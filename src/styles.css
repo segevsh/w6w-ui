@@ -1,0 +1,175 @@
+/*
+ * @w6w/ui — styles for the pure-presentation components.
+ *
+ * Everything is namespaced under `.w6w-*` class names so this stylesheet
+ * won't collide with your app's CSS. Theme with CSS custom properties:
+ *
+ *   :root {
+ *     --w6w-panel: #ffffff;
+ *     --w6w-accent: #3355e6;
+ *   }
+ *
+ * Only override the tokens you want to change; the rest fall back to the
+ * defaults defined here.
+ */
+
+:where(.w6w-modal-backdrop, .w6w-modal, .w6w-btn, .w6w-field, .w6w-app-summary, .w6w-stack, .w6w-result, .w6w-muted, .w6w-small) {
+  --w6w-bg: #0f1115;
+  --w6w-panel: #181b22;
+  --w6w-panel-2: #1f232c;
+  --w6w-border: #2a2f3a;
+  --w6w-text: #e6e8ee;
+  --w6w-muted: #9aa3b2;
+  --w6w-accent: #5b8cff;
+  --w6w-danger: #ff6b6b;
+  --w6w-radius: 10px;
+}
+
+.w6w-muted {
+  color: var(--w6w-muted);
+}
+.w6w-small {
+  font-size: 0.85em;
+}
+
+/* Layout helpers */
+.w6w-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Form fields */
+.w6w-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--w6w-muted);
+  font-size: 0.9em;
+}
+.w6w-field > span {
+  color: var(--w6w-muted);
+}
+.w6w-field input[type="text"],
+.w6w-field input[type="password"],
+.w6w-field input[type="number"],
+.w6w-field select,
+.w6w-field textarea {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+}
+.w6w-field input:focus,
+.w6w-field select:focus,
+.w6w-field textarea:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-hint {
+  color: var(--w6w-muted);
+  font-size: 0.8em;
+}
+
+/* Buttons */
+.w6w-btn {
+  background: var(--w6w-accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.w6w-btn:hover {
+  filter: brightness(1.08);
+}
+.w6w-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.w6w-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--w6w-border);
+  color: var(--w6w-text);
+}
+.w6w-btn-ghost:hover {
+  background: var(--w6w-panel-2);
+}
+
+/* App summary block */
+.w6w-app-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Modal */
+.w6w-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 50;
+}
+.w6w-modal-dismiss-overlay {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+dialog.w6w-modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+dialog.w6w-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+dialog.w6w-modal h3,
+dialog.w6w-modal h4,
+dialog.w6w-modal p {
+  color: var(--w6w-text);
+  margin: 0;
+}
+.w6w-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* Result / error box */
+.w6w-result {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--w6w-text);
+}
+.w6w-result.w6w-error {
+  border-color: var(--w6w-danger);
+  color: var(--w6w-danger);
+}
