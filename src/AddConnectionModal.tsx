@@ -3,42 +3,13 @@ import { AppIcon } from "./components/AppIcon.tsx";
 import { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { startOAuthPopup } from "./oauth-popup.ts";
-import type { AppSummary, AuthDef, AuthField, ConnectionSummary, ThemeMode } from "./types.ts";
+import { useW6wApi } from "./provider.tsx";
+import type { AppSummary, AuthDef, AuthField, ThemeMode } from "./types.ts";
 
 export interface AddConnectionModalProps {
-  /** Registered apps to pick from. Fetch these once and pass in. */
-  apps: AppSummary[];
-
-  /**
-   * Load the auth methods for a chosen app. The modal calls this each time the
-   * user selects an app; results are cached internally by appId for this
-   * modal's lifetime.
-   */
-  getAppAuth: (appId: string) => Promise<AuthDef[]>;
-
-  /**
-   * Persist the connection. Called for non-oauth auth methods after the user
-   * fills in the auth fields.
-   */
-  createConnection: (
-    appId: string,
-    body: { authKey: string; credential: Record<string, unknown>; displayName?: string },
-  ) => Promise<ConnectionSummary>;
-
-  /**
-   * Kick off an OAuth 2.0 flow. Returns the provider's `authorization_url`;
-   * the modal opens it in a popup and awaits the server's callback message.
-   */
-  startOAuthFlow: (
-    appId: string,
-    authKey: string,
-    body: { displayName?: string },
-  ) => Promise<{ authorizationUrl: string }>;
-
   onClose: () => void;
   /** Fired after a successful create (both API-key and OAuth paths). */
   onCreated: (result: { connectionId: string }) => void;
-
   /** Optional theme hint passed through to `AppIcon` (light/dark variant). */
   theme?: ThemeMode;
 }
@@ -48,10 +19,13 @@ export interface AddConnectionModalProps {
  * (or run OAuth) → submit. The `AuthDef.fields` array drives the form so no
  * app-specific knowledge is hard-coded.
  *
- * Pure presentation: no fetching library, no global state. Consumers supply
- * the data and callbacks; this component owns only its own transient UI state.
+ * Data + IO come from `useW6wApi()` — wrap the app in `<W6wUIProvider api={...}>`
+ * once and this component (and everything else in @w6w/ui) uses that client.
  */
 export function AddConnectionModal(props: AddConnectionModalProps) {
+  const api = useW6wApi();
+  const [apps, setApps] = useState<AppSummary[] | null>(null);
+  const [appsError, setAppsError] = useState<string | null>(null);
   const [appId, setAppId] = useState<string>("");
   const [authKey, setAuthKey] = useState<string>("");
   const [displayName, setDisplayName] = useState("");
@@ -59,16 +33,33 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  // Per-app auth methods cache. Keeps changes to the app dropdown snappy.
+  // Per-app auth methods cache — keeps changes to the app dropdown snappy.
   const [authByApp, setAuthByApp] = useState<Record<string, AuthDef[]>>({});
   const [loadingAuth, setLoadingAuth] = useState(false);
+
+  // Fetch the app list once when the modal mounts. Consumers that want
+  // cross-modal caching wrap their W6wApi implementation with react-query/SWR.
+  useEffect(() => {
+    let canceled = false;
+    api
+      .listApps()
+      .then((r) => {
+        if (!canceled) setApps(r);
+      })
+      .catch((e) => {
+        if (!canceled) setAppsError((e as Error).message);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [api]);
 
   useEffect(() => {
     if (!appId) return;
     if (authByApp[appId]) return;
     let canceled = false;
     setLoadingAuth(true);
-    props
+    api
       .getAppAuth(appId)
       .then((auths) => {
         if (canceled) return;
@@ -84,15 +75,14 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
     return () => {
       canceled = true;
     };
-  }, [appId, authByApp, props]);
+  }, [api, appId, authByApp]);
 
-  const selectedApp: AppSummary | undefined = props.apps.find((a) => a.id === appId);
+  const selectedApp: AppSummary | undefined = (apps ?? []).find((a) => a.id === appId);
   // Hide methods the server flagged unavailable (e.g. oauth2 with no host creds).
   const auths: AuthDef[] = (authByApp[appId] ?? []).filter((a) => a.available !== false);
   const auth: AuthDef | undefined = auths.find((a) => a.key === authKey) ?? auths[0];
   const fields: AuthField[] = auth?.fields ?? [];
 
-  // Pick the first auth method once its list loads.
   if (auth && !authKey) setAuthKey(auth.key);
 
   const isOAuth = auth?.type === "oauth2";
@@ -105,13 +95,13 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
     setPending(true);
     try {
       if (isOAuth) {
-        const { authorizationUrl } = await props.startOAuthFlow(appId, auth.key, {
+        const { authorizationUrl } = await api.startAppOAuthFlow(appId, auth.key, {
           displayName: displayName || undefined,
         });
         const { connectionId } = await startOAuthPopup(authorizationUrl);
         props.onCreated({ connectionId });
       } else {
-        const conn = await props.createConnection(appId, {
+        const conn = await api.createConnection(appId, {
           authKey: auth.key,
           credential,
           displayName: displayName || undefined,
@@ -127,25 +117,30 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
 
   return (
     <Modal title="Add connection" onClose={props.onClose}>
-      <label className="w6w-field">
-        <span>App</span>
-        <select
-          value={appId}
-          onChange={(e) => {
-            setAppId(e.target.value);
-            setAuthKey("");
-            setCredential({});
-            setError(null);
-          }}
-        >
-          <option value="">— pick an app —</option>
-          {props.apps.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.displayName} ({a.id})
-            </option>
-          ))}
-        </select>
-      </label>
+      {appsError && <div className="w6w-result w6w-error">{appsError}</div>}
+      {!appsError && apps === null && <p className="w6w-muted w6w-small">Loading apps…</p>}
+
+      {apps !== null && (
+        <label className="w6w-field">
+          <span>App</span>
+          <select
+            value={appId}
+            onChange={(e) => {
+              setAppId(e.target.value);
+              setAuthKey("");
+              setCredential({});
+              setError(null);
+            }}
+          >
+            <option value="">— pick an app —</option>
+            {apps.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.displayName} ({a.id})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {appId && loadingAuth && <p className="w6w-muted w6w-small">Loading auth methods…</p>}
 
