@@ -16,6 +16,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./flow": {
+      "types": "./src/flow.ts",
+      "import": "./src/flow.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "files": [
@@ -41,7 +45,8 @@
     "@codemirror/lint": "^6.8.4",
     "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.35.0",
-    "@uiw/react-codemirror": "^4.23.7"
+    "@uiw/react-codemirror": "^4.23.7",
+    "@xyflow/react": "^12.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
