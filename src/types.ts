@@ -35,6 +35,31 @@ export interface AuthField {
   hint?: string;
 }
 
+/**
+ * One declared parameter of an action, as returned by GET /apps/:id (the
+ * `actions[].params` array). Drives the guided step-builder form. Same shape as
+ * an app manifest's action param — a superset of `AuthField` (adds `text`/`json`
+ * widget types).
+ */
+export interface ActionParam {
+  key: string;
+  label?: string;
+  type: "string" | "text" | "number" | "boolean" | "json" | "secret" | string;
+  required?: boolean;
+  default?: unknown;
+  hint?: string;
+}
+
+/** Summary of an action an app exposes, as returned by GET /apps/:id. */
+export interface ActionDef {
+  key: string;
+  type?: string;
+  title?: string;
+  description?: string;
+  params?: ActionParam[];
+  output?: unknown;
+}
+
 /** Auth method declaration as exposed by an app's manifest. */
 export interface AuthDef {
   key: string;

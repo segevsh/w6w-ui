@@ -1,9 +1,11 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 interface ModalProps {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** `"wide"` widens the dialog (e.g. for a sidebar + content layout). */
+  size?: "default" | "wide";
 }
 
 /**
@@ -11,7 +13,7 @@ interface ModalProps {
  * trapping, Esc-dismiss, and accessibility semantics for free. A button
  * positioned over the backdrop catches outside-clicks to close.
  */
-export function Modal({ title, onClose, children }: ModalProps) {
+export function Modal({ title, onClose, children, size = "default" }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -34,7 +36,11 @@ export function Modal({ title, onClose, children }: ModalProps) {
         aria-label="Close modal"
         onClick={onClose}
       />
-      <dialog ref={ref} className="w6w-modal" aria-label={title}>
+      <dialog
+        ref={ref}
+        className={`w6w-modal${size === "wide" ? " w6w-modal-wide" : ""}`}
+        aria-label={title}
+      >
         <h3>{title}</h3>
         {children}
       </dialog>

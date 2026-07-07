@@ -7,8 +7,8 @@
  *   const api = createW6wApi({ baseUrl: "/api", token });
  *   <W6wUIProvider api={api}>...</W6wUIProvider>
  */
-import { createContext, useContext, type ReactNode } from "react";
-import type { AppSummary, AuthDef, ConnectionSummary } from "./types.ts";
+import { type ReactNode, createContext, useContext } from "react";
+import type { ActionDef, AppSummary, AuthDef, ConnectionSummary } from "./types.ts";
 
 /**
  * The surface every w6w-io component may call. Grows as we add components;
@@ -43,6 +43,12 @@ export interface W6wApi {
     authKey: string,
     body: { displayName?: string },
   ): Promise<{ authorizationUrl: string }>;
+
+  /** List the actions an app exposes, to pick from in the step builder. */
+  getAppActions(appId: string): Promise<ActionDef[]>;
+
+  /** List the connections that already exist for a given app. */
+  listConnectionsForApp(appId: string): Promise<ConnectionSummary[]>;
 }
 
 const Ctx = createContext<W6wApi | null>(null);
