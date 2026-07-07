@@ -5,7 +5,7 @@
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
 import type { W6wApi } from "./provider.tsx";
-import type { AppSummary, AuthDef, ConnectionSummary } from "./types.ts";
+import type { ActionDef, AppSummary, AuthDef, ConnectionSummary } from "./types.ts";
 
 export interface CreateW6wApiOptions {
   /** Absolute URL or path prefix — e.g. `"https://w6w.example.com"` or `"/api"`. */
@@ -61,15 +61,25 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
     },
 
     createConnection: (appId, body) =>
-      req<{ connection: ConnectionSummary }>(
-        `/apps/${encodeURIComponent(appId)}/connections`,
-        { method: "POST", body: JSON.stringify(body) },
-      ).then((r) => r.connection),
+      req<{ connection: ConnectionSummary }>(`/apps/${encodeURIComponent(appId)}/connections`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }).then((r) => r.connection),
 
     startAppOAuthFlow: (appId, authKey, body) =>
       req<{ authorizationUrl: string }>(
         `/apps/${encodeURIComponent(appId)}/oauth-config/${encodeURIComponent(authKey)}/authorize-url`,
         { method: "POST", body: JSON.stringify(body) },
       ),
+
+    getAppActions: (appId) =>
+      req<{ actions: ActionDef[] }>(`/apps/${encodeURIComponent(appId)}`).then(
+        (r) => r.actions ?? [],
+      ),
+
+    listConnectionsForApp: (appId) =>
+      req<{ connections: ConnectionSummary[] }>(
+        `/apps/${encodeURIComponent(appId)}/connections`,
+      ).then((r) => r.connections ?? []),
   };
 }

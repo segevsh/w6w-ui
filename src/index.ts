@@ -14,6 +14,12 @@ export type { CreateW6wApiOptions } from "./createW6wApi.ts";
 export { AddConnectionModal } from "./AddConnectionModal.tsx";
 export type { AddConnectionModalProps } from "./AddConnectionModal.tsx";
 
+export { StepBuilderModal } from "./StepBuilderModal.tsx";
+export type { BuiltStep, StepBuilderModalProps } from "./StepBuilderModal.tsx";
+
+export { ParamsForm } from "./ParamsForm.tsx";
+export type { ParamsFormProps } from "./ParamsForm.tsx";
+
 export { JsonEditor } from "./JsonEditor.tsx";
 export type { JsonEditorProps } from "./JsonEditor.tsx";
 
@@ -25,6 +31,8 @@ export { startOAuthPopup } from "./oauth-popup.ts";
 export type { OAuthPopupResult } from "./oauth-popup.ts";
 
 export type {
+  ActionDef,
+  ActionParam,
   AppSummary,
   AuthDef,
   AuthField,

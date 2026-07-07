@@ -99,6 +99,10 @@
 .w6w-btn-ghost:hover {
   background: var(--w6w-panel-2);
 }
+.w6w-btn-ghost.active {
+  border-color: var(--w6w-accent);
+  background: var(--w6w-panel-2);
+}
 
 /* App summary block */
 .w6w-app-summary {
@@ -150,11 +154,113 @@ dialog.w6w-modal p {
   color: var(--w6w-text);
   margin: 0;
 }
+.w6w-modal-wide {
+  max-width: 860px;
+}
 .w6w-modal-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 4px;
+}
+
+/* Step builder (sidebar + content) */
+.w6w-stepbuilder {
+  display: flex;
+  gap: 14px;
+  min-height: 340px;
+}
+.w6w-stepbuilder-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 140px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--w6w-border);
+  padding-right: 12px;
+}
+.w6w-stepbuilder-tab {
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--w6w-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.w6w-stepbuilder-tab:hover {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+}
+.w6w-stepbuilder-tab.active {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+  font-weight: 500;
+}
+.w6w-stepbuilder-content {
+  flex: 1;
+  min-width: 0;
+  max-height: 60vh;
+  overflow: auto;
+}
+.w6w-stepbuilder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.w6w-stepbuilder-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--w6w-text);
+  cursor: pointer;
+  font-size: 14px;
+}
+.w6w-stepbuilder-item:hover {
+  border-color: var(--w6w-accent);
+}
+.w6w-stepbuilder-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Per-node control toolbar (React Flow NodeToolbar) */
+.w6w-node-toolbar {
+  display: flex;
+  gap: 4px;
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.w6w-node-toolbar-btn {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--w6w-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.w6w-node-toolbar-btn:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-node-toolbar-btn.danger:hover {
+  background: var(--w6w-danger);
+  color: white;
+}
+
+.w6w-params-optional > summary {
+  cursor: pointer;
 }
 
 /* Result / error box */

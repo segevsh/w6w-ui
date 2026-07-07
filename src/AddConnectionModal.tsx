@@ -12,6 +12,11 @@ export interface AddConnectionModalProps {
   onCreated: (result: { connectionId: string }) => void;
   /** Optional theme hint passed through to `AppIcon` (light/dark variant). */
   theme?: ThemeMode;
+  /**
+   * Pre-select an app and hide the app picker — used when the modal is opened
+   * for a specific app (e.g. from the step builder). Omit to let the user pick.
+   */
+  initialAppId?: string;
 }
 
 /**
@@ -26,7 +31,7 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
   const api = useW6wApi();
   const [apps, setApps] = useState<AppSummary[] | null>(null);
   const [appsError, setAppsError] = useState<string | null>(null);
-  const [appId, setAppId] = useState<string>("");
+  const [appId, setAppId] = useState<string>(props.initialAppId ?? "");
   const [authKey, setAuthKey] = useState<string>("");
   const [displayName, setDisplayName] = useState("");
   const [credential, setCredential] = useState<Record<string, unknown>>({});
@@ -86,7 +91,8 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
   if (auth && !authKey) setAuthKey(auth.key);
 
   const isOAuth = auth?.type === "oauth2";
-  const requiredMissing = !isOAuth &&
+  const requiredMissing =
+    !isOAuth &&
     fields.some((f) => f.required && (credential[f.key] === undefined || credential[f.key] === ""));
 
   async function submit() {
@@ -120,7 +126,7 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
       {appsError && <div className="w6w-result w6w-error">{appsError}</div>}
       {!appsError && apps === null && <p className="w6w-muted w6w-small">Loading apps…</p>}
 
-      {apps !== null && (
+      {apps !== null && !props.initialAppId && (
         <label className="w6w-field">
           <span>App</span>
           <select
@@ -194,14 +200,14 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
             />
           </label>
           {auth.description && <p className="w6w-muted w6w-small">{auth.description}</p>}
-          {isOAuth
-            ? (
-              <p className="w6w-muted w6w-small">
-                You'll be redirected to <strong>{auth.displayName ?? auth.key}</strong> to
-                authorize this connection.
-              </p>
-            )
-            : <AuthFieldsForm fields={fields} values={credential} onChange={setCredential} />}
+          {isOAuth ? (
+            <p className="w6w-muted w6w-small">
+              You'll be redirected to <strong>{auth.displayName ?? auth.key}</strong> to authorize
+              this connection.
+            </p>
+          ) : (
+            <AuthFieldsForm fields={fields} values={credential} onChange={setCredential} />
+          )}
         </>
       )}
 
@@ -218,10 +224,12 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
           onClick={submit}
         >
           {pending
-            ? isOAuth ? "Waiting for authorization…" : "Saving…"
+            ? isOAuth
+              ? "Waiting for authorization…"
+              : "Saving…"
             : isOAuth
-            ? `Sign in with ${auth?.displayName ?? auth?.key ?? "provider"}`
-            : "Save connection"}
+              ? `Sign in with ${auth?.displayName ?? auth?.key ?? "provider"}`
+              : "Save connection"}
         </button>
       </div>
     </Modal>
