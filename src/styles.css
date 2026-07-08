@@ -157,6 +157,15 @@ dialog.w6w-modal p {
 .w6w-modal-wide {
   max-width: 860px;
 }
+.w6w-modal-xl {
+  max-width: 1040px;
+  min-height: min(70vh, 620px);
+}
+.w6w-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .w6w-modal-actions {
   display: flex;
   gap: 8px;
@@ -203,6 +212,20 @@ dialog.w6w-modal p {
   min-width: 0;
   max-height: 60vh;
   overflow: auto;
+}
+.w6w-stepbuilder-search {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+  width: 100%;
+}
+.w6w-stepbuilder-search:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
 }
 .w6w-stepbuilder-list {
   display: flex;

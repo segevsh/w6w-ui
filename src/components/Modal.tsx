@@ -4,8 +4,13 @@ interface ModalProps {
   title: string;
   onClose: () => void;
   children: ReactNode;
-  /** `"wide"` widens the dialog (e.g. for a sidebar + content layout). */
-  size?: "default" | "wide";
+  /**
+   * Dialog width. `"wide"` fits a sidebar + content layout; `"xl"` is a large
+   * work surface (e.g. the app picker) that should feel roomy, not cramped.
+   */
+  size?: "default" | "wide" | "xl";
+  /** Optional node rendered next to the title (e.g. an app icon). */
+  titleIcon?: ReactNode;
 }
 
 /**
@@ -13,7 +18,13 @@ interface ModalProps {
  * trapping, Esc-dismiss, and accessibility semantics for free. A button
  * positioned over the backdrop catches outside-clicks to close.
  */
-export function Modal({ title, onClose, children, size = "default" }: ModalProps) {
+const SIZE_CLASS: Record<NonNullable<ModalProps["size"]>, string> = {
+  default: "",
+  wide: " w6w-modal-wide",
+  xl: " w6w-modal-xl",
+};
+
+export function Modal({ title, onClose, children, size = "default", titleIcon }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -36,12 +47,11 @@ export function Modal({ title, onClose, children, size = "default" }: ModalProps
         aria-label="Close modal"
         onClick={onClose}
       />
-      <dialog
-        ref={ref}
-        className={`w6w-modal${size === "wide" ? " w6w-modal-wide" : ""}`}
-        aria-label={title}
-      >
-        <h3>{title}</h3>
+      <dialog ref={ref} className={`w6w-modal${SIZE_CLASS[size]}`} aria-label={title}>
+        <h3 className="w6w-modal-title">
+          {titleIcon}
+          <span>{title}</span>
+        </h3>
         {children}
       </dialog>
     </div>

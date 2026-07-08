@@ -39,9 +39,42 @@ const CONTROL_DEFAULTS: Record<string, Record<string, unknown>> = {
  */
 export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProps) {
   const [tab, setTab] = useState<Tab>("apps");
+  // When an app is selected the modal collapses to a single-app detail view:
+  // the sidebar is hidden and the header switches to the app's name + icon.
+  const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
+
+  if (selectedApp) {
+    return (
+      <Modal
+        title={selectedApp.displayName}
+        onClose={onClose}
+        size="xl"
+        titleIcon={
+          <AppIcon
+            src={selectedApp.iconSvg}
+            srcDark={selectedApp.iconSvgDark}
+            brandColor={selectedApp.brandColor}
+            name={selectedApp.displayName}
+            theme={theme}
+            size={22}
+          />
+        }
+      >
+        <div className="w6w-stepbuilder-content">
+          <AppStepConfig
+            appId={selectedApp.id}
+            onBack={() => setSelectedApp(null)}
+            onAdd={onAdd}
+            onClose={onClose}
+            theme={theme}
+          />
+        </div>
+      </Modal>
+    );
+  }
 
   return (
-    <Modal title="Add a step" onClose={onClose} size="wide">
+    <Modal title="Add a step" onClose={onClose} size="xl">
       <div className="w6w-stepbuilder">
         <nav className="w6w-stepbuilder-sidebar">
           <button
@@ -61,7 +94,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
         </nav>
         <div className="w6w-stepbuilder-content">
           {tab === "apps" ? (
-            <AppsFlow onAdd={onAdd} onClose={onClose} theme={theme} />
+            <AppsFlow onSelectApp={setSelectedApp} theme={theme} />
           ) : (
             <ControlsFlow onAdd={onAdd} />
           )}
@@ -104,18 +137,16 @@ function ControlsFlow({ onAdd }: { onAdd: (s: BuiltStep) => void }) {
 // ── Apps tab ───────────────────────────────────────────────────────────────
 
 function AppsFlow({
-  onAdd,
-  onClose,
+  onSelectApp,
   theme,
 }: {
-  onAdd: (s: BuiltStep) => void;
-  onClose: () => void;
+  onSelectApp: (app: AppSummary) => void;
   theme?: ThemeMode;
 }) {
   const api = useW6wApi();
   const [apps, setApps] = useState<AppSummary[] | null>(null);
   const [appsError, setAppsError] = useState<string | null>(null);
-  const [appId, setAppId] = useState<string>("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let canceled = false;
@@ -130,64 +161,73 @@ function AppsFlow({
 
   if (appsError) return <div className="w6w-result w6w-error">{appsError}</div>;
   if (apps === null) return <p className="w6w-muted w6w-small">Loading apps…</p>;
-
-  if (!appId) {
-    if (apps.length === 0) {
-      return (
-        <p className="w6w-muted w6w-small">
-          No apps registered yet. Register one from the Apps page first.
-        </p>
-      );
-    }
+  if (apps.length === 0) {
     return (
-      <div className="w6w-stepbuilder-list">
-        {apps.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            className="w6w-stepbuilder-item"
-            onClick={() => setAppId(a.id)}
-          >
-            <AppIcon
-              src={a.iconSvg}
-              srcDark={a.iconSvgDark}
-              brandColor={a.brandColor}
-              name={a.displayName}
-              theme={theme}
-              size={24}
-            />
-            <span className="w6w-stepbuilder-item-main">
-              <strong>{a.displayName}</strong>
-              <code className="w6w-muted w6w-small">{a.id}</code>
-            </span>
-          </button>
-        ))}
-      </div>
+      <p className="w6w-muted w6w-small">
+        No apps registered yet. Register one from the Apps page first.
+      </p>
     );
   }
 
-  const app = apps.find((a) => a.id === appId);
+  // Alphabetical by display name, then filtered by the search box (name or id).
+  const q = query.trim().toLowerCase();
+  const sorted = [...apps].sort((a, b) =>
+    a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }),
+  );
+  const visible = q
+    ? sorted.filter(
+        (a) => a.displayName.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
+      )
+    : sorted;
+
   return (
-    <AppStepConfig
-      app={app}
-      appId={appId}
-      onBack={() => setAppId("")}
-      onAdd={onAdd}
-      onClose={onClose}
-      theme={theme}
-    />
+    <div className="w6w-stack">
+      <input
+        type="text"
+        className="w6w-stepbuilder-search"
+        placeholder="Search apps…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Search apps"
+      />
+      {visible.length === 0 ? (
+        <p className="w6w-muted w6w-small">No apps match “{query}”.</p>
+      ) : (
+        <div className="w6w-stepbuilder-list">
+          {visible.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className="w6w-stepbuilder-item"
+              onClick={() => onSelectApp(a)}
+            >
+              <AppIcon
+                src={a.iconSvg}
+                srcDark={a.iconSvgDark}
+                brandColor={a.brandColor}
+                name={a.displayName}
+                theme={theme}
+                size={24}
+              />
+              <span className="w6w-stepbuilder-item-main">
+                <strong>{a.displayName}</strong>
+                <code className="w6w-muted w6w-small">{a.id}</code>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
 function AppStepConfig({
-  app,
   appId,
   onBack,
   onAdd,
   onClose,
   theme,
 }: {
-  app: AppSummary | undefined;
   appId: string;
   onBack: () => void;
   onAdd: (s: BuiltStep) => void;
@@ -252,22 +292,12 @@ function AppStepConfig({
   return (
     <div className="w6w-stack">
       <div className="w6w-app-summary">
-        <AppIcon
-          src={app?.iconSvg}
-          srcDark={app?.iconSvgDark}
-          brandColor={app?.brandColor}
-          name={app?.displayName ?? appId}
-          theme={theme}
-        />
-        <div style={{ flex: 1 }}>
-          <strong>{app?.displayName ?? appId}</strong>
-          <div className="w6w-muted w6w-small">
-            <code>{appId}</code>
-          </div>
-        </div>
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onBack}>
           ← Apps
         </button>
+        <code className="w6w-muted w6w-small" style={{ flex: 1 }}>
+          {appId}
+        </code>
       </div>
 
       {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
