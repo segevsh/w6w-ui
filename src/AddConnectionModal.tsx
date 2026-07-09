@@ -197,6 +197,14 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="e.g. Production API key"
+              // A plain text field sitting above a credential field gets treated
+              // as the "username" of a login form and prefilled — opt it out.
+              name="w6w-connection-label"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
             />
           </label>
           {auth.description && <p className="w6w-muted w6w-small">{auth.description}</p>}

@@ -12,10 +12,20 @@ import {
   addEdge,
   useEdgesState,
   useNodesState,
+  useReactFlow,
 } from "@xyflow/react";
+import type { FinalConnectionState } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Handle } from "@xyflow/react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { type BuiltStep, StepBuilderModal } from "./StepBuilderModal.tsx";
@@ -36,9 +46,17 @@ export interface WorkflowFlowEditorProps {
   height?: string | number;
 }
 
+/** Which view the step edit modal opens in. */
+type EditView = "form" | "json";
+
 /** Per-node control handlers, provided to the node cards via context. */
 interface StepControls {
+  /** Open the edit modal on the form view. */
   onEdit: (id: string) => void;
+  /** Open the edit modal straight on the JSON view. */
+  onEditJson: (id: string) => void;
+  /** Test-run a single step and show its result. */
+  onRun: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   readOnly?: boolean;
@@ -65,7 +83,17 @@ export function WorkflowFlowEditor(props: WorkflowFlowEditorProps) {
   );
 }
 
+/** Live state of a single-step test run, shown in a modal. */
+interface StepRunState {
+  stepId: string;
+  status: "running" | "done" | "error";
+  value?: unknown;
+  error?: string;
+}
+
 function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorProps) {
+  const api = useW6wApi();
+  const [runResult, setRunResult] = useState<StepRunState | null>(null);
   // Re-hydrate nodes+edges only when the workflow id changes identity. Local
   // edits (drag, connect, delete) go through the useNodesState / useEdgesState
   // handles so React Flow's own state stays authoritative during interaction.
@@ -76,6 +104,15 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editView, setEditView] = useState<EditView>("form");
+  // When a connection drag is released on empty canvas, we open the builder to
+  // create a new node and auto-wire it to the handle it was dragged from.
+  const [pendingConnect, setPendingConnect] = useState<{
+    nodeId: string;
+    handleType: "source" | "target";
+    position: { x: number; y: number };
+  } | null>(null);
+  const { screenToFlowPosition } = useReactFlow();
 
   // If the caller swaps in a different workflow, reset local graph state.
   useEffect(() => {
@@ -102,9 +139,31 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
     [edges, nodes, setEdges, emitChange, readOnly],
   );
 
+  // A connection dropped on empty canvas (no valid target) means "add a new node
+  // here and connect to it" — open the builder and remember where it came from.
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+      if (readOnly) return;
+      // A valid drop onto a handle is already handled by onConnect.
+      if (connectionState.isValid) return;
+      const fromNode = connectionState.fromNode;
+      if (!fromNode) return;
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      const position = screenToFlowPosition({ x: point.clientX, y: point.clientY });
+      setPendingConnect({
+        nodeId: fromNode.id,
+        handleType: connectionState.fromHandle?.type === "target" ? "target" : "source",
+        position,
+      });
+      setBuilderOpen(true);
+    },
+    [readOnly, screenToFlowPosition],
+  );
+
   const deleteStep = useCallback(
     (id: string) => {
       if (readOnly) return;
+      if (!window.confirm(`Delete step "${id}"?`)) return;
       const nextNodes = nodes.filter((n) => n.id !== id);
       const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
       setNodes(nextNodes);
@@ -156,16 +215,31 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
       const newNode: StepNode = {
         id,
         type: isControl ? "control" : "step",
-        position: { x: 80, y: 80 + nodes.length * 24 },
+        // Drop point when spawned from a dragged connection; else a light cascade.
+        position: pendingConnect?.position ?? { x: 80, y: 80 + nodes.length * 24 },
         data: { step, isControl },
       };
       const nextNodes = [...nodes, newNode];
+
+      // Auto-wire the edge back to the handle the drag started from. Dragging a
+      // source handle points the edge at the new node; a target handle reverses it.
+      let nextEdges = edges;
+      if (pendingConnect) {
+        const [source, target] =
+          pendingConnect.handleType === "target"
+            ? [id, pendingConnect.nodeId]
+            : [pendingConnect.nodeId, id];
+        nextEdges = addEdge({ source, target, id: `${source}->${target}` }, edges);
+      }
+
       setNodes(nextNodes);
+      if (nextEdges !== edges) setEdges(nextEdges);
       setSelectedId(id);
       setBuilderOpen(false);
-      emitChange(nextNodes, edges);
+      setPendingConnect(null);
+      emitChange(nextNodes, nextEdges);
     },
-    [nodes, edges, setNodes, emitChange, readOnly],
+    [nodes, edges, setNodes, setEdges, emitChange, readOnly, pendingConnect],
   );
 
   // Apply an edit to a step, rewiring edges if its id changed.
@@ -201,14 +275,45 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
     [nodes, edges, setNodes, setEdges, selectedId, editingId, emitChange],
   );
 
+  // Test-run one step through the invoke API, using its own `with` params and
+  // (for action steps) its stored connection. Control steps aren't invocable.
+  const runStep = useCallback(
+    async (id: string) => {
+      const node = nodes.find((n) => n.id === id);
+      if (!node || node.data.isControl) return;
+      const step = node.data.step;
+      setRunResult({ stepId: id, status: "running" });
+      try {
+        const { value: out } = await api.invokeAction(
+          step.uses.app,
+          step.uses.action,
+          step.with ?? {},
+          step.uses.connection ? { connectionId: step.uses.connection } : {},
+        );
+        setRunResult({ stepId: id, status: "done", value: out });
+      } catch (e) {
+        setRunResult({ stepId: id, status: "error", error: (e as Error).message });
+      }
+    },
+    [nodes, api],
+  );
+
   const controls = useMemo<StepControls>(
     () => ({
-      onEdit: (id) => setEditingId(id),
+      onEdit: (id) => {
+        setEditView("form");
+        setEditingId(id);
+      },
+      onEditJson: (id) => {
+        setEditView("json");
+        setEditingId(id);
+      },
+      onRun: runStep,
       onDuplicate: duplicateStep,
       onDelete: deleteStep,
       readOnly,
     }),
-    [duplicateStep, deleteStep, readOnly],
+    [runStep, duplicateStep, deleteStep, readOnly],
   );
 
   const editingStep = nodes.find((n) => n.id === editingId)?.data.step ?? null;
@@ -239,6 +344,7 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectEnd={onConnectEnd}
           onSelectionChange={({ nodes: sel }) => setSelectedId(sel[0]?.id ?? null)}
           nodeTypes={nodeTypes}
           nodesDraggable={!readOnly}
@@ -260,7 +366,13 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
         </ReactFlow>
 
         {builderOpen && (
-          <StepBuilderModal onClose={() => setBuilderOpen(false)} onAdd={addBuiltStep} />
+          <StepBuilderModal
+            onClose={() => {
+              setBuilderOpen(false);
+              setPendingConnect(null);
+            }}
+            onAdd={addBuiltStep}
+          />
         )}
 
         {editingStep && editingId && (
@@ -270,9 +382,37 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
           <StepEditModal
             step={editingStep}
             readOnly={readOnly}
+            initialView={editView}
             onChange={(next) => updateStep(editingId, next)}
             onClose={() => setEditingId(null)}
           />
+        )}
+
+        {runResult && (
+          <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
+            {runResult.status === "running" && <p className="w6w-muted w6w-small">Running…</p>}
+            {runResult.status === "error" && (
+              <div className="w6w-result w6w-error">{runResult.error}</div>
+            )}
+            {runResult.status === "done" && (
+              <div>
+                <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+                  Result
+                </div>
+                <pre
+                  className="w6w-result"
+                  style={{ whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: 0 }}
+                >
+                  {JSON.stringify(runResult.value, null, 2)}
+                </pre>
+              </div>
+            )}
+            <div className="w6w-modal-actions">
+              <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
+                Close
+              </button>
+            </div>
+          </Modal>
         )}
       </div>
     </StepControlsCtx.Provider>
@@ -281,23 +421,90 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
 
 // ── Node renderers ────────────────────────────────────────────────────────
 
-function NodeControls({ id }: { id: string }) {
+/** A 24×24 stroked glyph for the node toolbar. */
+function ToolbarIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
   const ctrl = useContext(StepControlsCtx);
   if (!ctrl || ctrl.readOnly) return null;
   return (
     <NodeToolbar position={Position.Top} className="w6w-node-toolbar">
-      <button type="button" className="w6w-node-toolbar-btn" onClick={() => ctrl.onEdit(id)}>
-        Edit
+      {runnable && (
+        <button
+          type="button"
+          className="w6w-node-toolbar-btn"
+          title="Test-run this step"
+          aria-label="Test-run this step"
+          onClick={() => ctrl.onRun(id)}
+        >
+          <ToolbarIcon>
+            <polygon points="6 4 20 12 6 20 6 4" />
+          </ToolbarIcon>
+        </button>
+      )}
+      <button
+        type="button"
+        className="w6w-node-toolbar-btn"
+        title="Edit"
+        aria-label="Edit step"
+        onClick={() => ctrl.onEdit(id)}
+      >
+        <ToolbarIcon>
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+        </ToolbarIcon>
       </button>
-      <button type="button" className="w6w-node-toolbar-btn" onClick={() => ctrl.onDuplicate(id)}>
-        Duplicate
+      <button
+        type="button"
+        className="w6w-node-toolbar-btn"
+        title="Edit as JSON"
+        aria-label="Edit step as JSON"
+        onClick={() => ctrl.onEditJson(id)}
+      >
+        <ToolbarIcon>
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </ToolbarIcon>
+      </button>
+      <button
+        type="button"
+        className="w6w-node-toolbar-btn"
+        title="Duplicate"
+        aria-label="Duplicate step"
+        onClick={() => ctrl.onDuplicate(id)}
+      >
+        <ToolbarIcon>
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </ToolbarIcon>
       </button>
       <button
         type="button"
         className="w6w-node-toolbar-btn danger"
+        title="Delete"
+        aria-label="Delete step"
         onClick={() => ctrl.onDelete(id)}
       >
-        Delete
+        <ToolbarIcon>
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </ToolbarIcon>
       </button>
     </NodeToolbar>
   );
@@ -317,7 +524,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         fontSize: 13,
       }}
     >
-      <NodeControls id={id} />
+      <NodeControls id={id} runnable />
       <Handle type="target" position={Position.Left} />
       <div style={{ fontWeight: 600 }}>{step.id}</div>
       <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
@@ -355,22 +562,22 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
-type EditView = "form" | "json";
-
 function StepEditModal({
   step: initialStep,
   onChange,
   onClose,
   readOnly,
+  initialView = "form",
 }: {
   step: FlowStep;
   onChange: (next: FlowStep) => void;
   onClose: () => void;
   readOnly?: boolean;
+  initialView?: EditView;
 }) {
   const api = useW6wApi();
   const [step, setStep] = useState<FlowStep>(initialStep);
-  const [view, setView] = useState<EditView>("form");
+  const [view, setView] = useState<EditView>(initialView);
   const [json, setJson] = useState(() => JSON.stringify(initialStep, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
 
@@ -474,9 +681,7 @@ function StepEditModal({
             {params === null ? (
               <p className="w6w-muted w6w-small">Loading parameters…</p>
             ) : isControl ? (
-              <p className="w6w-muted w6w-small">
-                Control steps have no declared params — edit their config in the JSON view.
-              </p>
+              <ControlConfigForm step={step} readOnly={readOnly} onChange={commit} />
             ) : (
               <ParamsForm
                 params={params}
@@ -521,6 +726,181 @@ function StepEditModal({
         </button>
       </div>
     </Modal>
+  );
+}
+
+// ── Control-step config forms ─────────────────────────────────────────────
+
+/** One declared data variable in a `data` control step. */
+interface DataVar {
+  key: string;
+  type: "string" | "number" | "boolean" | "json";
+  value: unknown;
+}
+
+const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
+
+/** Coerce a text input into the variable's declared type (best-effort). */
+function coerceVarValue(type: DataVar["type"], raw: string): unknown {
+  if (type === "number") {
+    if (raw.trim() === "") return "";
+    const n = Number(raw);
+    return Number.isNaN(n) ? raw : n;
+  }
+  if (type === "boolean") return raw === "true";
+  if (type === "json") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+/** Render a stored variable value back into an editable string. */
+function varValueToText(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+/**
+ * Config UI for the two internal control steps that have a real shape:
+ *   - `script` — an inline JS body (`with.code`).
+ *   - `data`   — a table of typed key/value variables (`with.vars`).
+ * Other controls fall back to JSON-only editing.
+ */
+function ControlConfigForm({
+  step,
+  readOnly,
+  onChange,
+}: {
+  step: FlowStep;
+  readOnly?: boolean;
+  onChange: (next: FlowStep) => void;
+}) {
+  const withObj = step.with ?? {};
+
+  if (step.uses.action === "script") {
+    const code = typeof withObj.code === "string" ? withObj.code : "";
+    return (
+      <label className="w6w-field">
+        <span>Script (JavaScript)</span>
+        <textarea
+          className="w6w-code"
+          value={code}
+          readOnly={readOnly}
+          spellCheck={false}
+          rows={10}
+          onChange={(e) =>
+            onChange({
+              ...step,
+              with: { ...withObj, language: "javascript", code: e.target.value },
+            })
+          }
+        />
+        <span className="w6w-hint">Runs as a function body; return the step's output.</span>
+      </label>
+    );
+  }
+
+  if (step.uses.action === "data") {
+    const vars: DataVar[] = Array.isArray(withObj.vars) ? (withObj.vars as DataVar[]) : [];
+    const setVars = (next: DataVar[]) => onChange({ ...step, with: { ...withObj, vars: next } });
+    return <DataVarsEditor vars={vars} readOnly={readOnly} onChange={setVars} />;
+  }
+
+  return (
+    <p className="w6w-muted w6w-small">
+      Control steps have no declared params — edit their config in the JSON view.
+    </p>
+  );
+}
+
+/** Add/remove/edit typed key-value variables for a `data` control step. */
+function DataVarsEditor({
+  vars,
+  readOnly,
+  onChange,
+}: {
+  vars: DataVar[];
+  readOnly?: boolean;
+  onChange: (next: DataVar[]) => void;
+}) {
+  const patch = (i: number, p: Partial<DataVar>) =>
+    onChange(vars.map((v, idx) => (idx === i ? { ...v, ...p } : v)));
+
+  return (
+    <div className="w6w-stack">
+      {vars.length === 0 && (
+        <p className="w6w-muted w6w-small">No variables yet — add one below.</p>
+      )}
+      {vars.map((v, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: rows have no stable id; keys/values are user-edited
+        <div className="w6w-datavar-row" key={i}>
+          <input
+            type="text"
+            placeholder="key"
+            value={v.key}
+            readOnly={readOnly}
+            onChange={(e) => patch(i, { key: e.target.value })}
+          />
+          <select
+            value={v.type}
+            disabled={readOnly}
+            onChange={(e) => {
+              const type = e.target.value as DataVar["type"];
+              patch(i, { type, value: coerceVarValue(type, varValueToText(v.value)) });
+            }}
+          >
+            {DATA_VAR_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          {v.type === "boolean" ? (
+            <select
+              value={v.value === true ? "true" : "false"}
+              disabled={readOnly}
+              onChange={(e) => patch(i, { value: e.target.value === "true" })}
+            >
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          ) : (
+            <input
+              type={v.type === "number" ? "number" : "text"}
+              placeholder="value"
+              value={varValueToText(v.value)}
+              readOnly={readOnly}
+              onChange={(e) => patch(i, { value: coerceVarValue(v.type, e.target.value) })}
+            />
+          )}
+          {!readOnly && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost"
+              aria-label={`Remove variable ${v.key || i + 1}`}
+              title="Remove"
+              onClick={() => onChange(vars.filter((_, idx) => idx !== i))}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      {!readOnly && (
+        <button
+          type="button"
+          className="w6w-btn w6w-btn-ghost"
+          onClick={() => onChange([...vars, { key: "", type: "string", value: "" }])}
+        >
+          + Add variable
+        </button>
+      )}
+    </div>
   );
 }
 

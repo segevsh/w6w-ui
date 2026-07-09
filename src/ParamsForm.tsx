@@ -95,7 +95,9 @@ function ParamField({
     );
   }
 
-  if (param.type === "json") {
+  // `json` and `group` params hold objects/arrays. Edit them as JSON so the
+  // value round-trips faithfully instead of collapsing to "[object Object]".
+  if (param.type === "json" || param.type === "group") {
     return <JsonParamField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
   }
 
@@ -120,7 +122,10 @@ function ParamField({
 
   const inputType =
     param.type === "secret" ? "password" : param.type === "number" ? "number" : "text";
-  const current = (value ?? param.default ?? "") as string | number;
+  const raw = value ?? param.default ?? "";
+  // Guard against object/array values landing in a text field (they'd render as
+  // "[object Object]"); show them JSON-stringified instead.
+  const display = typeof raw === "object" && raw !== null ? JSON.stringify(raw) : String(raw ?? "");
   return (
     <label className="w6w-field">
       <span>
@@ -129,7 +134,7 @@ function ParamField({
       </span>
       <input
         type={inputType}
-        value={String(current ?? "")}
+        value={display}
         readOnly={readOnly}
         autoComplete={param.type === "secret" ? "new-password" : "off"}
         onChange={(e) =>

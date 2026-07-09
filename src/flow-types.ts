@@ -42,4 +42,6 @@ export const CONTROL_LABELS: Record<string, string> = {
   foreach: "For each",
   parallel: "Parallel",
   wait: "Wait",
+  script: "Run script",
+  data: "Data",
 };

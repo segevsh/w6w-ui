@@ -73,6 +73,40 @@
   color: var(--w6w-muted);
   font-size: 0.8em;
 }
+/* Inline script editor (the `script` control step). */
+.w6w-field textarea.w6w-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 160px;
+}
+/* Typed key/value rows (the `data` control step). */
+.w6w-datavar-row {
+  display: grid;
+  grid-template-columns: 1fr 110px 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+.w6w-datavar-row input,
+.w6w-datavar-row select {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+  min-width: 0;
+}
+.w6w-datavar-row input:focus,
+.w6w-datavar-row select:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-datavar-row .w6w-btn {
+  padding: 6px 10px;
+}
 
 /* Buttons */
 .w6w-btn {
@@ -121,13 +155,6 @@
   padding: 20px;
   z-index: 50;
 }
-.w6w-modal-dismiss-overlay {
-  position: fixed;
-  inset: 0;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
 dialog.w6w-modal {
   position: fixed;
   inset: 0;
@@ -137,7 +164,7 @@ dialog.w6w-modal {
   border: 1px solid var(--w6w-border);
   border-radius: var(--w6w-radius);
   width: 100%;
-  max-width: 520px;
+  max-width: 800px;
   max-height: 90vh;
   overflow: auto;
   padding: 20px;
@@ -161,10 +188,28 @@ dialog.w6w-modal p {
   max-width: 1040px;
   min-height: min(70vh, 620px);
 }
+.w6w-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .w6w-modal-title {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+.w6w-modal-subtitle {
+  color: var(--w6w-muted);
+  font-size: 0.7em;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.w6w-modal-subtitle code {
+  font-size: inherit;
 }
 .w6w-modal-actions {
   display: flex;
@@ -210,8 +255,28 @@ dialog.w6w-modal p {
 .w6w-stepbuilder-content {
   flex: 1;
   min-width: 0;
-  max-height: 60vh;
+  /* Fixed height (not content-driven) so the modal never resizes when toggling
+     tabs, and the sidebar divider — which stretches to this row — stays a
+     constant length regardless of the right pane's content. */
+  height: min(70vh, 520px);
   overflow: auto;
+}
+/* Apps flow: a fixed search header + a separately scrolling list, so the
+   scrollbar is contained to the list and never runs alongside the search. */
+.w6w-stepbuilder-apps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+.w6w-stepbuilder-scroll {
+  overflow-y: auto;
+  /* Fill the remaining height below the search header; the list — not the
+     outer modal content — owns the scrollbar. */
+  flex: 1;
+  min-height: 0;
+  padding-right: 4px;
 }
 .w6w-stepbuilder-search {
   background: var(--w6w-panel-2);
@@ -266,10 +331,13 @@ dialog.w6w-modal p {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 .w6w-node-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 5px;
   color: var(--w6w-text);
   font-size: 12px;
   cursor: pointer;

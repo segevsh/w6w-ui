@@ -49,6 +49,20 @@ export interface W6wApi {
 
   /** List the connections that already exist for a given app. */
   listConnectionsForApp(appId: string): Promise<ConnectionSummary[]>;
+
+  /** List every connection across apps — drives the "Connected apps" tab. */
+  listConnections(): Promise<ConnectionSummary[]>;
+
+  /**
+   * Invoke a single action — used to test-run one step from the visual editor.
+   * Pass `connectionId` to run with a stored connection's credential.
+   */
+  invokeAction(
+    appId: string,
+    actionKey: string,
+    params: Record<string, unknown>,
+    opts?: { connectionId?: string },
+  ): Promise<{ value: unknown }>;
 }
 
 const Ctx = createContext<W6wApi | null>(null);

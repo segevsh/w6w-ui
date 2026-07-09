@@ -11,6 +11,10 @@ interface ModalProps {
   size?: "default" | "wide" | "xl";
   /** Optional node rendered next to the title (e.g. an app icon). */
   titleIcon?: ReactNode;
+  /** Optional muted meta rendered after the title (e.g. an app's id + version). */
+  subtitle?: ReactNode;
+  /** Optional node rendered at the far right of the title row (e.g. a back button). */
+  headerRight?: ReactNode;
 }
 
 /**
@@ -24,7 +28,15 @@ const SIZE_CLASS: Record<NonNullable<ModalProps["size"]>, string> = {
   xl: " w6w-modal-xl",
 };
 
-export function Modal({ title, onClose, children, size = "default", titleIcon }: ModalProps) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  size = "default",
+  titleIcon,
+  subtitle,
+  headerRight,
+}: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -35,23 +47,36 @@ export function Modal({ title, onClose, children, size = "default", titleIcon }:
       e.preventDefault();
       onClose();
     };
+    // A `showModal()` dialog and its ::backdrop live in the browser's top layer,
+    // above any sibling overlay — so an overlay button can't catch outside
+    // clicks. Backdrop clicks are dispatched with the dialog as target, so
+    // treat a click landing outside the dialog's box as a dismiss.
+    const onClick = (e: MouseEvent) => {
+      if (e.target !== el) return;
+      const r = el.getBoundingClientRect();
+      const outside =
+        e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      if (outside) onClose();
+    };
     el.addEventListener("cancel", onCancel);
-    return () => el.removeEventListener("cancel", onCancel);
+    el.addEventListener("click", onClick);
+    return () => {
+      el.removeEventListener("cancel", onCancel);
+      el.removeEventListener("click", onClick);
+    };
   }, [onClose]);
 
   return (
     <div className="w6w-modal-backdrop">
-      <button
-        type="button"
-        className="w6w-modal-dismiss-overlay"
-        aria-label="Close modal"
-        onClick={onClose}
-      />
       <dialog ref={ref} className={`w6w-modal${SIZE_CLASS[size]}`} aria-label={title}>
-        <h3 className="w6w-modal-title">
-          {titleIcon}
-          <span>{title}</span>
-        </h3>
+        <div className="w6w-modal-header">
+          <h3 className="w6w-modal-title">
+            {titleIcon}
+            <span>{title}</span>
+            {subtitle && <span className="w6w-modal-subtitle">{subtitle}</span>}
+          </h3>
+          {headerRight}
+        </div>
         {children}
       </dialog>
     </div>

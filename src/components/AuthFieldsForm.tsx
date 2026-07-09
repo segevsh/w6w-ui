@@ -53,7 +53,18 @@ export function AuthFieldsForm({ fields, values, onChange }: Props) {
               onChange={(e) =>
                 update(field.key, field.type === "number" ? Number(e.target.value) : e.target.value)
               }
+              // These are app credentials (API keys, tokens), not login passwords.
+              // `autoComplete="off"` is ignored by Chrome for password inputs, so
+              // secret fields use `new-password` — the one value that reliably
+              // suppresses autofill of the user's saved login password. An
+              // obfuscated `name` keeps the browser from treating this as a login
+              // form (which would prefill the username into a sibling text field).
+              name={`w6w-cred-${field.key}`}
               autoComplete={field.type === "secret" ? "new-password" : "off"}
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
             />
             {field.hint && <span className="w6w-hint">{field.hint}</span>}
           </label>
