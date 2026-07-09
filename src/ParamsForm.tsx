@@ -128,7 +128,9 @@ function ParamField({
     return <VarsField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
   }
 
-  if (param.type === "text") {
+  // Multi-line text: either the dedicated `text` type or any field the app
+  // flagged `config.multiline` (e.g. a `string` message body as a textarea).
+  if (param.type === "text" || param.config?.multiline) {
     const current = (value ?? param.default ?? "") as string;
     return (
       <label className="w6w-field">

@@ -63,6 +63,14 @@ export interface ActionParam {
   required?: boolean;
   default?: unknown;
   hint?: string;
+  /** Type-specific render/behavior options. */
+  config?: ParamConfig;
+}
+
+/** Type-specific render/behavior options for a param. */
+export interface ParamConfig {
+  /** Render as a multi-line textarea. Implied by `type: "text"`. */
+  multiline?: boolean;
 }
 
 /** Summary of an action an app exposes, as returned by GET /apps/:id. */
