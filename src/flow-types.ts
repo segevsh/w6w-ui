@@ -214,9 +214,13 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     icon: ICON_DATA,
     params: [
       {
+        // `required` surfaces the table in the form directly (not hidden under
+        // the optional disclosure). The value may be an empty array — a Data
+        // node with no vars yet is valid.
         key: "vars",
         type: "vars",
         label: "Variables",
+        required: true,
         default: [],
         hint: "Typed key/value variables for downstream steps to reference.",
       },
@@ -236,7 +240,14 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Method",
         required: true,
         default: "GET",
-        hint: "GET, POST, PUT, PATCH, or DELETE.",
+        options: [
+          { value: "GET", label: "GET" },
+          { value: "POST", label: "POST" },
+          { value: "PUT", label: "PUT" },
+          { value: "PATCH", label: "PATCH" },
+          { value: "DELETE", label: "DELETE" },
+        ],
+        hint: "HTTP method for the request.",
       },
       {
         key: "url",

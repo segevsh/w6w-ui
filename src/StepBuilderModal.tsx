@@ -8,10 +8,18 @@ import {
   INTERNAL_NODES,
   type InternalNodeDef,
   internalNodeDefaults,
+  isControlApp,
   isInternalApp,
 } from "./flow-types.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, ThemeMode } from "./types.ts";
+import type {
+  ActionDef,
+  ActionParam,
+  AppSummary,
+  AuthDef,
+  ConnectionSummary,
+  ThemeMode,
+} from "./types.ts";
 
 /** The step the builder emits — the editor assigns the final `id`. */
 export interface BuiltStep {
@@ -26,7 +34,7 @@ export interface StepBuilderModalProps {
   theme?: ThemeMode;
 }
 
-type Tab = "connected" | "apps" | "controls";
+type Tab = "connected" | "apps" | "controls" | "utilities";
 
 /**
  * Guided "add a step" flow. A sidebar toggles between **Apps** (pick app →
@@ -64,7 +72,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
             className="w6w-btn w6w-btn-ghost"
             onClick={() => setSelectedNode(null)}
           >
-            ← Controls
+            ← Back
           </button>
         }
       >
@@ -139,6 +147,13 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           >
             Controls
           </button>
+          <button
+            type="button"
+            className={`w6w-stepbuilder-tab${tab === "utilities" ? " active" : ""}`}
+            onClick={() => setTab("utilities")}
+          >
+            Utilities
+          </button>
         </nav>
         <div className="w6w-stepbuilder-content">
           {tab === "connected" ? (
@@ -149,8 +164,10 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
             />
           ) : tab === "apps" ? (
             <AppPicker onSelectApp={setSelectedApp} theme={theme} />
-          ) : (
+          ) : tab === "controls" ? (
             <ControlsFlow onSelect={setSelectedNode} />
+          ) : (
+            <UtilitiesFlow onSelect={setSelectedNode} />
           )}
         </div>
       </div>
@@ -160,49 +177,55 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
 
 // ── Internal nodes tab (triggers, flow control, compute) ───────────────────
 
-/**
- * The internal-node categories shown in the Controls tab, mirroring the Apps
- * registry's category tabs: flow control on its own; everything else (compute,
- * request, trigger) files under Utilities.
- */
-const NODE_CATEGORIES = ["Flow control", "Utilities"] as const;
-
-/** Map an internal node's group to its palette category. */
-function internalNodeCategory(group: InternalNodeDef["group"]): (typeof NODE_CATEGORIES)[number] {
-  return group === "control" ? "Flow control" : "Utilities";
+/** A flat, clickable list of internal nodes. Shared by Controls + Utilities. */
+function NodeList({
+  nodes,
+  onSelect,
+}: {
+  nodes: InternalNodeDef[];
+  onSelect: (node: InternalNodeDef) => void;
+}) {
+  return (
+    <div className="w6w-stepbuilder-list">
+      {nodes.map((n) => (
+        <button
+          key={`${n.app}:${n.action}`}
+          type="button"
+          className="w6w-stepbuilder-item"
+          onClick={() => onSelect(n)}
+        >
+          <strong>{n.label}</strong>
+          <code className="w6w-muted w6w-small">
+            {n.app} · {n.action}
+          </code>
+        </button>
+      ))}
+    </div>
+  );
 }
 
+/** Controls tab — engine-native flow control only (branch, loop, parallelize, wait). */
 function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
+  const nodes = INTERNAL_NODES.filter((n) => n.group === "control");
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Flow-control nodes branch, loop, parallelize, or pause the run; utilities run a script, call
-        an HTTP(S) endpoint, declare data, or trigger the workflow.
+        Flow-control nodes branch, loop, parallelize, or pause the run.
       </p>
-      {NODE_CATEGORIES.map((category) => {
-        const nodes = INTERNAL_NODES.filter((n) => internalNodeCategory(n.group) === category);
-        if (nodes.length === 0) return null;
-        return (
-          <div className="w6w-stack" key={category}>
-            <div className="w6w-muted w6w-small">{category}</div>
-            <div className="w6w-stepbuilder-list">
-              {nodes.map((n) => (
-                <button
-                  key={`${n.app}:${n.action}`}
-                  type="button"
-                  className="w6w-stepbuilder-item"
-                  onClick={() => onSelect(n)}
-                >
-                  <strong>{n.label}</strong>
-                  <code className="w6w-muted w6w-small">
-                    {n.app} · {n.action}
-                  </code>
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <NodeList nodes={nodes} onSelect={onSelect} />
+    </div>
+  );
+}
+
+/** Utilities tab — everything else: run a script, call HTTP(S), declare data, or trigger. */
+function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
+  const nodes = INTERNAL_NODES.filter((n) => n.group !== "control");
+  return (
+    <div className="w6w-stack">
+      <p className="w6w-muted w6w-small">
+        Utilities run a script, call an HTTP(S) endpoint, declare data, or trigger the workflow.
+      </p>
+      <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
   );
 }
@@ -234,6 +257,16 @@ function ControlStepConfig({
         </div>
         <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
       </div>
+      {/* Flow-control nodes can't run standalone (they need traversal context);
+          everything else (script/data/http/trigger) is testable in place. */}
+      {!isControlApp(node.app) && (
+        <StepTestRun
+          app={node.app}
+          action={node.action}
+          values={withValues}
+          canRun={requiredParamsFilled(node.params, withValues)}
+        />
+      )}
       {/* Footer — pinned to the modal bottom, outside the scroll area. */}
       <div className="w6w-modal-actions w6w-stepconfig-footer">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
@@ -247,6 +280,118 @@ function ControlStepConfig({
           Add step
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Whether every required param has a usable value — gates the inline "Test run".
+ * A required array (e.g. a `vars` table) may be empty (see the Data node); other
+ * required fields must be non-empty.
+ */
+function requiredParamsFilled(params: ActionParam[], values: Record<string, unknown>): boolean {
+  return params
+    .filter((p) => p.required)
+    .every((p) => {
+      const v = values[p.key] ?? p.default;
+      if (v === undefined || v === null) return false;
+      if (typeof v === "string") return v.trim() !== "";
+      return true;
+    });
+}
+
+type TestState =
+  | { status: "running" }
+  | { status: "done"; value: unknown; logs?: string[] }
+  | { status: "error"; error: string; errorCode?: string; logs?: string[] };
+
+/**
+ * Inline "Test run" — invokes the action/node with the current params (and, for
+ * app actions, the chosen connection) so the user can try a step from inside the
+ * builder before adding it. Pressable only once required fields are filled.
+ */
+function StepTestRun({
+  app,
+  action,
+  connectionId,
+  values,
+  canRun,
+}: {
+  app: string;
+  action: string;
+  connectionId?: string;
+  values: Record<string, unknown>;
+  canRun: boolean;
+}) {
+  const api = useW6wApi();
+  const [state, setState] = useState<TestState | null>(null);
+
+  const run = async () => {
+    setState({ status: "running" });
+    try {
+      const result = await api.invokeAction(
+        app,
+        action,
+        values,
+        connectionId ? { connectionId } : {},
+      );
+      setState({
+        status: "done",
+        value: result.value,
+        logs: (result as { logs?: string[] }).logs,
+      });
+    } catch (e) {
+      const err = e as { message?: string; code?: string; logs?: string[] };
+      setState({
+        status: "error",
+        error: err.message ?? String(e),
+        errorCode: err.code,
+        logs: err.logs,
+      });
+    }
+  };
+
+  const logs = state && state.status !== "running" ? state.logs : undefined;
+
+  return (
+    <div className="w6w-steptest">
+      <div className="w6w-steptest-bar">
+        <button
+          type="button"
+          className="w6w-btn w6w-btn-ghost"
+          disabled={!canRun || state?.status === "running"}
+          onClick={run}
+        >
+          {state?.status === "running" ? "Running…" : "▶ Test run"}
+        </button>
+        {!canRun && <span className="w6w-muted w6w-small">Fill the required fields to test.</span>}
+      </div>
+      {state?.status === "error" && (
+        <div className="w6w-result w6w-error">
+          {state.errorCode && (
+            <div className="w6w-small" style={{ opacity: 0.75, marginBottom: 4 }}>
+              <code>{state.errorCode}</code>
+            </div>
+          )}
+          {state.error}
+        </div>
+      )}
+      {state?.status === "done" && (
+        <pre
+          className="w6w-result"
+          style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
+        >
+          {JSON.stringify(state.value, null, 2)}
+        </pre>
+      )}
+      {logs && logs.length > 0 && (
+        <pre
+          className="w6w-result"
+          style={{ whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", margin: 0 }}
+        >
+          {logs.join("\n")}
+        </pre>
+      )}
     </div>
   );
 }
@@ -530,6 +675,17 @@ function AppStepConfig({
           </div>
         )}
       </div>
+
+      {/* Inline test run — available once an action + required params are set. */}
+      {selectedAction && (
+        <StepTestRun
+          app={appId}
+          action={selectedAction.key}
+          connectionId={needsConnection && connectionId ? connectionId : undefined}
+          values={withValues}
+          canRun={canAdd && requiredParamsFilled(selectedAction.params ?? [], withValues)}
+        />
+      )}
 
       {/* Footer — pinned to the modal bottom, outside the scroll area. */}
       <div className="w6w-modal-actions w6w-stepconfig-footer">

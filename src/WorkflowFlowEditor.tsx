@@ -112,6 +112,9 @@ interface StepRunState {
   status: "running" | "done" | "error";
   value?: unknown;
   error?: string;
+  errorCode?: string;
+  /** console.* output captured from a script node run, if any. */
+  logs?: string[];
 }
 
 function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEditorProps) {
@@ -309,15 +312,25 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
       const step = node.data.step;
       setRunResult({ stepId: id, status: "running" });
       try {
-        const { value: out } = await api.invokeAction(
+        const result = await api.invokeAction(
           step.uses.app,
           step.uses.action,
           step.with ?? {},
           step.uses.connection ? { connectionId: step.uses.connection } : {},
         );
-        setRunResult({ stepId: id, status: "done", value: out });
+        // Script nodes may return captured console output alongside the value.
+        const logs = (result as { logs?: string[] }).logs;
+        setRunResult({ stepId: id, status: "done", value: result.value, logs });
       } catch (e) {
-        setRunResult({ stepId: id, status: "error", error: (e as Error).message });
+        // The api client wraps network/parse failures with context; duck-type the
+        // code so the modal can show it next to the message.
+        const err = e as { message?: string; code?: string };
+        setRunResult({
+          stepId: id,
+          status: "error",
+          error: err.message ?? String(e),
+          errorCode: err.code,
+        });
       }
     },
     [nodes, api],
@@ -418,7 +431,14 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
             <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
               {runResult.status === "running" && <p className="w6w-muted w6w-small">Running…</p>}
               {runResult.status === "error" && (
-                <div className="w6w-result w6w-error">{runResult.error}</div>
+                <div className="w6w-result w6w-error">
+                  {runResult.errorCode && (
+                    <div className="w6w-small" style={{ opacity: 0.75, marginBottom: 4 }}>
+                      <code>{runResult.errorCode}</code>
+                    </div>
+                  )}
+                  {runResult.error || "The step failed with no error message."}
+                </div>
               )}
               {runResult.status === "done" && (
                 <div>
@@ -430,6 +450,19 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
                     style={{ whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: 0 }}
                   >
                     {JSON.stringify(runResult.value, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {runResult.logs && runResult.logs.length > 0 && (
+                <div>
+                  <div className="w6w-muted w6w-small" style={{ margin: "10px 0 6px" }}>
+                    Console output
+                  </div>
+                  <pre
+                    className="w6w-result"
+                    style={{ whiteSpace: "pre-wrap", maxHeight: 200, overflow: "auto", margin: 0 }}
+                  >
+                    {runResult.logs.join("\n")}
                   </pre>
                 </div>
               )}
@@ -756,15 +789,14 @@ function StepEditModal({
 
       {view === "form" ? (
         <div className="w6w-stack">
-          <label className="w6w-field">
+          {/* Step id is the node's stable identity (edges reference it) — shown
+              read-only, not an editable field. */}
+          <div className="w6w-field">
             <span>Step id</span>
-            <input
-              type="text"
-              value={step.id}
-              readOnly={readOnly}
-              onChange={(e) => commit({ ...step, id: e.target.value })}
-            />
-          </label>
+            <div className="w6w-muted w6w-small">
+              <code>{step.id}</code>
+            </div>
+          </div>
           <div className="w6w-field">
             <span>Uses</span>
             <div className="w6w-muted w6w-small">
