@@ -69,6 +69,14 @@
   outline: none;
   border-color: var(--w6w-accent);
 }
+/* Credential inputs are plain text fields (never type="password", which would
+   trigger the browser's save-password prompt + suggestions). Mask them visually
+   so a secret still reads as dots. WebKit/Blink support text-security; other
+   engines fall back to plain text, which is acceptable for a credential. */
+.w6w-secret-input {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
 .w6w-hint {
   color: var(--w6w-muted);
   font-size: 0.8em;

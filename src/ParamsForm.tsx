@@ -147,8 +147,10 @@ function ParamField({
     );
   }
 
-  const inputType =
-    param.type === "secret" ? "password" : param.type === "number" ? "number" : "text";
+  const isSecret = param.type === "secret";
+  // Secrets are credentials, not login passwords: never `type="password"` (which
+  // triggers the browser's save-password prompt + suggestions). Mask with CSS.
+  const inputType = param.type === "number" ? "number" : "text";
   const raw = value ?? param.default ?? "";
   // Guard against object/array values landing in a text field (they'd render as
   // "[object Object]"); show them JSON-stringified instead.
@@ -161,9 +163,18 @@ function ParamField({
       </span>
       <input
         type={inputType}
+        className={isSecret ? "w6w-secret-input" : undefined}
         value={display}
         readOnly={readOnly}
-        autoComplete={param.type === "secret" ? "new-password" : "off"}
+        name={isSecret ? `w6w-cred-${param.key}` : undefined}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-bwignore="true"
+        data-form-type="other"
         onChange={(e) =>
           onChange(param.key, param.type === "number" ? Number(e.target.value) : e.target.value)
         }
