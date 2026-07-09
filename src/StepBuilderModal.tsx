@@ -20,7 +20,7 @@ export interface StepBuilderModalProps {
   theme?: ThemeMode;
 }
 
-type Tab = "apps" | "controls";
+type Tab = "connected" | "apps" | "controls";
 
 /** Default `with` for a freshly added control step. */
 const CONTROL_DEFAULTS: Record<string, Record<string, unknown>> = {
@@ -28,6 +28,13 @@ const CONTROL_DEFAULTS: Record<string, Record<string, unknown>> = {
   foreach: { items: [] },
   parallel: {},
   wait: { ms: 1000 },
+  // Run an inline JS script. `code` is the body; whatever it returns is the step output.
+  script: {
+    language: "javascript",
+    code: "// Runs as a function body. Return the step's output.\nreturn input;",
+  },
+  // Declare typed key/value variables for downstream steps to reference.
+  data: { vars: [] },
 };
 
 /**
@@ -38,12 +45,63 @@ const CONTROL_DEFAULTS: Record<string, Record<string, unknown>> = {
  * Data + IO come from `useW6wApi()`, so mount it under `<W6wUIProvider>`.
  */
 export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProps) {
-  const [tab, setTab] = useState<Tab>("apps");
+  // Default to the apps the user already connected — no searching for the one
+  // integration they use every day.
+  const [tab, setTab] = useState<Tab>("connected");
+  // When an app is selected the modal collapses to a single-app detail view:
+  // the sidebar is hidden and the header switches to the app's name + icon.
+  const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
+
+  if (selectedApp) {
+    return (
+      <Modal
+        title={selectedApp.displayName}
+        subtitle={
+          <>
+            <code>{selectedApp.id}</code>
+            {selectedApp.version && ` · v${selectedApp.version}`}
+          </>
+        }
+        onClose={onClose}
+        size="xl"
+        titleIcon={
+          <AppIcon
+            src={selectedApp.iconSvg}
+            srcDark={selectedApp.iconSvgDark}
+            brandColor={selectedApp.brandColor}
+            name={selectedApp.displayName}
+            theme={theme}
+            size={22}
+          />
+        }
+        headerRight={
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            onClick={() => setSelectedApp(null)}
+          >
+            ← Apps
+          </button>
+        }
+      >
+        <div className="w6w-stepbuilder-content">
+          <AppStepConfig appId={selectedApp.id} onAdd={onAdd} onClose={onClose} theme={theme} />
+        </div>
+      </Modal>
+    );
+  }
 
   return (
-    <Modal title="Add a step" onClose={onClose} size="wide">
+    <Modal title="Add a step" onClose={onClose} size="xl">
       <div className="w6w-stepbuilder">
         <nav className="w6w-stepbuilder-sidebar">
+          <button
+            type="button"
+            className={`w6w-stepbuilder-tab${tab === "connected" ? " active" : ""}`}
+            onClick={() => setTab("connected")}
+          >
+            Connected apps
+          </button>
           <button
             type="button"
             className={`w6w-stepbuilder-tab${tab === "apps" ? " active" : ""}`}
@@ -60,8 +118,14 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           </button>
         </nav>
         <div className="w6w-stepbuilder-content">
-          {tab === "apps" ? (
-            <AppsFlow onAdd={onAdd} onClose={onClose} theme={theme} />
+          {tab === "connected" ? (
+            <ConnectedAppsFlow
+              onSelectApp={setSelectedApp}
+              onBrowseAll={() => setTab("apps")}
+              theme={theme}
+            />
+          ) : tab === "apps" ? (
+            <AppsFlow onSelectApp={setSelectedApp} theme={theme} />
           ) : (
             <ControlsFlow onAdd={onAdd} />
           )}
@@ -77,7 +141,7 @@ function ControlsFlow({ onAdd }: { onAdd: (s: BuiltStep) => void }) {
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Flow controls branch, loop, parallelize, or pause a workflow.
+        Flow controls branch, loop, parallelize, pause, run a script, or declare data.
       </p>
       <div className="w6w-stepbuilder-list">
         {Object.entries(CONTROL_LABELS).map(([action, label]) => (
@@ -101,52 +165,67 @@ function ControlsFlow({ onAdd }: { onAdd: (s: BuiltStep) => void }) {
   );
 }
 
-// ── Apps tab ───────────────────────────────────────────────────────────────
+// ── Connected apps tab (default) ─────────────────────────────────────────────
 
-function AppsFlow({
-  onAdd,
-  onClose,
+function ConnectedAppsFlow({
+  onSelectApp,
+  onBrowseAll,
   theme,
 }: {
-  onAdd: (s: BuiltStep) => void;
-  onClose: () => void;
+  onSelectApp: (app: AppSummary) => void;
+  onBrowseAll: () => void;
   theme?: ThemeMode;
 }) {
   const api = useW6wApi();
   const [apps, setApps] = useState<AppSummary[] | null>(null);
-  const [appsError, setAppsError] = useState<string | null>(null);
-  const [appId, setAppId] = useState<string>("");
+  const [connectedIds, setConnectedIds] = useState<Set<string> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let canceled = false;
-    api
-      .listApps()
-      .then((r) => !canceled && setApps(r))
-      .catch((e) => !canceled && setAppsError((e as Error).message));
+    Promise.all([api.listApps(), api.listConnections()])
+      .then(([allApps, conns]) => {
+        if (canceled) return;
+        setApps(allApps);
+        setConnectedIds(new Set(conns.map((c) => c.appId)));
+      })
+      .catch((e) => !canceled && setError((e as Error).message));
     return () => {
       canceled = true;
     };
   }, [api]);
 
-  if (appsError) return <div className="w6w-result w6w-error">{appsError}</div>;
-  if (apps === null) return <p className="w6w-muted w6w-small">Loading apps…</p>;
+  if (error) return <div className="w6w-result w6w-error">{error}</div>;
+  if (apps === null || connectedIds === null) {
+    return <p className="w6w-muted w6w-small">Loading…</p>;
+  }
 
-  if (!appId) {
-    if (apps.length === 0) {
-      return (
-        <p className="w6w-muted w6w-small">
-          No apps registered yet. Register one from the Apps page first.
-        </p>
-      );
-    }
+  const connected = apps
+    .filter((a) => connectedIds.has(a.id))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }));
+
+  if (connected.length === 0) {
     return (
-      <div className="w6w-stepbuilder-list">
-        {apps.map((a) => (
+      <div className="w6w-stack">
+        <p className="w6w-muted w6w-small">
+          No connected apps yet. Browse all apps to add your first connection.
+        </p>
+        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onBrowseAll}>
+          Browse all apps
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w6w-stepbuilder-apps">
+      <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">
+        {connected.map((a) => (
           <button
             key={a.id}
             type="button"
             className="w6w-stepbuilder-item"
-            onClick={() => setAppId(a.id)}
+            onClick={() => onSelectApp(a)}
           >
             <AppIcon
               src={a.iconSvg}
@@ -163,33 +242,104 @@ function AppsFlow({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Apps tab ───────────────────────────────────────────────────────────────
+
+function AppsFlow({
+  onSelectApp,
+  theme,
+}: {
+  onSelectApp: (app: AppSummary) => void;
+  theme?: ThemeMode;
+}) {
+  const api = useW6wApi();
+  const [apps, setApps] = useState<AppSummary[] | null>(null);
+  const [appsError, setAppsError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    let canceled = false;
+    api
+      .listApps()
+      .then((r) => !canceled && setApps(r))
+      .catch((e) => !canceled && setAppsError((e as Error).message));
+    return () => {
+      canceled = true;
+    };
+  }, [api]);
+
+  if (appsError) return <div className="w6w-result w6w-error">{appsError}</div>;
+  if (apps === null) return <p className="w6w-muted w6w-small">Loading apps…</p>;
+  if (apps.length === 0) {
+    return (
+      <p className="w6w-muted w6w-small">
+        No apps registered yet. Register one from the Apps page first.
+      </p>
     );
   }
 
-  const app = apps.find((a) => a.id === appId);
+  // Alphabetical by display name, then filtered by the search box (name or id).
+  const q = query.trim().toLowerCase();
+  const sorted = [...apps].sort((a, b) =>
+    a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }),
+  );
+  const visible = q
+    ? sorted.filter(
+        (a) => a.displayName.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
+      )
+    : sorted;
+
   return (
-    <AppStepConfig
-      app={app}
-      appId={appId}
-      onBack={() => setAppId("")}
-      onAdd={onAdd}
-      onClose={onClose}
-      theme={theme}
-    />
+    <div className="w6w-stepbuilder-apps">
+      <input
+        type="text"
+        className="w6w-stepbuilder-search"
+        placeholder="Search apps…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Search apps"
+      />
+      {visible.length === 0 ? (
+        <p className="w6w-muted w6w-small">No apps match “{query}”.</p>
+      ) : (
+        <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">
+          {visible.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className="w6w-stepbuilder-item"
+              onClick={() => onSelectApp(a)}
+            >
+              <AppIcon
+                src={a.iconSvg}
+                srcDark={a.iconSvgDark}
+                brandColor={a.brandColor}
+                name={a.displayName}
+                theme={theme}
+                size={24}
+              />
+              <span className="w6w-stepbuilder-item-main">
+                <strong>{a.displayName}</strong>
+                <code className="w6w-muted w6w-small">{a.id}</code>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
 function AppStepConfig({
-  app,
   appId,
-  onBack,
   onAdd,
   onClose,
   theme,
 }: {
-  app: AppSummary | undefined;
   appId: string;
-  onBack: () => void;
   onAdd: (s: BuiltStep) => void;
   onClose: () => void;
   theme?: ThemeMode;
@@ -233,6 +383,11 @@ function AppStepConfig({
   const needsConnection = availableAuths.length > 0;
   const hasConnection = (conns ?? []).length > 0;
   const selectedAction = (actions ?? []).find((a) => a.key === actionKey);
+  // Alphabetical by display title (falling back to key) so the dropdown is
+  // scannable regardless of the manifest's declaration order.
+  const sortedActions = [...(actions ?? [])].sort((a, b) =>
+    (a.title ?? a.key).localeCompare(b.title ?? b.key, undefined, { sensitivity: "base" }),
+  );
 
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
   const canAdd = !!actionKey && connectionSatisfied;
@@ -251,25 +406,6 @@ function AppStepConfig({
 
   return (
     <div className="w6w-stack">
-      <div className="w6w-app-summary">
-        <AppIcon
-          src={app?.iconSvg}
-          srcDark={app?.iconSvgDark}
-          brandColor={app?.brandColor}
-          name={app?.displayName ?? appId}
-          theme={theme}
-        />
-        <div style={{ flex: 1 }}>
-          <strong>{app?.displayName ?? appId}</strong>
-          <div className="w6w-muted w6w-small">
-            <code>{appId}</code>
-          </div>
-        </div>
-        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onBack}>
-          ← Apps
-        </button>
-      </div>
-
       {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
       {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
 
@@ -326,7 +462,7 @@ function AppStepConfig({
               }}
             >
               <option value="">— pick an action —</option>
-              {actions.map((a) => (
+              {sortedActions.map((a) => (
                 <option key={a.key} value={a.key}>
                   {a.title ?? a.key} ({a.key})
                 </option>

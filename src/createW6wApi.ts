@@ -81,5 +81,14 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
       req<{ connections: ConnectionSummary[] }>(
         `/apps/${encodeURIComponent(appId)}/connections`,
       ).then((r) => r.connections ?? []),
+
+    listConnections: () =>
+      req<{ connections: ConnectionSummary[] }>("/connections").then((r) => r.connections ?? []),
+
+    invokeAction: (appId, actionKey, params, opts = {}) =>
+      req<{ value: unknown }>(
+        `/apps/${encodeURIComponent(appId)}/actions/${encodeURIComponent(actionKey)}/invoke`,
+        { method: "POST", body: JSON.stringify({ params, ...opts }) },
+      ),
   };
 }
