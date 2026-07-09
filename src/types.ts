@@ -44,7 +44,22 @@ export interface AuthField {
 export interface ActionParam {
   key: string;
   label?: string;
-  type: "string" | "text" | "number" | "boolean" | "json" | "secret" | string;
+  /**
+   * Widget to render for this param. Beyond the scalar types, `text` is a
+   * textarea, `json`/`group` an inline JSON editor, `code` a code editor, and
+   * `vars` a dynamic typed key/value table.
+   */
+  type:
+    | "string"
+    | "text"
+    | "number"
+    | "boolean"
+    | "json"
+    | "group"
+    | "secret"
+    | "code"
+    | "vars"
+    | string;
   required?: boolean;
   default?: unknown;
   hint?: string;

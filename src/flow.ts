@@ -14,7 +14,7 @@ export { WorkflowFlowEditor } from "./WorkflowFlowEditor.tsx";
 export type { WorkflowFlowEditorProps } from "./WorkflowFlowEditor.tsx";
 
 export type { FlowEdge, FlowStep, FlowWorkflow } from "./flow-types.ts";
-export { CONTROL_APP, CONTROL_LABELS } from "./flow-types.ts";
+export { CONTROL_APP, CONTROL_LABELS, CONTROL_PARAMS, controlDefaults } from "./flow-types.ts";
 
 export { flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 export type { StepNode, StepNodeData } from "./flow-utils.ts";

@@ -30,7 +30,13 @@ import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { type BuiltStep, StepBuilderModal } from "./StepBuilderModal.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { CONTROL_APP, CONTROL_LABELS, type FlowStep, type FlowWorkflow } from "./flow-types.ts";
+import {
+  CONTROL_APP,
+  CONTROL_LABELS,
+  CONTROL_PARAMS,
+  type FlowStep,
+  type FlowWorkflow,
+} from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
 import type { ActionParam } from "./types.ts";
@@ -581,13 +587,19 @@ function StepEditModal({
   const [json, setJson] = useState(() => JSON.stringify(initialStep, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
 
-  // Action param defs for the Form view (skipped for control steps).
+  // Param defs driving the Form view. Control steps use their built-in
+  // CONTROL_PARAMS schema; app actions fetch theirs from the registry. Either
+  // way the same ParamsForm renders the config.
   const [params, setParams] = useState<ActionParam[] | null>(null);
   const isControl = step.uses.app === CONTROL_APP;
 
   // Refetch action param defs whenever the app/action identity changes.
   useEffect(() => {
-    if (isControl || !step.uses.app || !step.uses.action) {
+    if (isControl) {
+      setParams(CONTROL_PARAMS[step.uses.action] ?? []);
+      return;
+    }
+    if (!step.uses.app || !step.uses.action) {
       setParams([]);
       return;
     }
@@ -680,8 +692,6 @@ function StepEditModal({
             </div>
             {params === null ? (
               <p className="w6w-muted w6w-small">Loading parameters…</p>
-            ) : isControl ? (
-              <ControlConfigForm step={step} readOnly={readOnly} onChange={commit} />
             ) : (
               <ParamsForm
                 params={params}
@@ -726,181 +736,6 @@ function StepEditModal({
         </button>
       </div>
     </Modal>
-  );
-}
-
-// ── Control-step config forms ─────────────────────────────────────────────
-
-/** One declared data variable in a `data` control step. */
-interface DataVar {
-  key: string;
-  type: "string" | "number" | "boolean" | "json";
-  value: unknown;
-}
-
-const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
-
-/** Coerce a text input into the variable's declared type (best-effort). */
-function coerceVarValue(type: DataVar["type"], raw: string): unknown {
-  if (type === "number") {
-    if (raw.trim() === "") return "";
-    const n = Number(raw);
-    return Number.isNaN(n) ? raw : n;
-  }
-  if (type === "boolean") return raw === "true";
-  if (type === "json") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return raw;
-    }
-  }
-  return raw;
-}
-
-/** Render a stored variable value back into an editable string. */
-function varValueToText(v: unknown): string {
-  if (v === undefined || v === null) return "";
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
-
-/**
- * Config UI for the two internal control steps that have a real shape:
- *   - `script` — an inline JS body (`with.code`).
- *   - `data`   — a table of typed key/value variables (`with.vars`).
- * Other controls fall back to JSON-only editing.
- */
-function ControlConfigForm({
-  step,
-  readOnly,
-  onChange,
-}: {
-  step: FlowStep;
-  readOnly?: boolean;
-  onChange: (next: FlowStep) => void;
-}) {
-  const withObj = step.with ?? {};
-
-  if (step.uses.action === "script") {
-    const code = typeof withObj.code === "string" ? withObj.code : "";
-    return (
-      <label className="w6w-field">
-        <span>Script (JavaScript)</span>
-        <textarea
-          className="w6w-code"
-          value={code}
-          readOnly={readOnly}
-          spellCheck={false}
-          rows={10}
-          onChange={(e) =>
-            onChange({
-              ...step,
-              with: { ...withObj, language: "javascript", code: e.target.value },
-            })
-          }
-        />
-        <span className="w6w-hint">Runs as a function body; return the step's output.</span>
-      </label>
-    );
-  }
-
-  if (step.uses.action === "data") {
-    const vars: DataVar[] = Array.isArray(withObj.vars) ? (withObj.vars as DataVar[]) : [];
-    const setVars = (next: DataVar[]) => onChange({ ...step, with: { ...withObj, vars: next } });
-    return <DataVarsEditor vars={vars} readOnly={readOnly} onChange={setVars} />;
-  }
-
-  return (
-    <p className="w6w-muted w6w-small">
-      Control steps have no declared params — edit their config in the JSON view.
-    </p>
-  );
-}
-
-/** Add/remove/edit typed key-value variables for a `data` control step. */
-function DataVarsEditor({
-  vars,
-  readOnly,
-  onChange,
-}: {
-  vars: DataVar[];
-  readOnly?: boolean;
-  onChange: (next: DataVar[]) => void;
-}) {
-  const patch = (i: number, p: Partial<DataVar>) =>
-    onChange(vars.map((v, idx) => (idx === i ? { ...v, ...p } : v)));
-
-  return (
-    <div className="w6w-stack">
-      {vars.length === 0 && (
-        <p className="w6w-muted w6w-small">No variables yet — add one below.</p>
-      )}
-      {vars.map((v, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: rows have no stable id; keys/values are user-edited
-        <div className="w6w-datavar-row" key={i}>
-          <input
-            type="text"
-            placeholder="key"
-            value={v.key}
-            readOnly={readOnly}
-            onChange={(e) => patch(i, { key: e.target.value })}
-          />
-          <select
-            value={v.type}
-            disabled={readOnly}
-            onChange={(e) => {
-              const type = e.target.value as DataVar["type"];
-              patch(i, { type, value: coerceVarValue(type, varValueToText(v.value)) });
-            }}
-          >
-            {DATA_VAR_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          {v.type === "boolean" ? (
-            <select
-              value={v.value === true ? "true" : "false"}
-              disabled={readOnly}
-              onChange={(e) => patch(i, { value: e.target.value === "true" })}
-            >
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          ) : (
-            <input
-              type={v.type === "number" ? "number" : "text"}
-              placeholder="value"
-              value={varValueToText(v.value)}
-              readOnly={readOnly}
-              onChange={(e) => patch(i, { value: coerceVarValue(v.type, e.target.value) })}
-            />
-          )}
-          {!readOnly && (
-            <button
-              type="button"
-              className="w6w-btn w6w-btn-ghost"
-              aria-label={`Remove variable ${v.key || i + 1}`}
-              title="Remove"
-              onClick={() => onChange(vars.filter((_, idx) => idx !== i))}
-            >
-              ×
-            </button>
-          )}
-        </div>
-      ))}
-      {!readOnly && (
-        <button
-          type="button"
-          className="w6w-btn w6w-btn-ghost"
-          onClick={() => onChange([...vars, { key: "", type: "string", value: "" }])}
-        >
-          + Add variable
-        </button>
-      )}
-    </div>
   );
 }
 
