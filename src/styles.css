@@ -320,6 +320,80 @@ dialog.w6w-modal p {
   min-width: 0;
 }
 
+/* Step config (app action / control node): a fixed header (connection + action)
+   that never scrolls, a scrolling parameters body, and a pinned footer — mirrors
+   the fixed-header/scroll-body split used by `.w6w-stepbuilder-apps`. */
+.w6w-stepconfig {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+  /* Horizontal breathing room so header/footer align with the padded body. */
+  padding-inline: 4px;
+}
+.w6w-stepconfig-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+/* Connection + action share a row and wrap on narrow widths. */
+.w6w-stepconfig-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+.w6w-stepconfig-conn,
+.w6w-stepconfig-action {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.w6w-stepconfig-conn-empty {
+  flex: 1 1 100%;
+}
+/* Selected connection rendered as a static label (not a dropdown). */
+.w6w-conn-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 6px 8px 6px 10px;
+  min-height: 36px;
+}
+.w6w-conn-label-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--w6w-text);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+/* Only the parameters form scrolls; x-padding keeps fields off the edge + scrollbar. */
+.w6w-stepconfig-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-inline: 4px;
+  padding-right: 8px;
+}
+/* Footer pinned to the modal bottom, outside the scroll area. */
+.w6w-stepconfig-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--w6w-border);
+  padding-top: 12px;
+  margin-top: 0;
+}
+
 /* Per-node control toolbar (React Flow NodeToolbar) */
 .w6w-node-toolbar {
   display: flex;

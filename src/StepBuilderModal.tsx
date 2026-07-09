@@ -160,15 +160,16 @@ const GROUP_LABELS: Record<InternalNodeDef["group"], string> = {
   trigger: "Triggers",
   control: "Flow control",
   compute: "Compute",
+  request: "Request",
 };
 
 function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const groups: InternalNodeDef["group"][] = ["trigger", "control", "compute"];
+  const groups: InternalNodeDef["group"][] = ["trigger", "control", "compute", "request"];
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
         A trigger starts the workflow; flow-control nodes branch, loop, parallelize, or pause;
-        compute nodes run a script or declare data.
+        compute nodes run a script or declare data; a request node calls any HTTP(S) endpoint.
       </p>
       {groups.map((group) => (
         <div className="w6w-stack" key={group}>
@@ -213,14 +214,16 @@ function ControlStepConfig({
   );
 
   return (
-    <div className="w6w-stack">
-      <div>
+    <div className="w6w-stepconfig">
+      {/* Configuration — the only scrolling region. */}
+      <div className="w6w-stepconfig-body">
         <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
           Configuration
         </div>
         <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
       </div>
-      <div className="w6w-modal-actions">
+      {/* Footer — pinned to the modal bottom, outside the scroll area. */}
+      <div className="w6w-modal-actions w6w-stepconfig-footer">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
@@ -338,6 +341,9 @@ function AppStepConfig({
   const [actionKey, setActionKey] = useState<string>("");
   const [withValues, setWithValues] = useState<Record<string, unknown>>({});
   const [showConnModal, setShowConnModal] = useState(false);
+  // Once a connection is chosen it renders as a static label; "Change" flips
+  // back to the dropdown. No connection selected yet also forces the dropdown.
+  const [changingConn, setChangingConn] = useState(false);
 
   // Load auth methods, existing connections, and actions for the app in parallel.
   useEffect(() => {
@@ -376,6 +382,11 @@ function AppStepConfig({
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
   const canAdd = !!actionKey && connectionSatisfied;
 
+  const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
+  // Show the dropdown only before a connection is picked or while changing it;
+  // otherwise the selected connection reads as a compact label.
+  const showConnPicker = changingConn || !connectionId;
+
   function add() {
     if (!selectedAction) return;
     onAdd({
@@ -389,90 +400,125 @@ function AppStepConfig({
   }
 
   return (
-    <div className="w6w-stack">
-      {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
-      {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
+    <div className="w6w-stepconfig">
+      {/* Fixed header — connection + action never scroll with the params form. */}
+      <div className="w6w-stepconfig-header">
+        {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
+        {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
 
-      {/* Connection */}
-      {auths !== null &&
-        needsConnection &&
-        (!hasConnection ? (
-          <div className="w6w-result">
-            <div style={{ marginBottom: 8 }}>
-              This app needs a connection before its actions can run.
-            </div>
-            <button type="button" className="w6w-btn" onClick={() => setShowConnModal(true)}>
-              Create connection
-            </button>
-          </div>
-        ) : (
-          <label className="w6w-field">
-            <span>Connection</span>
-            <div style={{ display: "flex", gap: 6 }}>
-              <select
-                value={connectionId}
-                onChange={(e) => setConnectionId(e.target.value)}
-                style={{ flex: 1 }}
-              >
-                {(conns ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.displayName || c.id} {c.state ? `(${c.state})` : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="w6w-btn w6w-btn-ghost"
-                onClick={() => setShowConnModal(true)}
-              >
-                + New
-              </button>
-            </div>
-          </label>
-        ))}
+        <div className="w6w-stepconfig-row">
+          {/* Connection */}
+          {auths !== null &&
+            needsConnection &&
+            (!hasConnection ? (
+              <div className="w6w-result w6w-stepconfig-conn-empty">
+                <div style={{ marginBottom: 8 }}>
+                  This app needs a connection before its actions can run.
+                </div>
+                <button type="button" className="w6w-btn" onClick={() => setShowConnModal(true)}>
+                  Create connection
+                </button>
+              </div>
+            ) : showConnPicker ? (
+              <label className="w6w-field w6w-stepconfig-conn">
+                <span>Connection</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <select
+                    value={connectionId}
+                    onChange={(e) => {
+                      setConnectionId(e.target.value);
+                      setChangingConn(false);
+                    }}
+                    style={{ flex: 1 }}
+                  >
+                    {(conns ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.displayName || c.id} {c.state ? `(${c.state})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost"
+                    onClick={() => setShowConnModal(true)}
+                  >
+                    + New
+                  </button>
+                </div>
+              </label>
+            ) : (
+              <div className="w6w-field w6w-stepconfig-conn">
+                <span>Connection</span>
+                <div className="w6w-conn-label">
+                  <span className="w6w-conn-label-name">
+                    {selectedConn?.displayName || selectedConn?.id || connectionId}
+                    {selectedConn?.state ? ` (${selectedConn.state})` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                    onClick={() => setChangingConn(true)}
+                  >
+                    Change
+                  </button>
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                    onClick={() => setShowConnModal(true)}
+                  >
+                    + New
+                  </button>
+                </div>
+              </div>
+            ))}
 
-      {/* Actions */}
-      {actions !== null &&
-        (actions.length === 0 ? (
-          <p className="w6w-muted w6w-small">This app exposes no actions.</p>
-        ) : (
-          <label className="w6w-field">
-            <span>Action{actionKey ? "" : " *"}</span>
-            <select
-              value={actionKey}
-              onChange={(e) => {
-                setActionKey(e.target.value);
-                setWithValues({});
-              }}
-            >
-              <option value="">— pick an action —</option>
-              {sortedActions.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.title ?? a.key} ({a.key})
-                </option>
-              ))}
-            </select>
-            {selectedAction?.description && (
-              <span className="w6w-hint">{selectedAction.description}</span>
-            )}
-          </label>
-        ))}
-
-      {/* Params */}
-      {selectedAction && (
-        <div>
-          <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-            Parameters
-          </div>
-          <ParamsForm
-            params={selectedAction.params ?? []}
-            values={withValues}
-            onChange={setWithValues}
-          />
+          {/* Actions */}
+          {actions !== null &&
+            (actions.length === 0 ? (
+              <p className="w6w-muted w6w-small">This app exposes no actions.</p>
+            ) : (
+              <label className="w6w-field w6w-stepconfig-action">
+                <span>Action{actionKey ? "" : " *"}</span>
+                <select
+                  value={actionKey}
+                  onChange={(e) => {
+                    setActionKey(e.target.value);
+                    setWithValues({});
+                  }}
+                >
+                  <option value="">— pick an action —</option>
+                  {sortedActions.map((a) => (
+                    <option key={a.key} value={a.key}>
+                      {a.title ?? a.key} ({a.key})
+                    </option>
+                  ))}
+                </select>
+                {selectedAction?.description && (
+                  <span className="w6w-hint">{selectedAction.description}</span>
+                )}
+              </label>
+            ))}
         </div>
-      )}
+      </div>
 
-      <div className="w6w-modal-actions">
+      {/* Params — the only scrolling region. */}
+      <div className="w6w-stepconfig-body">
+        {selectedAction && (
+          <div>
+            <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+              Parameters
+            </div>
+            <ParamsForm
+              params={selectedAction.params ?? []}
+              values={withValues}
+              onChange={setWithValues}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Footer — pinned to the modal bottom, outside the scroll area. */}
+      <div className="w6w-modal-actions w6w-stepconfig-footer">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
@@ -489,6 +535,7 @@ function AppStepConfig({
           onCreated={async ({ connectionId: id }) => {
             setShowConnModal(false);
             setConnectionId(id);
+            setChangingConn(false);
             await refetchConns();
           }}
         />

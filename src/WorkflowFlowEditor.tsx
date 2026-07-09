@@ -29,10 +29,12 @@ import {
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { type BuiltStep, StepBuilderModal } from "./StepBuilderModal.tsx";
+import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
   type FlowStep,
   type FlowWorkflow,
+  internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
   isControlApp,
@@ -40,7 +42,7 @@ import {
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionParam } from "./types.ts";
+import type { ActionParam, AppSummary } from "./types.ts";
 
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
@@ -51,7 +53,21 @@ export interface WorkflowFlowEditorProps {
   readOnly?: boolean;
   /** Height of the editor viewport. Defaults to 480px. */
   height?: string | number;
+  /**
+   * Registered apps, used to render each action node with its owning app's icon,
+   * display name, and version. A step only carries `uses.app` (an id), so the
+   * card joins that id against this list. Optional — unknown/absent apps degrade
+   * to an initials tile with no version. Metadata is looked up at render time and
+   * never stored on nodes, so it can't corrupt round-tripping back to a workflow.
+   */
+  apps?: AppSummary[];
 }
+
+/**
+ * App metadata by id, shared with the node cards so `StepNodeCard` can show the
+ * app's icon/name/version without threading it through each node's `data`.
+ */
+const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
 
 /** Which view the step edit modal opens in. */
 type EditView = "form" | "json";
@@ -98,8 +114,9 @@ interface StepRunState {
   error?: string;
 }
 
-function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorProps) {
+function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEditorProps) {
   const api = useW6wApi();
+  const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
   const [runResult, setRunResult] = useState<StepRunState | null>(null);
   // Re-hydrate nodes+edges only when the workflow id changes identity. Local
   // edits (drag, connect, delete) go through the useNodesState / useEdgesState
@@ -336,93 +353,95 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
 
   return (
     <StepControlsCtx.Provider value={controls}>
-      <div
-        className="w6w-flow"
-        style={{ width: "100%", height, position: "relative" }}
-        onKeyDown={(e) => {
-          if ((e.key === "Backspace" || e.key === "Delete") && selectedId && !editingId) {
-            e.preventDefault();
-            deleteStep(selectedId);
-          }
-        }}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onConnectEnd={onConnectEnd}
-          onSelectionChange={({ nodes: sel }) => setSelectedId(sel[0]?.id ?? null)}
-          nodeTypes={nodeTypes}
-          nodesDraggable={!readOnly}
-          nodesConnectable={!readOnly}
-          elementsSelectable
-          fitView
-          proOptions={{ hideAttribution: true }}
+      <AppsCtx.Provider value={appsById}>
+        <div
+          className="w6w-flow"
+          style={{ width: "100%", height, position: "relative" }}
+          onKeyDown={(e) => {
+            if ((e.key === "Backspace" || e.key === "Delete") && selectedId && !editingId) {
+              e.preventDefault();
+              deleteStep(selectedId);
+            }
+          }}
         >
-          <Background gap={16} />
-          <Controls showInteractive={false} />
-          <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
-          {!readOnly && (
-            <Panel position="top-left">
-              <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
-                + Step
-              </button>
-            </Panel>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
+            onSelectionChange={({ nodes: sel }) => setSelectedId(sel[0]?.id ?? null)}
+            nodeTypes={nodeTypes}
+            nodesDraggable={!readOnly}
+            nodesConnectable={!readOnly}
+            elementsSelectable
+            fitView
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background gap={16} />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
+            {!readOnly && (
+              <Panel position="top-left">
+                <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
+                  + Step
+                </button>
+              </Panel>
+            )}
+          </ReactFlow>
+
+          {builderOpen && (
+            <StepBuilderModal
+              onClose={() => {
+                setBuilderOpen(false);
+                setPendingConnect(null);
+              }}
+              onAdd={addBuiltStep}
+            />
           )}
-        </ReactFlow>
 
-        {builderOpen && (
-          <StepBuilderModal
-            onClose={() => {
-              setBuilderOpen(false);
-              setPendingConnect(null);
-            }}
-            onAdd={addBuiltStep}
-          />
-        )}
+          {editingStep && editingId && (
+            // No `key` on purpose: renaming a step updates `editingId`, and a keyed
+            // remount would drop focus mid-keystroke. The modal seeds its own state
+            // once and unmounts (editingId → null) between edits of different nodes.
+            <StepEditModal
+              step={editingStep}
+              readOnly={readOnly}
+              initialView={editView}
+              onChange={(next) => updateStep(editingId, next)}
+              onClose={() => setEditingId(null)}
+            />
+          )}
 
-        {editingStep && editingId && (
-          // No `key` on purpose: renaming a step updates `editingId`, and a keyed
-          // remount would drop focus mid-keystroke. The modal seeds its own state
-          // once and unmounts (editingId → null) between edits of different nodes.
-          <StepEditModal
-            step={editingStep}
-            readOnly={readOnly}
-            initialView={editView}
-            onChange={(next) => updateStep(editingId, next)}
-            onClose={() => setEditingId(null)}
-          />
-        )}
-
-        {runResult && (
-          <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
-            {runResult.status === "running" && <p className="w6w-muted w6w-small">Running…</p>}
-            {runResult.status === "error" && (
-              <div className="w6w-result w6w-error">{runResult.error}</div>
-            )}
-            {runResult.status === "done" && (
-              <div>
-                <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-                  Result
+          {runResult && (
+            <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
+              {runResult.status === "running" && <p className="w6w-muted w6w-small">Running…</p>}
+              {runResult.status === "error" && (
+                <div className="w6w-result w6w-error">{runResult.error}</div>
+              )}
+              {runResult.status === "done" && (
+                <div>
+                  <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+                    Result
+                  </div>
+                  <pre
+                    className="w6w-result"
+                    style={{ whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: 0 }}
+                  >
+                    {JSON.stringify(runResult.value, null, 2)}
+                  </pre>
                 </div>
-                <pre
-                  className="w6w-result"
-                  style={{ whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: 0 }}
-                >
-                  {JSON.stringify(runResult.value, null, 2)}
-                </pre>
+              )}
+              <div className="w6w-modal-actions">
+                <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
+                  Close
+                </button>
               </div>
-            )}
-            <div className="w6w-modal-actions">
-              <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
-                Close
-              </button>
-            </div>
-          </Modal>
-        )}
-      </div>
+            </Modal>
+          )}
+        </div>
+      </AppsCtx.Provider>
     </StepControlsCtx.Provider>
   );
 }
@@ -518,27 +537,90 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
   );
 }
 
-function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
-  const step = data.step;
+/**
+ * An internal pseudo-app's glyph on a rounded tile, sized and shaped to match
+ * `AppIcon`'s image tile so control nodes and app nodes read as the same family.
+ * The glyph strokes with the panel's text color, so it tracks the active theme.
+ */
+function InternalIcon({ icon, size = 28 }: { icon: string; size?: number }) {
   return (
-    <div
+    <span
+      aria-hidden="true"
       style={{
-        border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
-        background: "var(--w6w-panel)",
-        color: "var(--w6w-text)",
-        borderRadius: 8,
-        padding: "8px 12px",
-        minWidth: 180,
-        fontSize: 13,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: size,
+        height: size,
+        borderRadius: 6,
+        flexShrink: 0,
+        background: "var(--w6w-icon-swatch, var(--w6w-panel-2))",
+        color: "var(--w6w-accent)",
       }}
     >
+      <svg
+        width={Math.round(size * 0.6)}
+        height={Math.round(size * 0.6)}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: static, in-repo SVG glyph markup (no user input)
+        dangerouslySetInnerHTML={{ __html: icon }}
+      />
+    </span>
+  );
+}
+
+function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
+  const step = data.step;
+  const apps = useContext(AppsCtx);
+  const app = apps.get(step.uses.app);
+  // The human app name (fall back to the raw id when the app isn't in the list).
+  const appName = app?.displayName || step.uses.app || "—";
+  return (
+    <div>
       <NodeControls id={id} runnable />
-      <Handle type="target" position={Position.Left} />
-      <div style={{ fontWeight: 600 }}>{step.id}</div>
-      <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
-        {step.uses.app || "—"} · <code>{step.uses.action || "—"}</code>
+      <div
+        style={{
+          border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
+          background: "var(--w6w-panel)",
+          color: "var(--w6w-text)",
+          borderRadius: 8,
+          padding: "8px 12px",
+          minWidth: 180,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <Handle type="target" position={Position.Left} />
+        <AppIcon
+          src={app?.iconSvg}
+          srcDark={app?.iconSvgDark}
+          brandColor={app?.brandColor}
+          name={appName}
+          size={28}
+        />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>{appName}</div>
+          <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
+            <code>{step.uses.action || "—"}</code>
+          </div>
+        </div>
+        <Handle type="source" position={Position.Right} />
       </div>
-      <Handle type="source" position={Position.Right} />
+      {/* Meta line under the card: the step id and (when known) the app version. */}
+      <div
+        className="w6w-muted"
+        style={{ marginTop: 3, fontSize: 10, opacity: 0.75, paddingLeft: 2 }}
+      >
+        {step.id}
+        {app?.version ? ` - v${app.version}` : ""}
+      </div>
     </div>
   );
 }
@@ -546,6 +628,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const label = internalNodeLabel(step.uses.app, step.uses.action);
+  const icon = internalNodeIcon(step.uses.app, step.uses.action);
   return (
     <div
       style={{
@@ -553,17 +636,22 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         background: "var(--w6w-panel-2)",
         color: "var(--w6w-text)",
         borderRadius: 999,
-        padding: "6px 14px",
+        padding: "6px 14px 6px 8px",
         minWidth: 140,
         fontSize: 13,
-        textAlign: "center",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
       }}
     >
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <Handle type="target" position={Position.Left} />
-      <div style={{ fontWeight: 600 }}>{label}</div>
-      <div className="w6w-muted w6w-small">{step.id}</div>
+      {icon && <InternalIcon icon={icon} />}
+      <div style={{ minWidth: 0, textAlign: "left" }}>
+        <div style={{ fontWeight: 600 }}>{label}</div>
+        <div className="w6w-muted w6w-small">{step.id}</div>
+      </div>
       <Handle type="source" position={Position.Right} />
     </div>
   );
