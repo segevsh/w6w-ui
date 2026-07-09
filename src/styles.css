@@ -73,15 +73,7 @@
   color: var(--w6w-muted);
   font-size: 0.8em;
 }
-/* Inline script editor (the `script` control step). */
-.w6w-field textarea.w6w-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  resize: vertical;
-  min-height: 160px;
-}
-/* Typed key/value rows (the `data` control step). */
+/* Typed key/value rows (the `vars` form element / `data` control step). */
 .w6w-datavar-row {
   display: grid;
   grid-template-columns: 1fr 110px 1fr auto;

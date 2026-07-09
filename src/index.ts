@@ -18,10 +18,13 @@ export { StepBuilderModal } from "./StepBuilderModal.tsx";
 export type { BuiltStep, StepBuilderModalProps } from "./StepBuilderModal.tsx";
 
 export { ParamsForm } from "./ParamsForm.tsx";
-export type { ParamsFormProps } from "./ParamsForm.tsx";
+export type { DataVar, ParamsFormProps } from "./ParamsForm.tsx";
 
 export { JsonEditor } from "./JsonEditor.tsx";
 export type { JsonEditorProps } from "./JsonEditor.tsx";
+
+export { CodeEditor } from "./CodeEditor.tsx";
+export type { CodeEditorProps } from "./CodeEditor.tsx";
 
 export { Modal } from "./components/Modal.tsx";
 export { AppIcon } from "./components/AppIcon.tsx";

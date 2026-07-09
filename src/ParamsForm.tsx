@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import type { ActionParam } from "./types.ts";
 
@@ -101,6 +102,32 @@ function ParamField({
     return <JsonParamField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
   }
 
+  // `code` — an inline script/snippet, edited in a real code editor.
+  if (param.type === "code") {
+    const current = (value ?? param.default ?? "") as string;
+    return (
+      <div className="w6w-field">
+        <span>
+          {label}
+          {req}
+        </span>
+        <CodeEditor
+          value={String(current)}
+          readOnly={readOnly}
+          minHeight="180px"
+          aria-label={`${param.key} code`}
+          onChange={(next) => onChange(param.key, next)}
+        />
+        {param.hint && <span className="w6w-hint">{param.hint}</span>}
+      </div>
+    );
+  }
+
+  // `vars` — a dynamic table of typed key/value variables.
+  if (param.type === "vars") {
+    return <VarsField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
+  }
+
   if (param.type === "text") {
     const current = (value ?? param.default ?? "") as string;
     return (
@@ -196,6 +223,144 @@ function JsonParamField({
           Invalid JSON
         </span>
       )}
+      {param.hint && <span className="w6w-hint">{param.hint}</span>}
+    </div>
+  );
+}
+
+/** One typed key/value entry in a `vars` param. */
+export interface DataVar {
+  key: string;
+  type: "string" | "number" | "boolean" | "json";
+  value: unknown;
+}
+
+const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
+
+/** Coerce a text input into the variable's declared type (best-effort). */
+function coerceVarValue(type: DataVar["type"], raw: string): unknown {
+  if (type === "number") {
+    if (raw.trim() === "") return "";
+    const n = Number(raw);
+    return Number.isNaN(n) ? raw : n;
+  }
+  if (type === "boolean") return raw === "true";
+  if (type === "json") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+/** Render a stored variable value back into an editable string. */
+function varValueToText(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+/**
+ * A `vars`-typed param: a dynamic table of typed key/value variables. The value
+ * is an array of `{ key, type, value }`, collected into the step's `with`.
+ */
+function VarsField({
+  param,
+  value,
+  onChange,
+  readOnly,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+}) {
+  const vars: DataVar[] = Array.isArray(value)
+    ? (value as DataVar[])
+    : Array.isArray(param.default)
+      ? (param.default as DataVar[])
+      : [];
+  const commit = (next: DataVar[]) => onChange(param.key, next);
+  const patch = (i: number, p: Partial<DataVar>) =>
+    commit(vars.map((v, idx) => (idx === i ? { ...v, ...p } : v)));
+
+  return (
+    <div className="w6w-field">
+      <span>
+        {param.label ?? param.key}
+        {param.required ? " *" : ""}
+      </span>
+      <div className="w6w-stack">
+        {vars.length === 0 && (
+          <p className="w6w-muted w6w-small">No variables yet — add one below.</p>
+        )}
+        {vars.map((v, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: rows have no stable id; keys/values are user-edited
+          <div className="w6w-datavar-row" key={i}>
+            <input
+              type="text"
+              placeholder="key"
+              value={v.key}
+              readOnly={readOnly}
+              onChange={(e) => patch(i, { key: e.target.value })}
+            />
+            <select
+              value={v.type}
+              disabled={readOnly}
+              onChange={(e) => {
+                const type = e.target.value as DataVar["type"];
+                patch(i, { type, value: coerceVarValue(type, varValueToText(v.value)) });
+              }}
+            >
+              {DATA_VAR_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            {v.type === "boolean" ? (
+              <select
+                value={v.value === true ? "true" : "false"}
+                disabled={readOnly}
+                onChange={(e) => patch(i, { value: e.target.value === "true" })}
+              >
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            ) : (
+              <input
+                type={v.type === "number" ? "number" : "text"}
+                placeholder="value"
+                value={varValueToText(v.value)}
+                readOnly={readOnly}
+                onChange={(e) => patch(i, { value: coerceVarValue(v.type, e.target.value) })}
+              />
+            )}
+            {!readOnly && (
+              <button
+                type="button"
+                className="w6w-btn w6w-btn-ghost"
+                aria-label={`Remove variable ${v.key || i + 1}`}
+                title="Remove"
+                onClick={() => commit(vars.filter((_, idx) => idx !== i))}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        {!readOnly && (
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            onClick={() => commit([...vars, { key: "", type: "string", value: "" }])}
+          >
+            + Add variable
+          </button>
+        )}
+      </div>
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
     </div>
   );

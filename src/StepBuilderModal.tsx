@@ -3,7 +3,7 @@ import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { CONTROL_APP, CONTROL_LABELS } from "./flow-types.ts";
+import { CONTROL_APP, CONTROL_LABELS, CONTROL_PARAMS, controlDefaults } from "./flow-types.ts";
 import { useW6wApi } from "./provider.tsx";
 import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, ThemeMode } from "./types.ts";
 
@@ -22,21 +22,6 @@ export interface StepBuilderModalProps {
 
 type Tab = "connected" | "apps" | "controls";
 
-/** Default `with` for a freshly added control step. */
-const CONTROL_DEFAULTS: Record<string, Record<string, unknown>> = {
-  if: { condition: true },
-  foreach: { items: [] },
-  parallel: {},
-  wait: { ms: 1000 },
-  // Run an inline JS script. `code` is the body; whatever it returns is the step output.
-  script: {
-    language: "javascript",
-    code: "// Runs as a function body. Return the step's output.\nreturn input;",
-  },
-  // Declare typed key/value variables for downstream steps to reference.
-  data: { vars: [] },
-};
-
 /**
  * Guided "add a step" flow. A sidebar toggles between **Apps** (pick app →
  * ensure a connection → pick action → fill params) and **Flow controls**
@@ -51,6 +36,33 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
   // When an app is selected the modal collapses to a single-app detail view:
   // the sidebar is hidden and the header switches to the app's name + icon.
   const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
+  // Same collapse for a chosen flow control — its config form (dynamic
+  // ParamsForm over CONTROL_PARAMS) shows before the step is added.
+  const [selectedControl, setSelectedControl] = useState<string | null>(null);
+
+  if (selectedControl) {
+    return (
+      <Modal
+        title={CONTROL_LABELS[selectedControl] ?? selectedControl}
+        subtitle={<code>{selectedControl}</code>}
+        onClose={onClose}
+        size="xl"
+        headerRight={
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            onClick={() => setSelectedControl(null)}
+          >
+            ← Controls
+          </button>
+        }
+      >
+        <div className="w6w-stepbuilder-content">
+          <ControlStepConfig action={selectedControl} onAdd={onAdd} onClose={onClose} />
+        </div>
+      </Modal>
+    );
+  }
 
   if (selectedApp) {
     return (
@@ -127,7 +139,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           ) : tab === "apps" ? (
             <AppsFlow onSelectApp={setSelectedApp} theme={theme} />
           ) : (
-            <ControlsFlow onAdd={onAdd} />
+            <ControlsFlow onSelect={setSelectedControl} />
           )}
         </div>
       </div>
@@ -137,7 +149,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
 
 // ── Flow controls tab ─────────────────────────────────────────────────────
 
-function ControlsFlow({ onAdd }: { onAdd: (s: BuiltStep) => void }) {
+function ControlsFlow({ onSelect }: { onSelect: (action: string) => void }) {
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
@@ -149,17 +161,55 @@ function ControlsFlow({ onAdd }: { onAdd: (s: BuiltStep) => void }) {
             key={action}
             type="button"
             className="w6w-stepbuilder-item"
-            onClick={() =>
-              onAdd({
-                uses: { app: CONTROL_APP, action },
-                with: CONTROL_DEFAULTS[action] ?? {},
-              })
-            }
+            onClick={() => onSelect(action)}
           >
             <strong>{label}</strong>
             <code className="w6w-muted w6w-small">{action}</code>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Config form for a chosen flow control — the control's `CONTROL_PARAMS` schema
+ * rendered through the same `ParamsForm` as app actions, seeded with the
+ * control's defaults. Emits the built control step on Add.
+ */
+function ControlStepConfig({
+  action,
+  onAdd,
+  onClose,
+}: {
+  action: string;
+  onAdd: (s: BuiltStep) => void;
+  onClose: () => void;
+}) {
+  const params = CONTROL_PARAMS[action] ?? [];
+  const [withValues, setWithValues] = useState<Record<string, unknown>>(() =>
+    controlDefaults(action),
+  );
+
+  return (
+    <div className="w6w-stack">
+      <div>
+        <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+          Configuration
+        </div>
+        <ParamsForm params={params} values={withValues} onChange={setWithValues} />
+      </div>
+      <div className="w6w-modal-actions">
+        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="w6w-btn"
+          onClick={() => onAdd({ uses: { app: CONTROL_APP, action }, with: withValues })}
+        >
+          Add step
+        </button>
       </div>
     </div>
   );
