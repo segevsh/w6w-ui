@@ -3,7 +3,7 @@ import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { CONTROL_APP, CONTROL_LABELS, CONTROL_PARAMS, controlDefaults } from "./flow-types.ts";
+import { INTERNAL_NODES, type InternalNodeDef, internalNodeDefaults } from "./flow-types.ts";
 import { useW6wApi } from "./provider.tsx";
 import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, ThemeMode } from "./types.ts";
 
@@ -24,8 +24,9 @@ type Tab = "connected" | "apps" | "controls";
 
 /**
  * Guided "add a step" flow. A sidebar toggles between **Apps** (pick app →
- * ensure a connection → pick action → fill params) and **Flow controls**
- * (if / for-each / parallel / wait). Emits a `BuiltStep` via `onAdd`.
+ * ensure a connection → pick action → fill params) and **Controls** — the
+ * internal nodes: triggers, flow control (if/foreach/parallel/wait), and compute
+ * (script/data). Emits a `BuiltStep` via `onAdd`.
  *
  * Data + IO come from `useW6wApi()`, so mount it under `<W6wUIProvider>`.
  */
@@ -36,29 +37,33 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
   // When an app is selected the modal collapses to a single-app detail view:
   // the sidebar is hidden and the header switches to the app's name + icon.
   const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
-  // Same collapse for a chosen flow control — its config form (dynamic
-  // ParamsForm over CONTROL_PARAMS) shows before the step is added.
-  const [selectedControl, setSelectedControl] = useState<string | null>(null);
+  // Same collapse for a chosen internal node (trigger / control / compute) — its
+  // config form (dynamic ParamsForm over the node's schema) shows before adding.
+  const [selectedNode, setSelectedNode] = useState<InternalNodeDef | null>(null);
 
-  if (selectedControl) {
+  if (selectedNode) {
     return (
       <Modal
-        title={CONTROL_LABELS[selectedControl] ?? selectedControl}
-        subtitle={<code>{selectedControl}</code>}
+        title={selectedNode.label}
+        subtitle={
+          <code>
+            {selectedNode.app} · {selectedNode.action}
+          </code>
+        }
         onClose={onClose}
         size="xl"
         headerRight={
           <button
             type="button"
             className="w6w-btn w6w-btn-ghost"
-            onClick={() => setSelectedControl(null)}
+            onClick={() => setSelectedNode(null)}
           >
             ← Controls
           </button>
         }
       >
         <div className="w6w-stepbuilder-content">
-          <ControlStepConfig action={selectedControl} onAdd={onAdd} onClose={onClose} />
+          <ControlStepConfig node={selectedNode} onAdd={onAdd} onClose={onClose} />
         </div>
       </Modal>
     );
@@ -126,7 +131,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
             className={`w6w-stepbuilder-tab${tab === "controls" ? " active" : ""}`}
             onClick={() => setTab("controls")}
           >
-            Flow controls
+            Controls
           </button>
         </nav>
         <div className="w6w-stepbuilder-content">
@@ -139,7 +144,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           ) : tab === "apps" ? (
             <AppsFlow onSelectApp={setSelectedApp} theme={theme} />
           ) : (
-            <ControlsFlow onSelect={setSelectedControl} />
+            <ControlsFlow onSelect={setSelectedNode} />
           )}
         </div>
       </div>
@@ -147,48 +152,63 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
   );
 }
 
-// ── Flow controls tab ─────────────────────────────────────────────────────
+// ── Internal nodes tab (triggers, flow control, compute) ───────────────────
 
-function ControlsFlow({ onSelect }: { onSelect: (action: string) => void }) {
+/** Group label shown above each cluster of internal nodes. */
+const GROUP_LABELS: Record<InternalNodeDef["group"], string> = {
+  trigger: "Triggers",
+  control: "Flow control",
+  compute: "Compute",
+};
+
+function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
+  const groups: InternalNodeDef["group"][] = ["trigger", "control", "compute"];
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Flow controls branch, loop, parallelize, pause, run a script, or declare data.
+        A trigger starts the workflow; flow-control nodes branch, loop, parallelize, or pause;
+        compute nodes run a script or declare data.
       </p>
-      <div className="w6w-stepbuilder-list">
-        {Object.entries(CONTROL_LABELS).map(([action, label]) => (
-          <button
-            key={action}
-            type="button"
-            className="w6w-stepbuilder-item"
-            onClick={() => onSelect(action)}
-          >
-            <strong>{label}</strong>
-            <code className="w6w-muted w6w-small">{action}</code>
-          </button>
-        ))}
-      </div>
+      {groups.map((group) => (
+        <div className="w6w-stack" key={group}>
+          <div className="w6w-muted w6w-small">{GROUP_LABELS[group]}</div>
+          <div className="w6w-stepbuilder-list">
+            {INTERNAL_NODES.filter((n) => n.group === group).map((n) => (
+              <button
+                key={`${n.app}:${n.action}`}
+                type="button"
+                className="w6w-stepbuilder-item"
+                onClick={() => onSelect(n)}
+              >
+                <strong>{n.label}</strong>
+                <code className="w6w-muted w6w-small">
+                  {n.app} · {n.action}
+                </code>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 /**
- * Config form for a chosen flow control — the control's `CONTROL_PARAMS` schema
- * rendered through the same `ParamsForm` as app actions, seeded with the
- * control's defaults. Emits the built control step on Add.
+ * Config form for a chosen internal node — its schema rendered through the same
+ * `ParamsForm` as app actions, seeded with the node's defaults. Emits the built
+ * step on Add.
  */
 function ControlStepConfig({
-  action,
+  node,
   onAdd,
   onClose,
 }: {
-  action: string;
+  node: InternalNodeDef;
   onAdd: (s: BuiltStep) => void;
   onClose: () => void;
 }) {
-  const params = CONTROL_PARAMS[action] ?? [];
   const [withValues, setWithValues] = useState<Record<string, unknown>>(() =>
-    controlDefaults(action),
+    internalNodeDefaults(node.app, node.action),
   );
 
   return (
@@ -197,7 +217,7 @@ function ControlStepConfig({
         <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
           Configuration
         </div>
-        <ParamsForm params={params} values={withValues} onChange={setWithValues} />
+        <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
       </div>
       <div className="w6w-modal-actions">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
@@ -206,7 +226,7 @@ function ControlStepConfig({
         <button
           type="button"
           className="w6w-btn"
-          onClick={() => onAdd({ uses: { app: CONTROL_APP, action }, with: withValues })}
+          onClick={() => onAdd({ uses: { app: node.app, action: node.action }, with: withValues })}
         >
           Add step
         </button>

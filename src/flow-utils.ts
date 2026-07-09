@@ -5,11 +5,12 @@
  * so the same workflow always opens with the same layout.
  */
 import type { Edge, Node } from "@xyflow/react";
-import { CONTROL_APP, type FlowEdge, type FlowStep, type FlowWorkflow } from "./flow-types.ts";
+import { type FlowEdge, type FlowStep, type FlowWorkflow, isInternalApp } from "./flow-types.ts";
 
 export interface StepNodeData extends Record<string, unknown> {
   step: FlowStep;
-  isControl: boolean;
+  /** True for internal pseudo-app nodes (`@w6w/*`) — rendered as pill cards. */
+  isInternal: boolean;
 }
 
 export type StepNode = Node<StepNodeData>;
@@ -55,18 +56,18 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
   const rowsInLayer = new Map<number, number>();
 
   const nodes: StepNode[] = wf.steps.map((step) => {
-    const isControl = step.uses.app === CONTROL_APP;
+    const isInternal = isInternalApp(step.uses.app);
     const col = layer.get(step.id) ?? 0;
     const row = rowsInLayer.get(col) ?? 0;
     rowsInLayer.set(col, row + 1);
     return {
       id: step.id,
-      type: isControl ? "control" : "step",
+      type: isInternal ? "control" : "step",
       position: {
         x: MARGIN_X + col * COLUMN_WIDTH,
         y: MARGIN_Y + row * ROW_HEIGHT,
       },
-      data: { step, isControl },
+      data: { step, isInternal },
     };
   });
 

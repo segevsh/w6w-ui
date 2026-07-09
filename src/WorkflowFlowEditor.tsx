@@ -31,11 +31,12 @@ import { ParamsForm } from "./ParamsForm.tsx";
 import { type BuiltStep, StepBuilderModal } from "./StepBuilderModal.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
-  CONTROL_APP,
-  CONTROL_LABELS,
-  CONTROL_PARAMS,
   type FlowStep,
   type FlowWorkflow,
+  internalNodeLabel,
+  internalNodeParams,
+  isControlApp,
+  isInternalApp,
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
@@ -195,7 +196,7 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
         id: newId,
         type: src.type,
         position: { x: src.position.x + 40, y: src.position.y + 60 },
-        data: { step: cloned, isControl: src.data.isControl },
+        data: { step: cloned, isInternal: src.data.isInternal },
       };
       const nextNodes = [...nodes, newNode];
       setNodes(nextNodes);
@@ -208,10 +209,10 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
   const addBuiltStep = useCallback(
     (built: BuiltStep) => {
       if (readOnly) return;
-      const isControl = built.uses.app === CONTROL_APP;
+      const isInternal = isInternalApp(built.uses.app);
       const id = suggestStepId(
         nodes.map((n) => n.id),
-        isControl ? "gate" : "step",
+        isInternal ? "gate" : "step",
       );
       const step: FlowStep = {
         id,
@@ -220,10 +221,10 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
       };
       const newNode: StepNode = {
         id,
-        type: isControl ? "control" : "step",
+        type: isInternal ? "control" : "step",
         // Drop point when spawned from a dragged connection; else a light cascade.
         position: pendingConnect?.position ?? { x: 80, y: 80 + nodes.length * 24 },
-        data: { step, isControl },
+        data: { step, isInternal },
       };
       const nextNodes = [...nodes, newNode];
 
@@ -258,7 +259,7 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
           ? {
               ...n,
               id: next.id,
-              data: { step: next, isControl: next.uses.app === CONTROL_APP },
+              data: { step: next, isInternal: isInternalApp(next.uses.app) },
             }
           : n,
       );
@@ -286,7 +287,8 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
   const runStep = useCallback(
     async (id: string) => {
       const node = nodes.find((n) => n.id === id);
-      if (!node || node.data.isControl) return;
+      // Flow-control nodes can't run standalone; app + compute/trigger nodes can.
+      if (!node || isControlApp(node.data.step.uses.app)) return;
       const step = node.data.step;
       setRunResult({ stepId: id, status: "running" });
       try {
@@ -543,7 +545,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
-  const label = CONTROL_LABELS[step.uses.action] ?? step.uses.action;
+  const label = internalNodeLabel(step.uses.app, step.uses.action);
   return (
     <div
       style={{
@@ -557,7 +559,8 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         textAlign: "center",
       }}
     >
-      <NodeControls id={id} />
+      {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
+      <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <Handle type="target" position={Position.Left} />
       <div style={{ fontWeight: 600 }}>{label}</div>
       <div className="w6w-muted w6w-small">{step.id}</div>
@@ -587,16 +590,16 @@ function StepEditModal({
   const [json, setJson] = useState(() => JSON.stringify(initialStep, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
 
-  // Param defs driving the Form view. Control steps use their built-in
-  // CONTROL_PARAMS schema; app actions fetch theirs from the registry. Either
-  // way the same ParamsForm renders the config.
+  // Param defs driving the Form view. Internal pseudo-app nodes use their
+  // built-in schema; app actions fetch theirs from the registry. Either way the
+  // same ParamsForm renders the config.
   const [params, setParams] = useState<ActionParam[] | null>(null);
-  const isControl = step.uses.app === CONTROL_APP;
+  const isInternal = isInternalApp(step.uses.app);
 
   // Refetch action param defs whenever the app/action identity changes.
   useEffect(() => {
-    if (isControl) {
-      setParams(CONTROL_PARAMS[step.uses.action] ?? []);
+    if (isInternal) {
+      setParams(internalNodeParams(step.uses.app, step.uses.action));
       return;
     }
     if (!step.uses.app || !step.uses.action) {
@@ -616,7 +619,7 @@ function StepEditModal({
     return () => {
       canceled = true;
     };
-  }, [api, step.uses.app, step.uses.action, isControl]);
+  }, [api, step.uses.app, step.uses.action, isInternal]);
 
   // Commit a new step: update local state, re-seed JSON, and propagate up.
   const commit = useCallback(
@@ -669,7 +672,7 @@ function StepEditModal({
               <code>{step.uses.app || "—"}</code> · <code>{step.uses.action || "—"}</code>
             </div>
           </div>
-          {!isControl && (
+          {!isInternal && (
             <label className="w6w-field">
               <span>Connection</span>
               <input
@@ -688,7 +691,7 @@ function StepEditModal({
           )}
           <div>
             <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-              {isControl ? "Configuration" : "Parameters"}
+              {isInternal ? "Configuration" : "Parameters"}
             </div>
             {params === null ? (
               <p className="w6w-muted w6w-small">Loading parameters…</p>
