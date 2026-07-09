@@ -14,6 +14,9 @@ export type { CreateW6wApiOptions } from "./createW6wApi.ts";
 export { AddConnectionModal } from "./AddConnectionModal.tsx";
 export type { AddConnectionModalProps } from "./AddConnectionModal.tsx";
 
+export { AppPicker } from "./AppPicker.tsx";
+export type { AppPickerProps } from "./AppPicker.tsx";
+
 export { StepBuilderModal } from "./StepBuilderModal.tsx";
 export type { BuiltStep, StepBuilderModalProps } from "./StepBuilderModal.tsx";
 

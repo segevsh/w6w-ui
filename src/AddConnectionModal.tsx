@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AppPicker } from "./AppPicker.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
 import { Modal } from "./components/Modal.tsx";
@@ -13,83 +14,148 @@ export interface AddConnectionModalProps {
   /** Optional theme hint passed through to `AppIcon` (light/dark variant). */
   theme?: ThemeMode;
   /**
-   * Pre-select an app and hide the app picker — used when the modal is opened
-   * for a specific app (e.g. from the step builder). Omit to let the user pick.
+   * Pre-select an app and skip the picker — used when the modal is opened for a
+   * specific app (e.g. from the step builder). Omit to let the user pick.
    */
   initialAppId?: string;
 }
 
 /**
- * Add-connection modal: pick an app → pick an auth method → fill in the fields
- * (or run OAuth) → submit. The `AuthDef.fields` array drives the form so no
- * app-specific knowledge is hard-coded.
- *
- * Data + IO come from `useW6wApi()` — wrap the app in `<W6wUIProvider api={...}>`
- * once and this component (and everything else in @w6w/ui) uses that client.
+ * Add-connection modal. Same shape as the step builder's "add a step" modal —
+ * the shared {@link AppPicker} (searchable icon grid) for step one, then the
+ * chosen app's connection fields for step two — minus the tabs. Pick an app →
+ * pick an auth method → fill the fields (or run OAuth) → submit. The
+ * `AuthDef.fields` array drives the form, so no app-specific knowledge is baked
+ * in. Data + IO come from `useW6wApi()`.
  */
 export function AddConnectionModal(props: AddConnectionModalProps) {
   const api = useW6wApi();
-  const [apps, setApps] = useState<AppSummary[] | null>(null);
-  const [appsError, setAppsError] = useState<string | null>(null);
-  const [appId, setAppId] = useState<string>(props.initialAppId ?? "");
+  const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
+  const [resolvingInitial, setResolvingInitial] = useState<boolean>(Boolean(props.initialAppId));
+
+  // Opened for a specific app: resolve it to an AppSummary (for the header) and
+  // go straight to the connection fields, skipping the picker.
+  useEffect(() => {
+    if (!props.initialAppId) return;
+    let canceled = false;
+    api
+      .listApps()
+      .then((apps) => {
+        if (!canceled) setSelectedApp(apps.find((a) => a.id === props.initialAppId) ?? null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!canceled) setResolvingInitial(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [api, props.initialAppId]);
+
+  // Step two: the chosen app's connection fields.
+  if (selectedApp) {
+    return (
+      <Modal
+        title={selectedApp.displayName}
+        subtitle={
+          <>
+            <code>{selectedApp.id}</code>
+            {selectedApp.version && ` · v${selectedApp.version}`}
+          </>
+        }
+        onClose={props.onClose}
+        size="xl"
+        titleIcon={
+          <AppIcon
+            src={selectedApp.iconSvg}
+            srcDark={selectedApp.iconSvgDark}
+            brandColor={selectedApp.brandColor}
+            name={selectedApp.displayName}
+            theme={props.theme}
+            size={22}
+          />
+        }
+        headerRight={
+          props.initialAppId ? undefined : (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost"
+              onClick={() => setSelectedApp(null)}
+            >
+              ← Apps
+            </button>
+          )
+        }
+      >
+        <div className="w6w-stepbuilder-content">
+          <ConnectionConfig app={selectedApp} onCreated={props.onCreated} onClose={props.onClose} />
+        </div>
+      </Modal>
+    );
+  }
+
+  // Resolving an initialAppId — don't flash the picker.
+  if (resolvingInitial) {
+    return (
+      <Modal title="Add connection" onClose={props.onClose} size="xl">
+        <div className="w6w-stepbuilder-content">
+          <p className="w6w-muted w6w-small">Loading…</p>
+        </div>
+      </Modal>
+    );
+  }
+
+  // Step one: the shared searchable app picker (icons + search).
+  return (
+    <Modal title="Add connection" onClose={props.onClose} size="xl">
+      <div className="w6w-stepbuilder-content">
+        <AppPicker
+          onSelectApp={setSelectedApp}
+          theme={props.theme}
+          searchPlaceholder="Search apps to connect…"
+        />
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * The chosen app's connection form: pick an auth method (when >1), name the
+ * connection, fill the credential fields (or run OAuth), and submit.
+ */
+function ConnectionConfig({
+  app,
+  onCreated,
+  onClose,
+}: {
+  app: AppSummary;
+  onCreated: (result: { connectionId: string }) => void;
+  onClose: () => void;
+}) {
+  const api = useW6wApi();
+  const [auths, setAuths] = useState<AuthDef[] | null>(null);
   const [authKey, setAuthKey] = useState<string>("");
   const [displayName, setDisplayName] = useState("");
   const [credential, setCredential] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  // Per-app auth methods cache — keeps changes to the app dropdown snappy.
-  const [authByApp, setAuthByApp] = useState<Record<string, AuthDef[]>>({});
-  const [loadingAuth, setLoadingAuth] = useState(false);
-
-  // Fetch the app list once when the modal mounts. Consumers that want
-  // cross-modal caching wrap their W6wApi implementation with react-query/SWR.
   useEffect(() => {
     let canceled = false;
+    setAuths(null);
     api
-      .listApps()
-      .then((r) => {
-        if (!canceled) setApps(r);
-      })
-      .catch((e) => {
-        if (!canceled) setAppsError((e as Error).message);
-      });
+      .getAppAuth(app.id)
+      // Hide methods the server flagged unavailable (e.g. oauth2 with no host creds).
+      .then((a) => !canceled && setAuths(a.filter((x) => x.available !== false)))
+      .catch((e) => !canceled && setError((e as Error).message));
     return () => {
       canceled = true;
     };
-  }, [api]);
+  }, [api, app.id]);
 
-  useEffect(() => {
-    if (!appId) return;
-    if (authByApp[appId]) return;
-    let canceled = false;
-    setLoadingAuth(true);
-    api
-      .getAppAuth(appId)
-      .then((auths) => {
-        if (canceled) return;
-        setAuthByApp((prev) => ({ ...prev, [appId]: auths }));
-      })
-      .catch((e) => {
-        if (canceled) return;
-        setError((e as Error).message);
-      })
-      .finally(() => {
-        if (!canceled) setLoadingAuth(false);
-      });
-    return () => {
-      canceled = true;
-    };
-  }, [api, appId, authByApp]);
-
-  const selectedApp: AppSummary | undefined = (apps ?? []).find((a) => a.id === appId);
-  // Hide methods the server flagged unavailable (e.g. oauth2 with no host creds).
-  const auths: AuthDef[] = (authByApp[appId] ?? []).filter((a) => a.available !== false);
-  const auth: AuthDef | undefined = auths.find((a) => a.key === authKey) ?? auths[0];
+  const available = auths ?? [];
+  const auth: AuthDef | undefined = available.find((a) => a.key === authKey) ?? available[0];
   const fields: AuthField[] = auth?.fields ?? [];
-
-  if (auth && !authKey) setAuthKey(auth.key);
-
   const isOAuth = auth?.type === "oauth2";
   const requiredMissing =
     !isOAuth &&
@@ -101,18 +167,18 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
     setPending(true);
     try {
       if (isOAuth) {
-        const { authorizationUrl } = await api.startAppOAuthFlow(appId, auth.key, {
+        const { authorizationUrl } = await api.startAppOAuthFlow(app.id, auth.key, {
           displayName: displayName || undefined,
         });
         const { connectionId } = await startOAuthPopup(authorizationUrl);
-        props.onCreated({ connectionId });
+        onCreated({ connectionId });
       } else {
-        const conn = await api.createConnection(appId, {
+        const conn = await api.createConnection(app.id, {
           authKey: auth.key,
           credential,
           displayName: displayName || undefined,
         });
-        props.onCreated({ connectionId: conn.id });
+        onCreated({ connectionId: conn.id });
       }
     } catch (e) {
       setError((e as Error).message);
@@ -122,70 +188,34 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
   }
 
   return (
-    <Modal title="Add connection" onClose={props.onClose}>
-      {appsError && <div className="w6w-result w6w-error">{appsError}</div>}
-      {!appsError && apps === null && <p className="w6w-muted w6w-small">Loading apps…</p>}
+    <div className="w6w-stack">
+      {auths === null && <p className="w6w-muted w6w-small">Loading auth methods…</p>}
 
-      {apps !== null && !props.initialAppId && (
-        <label className="w6w-field">
-          <span>App</span>
-          <select
-            value={appId}
-            onChange={(e) => {
-              setAppId(e.target.value);
-              setAuthKey("");
-              setCredential({});
-              setError(null);
-            }}
-          >
-            <option value="">— pick an app —</option>
-            {apps.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.displayName} ({a.id})
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      {appId && loadingAuth && <p className="w6w-muted w6w-small">Loading auth methods…</p>}
-
-      {appId && !loadingAuth && auths.length === 0 && (
+      {auths !== null && available.length === 0 && (
         <p className="w6w-muted w6w-small">
           This app has no available auth methods. If it uses OAuth, its client credentials may not
           be configured on the server yet.
         </p>
       )}
 
-      {appId && auths.length > 1 && (
+      {available.length > 1 && (
         <label className="w6w-field">
           <span>Auth method</span>
-          <select value={authKey} onChange={(e) => setAuthKey(e.target.value)}>
-            {auths.map((a) => (
+          <select
+            value={auth?.key ?? ""}
+            onChange={(e) => {
+              setAuthKey(e.target.value);
+              setCredential({});
+              setError(null);
+            }}
+          >
+            {available.map((a) => (
               <option key={a.key} value={a.key}>
                 {a.displayName ?? a.key} ({a.type})
               </option>
             ))}
           </select>
         </label>
-      )}
-
-      {selectedApp && (
-        <div className="w6w-app-summary">
-          <AppIcon
-            src={selectedApp.iconSvg}
-            srcDark={selectedApp.iconSvgDark}
-            brandColor={selectedApp.brandColor}
-            name={selectedApp.displayName}
-            theme={props.theme}
-          />
-          <div>
-            <strong>{selectedApp.displayName}</strong>
-            <div className="w6w-muted w6w-small">
-              <code>{selectedApp.id}</code>
-            </div>
-          </div>
-        </div>
       )}
 
       {auth && (
@@ -197,8 +227,8 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="e.g. Production API key"
-              // A plain text field sitting above a credential field gets treated
-              // as the "username" of a login form and prefilled — opt it out.
+              // A plain text field above a credential field gets treated as the
+              // "username" of a login form and prefilled — opt it out.
               name="w6w-connection-label"
               autoComplete="off"
               data-1p-ignore="true"
@@ -222,7 +252,7 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
       {error && <div className="w6w-result w6w-error">{error}</div>}
 
       <div className="w6w-modal-actions">
-        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={props.onClose}>
+        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
         <button
@@ -240,6 +270,6 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
               : "Save connection"}
         </button>
       </div>
-    </Modal>
+    </div>
   );
 }
