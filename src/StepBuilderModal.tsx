@@ -4,7 +4,12 @@ import { AppPicker } from "./AppPicker.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { INTERNAL_NODES, type InternalNodeDef, internalNodeDefaults } from "./flow-types.ts";
+import {
+  INTERNAL_NODES,
+  type InternalNodeDef,
+  internalNodeDefaults,
+  isInternalApp,
+} from "./flow-types.ts";
 import { useW6wApi } from "./provider.tsx";
 import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, ThemeMode } from "./types.ts";
 
@@ -155,42 +160,49 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
 
 // ── Internal nodes tab (triggers, flow control, compute) ───────────────────
 
-/** Group label shown above each cluster of internal nodes. */
-const GROUP_LABELS: Record<InternalNodeDef["group"], string> = {
-  trigger: "Triggers",
-  control: "Flow control",
-  compute: "Compute",
-  request: "Request",
-};
+/**
+ * The internal-node categories shown in the Controls tab, mirroring the Apps
+ * registry's category tabs: flow control on its own; everything else (compute,
+ * request, trigger) files under Utilities.
+ */
+const NODE_CATEGORIES = ["Flow control", "Utilities"] as const;
+
+/** Map an internal node's group to its palette category. */
+function internalNodeCategory(group: InternalNodeDef["group"]): (typeof NODE_CATEGORIES)[number] {
+  return group === "control" ? "Flow control" : "Utilities";
+}
 
 function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const groups: InternalNodeDef["group"][] = ["trigger", "control", "compute", "request"];
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        A trigger starts the workflow; flow-control nodes branch, loop, parallelize, or pause;
-        compute nodes run a script or declare data; a request node calls any HTTP(S) endpoint.
+        Flow-control nodes branch, loop, parallelize, or pause the run; utilities run a script, call
+        an HTTP(S) endpoint, declare data, or trigger the workflow.
       </p>
-      {groups.map((group) => (
-        <div className="w6w-stack" key={group}>
-          <div className="w6w-muted w6w-small">{GROUP_LABELS[group]}</div>
-          <div className="w6w-stepbuilder-list">
-            {INTERNAL_NODES.filter((n) => n.group === group).map((n) => (
-              <button
-                key={`${n.app}:${n.action}`}
-                type="button"
-                className="w6w-stepbuilder-item"
-                onClick={() => onSelect(n)}
-              >
-                <strong>{n.label}</strong>
-                <code className="w6w-muted w6w-small">
-                  {n.app} · {n.action}
-                </code>
-              </button>
-            ))}
+      {NODE_CATEGORIES.map((category) => {
+        const nodes = INTERNAL_NODES.filter((n) => internalNodeCategory(n.group) === category);
+        if (nodes.length === 0) return null;
+        return (
+          <div className="w6w-stack" key={category}>
+            <div className="w6w-muted w6w-small">{category}</div>
+            <div className="w6w-stepbuilder-list">
+              {nodes.map((n) => (
+                <button
+                  key={`${n.app}:${n.action}`}
+                  type="button"
+                  className="w6w-stepbuilder-item"
+                  onClick={() => onSelect(n)}
+                >
+                  <strong>{n.label}</strong>
+                  <code className="w6w-muted w6w-small">
+                    {n.app} · {n.action}
+                  </code>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -275,7 +287,9 @@ function ConnectedAppsFlow({
   }
 
   const connected = apps
-    .filter((a) => connectedIds.has(a.id))
+    // Reserved `@w6w/*` pseudo-apps have no connections; filter them defensively
+    // so they can never surface here even if one slips into the app list.
+    .filter((a) => connectedIds.has(a.id) && !isInternalApp(a.id))
     .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }));
 
   if (connected.length === 0) {

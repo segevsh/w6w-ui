@@ -176,7 +176,16 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     displayName: "Wait",
     group: "control",
     icon: ICON_WAIT,
-    params: [{ key: "ms", type: "number", label: "Wait (ms)", required: true, default: 1000 }],
+    params: [
+      {
+        key: "duration",
+        type: "string",
+        label: "Duration",
+        required: true,
+        default: "PT1S",
+        hint: "ISO-8601 duration, e.g. PT30S or PT5M. (Or set `until` to an ISO timestamp.)",
+      },
+    ],
   },
   {
     app: SCRIPT_APP,

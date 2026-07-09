@@ -630,29 +630,40 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const label = internalNodeLabel(step.uses.app, step.uses.action);
   const icon = internalNodeIcon(step.uses.app, step.uses.action);
   return (
-    <div
-      style={{
-        border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
-        background: "var(--w6w-panel-2)",
-        color: "var(--w6w-text)",
-        borderRadius: 999,
-        padding: "6px 14px 6px 8px",
-        minWidth: 140,
-        fontSize: 13,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-      }}
-    >
+    <div>
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
-      <Handle type="target" position={Position.Left} />
-      {icon && <InternalIcon icon={icon} />}
-      <div style={{ minWidth: 0, textAlign: "left" }}>
-        <div style={{ fontWeight: 600 }}>{label}</div>
-        <div className="w6w-muted w6w-small">{step.id}</div>
+      <div
+        style={{
+          border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
+          background: "var(--w6w-panel-2)",
+          color: "var(--w6w-text)",
+          borderRadius: 999,
+          padding: "6px 14px 6px 8px",
+          minWidth: 140,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <Handle type="target" position={Position.Left} />
+        {icon && <InternalIcon icon={icon} />}
+        <div style={{ minWidth: 0, textAlign: "left" }}>
+          <div style={{ fontWeight: 600 }}>{label}</div>
+          <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
+            <code>{step.uses.action || "—"}</code>
+          </div>
+        </div>
+        <Handle type="source" position={Position.Right} />
       </div>
-      <Handle type="source" position={Position.Right} />
+      {/* Meta line under the card: the step id (internal nodes carry no version). */}
+      <div
+        className="w6w-muted"
+        style={{ marginTop: 3, fontSize: 10, opacity: 0.75, paddingLeft: 2 }}
+      >
+        {step.id}
+      </div>
     </div>
   );
 }
