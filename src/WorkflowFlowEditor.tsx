@@ -376,10 +376,24 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
           className="w6w-flow"
           style={{ width: "100%", height, position: "relative" }}
           onKeyDown={(e) => {
-            if ((e.key === "Backspace" || e.key === "Delete") && selectedId && !editingId) {
-              e.preventDefault();
-              deleteStep(selectedId);
+            if (e.key !== "Backspace" && e.key !== "Delete") return;
+            // Only delete a selected node when the key is aimed at the canvas —
+            // never while a modal is open or the user is editing a field. The
+            // modal <dialog> is a DOM descendant here, so its keystrokes bubble
+            // up; without this guard, backspacing a typo deletes the whole node.
+            if (editingId || builderOpen || !selectedId) return;
+            const t = e.target as HTMLElement;
+            if (
+              t.isContentEditable ||
+              t.tagName === "INPUT" ||
+              t.tagName === "TEXTAREA" ||
+              t.tagName === "SELECT" ||
+              t.closest("dialog, .w6w-modal") !== null
+            ) {
+              return;
             }
+            e.preventDefault();
+            deleteStep(selectedId);
           }}
         >
           <ReactFlow
@@ -395,6 +409,11 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
             nodesConnectable={!readOnly}
             elementsSelectable
             fitView
+            // Deletion is owned solely by the guarded onKeyDown handler above
+            // (canvas-only, with a confirm). Disable React Flow's built-in
+            // Backspace/Delete so it can't silently remove a node — e.g. while a
+            // modal is open or the user is editing a field.
+            deleteKeyCode={null}
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={16} />
