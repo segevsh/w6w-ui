@@ -289,7 +289,10 @@ function ControlStepConfig({
  * A required array (e.g. a `vars` table) may be empty (see the Data node); other
  * required fields must be non-empty.
  */
-function requiredParamsFilled(params: ActionParam[], values: Record<string, unknown>): boolean {
+export function requiredParamsFilled(
+  params: ActionParam[],
+  values: Record<string, unknown>,
+): boolean {
   return params
     .filter((p) => p.required)
     .every((p) => {
@@ -310,7 +313,7 @@ type TestState =
  * app actions, the chosen connection) so the user can try a step from inside the
  * builder before adding it. Pressable only once required fields are filled.
  */
-function StepTestRun({
+export function StepTestRun({
   app,
   action,
   connectionId,

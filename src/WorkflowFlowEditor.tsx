@@ -28,7 +28,12 @@ import {
 } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
-import { type BuiltStep, StepBuilderModal } from "./StepBuilderModal.tsx";
+import {
+  type BuiltStep,
+  StepBuilderModal,
+  StepTestRun,
+  requiredParamsFilled,
+} from "./StepBuilderModal.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
@@ -769,57 +774,55 @@ function StepEditModal({
   }
 
   return (
-    <Modal title={`Edit step: ${step.id}`} onClose={onClose} size="wide">
-      <div className="w6w-tabbar" style={{ display: "flex", gap: 6 }}>
-        <button
-          type="button"
-          className={`w6w-btn w6w-btn-ghost${view === "form" ? " active" : ""}`}
-          onClick={() => switchTo("form")}
-        >
-          Form
-        </button>
-        <button
-          type="button"
-          className={`w6w-btn w6w-btn-ghost${view === "json" ? " active" : ""}`}
-          onClick={() => switchTo("json")}
-        >
-          JSON
-        </button>
-      </div>
-
+    <Modal
+      title={`Edit step: ${step.id}`}
+      onClose={onClose}
+      size="wide"
+      headerRight={
+        // Form ⇄ JSON as compact icon buttons, inline with the title.
+        <div className="w6w-view-toggle">
+          <button
+            type="button"
+            title="Form view"
+            aria-label="Form view"
+            aria-pressed={view === "form"}
+            className={`w6w-icon-btn${view === "form" ? " active" : ""}`}
+            onClick={() => switchTo("form")}
+          >
+            <ToolbarIcon>
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="7" y1="8" x2="17" y2="8" />
+              <line x1="7" y1="12" x2="17" y2="12" />
+              <line x1="7" y1="16" x2="13" y2="16" />
+            </ToolbarIcon>
+          </button>
+          <button
+            type="button"
+            title="JSON view"
+            aria-label="JSON view"
+            aria-pressed={view === "json"}
+            className={`w6w-icon-btn${view === "json" ? " active" : ""}`}
+            onClick={() => switchTo("json")}
+          >
+            <ToolbarIcon>
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </ToolbarIcon>
+          </button>
+        </div>
+      }
+    >
       {view === "form" ? (
         <div className="w6w-stack">
-          {/* Step id is the node's stable identity (edges reference it) — shown
-              read-only, not an editable field. */}
-          <div className="w6w-field">
-            <span>Step id</span>
-            <div className="w6w-muted w6w-small">
-              <code>{step.id}</code>
-            </div>
+          {/* Identity — step id · app · action — read-only, on one line.
+              (Connection is set in the builder; it's not an editable field here.) */}
+          <div className="w6w-step-meta">
+            <code>{step.id}</code>
+            <span>·</span>
+            <code>{step.uses.app || "—"}</code>
+            <span>·</span>
+            <code>{step.uses.action || "—"}</code>
           </div>
-          <div className="w6w-field">
-            <span>Uses</span>
-            <div className="w6w-muted w6w-small">
-              <code>{step.uses.app || "—"}</code> · <code>{step.uses.action || "—"}</code>
-            </div>
-          </div>
-          {!isInternal && (
-            <label className="w6w-field">
-              <span>Connection</span>
-              <input
-                type="text"
-                value={step.uses.connection ?? ""}
-                readOnly={readOnly}
-                placeholder="(optional connection id)"
-                onChange={(e) =>
-                  commit({
-                    ...step,
-                    uses: { ...step.uses, connection: e.target.value || undefined },
-                  })
-                }
-              />
-            </label>
-          )}
           <div>
             <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
               {isInternal ? "Configuration" : "Parameters"}
@@ -862,6 +865,17 @@ function StepEditModal({
           />
           {jsonError && <div className="w6w-result w6w-error">{jsonError}</div>}
         </div>
+      )}
+
+      {/* Inline test run — app actions + testable internal nodes (not flow control). */}
+      {step.uses.app && step.uses.action && !isControlApp(step.uses.app) && params && (
+        <StepTestRun
+          app={step.uses.app}
+          action={step.uses.action}
+          connectionId={step.uses.connection ?? undefined}
+          values={step.with ?? {}}
+          canRun={requiredParamsFilled(params, step.with ?? {})}
+        />
       )}
 
       <div className="w6w-modal-actions">

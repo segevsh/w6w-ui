@@ -75,7 +75,9 @@ function ParamField({
   readOnly?: boolean;
 }) {
   const label = param.label ?? param.key;
-  const req = param.required ? " *" : "";
+  // A checkbox always carries a value (true/false), so "required" has no meaning
+  // for it — don't decorate booleans with the required asterisk.
+  const req = param.required && param.type !== "boolean" ? " *" : "";
 
   if (param.type === "boolean") {
     const current = Boolean(value ?? param.default ?? false);

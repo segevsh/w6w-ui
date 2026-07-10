@@ -221,6 +221,46 @@ dialog.w6w-modal p {
   margin-top: auto;
 }
 
+/* Icon-button view toggle (e.g. Form ⇄ JSON), inline with a modal header. */
+.w6w-view-toggle {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.w6w-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px;
+  color: var(--w6w-muted);
+  cursor: pointer;
+}
+.w6w-icon-btn:hover {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+}
+.w6w-icon-btn.active {
+  background: var(--w6w-panel-2);
+  border-color: var(--w6w-accent);
+  color: var(--w6w-text);
+}
+
+/* Compact one-line step identity (id · app · action) in the edit modal. */
+.w6w-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8em;
+  color: var(--w6w-muted);
+}
+.w6w-step-meta code {
+  color: var(--w6w-text);
+}
+
 /* Step builder (sidebar + content) */
 .w6w-stepbuilder {
   display: flex;
