@@ -81,6 +81,42 @@
   color: var(--w6w-muted);
   font-size: 0.8em;
 }
+/* Multi-select chosen values, shown as removable pills. */
+.w6w-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.w6w-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  font-size: 13px;
+  color: var(--w6w-text);
+}
+.w6w-pill-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.w6w-pill-x:hover {
+  background: var(--w6w-border);
+  color: var(--w6w-text);
+}
 /* Typed key/value rows (the `vars` form element / `data` control step). */
 .w6w-datavar-row {
   display: grid;
@@ -246,6 +282,34 @@ dialog.w6w-modal p {
   background: var(--w6w-panel-2);
   border-color: var(--w6w-accent);
   color: var(--w6w-text);
+}
+
+/* Segmented sub-tabs inside the edit modal's form view (Parameters | Config). */
+.w6w-subtabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  align-self: flex-start;
+}
+.w6w-subtab {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  color: var(--w6w-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.w6w-subtab:hover {
+  color: var(--w6w-text);
+}
+.w6w-subtab.active {
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  font-weight: 500;
 }
 
 /* Compact one-line step identity (id · app · action) in the edit modal. */

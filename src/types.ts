@@ -54,6 +54,8 @@ export interface ActionParam {
     | "text"
     | "number"
     | "boolean"
+    | "select"
+    | "multiselect"
     | "json"
     | "group"
     | "secret"
@@ -64,8 +66,8 @@ export interface ActionParam {
   default?: unknown;
   hint?: string;
   /**
-   * Constrained choices. When present the field renders as a dropdown even for a
-   * `string` param — e.g. an HTTP method limited to GET/POST/… .
+   * Constrained choices. Renders as a single-select dropdown for `select` (or any
+   * param with options), and as a multi-select pill picker for `multiselect`.
    */
   options?: ParamOption[];
   /** Type-specific render/behavior options. */

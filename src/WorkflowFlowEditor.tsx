@@ -745,6 +745,9 @@ function StepEditModal({
   const [view, setView] = useState<EditView>(initialView);
   const [json, setJson] = useState(() => JSON.stringify(initialStep, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
+  // Form view splits into the dynamic Parameters form and the always-available
+  // node Config (retry / error handling / notes).
+  const [formTab, setFormTab] = useState<"params" | "config">("params");
 
   // Param defs driving the Form view. Internal pseudo-app nodes use their
   // built-in schema; app actions fetch theirs from the registry. Either way the
@@ -842,11 +845,26 @@ function StepEditModal({
             <span>·</span>
             <code>{step.uses.action || "—"}</code>
           </div>
-          <div>
-            <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-              {isInternal ? "Configuration" : "Parameters"}
-            </div>
-            {params === null ? (
+          {/* Parameters (dynamic form) vs Config (retry / error handling / notes,
+              available on any node). */}
+          <div className="w6w-subtabs">
+            <button
+              type="button"
+              className={`w6w-subtab${formTab === "params" ? " active" : ""}`}
+              onClick={() => setFormTab("params")}
+            >
+              Parameters
+            </button>
+            <button
+              type="button"
+              className={`w6w-subtab${formTab === "config" ? " active" : ""}`}
+              onClick={() => setFormTab("config")}
+            >
+              Config
+            </button>
+          </div>
+          {formTab === "params" ? (
+            params === null ? (
               <p className="w6w-muted w6w-small">Loading parameters…</p>
             ) : (
               <ParamsForm
@@ -855,8 +873,10 @@ function StepEditModal({
                 readOnly={readOnly}
                 onChange={(w) => commit({ ...step, with: w })}
               />
-            )}
-          </div>
+            )
+          ) : (
+            <NodeConfigForm step={step} onChange={commit} readOnly={readOnly} />
+          )}
         </div>
       ) : (
         <div className="w6w-stack">
@@ -903,6 +923,120 @@ function StepEditModal({
         </button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * The always-available node Config tab: retry-on-fail, error handling, and notes.
+ * Edits the step's `retry` / `onError` / `notes` (all optional; absent = defaults).
+ */
+function NodeConfigForm({
+  step,
+  onChange,
+  readOnly,
+}: {
+  step: FlowStep;
+  onChange: (next: FlowStep) => void;
+  readOnly?: boolean;
+}) {
+  const retryOn = !!step.retry;
+  const attempts = step.retry?.maxAttempts ?? 3;
+  const delayMs = step.retry?.delayMs ?? 1000;
+  const backoff = step.retry?.backoff ?? "fixed";
+  const onError = step.onError ?? "fail";
+
+  const setRetry = (patch: Partial<NonNullable<FlowStep["retry"]>>) =>
+    onChange({
+      ...step,
+      retry: { maxAttempts: attempts, delayMs, backoff, ...step.retry, ...patch },
+    });
+
+  return (
+    <div className="w6w-stack">
+      {/* Retry on fail */}
+      <label className="w6w-field">
+        <span>
+          <input
+            type="checkbox"
+            checked={retryOn}
+            disabled={readOnly}
+            onChange={(e) =>
+              onChange({
+                ...step,
+                retry: e.target.checked ? { maxAttempts: attempts, delayMs, backoff } : undefined,
+              })
+            }
+          />{" "}
+          Retry on failure
+        </span>
+        <span className="w6w-hint">Re-run this step if it fails, up to N attempts.</span>
+      </label>
+      {retryOn && (
+        <div className="w6w-stepconfig-row">
+          <label className="w6w-field">
+            <span>Attempts</span>
+            <input
+              type="number"
+              min={1}
+              value={attempts}
+              readOnly={readOnly}
+              onChange={(e) => setRetry({ maxAttempts: Math.max(1, Number(e.target.value) || 1) })}
+            />
+          </label>
+          <label className="w6w-field">
+            <span>Delay (ms)</span>
+            <input
+              type="number"
+              min={0}
+              value={delayMs}
+              readOnly={readOnly}
+              onChange={(e) => setRetry({ delayMs: Math.max(0, Number(e.target.value) || 0) })}
+            />
+          </label>
+          <label className="w6w-field">
+            <span>Backoff</span>
+            <select
+              value={backoff}
+              disabled={readOnly}
+              onChange={(e) => setRetry({ backoff: e.target.value as "fixed" | "exponential" })}
+            >
+              <option value="fixed">Fixed</option>
+              <option value="exponential">Exponential</option>
+            </select>
+          </label>
+        </div>
+      )}
+
+      {/* Error handling */}
+      <label className="w6w-field">
+        <span>On error</span>
+        <select
+          value={onError}
+          disabled={readOnly}
+          onChange={(e) => {
+            const v = e.target.value as NonNullable<FlowStep["onError"]>;
+            // "fail" is the default — store it as absent to keep the step clean.
+            onChange({ ...step, onError: v === "fail" ? undefined : v });
+          }}
+        >
+          <option value="fail">Stop on error (default)</option>
+          <option value="continue">Continue</option>
+          <option value="continue-record">Continue &amp; record error in end state</option>
+        </select>
+      </label>
+
+      {/* Notes */}
+      <label className="w6w-field">
+        <span>Notes</span>
+        <textarea
+          rows={3}
+          value={step.notes ?? ""}
+          readOnly={readOnly}
+          placeholder="Notes about this step (not executed)…"
+          onChange={(e) => onChange({ ...step, notes: e.target.value || undefined })}
+        />
+      </label>
+    </div>
   );
 }
 

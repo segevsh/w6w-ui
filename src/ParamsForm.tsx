@@ -151,6 +151,12 @@ function ParamField({
     );
   }
 
+  // Multi-select: pick several options from a dropdown; each becomes a removable
+  // pill. Value is an array of the chosen option values.
+  if (param.type === "multiselect") {
+    return <MultiSelectField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
+  }
+
   // A constrained set of choices renders as a dropdown — even for a `string`
   // param (e.g. an HTTP method). Driven by `param.options` in the config.
   if (Array.isArray(param.options) && param.options.length > 0) {
@@ -264,6 +270,87 @@ function JsonParamField({
         <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
           Invalid JSON
         </span>
+      )}
+      {param.hint && <span className="w6w-hint">{param.hint}</span>}
+    </div>
+  );
+}
+
+/**
+ * A `multiselect` param — pick several options from a dropdown. Each selection
+ * becomes a pill with an `×` to remove it; the value is an array of the chosen
+ * option values. The dropdown only lists options not already selected.
+ */
+function MultiSelectField({
+  param,
+  value,
+  onChange,
+  readOnly,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+}) {
+  const options = Array.isArray(param.options) ? param.options : [];
+  const selected: Array<string | number> = Array.isArray(value)
+    ? (value as Array<string | number>)
+    : Array.isArray(param.default)
+      ? (param.default as Array<string | number>)
+      : [];
+  const selectedKeys = new Set(selected.map(String));
+  const available = options.filter((o) => !selectedKeys.has(String(o.value)));
+  const labelFor = (v: string | number) =>
+    options.find((o) => String(o.value) === String(v))?.label ?? String(v);
+
+  const add = (raw: string) => {
+    if (!raw || selectedKeys.has(raw)) return;
+    const opt = options.find((o) => String(o.value) === raw);
+    onChange(param.key, [...selected, opt ? opt.value : raw]);
+  };
+  const remove = (v: string | number) =>
+    onChange(
+      param.key,
+      selected.filter((x) => String(x) !== String(v)),
+    );
+
+  return (
+    <div className="w6w-field">
+      <span>
+        {param.label ?? param.key}
+        {param.required ? " *" : ""}
+      </span>
+      {selected.length > 0 && (
+        <div className="w6w-pills">
+          {selected.map((v) => (
+            <span className="w6w-pill" key={String(v)}>
+              {labelFor(v)}
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="w6w-pill-x"
+                  aria-label={`Remove ${labelFor(v)}`}
+                  title="Remove"
+                  onClick={() => remove(v)}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {!readOnly && (
+        // Controlled to "" so it always reads as a placeholder; picking an option
+        // fires onChange, appends it, then resets.
+        <select value="" disabled={available.length === 0} onChange={(e) => add(e.target.value)}>
+          <option value="">{available.length > 0 ? "+ Add…" : "All options selected"}</option>
+          {available.map((o) => (
+            <option key={String(o.value)} value={String(o.value)}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       )}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
     </div>
