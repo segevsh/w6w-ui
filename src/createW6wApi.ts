@@ -42,11 +42,37 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
     if (token) headers.set("authorization", `Bearer ${token}`);
     if (init?.body && !headers.has("content-type")) headers.set("content-type", "application/json");
 
-    const res = await doFetch(`${baseUrl}${path}`, { ...init, headers });
+    let res: Response;
+    try {
+      res = await doFetch(`${baseUrl}${path}`, { ...init, headers });
+    } catch (e) {
+      // A failed fetch throws a bare `TypeError: Failed to fetch` — wrap it with
+      // the target so callers can tell the server is down vs. a real API error.
+      throw new ApiError(
+        0,
+        "network_error",
+        `Could not reach the w6w server (${init?.method ?? "GET"} ${baseUrl}${path}). ` +
+          `It may be down or unreachable. (${(e as Error).message})`,
+      );
+    }
     const text = await res.text();
-    const data = text ? JSON.parse(text) : null;
+    let data: unknown = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        if (!res.ok) {
+          throw new ApiError(
+            res.status,
+            "bad_response",
+            `Server returned a non-JSON ${res.status} response: ${text.slice(0, 200)}`,
+          );
+        }
+      }
+    }
     if (!res.ok) {
-      const err = (data?.error ?? {}) as { code?: string; message?: string };
+      const err = ((data as { error?: { code?: string; message?: string } } | null)?.error ??
+        {}) as { code?: string; message?: string };
       throw new ApiError(res.status, err.code ?? "error", err.message ?? res.statusText);
     }
     return data as T;

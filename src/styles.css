@@ -183,6 +183,7 @@ dialog.w6w-modal p {
 }
 .w6w-modal-wide {
   max-width: 860px;
+  min-height: min(70vh, 560px);
 }
 .w6w-modal-xl {
   max-width: 1040px;
@@ -215,7 +216,49 @@ dialog.w6w-modal p {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 4px;
+  /* Pin the action row to the modal's bottom rather than letting it float right
+     under short content — the dialog is a flex column, so `auto` pushes it down. */
+  margin-top: auto;
+}
+
+/* Icon-button view toggle (e.g. Form ⇄ JSON), inline with a modal header. */
+.w6w-view-toggle {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.w6w-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px;
+  color: var(--w6w-muted);
+  cursor: pointer;
+}
+.w6w-icon-btn:hover {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+}
+.w6w-icon-btn.active {
+  background: var(--w6w-panel-2);
+  border-color: var(--w6w-accent);
+  color: var(--w6w-text);
+}
+
+/* Compact one-line step identity (id · app · action) in the edit modal. */
+.w6w-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8em;
+  color: var(--w6w-muted);
+}
+.w6w-step-meta code {
+  color: var(--w6w-text);
 }
 
 /* Step builder (sidebar + content) */
@@ -320,6 +363,109 @@ dialog.w6w-modal p {
   min-width: 0;
 }
 
+/* Step config (app action / control node): a fixed header (connection + action)
+   that never scrolls, a scrolling parameters body, and a pinned footer — mirrors
+   the fixed-header/scroll-body split used by `.w6w-stepbuilder-apps`. */
+.w6w-stepconfig {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+  /* Horizontal breathing room so header/footer align with the padded body. */
+  padding-inline: 4px;
+}
+.w6w-stepconfig-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+/* Connection + action share a row and wrap on narrow widths. */
+.w6w-stepconfig-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+.w6w-stepconfig-conn,
+.w6w-stepconfig-action {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.w6w-stepconfig-conn-empty {
+  flex: 1 1 100%;
+}
+/* Selected connection rendered as a static label (not a dropdown). */
+.w6w-conn-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 6px 8px 6px 10px;
+  min-height: 36px;
+}
+.w6w-conn-label-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--w6w-text);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+/* Only the parameters form scrolls; x-padding keeps fields off the edge + scrollbar. */
+.w6w-stepconfig-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-inline: 4px;
+  padding-right: 8px;
+}
+/* Footer pinned to the modal bottom, outside the scroll area. */
+.w6w-stepconfig-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--w6w-border);
+  padding-top: 12px;
+  margin-top: 0;
+}
+
+/* When a config form's main input is a tall editor (code / textarea / json /
+   vars), stretch the flex chain so it fills the available modal height instead
+   of leaving the dialog half-empty. Guarded by :has() so ordinary multi-field
+   forms keep their natural height + scroll. */
+.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor, textarea) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor, textarea) > div,
+.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor, textarea) > .w6w-stack,
+.w6w-stepconfig-body
+  :is(.w6w-stack, .w6w-field):has(> .w6w-code-editor, > .w6w-json-editor, > span + textarea) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The editor element itself fills its (now-growable) field. */
+.w6w-stepconfig-body .w6w-field > .w6w-code-editor,
+.w6w-stepconfig-body .w6w-field > .w6w-json-editor,
+.w6w-stepconfig-body .w6w-field > textarea {
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+.w6w-stepconfig-body .w6w-field > textarea {
+  resize: vertical;
+}
+
 /* Per-node control toolbar (React Flow NodeToolbar) */
 .w6w-node-toolbar {
   display: flex;
@@ -352,6 +498,19 @@ dialog.w6w-modal p {
 
 .w6w-params-optional > summary {
   cursor: pointer;
+}
+
+/* Inline "Test run" block in the step builder (sits above the footer). */
+.w6w-steptest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.w6w-steptest-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* Result / error box */

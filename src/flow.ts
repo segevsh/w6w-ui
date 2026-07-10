@@ -19,6 +19,7 @@ export {
   DATA_APP,
   INTERNAL_NODES,
   internalNodeDefaults,
+  internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
   isControlApp,

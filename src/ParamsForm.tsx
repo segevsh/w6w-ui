@@ -75,7 +75,9 @@ function ParamField({
   readOnly?: boolean;
 }) {
   const label = param.label ?? param.key;
-  const req = param.required ? " *" : "";
+  // A checkbox always carries a value (true/false), so "required" has no meaning
+  // for it — don't decorate booleans with the required asterisk.
+  const req = param.required && param.type !== "boolean" ? " *" : "";
 
   if (param.type === "boolean") {
     const current = Boolean(value ?? param.default ?? false);
@@ -128,7 +130,9 @@ function ParamField({
     return <VarsField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
   }
 
-  if (param.type === "text") {
+  // Multi-line text: either the dedicated `text` type or any field the app
+  // flagged `config.multiline` (e.g. a `string` message body as a textarea).
+  if (param.type === "text" || param.config?.multiline) {
     const current = (value ?? param.default ?? "") as string;
     return (
       <label className="w6w-field">
@@ -142,6 +146,33 @@ function ParamField({
           readOnly={readOnly}
           onChange={(e) => onChange(param.key, e.target.value)}
         />
+        {param.hint && <span className="w6w-hint">{param.hint}</span>}
+      </label>
+    );
+  }
+
+  // A constrained set of choices renders as a dropdown — even for a `string`
+  // param (e.g. an HTTP method). Driven by `param.options` in the config.
+  if (Array.isArray(param.options) && param.options.length > 0) {
+    const current = value ?? param.default ?? param.options[0]?.value ?? "";
+    const isNumber = param.type === "number";
+    return (
+      <label className="w6w-field">
+        <span>
+          {label}
+          {req}
+        </span>
+        <select
+          value={String(current)}
+          disabled={readOnly}
+          onChange={(e) => onChange(param.key, isNumber ? Number(e.target.value) : e.target.value)}
+        >
+          {param.options.map((o) => (
+            <option key={String(o.value)} value={String(o.value)}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         {param.hint && <span className="w6w-hint">{param.hint}</span>}
       </label>
     );

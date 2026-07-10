@@ -63,6 +63,25 @@ export interface ActionParam {
   required?: boolean;
   default?: unknown;
   hint?: string;
+  /**
+   * Constrained choices. When present the field renders as a dropdown even for a
+   * `string` param — e.g. an HTTP method limited to GET/POST/… .
+   */
+  options?: ParamOption[];
+  /** Type-specific render/behavior options. */
+  config?: ParamConfig;
+}
+
+/** A single choice for a param rendered as a dropdown. */
+export interface ParamOption {
+  value: string | number;
+  label: string;
+}
+
+/** Type-specific render/behavior options for a param. */
+export interface ParamConfig {
+  /** Render as a multi-line textarea. Implied by `type: "text"`. */
+  multiline?: boolean;
 }
 
 /** Summary of an action an app exposes, as returned by GET /apps/:id. */

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppIcon } from "./components/AppIcon.tsx";
+import { isInternalApp } from "./flow-types.ts";
 import { useW6wApi } from "./provider.tsx";
 import type { AppSummary, ThemeMode } from "./types.ts";
 
@@ -46,7 +47,10 @@ export function AppPicker({
   if (appsError) return <div className="w6w-result w6w-error">{appsError}</div>;
   if (apps === null) return <p className="w6w-muted w6w-small">Loading apps…</p>;
 
-  const base = filter ? apps.filter(filter) : apps;
+  // Reserved `@w6w/*` pseudo-apps are added via the builder's "Controls" tab, not
+  // as connectable apps — keep them out of this grid even after they register.
+  const connectable = apps.filter((a) => !isInternalApp(a.id));
+  const base = filter ? connectable.filter(filter) : connectable;
   if (base.length === 0) {
     return (
       <p className="w6w-muted w6w-small">

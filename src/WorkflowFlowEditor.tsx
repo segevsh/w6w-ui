@@ -28,11 +28,18 @@ import {
 } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
-import { type BuiltStep, StepBuilderModal } from "./StepBuilderModal.tsx";
+import {
+  type BuiltStep,
+  StepBuilderModal,
+  StepTestRun,
+  requiredParamsFilled,
+} from "./StepBuilderModal.tsx";
+import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
   type FlowStep,
   type FlowWorkflow,
+  internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
   isControlApp,
@@ -40,7 +47,7 @@ import {
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionParam } from "./types.ts";
+import type { ActionParam, AppSummary } from "./types.ts";
 
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
@@ -51,7 +58,21 @@ export interface WorkflowFlowEditorProps {
   readOnly?: boolean;
   /** Height of the editor viewport. Defaults to 480px. */
   height?: string | number;
+  /**
+   * Registered apps, used to render each action node with its owning app's icon,
+   * display name, and version. A step only carries `uses.app` (an id), so the
+   * card joins that id against this list. Optional — unknown/absent apps degrade
+   * to an initials tile with no version. Metadata is looked up at render time and
+   * never stored on nodes, so it can't corrupt round-tripping back to a workflow.
+   */
+  apps?: AppSummary[];
 }
+
+/**
+ * App metadata by id, shared with the node cards so `StepNodeCard` can show the
+ * app's icon/name/version without threading it through each node's `data`.
+ */
+const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
 
 /** Which view the step edit modal opens in. */
 type EditView = "form" | "json";
@@ -96,10 +117,14 @@ interface StepRunState {
   status: "running" | "done" | "error";
   value?: unknown;
   error?: string;
+  errorCode?: string;
+  /** console.* output captured from a script node run, if any. */
+  logs?: string[];
 }
 
-function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorProps) {
+function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEditorProps) {
   const api = useW6wApi();
+  const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
   const [runResult, setRunResult] = useState<StepRunState | null>(null);
   // Re-hydrate nodes+edges only when the workflow id changes identity. Local
   // edits (drag, connect, delete) go through the useNodesState / useEdgesState
@@ -292,15 +317,25 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
       const step = node.data.step;
       setRunResult({ stepId: id, status: "running" });
       try {
-        const { value: out } = await api.invokeAction(
+        const result = await api.invokeAction(
           step.uses.app,
           step.uses.action,
           step.with ?? {},
           step.uses.connection ? { connectionId: step.uses.connection } : {},
         );
-        setRunResult({ stepId: id, status: "done", value: out });
+        // Script nodes may return captured console output alongside the value.
+        const logs = (result as { logs?: string[] }).logs;
+        setRunResult({ stepId: id, status: "done", value: result.value, logs });
       } catch (e) {
-        setRunResult({ stepId: id, status: "error", error: (e as Error).message });
+        // The api client wraps network/parse failures with context; duck-type the
+        // code so the modal can show it next to the message.
+        const err = e as { message?: string; code?: string };
+        setRunResult({
+          stepId: id,
+          status: "error",
+          error: err.message ?? String(e),
+          errorCode: err.code,
+        });
       }
     },
     [nodes, api],
@@ -336,93 +371,134 @@ function Inner({ value, onChange, readOnly, height = 480 }: WorkflowFlowEditorPr
 
   return (
     <StepControlsCtx.Provider value={controls}>
-      <div
-        className="w6w-flow"
-        style={{ width: "100%", height, position: "relative" }}
-        onKeyDown={(e) => {
-          if ((e.key === "Backspace" || e.key === "Delete") && selectedId && !editingId) {
+      <AppsCtx.Provider value={appsById}>
+        <div
+          className="w6w-flow"
+          style={{ width: "100%", height, position: "relative" }}
+          onKeyDown={(e) => {
+            if (e.key !== "Backspace" && e.key !== "Delete") return;
+            // Only delete a selected node when the key is aimed at the canvas —
+            // never while a modal is open or the user is editing a field. The
+            // modal <dialog> is a DOM descendant here, so its keystrokes bubble
+            // up; without this guard, backspacing a typo deletes the whole node.
+            if (editingId || builderOpen || !selectedId) return;
+            const t = e.target as HTMLElement;
+            if (
+              t.isContentEditable ||
+              t.tagName === "INPUT" ||
+              t.tagName === "TEXTAREA" ||
+              t.tagName === "SELECT" ||
+              t.closest("dialog, .w6w-modal") !== null
+            ) {
+              return;
+            }
             e.preventDefault();
             deleteStep(selectedId);
-          }
-        }}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onConnectEnd={onConnectEnd}
-          onSelectionChange={({ nodes: sel }) => setSelectedId(sel[0]?.id ?? null)}
-          nodeTypes={nodeTypes}
-          nodesDraggable={!readOnly}
-          nodesConnectable={!readOnly}
-          elementsSelectable
-          fitView
-          proOptions={{ hideAttribution: true }}
+          }}
         >
-          <Background gap={16} />
-          <Controls showInteractive={false} />
-          <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
-          {!readOnly && (
-            <Panel position="top-left">
-              <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
-                + Step
-              </button>
-            </Panel>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
+            onSelectionChange={({ nodes: sel }) => setSelectedId(sel[0]?.id ?? null)}
+            nodeTypes={nodeTypes}
+            nodesDraggable={!readOnly}
+            nodesConnectable={!readOnly}
+            elementsSelectable
+            fitView
+            // Deletion is owned solely by the guarded onKeyDown handler above
+            // (canvas-only, with a confirm). Disable React Flow's built-in
+            // Backspace/Delete so it can't silently remove a node — e.g. while a
+            // modal is open or the user is editing a field.
+            deleteKeyCode={null}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background gap={16} />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
+            {!readOnly && (
+              <Panel position="top-left">
+                <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
+                  + Step
+                </button>
+              </Panel>
+            )}
+          </ReactFlow>
+
+          {builderOpen && (
+            <StepBuilderModal
+              onClose={() => {
+                setBuilderOpen(false);
+                setPendingConnect(null);
+              }}
+              onAdd={addBuiltStep}
+            />
           )}
-        </ReactFlow>
 
-        {builderOpen && (
-          <StepBuilderModal
-            onClose={() => {
-              setBuilderOpen(false);
-              setPendingConnect(null);
-            }}
-            onAdd={addBuiltStep}
-          />
-        )}
+          {editingStep && editingId && (
+            // No `key` on purpose: renaming a step updates `editingId`, and a keyed
+            // remount would drop focus mid-keystroke. The modal seeds its own state
+            // once and unmounts (editingId → null) between edits of different nodes.
+            <StepEditModal
+              step={editingStep}
+              readOnly={readOnly}
+              initialView={editView}
+              onChange={(next) => updateStep(editingId, next)}
+              onClose={() => setEditingId(null)}
+            />
+          )}
 
-        {editingStep && editingId && (
-          // No `key` on purpose: renaming a step updates `editingId`, and a keyed
-          // remount would drop focus mid-keystroke. The modal seeds its own state
-          // once and unmounts (editingId → null) between edits of different nodes.
-          <StepEditModal
-            step={editingStep}
-            readOnly={readOnly}
-            initialView={editView}
-            onChange={(next) => updateStep(editingId, next)}
-            onClose={() => setEditingId(null)}
-          />
-        )}
-
-        {runResult && (
-          <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
-            {runResult.status === "running" && <p className="w6w-muted w6w-small">Running…</p>}
-            {runResult.status === "error" && (
-              <div className="w6w-result w6w-error">{runResult.error}</div>
-            )}
-            {runResult.status === "done" && (
-              <div>
-                <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-                  Result
+          {runResult && (
+            <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
+              {runResult.status === "running" && <p className="w6w-muted w6w-small">Running…</p>}
+              {runResult.status === "error" && (
+                <div className="w6w-result w6w-error">
+                  {runResult.errorCode && (
+                    <div className="w6w-small" style={{ opacity: 0.75, marginBottom: 4 }}>
+                      <code>{runResult.errorCode}</code>
+                    </div>
+                  )}
+                  {runResult.error || "The step failed with no error message."}
                 </div>
-                <pre
-                  className="w6w-result"
-                  style={{ whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: 0 }}
-                >
-                  {JSON.stringify(runResult.value, null, 2)}
-                </pre>
+              )}
+              {runResult.status === "done" && (
+                <div>
+                  <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+                    Result
+                  </div>
+                  <pre
+                    className="w6w-result"
+                    style={{ whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: 0 }}
+                  >
+                    {JSON.stringify(runResult.value, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {runResult.logs && runResult.logs.length > 0 && (
+                <div>
+                  <div className="w6w-muted w6w-small" style={{ margin: "10px 0 6px" }}>
+                    Console output
+                  </div>
+                  <pre
+                    className="w6w-result"
+                    style={{ whiteSpace: "pre-wrap", maxHeight: 200, overflow: "auto", margin: 0 }}
+                  >
+                    {runResult.logs.join("\n")}
+                  </pre>
+                </div>
+              )}
+              <div className="w6w-modal-actions">
+                <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
+                  Close
+                </button>
               </div>
-            )}
-            <div className="w6w-modal-actions">
-              <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
-                Close
-              </button>
-            </div>
-          </Modal>
-        )}
-      </div>
+            </Modal>
+          )}
+        </div>
+      </AppsCtx.Provider>
     </StepControlsCtx.Provider>
   );
 }
@@ -518,27 +594,90 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
   );
 }
 
-function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
-  const step = data.step;
+/**
+ * An internal pseudo-app's glyph on a rounded tile, sized and shaped to match
+ * `AppIcon`'s image tile so control nodes and app nodes read as the same family.
+ * The glyph strokes with the panel's text color, so it tracks the active theme.
+ */
+function InternalIcon({ icon, size = 28 }: { icon: string; size?: number }) {
   return (
-    <div
+    <span
+      aria-hidden="true"
       style={{
-        border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
-        background: "var(--w6w-panel)",
-        color: "var(--w6w-text)",
-        borderRadius: 8,
-        padding: "8px 12px",
-        minWidth: 180,
-        fontSize: 13,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: size,
+        height: size,
+        borderRadius: 6,
+        flexShrink: 0,
+        background: "var(--w6w-icon-swatch, var(--w6w-panel-2))",
+        color: "var(--w6w-accent)",
       }}
     >
+      <svg
+        width={Math.round(size * 0.6)}
+        height={Math.round(size * 0.6)}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: static, in-repo SVG glyph markup (no user input)
+        dangerouslySetInnerHTML={{ __html: icon }}
+      />
+    </span>
+  );
+}
+
+function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
+  const step = data.step;
+  const apps = useContext(AppsCtx);
+  const app = apps.get(step.uses.app);
+  // The human app name (fall back to the raw id when the app isn't in the list).
+  const appName = app?.displayName || step.uses.app || "—";
+  return (
+    <div>
       <NodeControls id={id} runnable />
-      <Handle type="target" position={Position.Left} />
-      <div style={{ fontWeight: 600 }}>{step.id}</div>
-      <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
-        {step.uses.app || "—"} · <code>{step.uses.action || "—"}</code>
+      <div
+        style={{
+          border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
+          background: "var(--w6w-panel)",
+          color: "var(--w6w-text)",
+          borderRadius: 8,
+          padding: "8px 12px",
+          minWidth: 180,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <Handle type="target" position={Position.Left} />
+        <AppIcon
+          src={app?.iconSvg}
+          srcDark={app?.iconSvgDark}
+          brandColor={app?.brandColor}
+          name={appName}
+          size={28}
+        />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>{appName}</div>
+          <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
+            <code>{step.uses.action || "—"}</code>
+          </div>
+        </div>
+        <Handle type="source" position={Position.Right} />
       </div>
-      <Handle type="source" position={Position.Right} />
+      {/* Meta line under the card: the step id and (when known) the app version. */}
+      <div
+        className="w6w-muted"
+        style={{ marginTop: 3, fontSize: 10, opacity: 0.75, paddingLeft: 2 }}
+      >
+        {step.id}
+        {app?.version ? ` - v${app.version}` : ""}
+      </div>
     </div>
   );
 }
@@ -546,25 +685,42 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const label = internalNodeLabel(step.uses.app, step.uses.action);
+  const icon = internalNodeIcon(step.uses.app, step.uses.action);
   return (
-    <div
-      style={{
-        border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
-        background: "var(--w6w-panel-2)",
-        color: "var(--w6w-text)",
-        borderRadius: 999,
-        padding: "6px 14px",
-        minWidth: 140,
-        fontSize: 13,
-        textAlign: "center",
-      }}
-    >
+    <div>
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
-      <Handle type="target" position={Position.Left} />
-      <div style={{ fontWeight: 600 }}>{label}</div>
-      <div className="w6w-muted w6w-small">{step.id}</div>
-      <Handle type="source" position={Position.Right} />
+      <div
+        style={{
+          border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
+          background: "var(--w6w-panel-2)",
+          color: "var(--w6w-text)",
+          borderRadius: 999,
+          padding: "6px 14px 6px 8px",
+          minWidth: 140,
+          fontSize: 13,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <Handle type="target" position={Position.Left} />
+        {icon && <InternalIcon icon={icon} />}
+        <div style={{ minWidth: 0, textAlign: "left" }}>
+          <div style={{ fontWeight: 600 }}>{label}</div>
+          <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
+            <code>{step.uses.action || "—"}</code>
+          </div>
+        </div>
+        <Handle type="source" position={Position.Right} />
+      </div>
+      {/* Meta line under the card: the step id (internal nodes carry no version). */}
+      <div
+        className="w6w-muted"
+        style={{ marginTop: 3, fontSize: 10, opacity: 0.75, paddingLeft: 2 }}
+      >
+        {step.id}
+      </div>
     </div>
   );
 }
@@ -637,58 +793,55 @@ function StepEditModal({
   }
 
   return (
-    <Modal title={`Edit step: ${step.id}`} onClose={onClose} size="wide">
-      <div className="w6w-tabbar" style={{ display: "flex", gap: 6 }}>
-        <button
-          type="button"
-          className={`w6w-btn w6w-btn-ghost${view === "form" ? " active" : ""}`}
-          onClick={() => switchTo("form")}
-        >
-          Form
-        </button>
-        <button
-          type="button"
-          className={`w6w-btn w6w-btn-ghost${view === "json" ? " active" : ""}`}
-          onClick={() => switchTo("json")}
-        >
-          JSON
-        </button>
-      </div>
-
+    <Modal
+      title={`Edit step: ${step.id}`}
+      onClose={onClose}
+      size="wide"
+      headerRight={
+        // Form ⇄ JSON as compact icon buttons, inline with the title.
+        <div className="w6w-view-toggle">
+          <button
+            type="button"
+            title="Form view"
+            aria-label="Form view"
+            aria-pressed={view === "form"}
+            className={`w6w-icon-btn${view === "form" ? " active" : ""}`}
+            onClick={() => switchTo("form")}
+          >
+            <ToolbarIcon>
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="7" y1="8" x2="17" y2="8" />
+              <line x1="7" y1="12" x2="17" y2="12" />
+              <line x1="7" y1="16" x2="13" y2="16" />
+            </ToolbarIcon>
+          </button>
+          <button
+            type="button"
+            title="JSON view"
+            aria-label="JSON view"
+            aria-pressed={view === "json"}
+            className={`w6w-icon-btn${view === "json" ? " active" : ""}`}
+            onClick={() => switchTo("json")}
+          >
+            <ToolbarIcon>
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </ToolbarIcon>
+          </button>
+        </div>
+      }
+    >
       {view === "form" ? (
         <div className="w6w-stack">
-          <label className="w6w-field">
-            <span>Step id</span>
-            <input
-              type="text"
-              value={step.id}
-              readOnly={readOnly}
-              onChange={(e) => commit({ ...step, id: e.target.value })}
-            />
-          </label>
-          <div className="w6w-field">
-            <span>Uses</span>
-            <div className="w6w-muted w6w-small">
-              <code>{step.uses.app || "—"}</code> · <code>{step.uses.action || "—"}</code>
-            </div>
+          {/* Identity — step id · app · action — read-only, on one line.
+              (Connection is set in the builder; it's not an editable field here.) */}
+          <div className="w6w-step-meta">
+            <code>{step.id}</code>
+            <span>·</span>
+            <code>{step.uses.app || "—"}</code>
+            <span>·</span>
+            <code>{step.uses.action || "—"}</code>
           </div>
-          {!isInternal && (
-            <label className="w6w-field">
-              <span>Connection</span>
-              <input
-                type="text"
-                value={step.uses.connection ?? ""}
-                readOnly={readOnly}
-                placeholder="(optional connection id)"
-                onChange={(e) =>
-                  commit({
-                    ...step,
-                    uses: { ...step.uses, connection: e.target.value || undefined },
-                  })
-                }
-              />
-            </label>
-          )}
           <div>
             <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
               {isInternal ? "Configuration" : "Parameters"}
@@ -731,6 +884,17 @@ function StepEditModal({
           />
           {jsonError && <div className="w6w-result w6w-error">{jsonError}</div>}
         </div>
+      )}
+
+      {/* Inline test run — app actions + testable internal nodes (not flow control). */}
+      {step.uses.app && step.uses.action && !isControlApp(step.uses.app) && params && (
+        <StepTestRun
+          app={step.uses.app}
+          action={step.uses.action}
+          connectionId={step.uses.connection ?? undefined}
+          values={step.with ?? {}}
+          canRun={requiredParamsFilled(params, step.with ?? {})}
+        />
       )}
 
       <div className="w6w-modal-actions">
