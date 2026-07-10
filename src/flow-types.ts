@@ -65,6 +65,8 @@ export const TRIGGER_APP = "@w6w/trigger";
 export const HTTP_APP = "@w6w/http";
 /** Inbound HTTP(S) webhook trigger (entry node; provisions a receive URL). */
 export const WEBHOOK_APP = "@w6w/webhook";
+/** "Respond to Webhook" — shapes the HTTP response for `responseMode: responseNode`. */
+export const RESPOND_APP = "@w6w/respond";
 
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
@@ -125,6 +127,8 @@ const ICON_HTTP =
 /** Connected nodes — an inbound webhook. */
 const ICON_WEBHOOK =
   '<circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />';
+/** Reply arrow — respond to the caller. */
+const ICON_RESPOND = '<polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" />';
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
@@ -193,6 +197,12 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         ],
       },
       { key: "responseCode", label: "Response status code", type: "number", default: 200 },
+      {
+        key: "responseData",
+        label: "Response body (immediate)",
+        type: "text",
+        hint: 'Body for "Immediately" responses. Empty = { "message": "Workflow was started" }.',
+      },
       { key: "rawBody", label: "Raw body", type: "boolean", default: false },
       { key: "ignoreBots", label: "Ignore bots", type: "boolean", default: false },
       { key: "ipAllowList", label: "IP allow list", type: "text" },
@@ -354,6 +364,43 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Body",
         default: "",
         hint: "Request body (raw text or a JSON string). Ignored for GET/HEAD.",
+      },
+    ],
+  },
+  {
+    app: RESPOND_APP,
+    action: "respond",
+    label: "Respond to Webhook",
+    displayName: "Respond to Webhook",
+    group: "request",
+    icon: ICON_RESPOND,
+    params: [
+      {
+        key: "respondWith",
+        label: "Respond with",
+        type: "select",
+        default: "json",
+        hint: "Shape of the response returned to the webhook caller.",
+        options: [
+          { value: "json", label: "JSON" },
+          { value: "text", label: "Text" },
+          { value: "noData", label: "No body" },
+        ],
+      },
+      { key: "responseCode", label: "Response status code", type: "number", default: 200 },
+      {
+        key: "responseBody",
+        label: "Response body",
+        type: "json",
+        default: {},
+        hint: "Body to return (object for JSON, string for Text).",
+      },
+      {
+        key: "responseHeaders",
+        label: "Response headers",
+        type: "json",
+        default: [],
+        hint: "Array of { name, value } headers to add to the response.",
       },
     ],
   },
