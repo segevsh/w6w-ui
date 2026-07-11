@@ -56,6 +56,7 @@ export interface ActionParam {
     | "boolean"
     | "select"
     | "multiselect"
+    | "array"
     | "json"
     | "group"
     | "secret"
@@ -67,6 +68,19 @@ export interface ActionParam {
   hint?: string;
   /** Placeholder text for the input (e.g. the trailing prompt on a multiselect). */
   placeholder?: string;
+  /**
+   * Move this (optional) param under the collapsed "Additional parameters"
+   * section. Required + non-advanced params show up front. Ignored for required
+   * params (they always show).
+   */
+  advanced?: boolean;
+  /**
+   * Lay this param out on a shared row with adjacent params carrying the same
+   * `row` id — e.g. a username/password pair side by side.
+   */
+  row?: string;
+  /** Element schema when `type: "array"` (a scalar list or a list of objects). */
+  item?: ParamArrayItem;
   /**
    * Conditional visibility — the param renders only when this predicate holds
    * against a sibling field's value. Lets a schema declare conditional sections
@@ -86,6 +100,20 @@ export interface ActionParam {
 export interface ParamOption {
   value: string | number;
   label: string;
+}
+
+/**
+ * The element schema for a `type: "array"` param. Either a scalar list
+ * (`type: "string" | "number"`, each item a single value) or a list of objects
+ * (`type: "object"` with `fields`, each item a `{ [key]: value }` record whose
+ * fields render side by side).
+ */
+export interface ParamArrayItem {
+  type: "string" | "number" | "object" | string;
+  /** For object items — the fields of each element (rendered inline in a row). */
+  fields?: ActionParam[];
+  /** Placeholder for a scalar item's input. */
+  placeholder?: string;
 }
 
 /**

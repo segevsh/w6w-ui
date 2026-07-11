@@ -81,6 +81,78 @@
   color: var(--w6w-muted);
   font-size: 0.8em;
 }
+/* Side-by-side fields: params sharing a `row` id lay out horizontally. */
+.w6w-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.w6w-field-row > .w6w-field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+/* Array control: a row per item + an add button. */
+.w6w-array {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.w6w-array-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.w6w-array-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.w6w-array-cells > .w6w-array-input {
+  flex: 1 1 120px;
+}
+.w6w-field .w6w-array-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+}
+.w6w-field .w6w-array-input:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-array-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.w6w-array-x:hover {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+}
+.w6w-array-add {
+  margin-top: 2px;
+}
+
 /* Material-style multi-select: chips live INSIDE a single input-like box,
    followed by the dropdown which reads as the trailing placeholder. */
 .w6w-multiselect {

@@ -34,7 +34,7 @@ export interface StepBuilderModalProps {
   theme?: ThemeMode;
 }
 
-type Tab = "connected" | "apps" | "controls" | "utilities";
+type Tab = "connected" | "apps" | "triggers" | "controls" | "utilities";
 
 /**
  * Guided "add a step" flow. A sidebar toggles between **Apps** (pick app →
@@ -142,6 +142,13 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           </button>
           <button
             type="button"
+            className={`w6w-stepbuilder-tab${tab === "triggers" ? " active" : ""}`}
+            onClick={() => setTab("triggers")}
+          >
+            Triggers
+          </button>
+          <button
+            type="button"
             className={`w6w-stepbuilder-tab${tab === "controls" ? " active" : ""}`}
             onClick={() => setTab("controls")}
           >
@@ -164,6 +171,8 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
             />
           ) : tab === "apps" ? (
             <AppPicker onSelectApp={setSelectedApp} theme={theme} />
+          ) : tab === "triggers" ? (
+            <TriggersFlow onSelect={setSelectedNode} />
           ) : tab === "controls" ? (
             <ControlsFlow onSelect={setSelectedNode} />
           ) : (
@@ -204,6 +213,19 @@ function NodeList({
   );
 }
 
+/** Triggers tab — entry nodes that start a workflow (manual, webhook, …). */
+function TriggersFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
+  const nodes = INTERNAL_NODES.filter((n) => n.group === "trigger");
+  return (
+    <div className="w6w-stack">
+      <p className="w6w-muted w6w-small">
+        Triggers start a workflow — run it manually or on an inbound webhook.
+      </p>
+      <NodeList nodes={nodes} onSelect={onSelect} />
+    </div>
+  );
+}
+
 /** Controls tab — engine-native flow control only (branch, loop, parallelize, wait). */
 function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
   const nodes = INTERNAL_NODES.filter((n) => n.group === "control");
@@ -217,13 +239,13 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
   );
 }
 
-/** Utilities tab — everything else: run a script, call HTTP(S), declare data, or trigger. */
+/** Utilities tab — compute + request nodes (script, data, HTTP, respond). */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.group !== "control");
+  const nodes = INTERNAL_NODES.filter((n) => n.group !== "control" && n.group !== "trigger");
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Utilities run a script, call an HTTP(S) endpoint, declare data, or trigger the workflow.
+        Utilities run a script, call an HTTP(S) endpoint, declare data, or respond to a webhook.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import type { ActionParam } from "./types.ts";
@@ -16,6 +16,33 @@ function isParamVisible(param: ActionParam, getValue: (key: string) => unknown):
   if (c.notIn) return !c.notIn.some((x) => x === v);
   if (c.truthy !== undefined) return c.truthy ? !!v : !v;
   return true;
+}
+
+/**
+ * Render a param list, laying adjacent params that share a `row` id side by side
+ * in a flex row; everything else stacks normally.
+ */
+function renderFieldRows(
+  list: ActionParam[],
+  renderOne: (p: ActionParam) => ReactNode,
+): ReactNode[] {
+  const out: ReactNode[] = [];
+  for (let i = 0; i < list.length; ) {
+    const rowId = list[i].row;
+    if (rowId) {
+      const group: ActionParam[] = [];
+      while (i < list.length && list[i].row === rowId) group.push(list[i++]);
+      out.push(
+        <div className="w6w-field-row" key={`row:${rowId}`}>
+          {group.map(renderOne)}
+        </div>,
+      );
+    } else {
+      out.push(renderOne(list[i]));
+      i++;
+    }
+  }
+  return out;
 }
 
 export interface ParamsFormProps {
@@ -44,38 +71,30 @@ export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormPro
   const effective = (key: string) =>
     values[key] !== undefined ? values[key] : params.find((p) => p.key === key)?.default;
   const visible = params.filter((p) => isParamVisible(p, effective));
-  const required = visible.filter((p) => p.required);
-  const optional = visible.filter((p) => !p.required);
+  // Split by `advanced` (not by required): required + non-advanced show up front;
+  // only fields flagged `advanced` collapse under "Additional parameters".
+  const main = visible.filter((p) => p.required || !p.advanced);
+  const additional = visible.filter((p) => !p.required && p.advanced);
   const set = (key: string, value: unknown) => onChange({ ...values, [key]: value });
 
   if (params.length === 0) {
     return <p className="w6w-muted w6w-small">This action takes no parameters.</p>;
   }
 
+  const renderOne = (p: ActionParam) => (
+    <ParamField key={p.key} param={p} value={values[p.key]} onChange={set} readOnly={readOnly} />
+  );
+
   return (
     <div className="w6w-stack">
-      {required.map((p) => (
-        <ParamField
-          key={p.key}
-          param={p}
-          value={values[p.key]}
-          onChange={set}
-          readOnly={readOnly}
-        />
-      ))}
-      {optional.length > 0 && (
+      {renderFieldRows(main, renderOne)}
+      {additional.length > 0 && (
         <details className="w6w-params-optional">
-          <summary className="w6w-muted w6w-small">Optional parameters ({optional.length})</summary>
+          <summary className="w6w-muted w6w-small">
+            Additional parameters ({additional.length})
+          </summary>
           <div className="w6w-stack" style={{ marginTop: 8 }}>
-            {optional.map((p) => (
-              <ParamField
-                key={p.key}
-                param={p}
-                value={values[p.key]}
-                onChange={set}
-                readOnly={readOnly}
-              />
-            ))}
+            {renderFieldRows(additional, renderOne)}
           </div>
         </details>
       )}
@@ -175,6 +194,12 @@ function ParamField({
   // pill. Value is an array of the chosen option values.
   if (param.type === "multiselect") {
     return <MultiSelectField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
+  }
+
+  // `array` — a list control: a row per item (a scalar input, or an object's
+  // fields side by side), with add/remove buttons.
+  if (param.type === "array") {
+    return <ArrayField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
   }
 
   // A constrained set of choices renders as a dropdown — even for a `string`
@@ -386,6 +411,148 @@ function MultiSelectField({
               </option>
             ))}
           </select>
+        )}
+      </div>
+      {param.hint && <span className="w6w-hint">{param.hint}</span>}
+    </div>
+  );
+}
+
+/** A single input inside an `array` object-item row (placeholder = the field label). */
+function ArrayItemInput({
+  field,
+  value,
+  onChange,
+  readOnly,
+}: {
+  field: ActionParam;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  readOnly?: boolean;
+}) {
+  const ph = field.placeholder ?? field.label ?? field.key;
+  if (Array.isArray(field.options) && field.options.length > 0) {
+    return (
+      <select
+        className="w6w-array-input"
+        value={String(value ?? field.default ?? field.options[0]?.value ?? "")}
+        disabled={readOnly}
+        aria-label={field.label ?? field.key}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {field.options.map((o) => (
+          <option key={String(o.value)} value={String(o.value)}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  const isNumber = field.type === "number";
+  return (
+    <input
+      className="w6w-array-input"
+      type={isNumber ? "number" : "text"}
+      value={String(value ?? field.default ?? "")}
+      placeholder={ph}
+      aria-label={field.label ?? field.key}
+      readOnly={readOnly}
+      onChange={(e) => onChange(isNumber ? Number(e.target.value) : e.target.value)}
+    />
+  );
+}
+
+/**
+ * An `array`-typed param — a list control. Each row is either a single scalar
+ * input (`item.type: "string" | "number"`) or an object's `fields` side by side
+ * (`item.type: "object"`). "+ Add" appends a blank item; each row has an `×`.
+ */
+function ArrayField({
+  param,
+  value,
+  onChange,
+  readOnly,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+}) {
+  const item = param.item ?? { type: "string" };
+  const isObject = item.type === "object";
+  const items: unknown[] = Array.isArray(value)
+    ? value
+    : Array.isArray(param.default)
+      ? (param.default as unknown[])
+      : [];
+  const commit = (next: unknown[]) => onChange(param.key, next);
+  const blank = (): unknown =>
+    isObject
+      ? Object.fromEntries((item.fields ?? []).map((f) => [f.key, f.default ?? ""]))
+      : item.type === "number"
+        ? 0
+        : "";
+  const patchAt = (idx: number, next: unknown) =>
+    commit(items.map((it, j) => (j === idx ? next : it)));
+
+  return (
+    <div className="w6w-field">
+      <span>
+        {param.label ?? param.key}
+        {param.required ? " *" : ""}
+      </span>
+      <div className="w6w-array">
+        {items.length === 0 && <p className="w6w-muted w6w-small">None yet — add one below.</p>}
+        {items.map((it, idx) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: rows have no stable id; values are user-edited
+          <div className="w6w-array-row" key={idx}>
+            {isObject ? (
+              <div className="w6w-array-cells">
+                {(item.fields ?? []).map((f) => (
+                  <ArrayItemInput
+                    key={f.key}
+                    field={f}
+                    value={(it as Record<string, unknown>)?.[f.key]}
+                    readOnly={readOnly}
+                    onChange={(fv) =>
+                      patchAt(idx, { ...((it as Record<string, unknown>) ?? {}), [f.key]: fv })
+                    }
+                  />
+                ))}
+              </div>
+            ) : (
+              <input
+                className="w6w-array-input"
+                type={item.type === "number" ? "number" : "text"}
+                value={String(it ?? "")}
+                placeholder={item.placeholder}
+                readOnly={readOnly}
+                onChange={(e) =>
+                  patchAt(idx, item.type === "number" ? Number(e.target.value) : e.target.value)
+                }
+              />
+            )}
+            {!readOnly && (
+              <button
+                type="button"
+                className="w6w-array-x"
+                aria-label="Remove item"
+                title="Remove"
+                onClick={() => commit(items.filter((_, j) => j !== idx))}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        {!readOnly && (
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost w6w-btn-sm w6w-array-add"
+            onClick={() => commit([...items, blank()])}
+          >
+            + Add
+          </button>
         )}
       </div>
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
