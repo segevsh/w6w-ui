@@ -402,20 +402,26 @@ export function StepTestRun({
         </div>
       )}
       {state?.status === "done" && (
-        <pre
-          className="w6w-result"
-          style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-        >
-          {JSON.stringify(state.value, null, 2)}
-        </pre>
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Result (return value)</div>
+          <pre
+            className="w6w-result"
+            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
+          >
+            {JSON.stringify(state.value, null, 2)}
+          </pre>
+        </div>
       )}
       {logs && logs.length > 0 && (
-        <pre
-          className="w6w-result"
-          style={{ whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", margin: 0 }}
-        >
-          {logs.join("\n")}
-        </pre>
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Console output</div>
+          <pre
+            className="w6w-result w6w-testout-console"
+            style={{ whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", margin: 0 }}
+          >
+            {logs.join("\n")}
+          </pre>
+        </div>
       )}
     </div>
   );

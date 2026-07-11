@@ -323,7 +323,7 @@ dialog.w6w-modal p {
   margin: 0;
 }
 .w6w-modal-wide {
-  max-width: 860px;
+  max-width: min(850px, 80vw);
   min-height: min(70vh, 560px);
 }
 .w6w-modal-xl {
@@ -680,6 +680,25 @@ dialog.w6w-modal p {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+/* A labeled test-run output block (Result vs Console). */
+.w6w-testout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.w6w-testout-label {
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w6w-muted);
+}
+/* Console output reads as a terminal — monospace + muted, distinct from Result. */
+.w6w-testout-console {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--w6w-muted);
+  border-style: dashed;
 }
 
 /* Result / error box */

@@ -47,7 +47,7 @@ import {
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionParam, AppSummary } from "./types.ts";
+import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
@@ -74,8 +74,8 @@ export interface WorkflowFlowEditorProps {
  */
 const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
 
-/** Which view the step edit modal opens in. */
-type EditView = "form" | "json";
+/** Which view the step edit modal opens in: the tabbed form, raw JSON, or node settings. */
+type EditView = "props" | "json" | "settings";
 
 /** Per-node control handlers, provided to the node cards via context. */
 interface StepControls {
@@ -136,7 +136,7 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editView, setEditView] = useState<EditView>("form");
+  const [editView, setEditView] = useState<EditView>("props");
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -344,7 +344,7 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
   const controls = useMemo<StepControls>(
     () => ({
       onEdit: (id) => {
-        setEditView("form");
+        setEditView("props");
         setEditingId(id);
       },
       onEditJson: (id) => {
@@ -557,18 +557,6 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
       <button
         type="button"
         className="w6w-node-toolbar-btn"
-        title="Edit as JSON"
-        aria-label="Edit step as JSON"
-        onClick={() => ctrl.onEditJson(id)}
-      >
-        <ToolbarIcon>
-          <polyline points="16 18 22 12 16 6" />
-          <polyline points="8 6 2 12 8 18" />
-        </ToolbarIcon>
-      </button>
-      <button
-        type="button"
-        className="w6w-node-toolbar-btn"
         title="Duplicate"
         aria-label="Duplicate step"
         onClick={() => ctrl.onDuplicate(id)}
@@ -727,12 +715,14 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
+type PropsTab = "setup" | "configure" | "test";
+
 function StepEditModal({
   step: initialStep,
   onChange,
   onClose,
   readOnly,
-  initialView = "form",
+  initialView = "props",
 }: {
   step: FlowStep;
   onChange: (next: FlowStep) => void;
@@ -741,24 +731,27 @@ function StepEditModal({
   initialView?: EditView;
 }) {
   const api = useW6wApi();
+  const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
   const [view, setView] = useState<EditView>(initialView);
+  const [propsTab, setPropsTab] = useState<PropsTab>("configure");
   const [json, setJson] = useState(() => JSON.stringify(initialStep, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
-  // Form view splits into the dynamic Parameters form and the always-available
-  // node Config (retry / error handling / notes).
-  const [formTab, setFormTab] = useState<"params" | "config">("params");
+  // Editable "incoming state" for the Test tab — JSON merged into the invocation.
+  const [testState, setTestState] = useState("{}");
 
-  // Param defs driving the Form view. Internal pseudo-app nodes use their
-  // built-in schema; app actions fetch theirs from the registry. Either way the
-  // same ParamsForm renders the config.
+  // Param defs driving the Configure tab, plus the app's full action list and
+  // connections for the Setup tab. Internal nodes use their built-in schema.
   const [params, setParams] = useState<ActionParam[] | null>(null);
+  const [actions, setActions] = useState<ActionDef[] | null>(null);
+  const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
   const isInternal = isInternalApp(step.uses.app);
 
-  // Refetch action param defs whenever the app/action identity changes.
+  // Refetch actions + params whenever the app/action identity changes.
   useEffect(() => {
     if (isInternal) {
       setParams(internalNodeParams(step.uses.app, step.uses.action));
+      setActions(null);
       return;
     }
     if (!step.uses.app || !step.uses.action) {
@@ -769,10 +762,10 @@ function StepEditModal({
     setParams(null);
     api
       .getAppActions(step.uses.app)
-      .then((actions) => {
+      .then((acts) => {
         if (canceled) return;
-        const def = actions.find((a) => a.key === step.uses.action);
-        setParams(def?.params ?? []);
+        setActions(acts);
+        setParams(acts.find((a) => a.key === step.uses.action)?.params ?? []);
       })
       .catch(() => !canceled && setParams([]));
     return () => {
@@ -780,7 +773,19 @@ function StepEditModal({
     };
   }, [api, step.uses.app, step.uses.action, isInternal]);
 
-  // Commit a new step: update local state, re-seed JSON, and propagate up.
+  // Connections for the app (Setup tab connection dropdown).
+  useEffect(() => {
+    if (isInternal || !step.uses.app) return;
+    let canceled = false;
+    api
+      .listConnectionsForApp(step.uses.app)
+      .then((c) => !canceled && setConns(c))
+      .catch(() => !canceled && setConns([]));
+    return () => {
+      canceled = true;
+    };
+  }, [api, step.uses.app, isInternal]);
+
   const commit = useCallback(
     (next: FlowStep) => {
       setStep(next);
@@ -795,76 +800,103 @@ function StepEditModal({
     setView(next);
   }
 
+  const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
+  // Merge the Test tab's incoming-state JSON into the invocation params.
+  const testValues = (() => {
+    try {
+      const extra = JSON.parse(testState);
+      return extra && typeof extra === "object"
+        ? { ...(step.with ?? {}), ...(extra as Record<string, unknown>) }
+        : (step.with ?? {});
+    } catch {
+      return step.with ?? {};
+    }
+  })();
+
+  const iconBtn = (v: EditView, label: string, glyph: ReactNode) => (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={view === v}
+      className={`w6w-icon-btn${view === v ? " active" : ""}`}
+      onClick={() => switchTo(v)}
+    >
+      <ToolbarIcon>{glyph}</ToolbarIcon>
+    </button>
+  );
+
   return (
     <Modal
       title={`Edit step: ${step.id}`}
       onClose={onClose}
       size="wide"
       headerRight={
-        // Form ⇄ JSON as compact icon buttons, inline with the title.
+        // Props (tabbed form) / JSON / Settings (node config) as compact icons.
         <div className="w6w-view-toggle">
-          <button
-            type="button"
-            title="Form view"
-            aria-label="Form view"
-            aria-pressed={view === "form"}
-            className={`w6w-icon-btn${view === "form" ? " active" : ""}`}
-            onClick={() => switchTo("form")}
-          >
-            <ToolbarIcon>
+          {iconBtn(
+            "props",
+            "Properties",
+            <>
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <line x1="7" y1="8" x2="17" y2="8" />
               <line x1="7" y1="12" x2="17" y2="12" />
               <line x1="7" y1="16" x2="13" y2="16" />
-            </ToolbarIcon>
-          </button>
-          <button
-            type="button"
-            title="JSON view"
-            aria-label="JSON view"
-            aria-pressed={view === "json"}
-            className={`w6w-icon-btn${view === "json" ? " active" : ""}`}
-            onClick={() => switchTo("json")}
-          >
-            <ToolbarIcon>
+            </>,
+          )}
+          {iconBtn(
+            "json",
+            "JSON view",
+            <>
               <polyline points="16 18 22 12 16 6" />
               <polyline points="8 6 2 12 8 18" />
-            </ToolbarIcon>
-          </button>
+            </>,
+          )}
+          {iconBtn(
+            "settings",
+            "Node settings (retry, error handling, notes)",
+            <>
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </>,
+          )}
         </div>
       }
     >
-      {view === "form" ? (
+      {view === "props" && (
         <div className="w6w-stack">
-          {/* Identity — step id · app · action — read-only, on one line.
-              (Connection is set in the builder; it's not an editable field here.) */}
-          <div className="w6w-step-meta">
-            <code>{step.id}</code>
-            <span>·</span>
-            <code>{step.uses.app || "—"}</code>
-            <span>·</span>
-            <code>{step.uses.action || "—"}</code>
-          </div>
-          {/* Parameters (dynamic form) vs Config (retry / error handling / notes,
-              available on any node). */}
           <div className="w6w-subtabs">
-            <button
-              type="button"
-              className={`w6w-subtab${formTab === "params" ? " active" : ""}`}
-              onClick={() => setFormTab("params")}
-            >
-              Parameters
-            </button>
-            <button
-              type="button"
-              className={`w6w-subtab${formTab === "config" ? " active" : ""}`}
-              onClick={() => setFormTab("config")}
-            >
-              Config
-            </button>
+            {(["setup", "configure", "test"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`w6w-subtab${propsTab === t ? " active" : ""}`}
+                onClick={() => setPropsTab(t)}
+              >
+                {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
+              </button>
+            ))}
           </div>
-          {formTab === "params" ? (
-            params === null ? (
+
+          {propsTab === "setup" && (
+            <SetupTab
+              step={step}
+              app={apps.get(step.uses.app)}
+              actions={actions}
+              conns={conns}
+              isInternal={isInternal}
+              readOnly={readOnly}
+              onChangeAction={(action) =>
+                commit({ ...step, uses: { ...step.uses, action }, with: {} })
+              }
+              onChangeConnection={(connection) =>
+                commit({ ...step, uses: { ...step.uses, connection } })
+              }
+            />
+          )}
+
+          {propsTab === "configure" &&
+            (params === null ? (
               <p className="w6w-muted w6w-small">Loading parameters…</p>
             ) : (
               <ParamsForm
@@ -873,12 +905,44 @@ function StepEditModal({
                 readOnly={readOnly}
                 onChange={(w) => commit({ ...step, with: w })}
               />
-            )
-          ) : (
-            <NodeConfigForm step={step} onChange={commit} readOnly={readOnly} />
+            ))}
+
+          {propsTab === "test" && (
+            <div className="w6w-stack">
+              {testable ? (
+                <>
+                  <label className="w6w-field">
+                    <span>Incoming state</span>
+                    <textarea
+                      rows={3}
+                      value={testState}
+                      readOnly={readOnly}
+                      spellCheck={false}
+                      onChange={(e) => setTestState(e.target.value)}
+                    />
+                    <span className="w6w-hint">
+                      Optional JSON merged into the test call (e.g. a script's <code>input</code>).
+                    </span>
+                  </label>
+                  <StepTestRun
+                    app={step.uses.app}
+                    action={step.uses.action}
+                    connectionId={step.uses.connection ?? undefined}
+                    values={testValues}
+                    canRun={!!params && requiredParamsFilled(params, testValues)}
+                  />
+                </>
+              ) : (
+                <p className="w6w-muted w6w-small">
+                  Flow-control nodes can't be tested on their own.
+                </p>
+              )}
+            </div>
           )}
         </div>
-      ) : (
+      )}
+
+      {view === "json" && (
         <div className="w6w-stack">
           <p className="w6w-muted w6w-small">
             Edit the whole step as JSON. Changes apply on every valid edit.
@@ -906,15 +970,13 @@ function StepEditModal({
         </div>
       )}
 
-      {/* Inline test run — app actions + testable internal nodes (not flow control). */}
-      {step.uses.app && step.uses.action && !isControlApp(step.uses.app) && params && (
-        <StepTestRun
-          app={step.uses.app}
-          action={step.uses.action}
-          connectionId={step.uses.connection ?? undefined}
-          values={step.with ?? {}}
-          canRun={requiredParamsFilled(params, step.with ?? {})}
-        />
+      {view === "settings" && (
+        <div className="w6w-stack">
+          <div className="w6w-muted w6w-small">
+            Base settings for this node — applied on every run.
+          </div>
+          <NodeConfigForm step={step} onChange={commit} readOnly={readOnly} />
+        </div>
       )}
 
       <div className="w6w-modal-actions">
@@ -923,6 +985,96 @@ function StepEditModal({
         </button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * The Setup tab — the step's app (read-only), its action (a dropdown for app
+ * steps), and its connection. Mirrors the top of a Zapier node.
+ */
+function SetupTab({
+  step,
+  app,
+  actions,
+  conns,
+  isInternal,
+  readOnly,
+  onChangeAction,
+  onChangeConnection,
+}: {
+  step: FlowStep;
+  app: AppSummary | undefined;
+  actions: ActionDef[] | null;
+  conns: ConnectionSummary[] | null;
+  isInternal: boolean;
+  readOnly?: boolean;
+  onChangeAction: (action: string) => void;
+  onChangeConnection: (connection: string | undefined) => void;
+}) {
+  return (
+    <div className="w6w-stack">
+      <div className="w6w-field">
+        <span>App</span>
+        <div className="w6w-conn-label">
+          {!isInternal && app && (
+            <AppIcon
+              src={app.iconSvg}
+              srcDark={app.iconSvgDark}
+              brandColor={app.brandColor}
+              name={app.displayName}
+              size={20}
+            />
+          )}
+          <span className="w6w-conn-label-name">
+            {isInternal ? step.uses.app : (app?.displayName ?? step.uses.app)}
+          </span>
+        </div>
+      </div>
+
+      {isInternal ? (
+        <div className="w6w-field">
+          <span>Action</span>
+          <div className="w6w-muted w6w-small">
+            <code>{step.uses.action}</code>
+          </div>
+        </div>
+      ) : (
+        <label className="w6w-field">
+          <span>Action</span>
+          <select
+            value={step.uses.action}
+            disabled={readOnly || actions === null}
+            onChange={(e) => onChangeAction(e.target.value)}
+          >
+            {actions === null && <option>{step.uses.action}</option>}
+            {(actions ?? []).map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.title ?? a.key}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {!isInternal && (
+        <label className="w6w-field">
+          <span>Connection</span>
+          <select
+            value={step.uses.connection ?? ""}
+            disabled={readOnly}
+            onChange={(e) => onChangeConnection(e.target.value || undefined)}
+          >
+            <option value="">— none —</option>
+            {(conns ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.displayName || c.id}
+                {c.state ? ` (${c.state})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
   );
 }
 
