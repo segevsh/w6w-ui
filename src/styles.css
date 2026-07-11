@@ -661,15 +661,15 @@ dialog.w6w-modal p {
    vars), stretch the flex chain so it fills the available modal height instead
    of leaving the dialog half-empty. Guarded by :has() so ordinary multi-field
    forms keep their natural height + scroll. */
-.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor, textarea) {
+.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor) {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor, textarea) > div,
-.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor, textarea) > .w6w-stack,
+.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor) > div,
+.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor) > .w6w-stack,
 .w6w-stepconfig-body
-  :is(.w6w-stack, .w6w-field):has(> .w6w-code-editor, > .w6w-json-editor, > span + textarea) {
+  :is(.w6w-stack, .w6w-field):has(> .w6w-code-editor, > .w6w-json-editor) {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -677,8 +677,7 @@ dialog.w6w-modal p {
 }
 /* The editor element itself fills its (now-growable) field. */
 .w6w-stepconfig-body .w6w-field > .w6w-code-editor,
-.w6w-stepconfig-body .w6w-field > .w6w-json-editor,
-.w6w-stepconfig-body .w6w-field > textarea {
+.w6w-stepconfig-body .w6w-field > .w6w-json-editor {
   flex: 1 1 auto;
   min-height: 120px;
 }
@@ -718,6 +717,32 @@ dialog.w6w-modal p {
 
 .w6w-params-optional > summary {
   cursor: pointer;
+}
+
+/* `section` param — a layout-only container. `section: "collapsible"` renders as
+   a titled, bordered disclosure; `section: "group"` reuses `.w6w-field-row` /
+   `.w6w-stack` for its layout (no rules of its own needed). */
+.w6w-section {
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.w6w-section > summary {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.w6w-section-title {
+  color: var(--w6w-text);
+  font-weight: 600;
+}
+.w6w-section-subtitle {
+  color: var(--w6w-muted);
+  font-size: 0.8em;
+}
+.w6w-section-body {
+  margin-top: 8px;
 }
 
 /* Inline "Test run" block in the step builder (sits above the footer). */

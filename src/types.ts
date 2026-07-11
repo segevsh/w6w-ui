@@ -62,6 +62,7 @@ export interface ActionParam {
     | "secret"
     | "code"
     | "vars"
+    | "section"
     | string;
   required?: boolean;
   default?: unknown;
@@ -94,6 +95,25 @@ export interface ActionParam {
   options?: ParamOption[];
   /** Type-specific render/behavior options. */
   config?: ParamConfig;
+  /**
+   * Nested params, walked by the renderer for `type: "group"` (nested object)
+   * and `type: "section"` (layout-only container whose children write to the
+   * ENCLOSING form values, not under this param's key).
+   */
+  children?: ActionParam[];
+  /**
+   * `type: "section"` only — the container behavior. `"collapsible"` renders a
+   * titled, collapsed-by-default disclosure; `"group"` a `layout` row/stack.
+   */
+  section?: "collapsible" | "group";
+  /** `section: "collapsible"` only — the `<summary>` heading. */
+  title?: string;
+  /** `section: "collapsible"` only — an optional secondary summary line. */
+  subtitle?: string;
+  /** `section: "group"` only — `"row"` side by side, `"stack"` vertical (default). */
+  layout?: "row" | "stack";
+  /** `section: "collapsible"` only — start collapsed (default `true`). */
+  collapsed?: boolean;
 }
 
 /** A single choice for a param rendered as a dropdown. */

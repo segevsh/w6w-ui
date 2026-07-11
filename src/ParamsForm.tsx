@@ -22,6 +22,21 @@ function isParamVisible(param: ActionParam, getValue: (key: string) => unknown):
  * Render a param list, laying adjacent params that share a `row` id side by side
  * in a flex row; everything else stacks normally.
  */
+/**
+ * Flatten a param list, descending into `section` children (which write their
+ * values flat at the enclosing form level). Used to resolve declared defaults
+ * for `showIf` across sections. Non-section `children` (e.g. a nested `group`
+ * object) are left alone — those values live nested under the parent key.
+ */
+function flattenParams(list: ActionParam[]): ActionParam[] {
+  const out: ActionParam[] = [];
+  for (const p of list) {
+    out.push(p);
+    if (p.type === "section" && p.children) out.push(...flattenParams(p.children));
+  }
+  return out;
+}
+
 function renderFieldRows(
   list: ActionParam[],
   renderOne: (p: ActionParam) => ReactNode,
@@ -68,8 +83,12 @@ export interface ParamsFormProps {
 export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormProps) {
   // Effective value of a field for `showIf` checks: the entered value, else the
   // field's declared default (so conditions hold before the user touches it).
+  // Section/group children write flat at the enclosing level, so flatten them
+  // too — otherwise a `showIf` referencing a section child sees `undefined` for
+  // its declared default until the user edits it.
+  const flat = flattenParams(params);
   const effective = (key: string) =>
-    values[key] !== undefined ? values[key] : params.find((p) => p.key === key)?.default;
+    values[key] !== undefined ? values[key] : flat.find((p) => p.key === key)?.default;
   const visible = params.filter((p) => isParamVisible(p, effective));
   // Split by `advanced` (not by required): required + non-advanced show up front;
   // only fields flagged `advanced` collapse under "Additional parameters".
@@ -81,9 +100,17 @@ export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormPro
     return <p className="w6w-muted w6w-small">This action takes no parameters.</p>;
   }
 
-  const renderOne = (p: ActionParam) => (
-    <ParamField key={p.key} param={p} value={values[p.key]} onChange={set} readOnly={readOnly} />
-  );
+  // A `section` is a layout-only container: it renders its children through this
+  // SAME pipeline (so child `row`/`showIf`/nested sections still work) and —
+  // crucially — passes the TOP-LEVEL `set`/`values` down, so section children
+  // write to the enclosing form values, not nested under the section key. Note a
+  // section IS the disclosure, so a child's `advanced` flag is not re-split here.
+  const renderOne = (p: ActionParam): ReactNode =>
+    p.type === "section" ? (
+      <SectionField key={p.key} param={p} effective={effective} renderOne={renderOne} />
+    ) : (
+      <ParamField key={p.key} param={p} value={values[p.key]} onChange={set} readOnly={readOnly} />
+    );
 
   return (
     <div className="w6w-stack">
@@ -100,6 +127,53 @@ export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormPro
       )}
     </div>
   );
+}
+
+/**
+ * A `section`-typed param — a layout-only container of `children`. Two shapes:
+ * `section: "collapsible"` renders a titled, collapsed-by-default `<details>`
+ * disclosure (the app-authored per-cluster disclosure, distinct from the single
+ * global "Additional parameters" one); `section: "group"` lays the children out
+ * per `layout` — `"row"` side by side (reusing `.w6w-field-row`), else stacked.
+ *
+ * Children render through the SAME `renderOne` pipeline the enclosing form uses,
+ * so their values are written flat at the enclosing form level (a section does
+ * NOT nest its value object), and child `row`/`showIf`/nested sections keep
+ * working. A child's `advanced` flag is ignored inside a section — the section
+ * itself is the disclosure, so children are shown inline within it.
+ */
+function SectionField({
+  param,
+  effective,
+  renderOne,
+}: {
+  param: ActionParam;
+  effective: (key: string) => unknown;
+  renderOne: (p: ActionParam) => ReactNode;
+}) {
+  const visibleChildren = (param.children ?? []).filter((c) => isParamVisible(c, effective));
+
+  if (param.section === "collapsible") {
+    return (
+      <details className="w6w-section" open={param.collapsed === false}>
+        <summary className="w6w-section-summary">
+          <span className="w6w-section-title">{param.title ?? param.label ?? param.key}</span>
+          {param.subtitle && <span className="w6w-section-subtitle">{param.subtitle}</span>}
+        </summary>
+        <div className="w6w-stack w6w-section-body">
+          {renderFieldRows(visibleChildren, renderOne)}
+        </div>
+      </details>
+    );
+  }
+
+  // group: side by side (`layout: "row"`) or stacked (default). The row wrapper
+  // reuses the existing `.w6w-field-row` rule so each child `.w6w-field` sits
+  // side by side; stack still honors child `row` grouping via renderFieldRows.
+  if (param.layout === "row") {
+    return <div className="w6w-field-row">{visibleChildren.map(renderOne)}</div>;
+  }
+  return <div className="w6w-stack">{renderFieldRows(visibleChildren, renderOne)}</div>;
 }
 
 function ParamField({
