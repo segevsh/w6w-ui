@@ -27,6 +27,7 @@ import {
   useState,
 } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
+import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import {
   type BuiltStep,
@@ -975,7 +976,11 @@ function StepEditModal({
           <div className="w6w-muted w6w-small">
             Base settings for this node — applied on every run.
           </div>
-          <NodeConfigForm step={step} onChange={commit} readOnly={readOnly} />
+          <NodeConfigForm
+            config={{ retry: step.retry, onError: step.onError, notes: step.notes }}
+            onChange={(c) => commit({ ...step, ...c })}
+            readOnly={readOnly}
+          />
         </div>
       )}
 
@@ -1074,120 +1079,6 @@ function SetupTab({
           </select>
         </label>
       )}
-    </div>
-  );
-}
-
-/**
- * The always-available node Config tab: retry-on-fail, error handling, and notes.
- * Edits the step's `retry` / `onError` / `notes` (all optional; absent = defaults).
- */
-function NodeConfigForm({
-  step,
-  onChange,
-  readOnly,
-}: {
-  step: FlowStep;
-  onChange: (next: FlowStep) => void;
-  readOnly?: boolean;
-}) {
-  const retryOn = !!step.retry;
-  const attempts = step.retry?.maxAttempts ?? 3;
-  const delayMs = step.retry?.delayMs ?? 1000;
-  const backoff = step.retry?.backoff ?? "fixed";
-  const onError = step.onError ?? "fail";
-
-  const setRetry = (patch: Partial<NonNullable<FlowStep["retry"]>>) =>
-    onChange({
-      ...step,
-      retry: { maxAttempts: attempts, delayMs, backoff, ...step.retry, ...patch },
-    });
-
-  return (
-    <div className="w6w-stack">
-      {/* Retry on fail */}
-      <label className="w6w-field">
-        <span>
-          <input
-            type="checkbox"
-            checked={retryOn}
-            disabled={readOnly}
-            onChange={(e) =>
-              onChange({
-                ...step,
-                retry: e.target.checked ? { maxAttempts: attempts, delayMs, backoff } : undefined,
-              })
-            }
-          />{" "}
-          Retry on failure
-        </span>
-        <span className="w6w-hint">Re-run this step if it fails, up to N attempts.</span>
-      </label>
-      {retryOn && (
-        <div className="w6w-stepconfig-row">
-          <label className="w6w-field">
-            <span>Attempts</span>
-            <input
-              type="number"
-              min={1}
-              value={attempts}
-              readOnly={readOnly}
-              onChange={(e) => setRetry({ maxAttempts: Math.max(1, Number(e.target.value) || 1) })}
-            />
-          </label>
-          <label className="w6w-field">
-            <span>Delay (ms)</span>
-            <input
-              type="number"
-              min={0}
-              value={delayMs}
-              readOnly={readOnly}
-              onChange={(e) => setRetry({ delayMs: Math.max(0, Number(e.target.value) || 0) })}
-            />
-          </label>
-          <label className="w6w-field">
-            <span>Backoff</span>
-            <select
-              value={backoff}
-              disabled={readOnly}
-              onChange={(e) => setRetry({ backoff: e.target.value as "fixed" | "exponential" })}
-            >
-              <option value="fixed">Fixed</option>
-              <option value="exponential">Exponential</option>
-            </select>
-          </label>
-        </div>
-      )}
-
-      {/* Error handling */}
-      <label className="w6w-field">
-        <span>On error</span>
-        <select
-          value={onError}
-          disabled={readOnly}
-          onChange={(e) => {
-            const v = e.target.value as NonNullable<FlowStep["onError"]>;
-            // "fail" is the default — store it as absent to keep the step clean.
-            onChange({ ...step, onError: v === "fail" ? undefined : v });
-          }}
-        >
-          <option value="fail">Stop on error (default)</option>
-          <option value="continue">Continue</option>
-          <option value="continue-record">Continue &amp; record error in end state</option>
-        </select>
-      </label>
-
-      {/* Notes */}
-      <label className="w6w-field">
-        <span>Notes</span>
-        <textarea
-          rows={3}
-          value={step.notes ?? ""}
-          readOnly={readOnly}
-          placeholder="Notes about this step (not executed)…"
-          onChange={(e) => onChange({ ...step, notes: e.target.value || undefined })}
-        />
-      </label>
     </div>
   );
 }

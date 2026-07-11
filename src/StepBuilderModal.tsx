@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
+import { JsonEditor } from "./JsonEditor.tsx";
+import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
@@ -21,8 +23,9 @@ import type {
   ThemeMode,
 } from "./types.ts";
 
-/** The step the builder emits — the editor assigns the final `id`. */
-export interface BuiltStep {
+/** The step the builder emits — the editor assigns the final `id`. `NodeConfig`
+ * carries the base settings (retry / onError / notes) set on the Config view. */
+export interface BuiltStep extends NodeConfig {
   uses: { app: string; action: string; connection?: string | null };
   with?: Record<string, unknown>;
 }
@@ -38,6 +41,86 @@ type Tab = "connected" | "apps" | "triggers" | "controls" | "utilities";
 
 /** Config sub-tabs shared by the add-step config and the node editor. */
 type StepConfigTab = "setup" | "configure" | "test";
+
+/** The three representations of the Configure tab: form, raw JSON, node settings. */
+type ConfigView = "props" | "code" | "config";
+
+/** A 15×15 stroked glyph on a 24×24 viewBox (matches the editor's toolbar icons). */
+function Glyph({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+/**
+ * The props / code / config view toggle, right-aligned in the tabs bar. Disabled
+ * off the Configure tab (the three views all represent the action's config).
+ */
+function ConfigViewToggle({
+  view,
+  onChange,
+  disabled,
+}: {
+  view: ConfigView;
+  onChange: (v: ConfigView) => void;
+  disabled?: boolean;
+}) {
+  const btn = (v: ConfigView, label: string, glyph: ReactNode) => (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={view === v}
+      disabled={disabled}
+      className={`w6w-icon-btn${view === v && !disabled ? " active" : ""}`}
+      onClick={() => onChange(v)}
+    >
+      <Glyph>{glyph}</Glyph>
+    </button>
+  );
+  return (
+    <div className="w6w-view-toggle">
+      {btn(
+        "props",
+        "Form",
+        <>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <line x1="7" y1="8" x2="17" y2="8" />
+          <line x1="7" y1="12" x2="17" y2="12" />
+          <line x1="7" y1="16" x2="13" y2="16" />
+        </>,
+      )}
+      {btn(
+        "code",
+        "JSON",
+        <>
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </>,
+      )}
+      {btn(
+        "config",
+        "Node settings",
+        <>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </>,
+      )}
+    </div>
+  );
+}
 
 /**
  * Guided "add a step" flow. A sidebar toggles between **Apps** (pick app →
@@ -79,7 +162,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           </button>
         }
       >
-        <div className="w6w-stepbuilder-content">
+        <div className="w6w-stepbuilder-config">
           <ControlStepConfig node={selectedNode} onAdd={onAdd} onClose={onClose} />
         </div>
       </Modal>
@@ -108,18 +191,18 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
             size={22}
           />
         }
-        headerRight={
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-ghost"
-            onClick={() => setSelectedApp(null)}
-          >
-            ← Apps
-          </button>
-        }
       >
-        <div className="w6w-stepbuilder-content">
-          <AppStepConfig appId={selectedApp.id} onAdd={onAdd} onClose={onClose} theme={theme} />
+        <div className="w6w-stepbuilder-config">
+          {/* App-switching lives in the Setup tab's "Change" (à la Zapier), not a
+              top-right back button. */}
+          <AppStepConfig
+            appId={selectedApp.id}
+            app={selectedApp}
+            onAdd={onAdd}
+            onClose={onClose}
+            onChangeApp={() => setSelectedApp(null)}
+            theme={theme}
+          />
         </div>
       </Modal>
     );
@@ -276,38 +359,74 @@ function ControlStepConfig({
   // just Configure + Test (flow-control nodes aren't testable standalone).
   const testable = !isControlApp(node.app);
   const [tab, setTab] = useState<"configure" | "test">("configure");
+  const [configView, setConfigView] = useState<ConfigView>("props");
+  const [codeText, setCodeText] = useState("{}");
+  const [draftConfig, setDraftConfig] = useState<NodeConfig>({});
+  const configComplete = requiredParamsFilled(node.params, withValues);
+
+  const changeConfigView = (v: ConfigView) => {
+    if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
+    setConfigView(v);
+  };
+  const add = () =>
+    onAdd({ uses: { app: node.app, action: node.action }, with: withValues, ...draftConfig });
 
   return (
     <div className="w6w-stepconfig">
-      <div className="w6w-subtabs">
-        <button
-          type="button"
-          className={`w6w-subtab${tab === "configure" ? " active" : ""}`}
-          onClick={() => setTab("configure")}
-        >
-          Configure
-        </button>
-        {testable && (
+      <div className="w6w-tabsbar">
+        <div className="w6w-subtabs">
           <button
             type="button"
-            className={`w6w-subtab${tab === "test" ? " active" : ""}`}
-            onClick={() => setTab("test")}
+            className={`w6w-subtab${tab === "configure" ? " active" : ""}`}
+            onClick={() => setTab("configure")}
           >
-            Test
+            Configure
           </button>
-        )}
+          {testable && (
+            <button
+              type="button"
+              disabled={!configComplete}
+              title={configComplete ? undefined : "Fill the required fields first"}
+              className={`w6w-subtab${tab === "test" ? " active" : ""}`}
+              onClick={() => configComplete && setTab("test")}
+            >
+              Test
+            </button>
+          )}
+        </div>
+        <ConfigViewToggle
+          view={configView}
+          onChange={changeConfigView}
+          disabled={tab !== "configure"}
+        />
       </div>
 
       <div className="w6w-stepconfig-body">
-        {tab === "configure" && (
-          <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
-        )}
+        {tab === "configure" &&
+          (configView === "props" ? (
+            <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
+          ) : configView === "code" ? (
+            <JsonEditor
+              value={codeText}
+              onChange={setCodeText}
+              minHeight="240px"
+              aria-label="Parameters JSON"
+              onValidChange={(p) =>
+                p &&
+                typeof p === "object" &&
+                !Array.isArray(p) &&
+                setWithValues(p as Record<string, unknown>)
+              }
+            />
+          ) : (
+            <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
+          ))}
         {tab === "test" && testable && (
           <StepTestRun
             app={node.app}
             action={node.action}
             values={withValues}
-            canRun={requiredParamsFilled(node.params, withValues)}
+            canRun={configComplete}
           />
         )}
       </div>
@@ -317,13 +436,20 @@ function ControlStepConfig({
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="w6w-btn"
-          onClick={() => onAdd({ uses: { app: node.app, action: node.action }, with: withValues })}
-        >
-          Add step
-        </button>
+        {tab === "configure" && testable ? (
+          <button
+            type="button"
+            className="w6w-btn"
+            disabled={!configComplete}
+            onClick={() => setTab("test")}
+          >
+            Next →
+          </button>
+        ) : (
+          <button type="button" className="w6w-btn" onClick={add}>
+            Add step
+          </button>
+        )}
       </div>
     </div>
   );
@@ -535,13 +661,17 @@ function ConnectedAppsFlow({
 
 function AppStepConfig({
   appId,
+  app,
   onAdd,
   onClose,
+  onChangeApp,
   theme,
 }: {
   appId: string;
+  app?: AppSummary;
   onAdd: (s: BuiltStep) => void;
   onClose: () => void;
+  onChangeApp?: () => void;
   theme?: ThemeMode;
 }) {
   const api = useW6wApi();
@@ -557,9 +687,15 @@ function AppStepConfig({
   // Once a connection is chosen it renders as a static label; "Change" flips
   // back to the dropdown. No connection selected yet also forces the dropdown.
   const [changingConn, setChangingConn] = useState(false);
-  // Setup (pick connection + action) / Configure (params) / Test — same tabs as
+  // Setup (app + connection + action) / Configure (params) / Test — same tabs as
   // the node editor, so add + edit are consistent.
   const [tab, setTab] = useState<StepConfigTab>("setup");
+  // The Configure tab's three representations (form / JSON / node settings).
+  const [configView, setConfigView] = useState<ConfigView>("props");
+  // Draft text backing the JSON ("code") view of the params.
+  const [codeText, setCodeText] = useState("{}");
+  // Base node settings (retry / onError / notes) set on the Config view.
+  const [draftConfig, setDraftConfig] = useState<NodeConfig>({});
 
   // Load auth methods, existing connections, and actions for the app in parallel.
   useEffect(() => {
@@ -596,7 +732,14 @@ function AppStepConfig({
   );
 
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
-  const canAdd = !!actionKey && connectionSatisfied;
+  // Setup is done when an action is picked and its connection (if any) is set;
+  // Configure is done when the action's required params are filled.
+  const setupComplete = !!actionKey && connectionSatisfied;
+  const configComplete =
+    setupComplete &&
+    !!selectedAction &&
+    requiredParamsFilled(selectedAction.params ?? [], withValues);
+  const canAdd = setupComplete;
 
   const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
   // Show the dropdown only before a connection is picked or while changing it;
@@ -612,30 +755,87 @@ function AppStepConfig({
         ...(needsConnection && connectionId ? { connection: connectionId } : {}),
       },
       with: withValues,
+      ...draftConfig,
     });
   }
 
+  const changeConfigView = (v: ConfigView) => {
+    if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
+    setConfigView(v);
+  };
+
   return (
     <div className="w6w-stepconfig">
-      <div className="w6w-subtabs">
-        {(["setup", "configure", "test"] as const).map((t) => (
+      {/* Tabs bar — full width: Setup/Configure/Test on the left, the props/code/
+          config view icons on the right (enabled only on the Configure tab). */}
+      <div className="w6w-tabsbar">
+        <div className="w6w-subtabs">
           <button
-            key={t}
             type="button"
-            className={`w6w-subtab${tab === t ? " active" : ""}`}
-            onClick={() => setTab(t)}
+            className={`w6w-subtab${tab === "setup" ? " active" : ""}`}
+            onClick={() => setTab("setup")}
           >
-            {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
+            Setup
           </button>
-        ))}
+          <button
+            type="button"
+            disabled={!setupComplete}
+            title={setupComplete ? undefined : "Complete Setup first"}
+            className={`w6w-subtab${tab === "configure" ? " active" : ""}`}
+            onClick={() => setupComplete && setTab("configure")}
+          >
+            Configure
+          </button>
+          <button
+            type="button"
+            disabled={!configComplete}
+            title={configComplete ? undefined : "Fill the required fields first"}
+            className={`w6w-subtab${tab === "test" ? " active" : ""}`}
+            onClick={() => configComplete && setTab("test")}
+          >
+            Test
+          </button>
+        </div>
+        <ConfigViewToggle
+          view={configView}
+          onChange={changeConfigView}
+          disabled={tab !== "configure"}
+        />
       </div>
 
       <div className="w6w-stepconfig-body">
-        {/* Setup — connection + action, the same shape as the node editor's Setup. */}
+        {/* Setup — app, connection, action. */}
         {tab === "setup" && (
           <div className="w6w-stack">
             {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
             {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
+
+            {/* App — click Change to go back to the app picker. */}
+            <div className="w6w-field">
+              <span>App</span>
+              <div className="w6w-conn-label">
+                {app && (
+                  <AppIcon
+                    src={app.iconSvg}
+                    srcDark={app.iconSvgDark}
+                    brandColor={app.brandColor}
+                    name={app.displayName}
+                    theme={theme}
+                    size={20}
+                  />
+                )}
+                <span className="w6w-conn-label-name">{app?.displayName ?? appId}</span>
+                {onChangeApp && (
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                    onClick={onChangeApp}
+                  >
+                    Change
+                  </button>
+                )}
+              </div>
+            </div>
 
             {/* Connection */}
             {auths !== null &&
@@ -731,16 +931,32 @@ function AppStepConfig({
           </div>
         )}
 
-        {/* Configure — the action's dynamic params. */}
+        {/* Configure — the action's config, as a form (props), raw JSON (code),
+            or the base node settings (config). */}
         {tab === "configure" &&
-          (selectedAction ? (
+          (!selectedAction ? (
+            <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
+          ) : configView === "props" ? (
             <ParamsForm
               params={selectedAction.params ?? []}
               values={withValues}
               onChange={setWithValues}
             />
+          ) : configView === "code" ? (
+            <JsonEditor
+              value={codeText}
+              onChange={setCodeText}
+              minHeight="240px"
+              aria-label="Parameters JSON"
+              onValidChange={(p) =>
+                p &&
+                typeof p === "object" &&
+                !Array.isArray(p) &&
+                setWithValues(p as Record<string, unknown>)
+              }
+            />
           ) : (
-            <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
+            <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
           ))}
 
         {/* Test — try the action with the current params. */}
@@ -758,14 +974,26 @@ function AppStepConfig({
           ))}
       </div>
 
-      {/* Footer — pinned to the modal bottom, outside the scroll area. */}
+      {/* Footer — pinned to the modal bottom. Each tab has a Next button; the
+          last (Test) commits the step. */}
       <div className="w6w-modal-actions w6w-stepconfig-footer">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="w6w-btn" disabled={!canAdd} onClick={add}>
-          Add step
-        </button>
+        {tab === "test" ? (
+          <button type="button" className="w6w-btn" disabled={!canAdd} onClick={add}>
+            Add step
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="w6w-btn"
+            disabled={tab === "setup" ? !setupComplete : !configComplete}
+            onClick={() => setTab(tab === "setup" ? "configure" : "test")}
+          >
+            Next →
+          </button>
+        )}
       </div>
 
       {showConnModal && (
