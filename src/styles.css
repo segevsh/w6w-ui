@@ -657,32 +657,43 @@ dialog.w6w-modal p {
   margin-top: 0;
 }
 
-/* When a config form's main input is a tall editor (code / textarea / json /
-   vars), stretch the flex chain so it fills the available modal height instead
-   of leaving the dialog half-empty. Guarded by :has() so ordinary multi-field
-   forms keep their natural height + scroll. */
-.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor) {
+/* The whole-config "code"/JSON view is a DIRECT child of the body — stretch it
+   to fill the modal height instead of leaving the dialog half-empty (it passes
+   height="100%"). Inline json/code PARAM fields live inside a `.w6w-field` and
+   size to their content, capped by the editor's own maxHeight (grow, then
+   scroll inside), so they are intentionally NOT stretched here — that was the
+   cause of the empty space + overlap under short group/json fields. */
+.w6w-stepconfig-body:has(> .w6w-code-editor, > .w6w-json-editor) {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor) > div,
-.w6w-stepconfig-body:has(.w6w-code-editor, .w6w-json-editor) > .w6w-stack,
-.w6w-stepconfig-body
-  :is(.w6w-stack, .w6w-field):has(> .w6w-code-editor, > .w6w-json-editor) {
+.w6w-stepconfig-body > .w6w-code-editor,
+.w6w-stepconfig-body > .w6w-json-editor {
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* The editor element itself fills its (now-growable) field. */
-.w6w-stepconfig-body .w6w-field > .w6w-code-editor,
-.w6w-stepconfig-body .w6w-field > .w6w-json-editor {
-  flex: 1 1 auto;
-  min-height: 120px;
 }
 .w6w-stepconfig-body .w6w-field > textarea {
   resize: vertical;
+}
+/* Field label row with a trailing action (e.g. the JSON "open full view" btn). */
+.w6w-field-labelrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* Full-view JSON modal body — fill the dialog so the editor is roomy. */
+.w6w-json-fullview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 60vh;
+}
+.w6w-json-fullview > .w6w-json-editor {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* Per-node control toolbar (React Flow NodeToolbar) */

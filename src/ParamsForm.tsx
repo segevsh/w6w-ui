@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
+import { Modal } from "./components/Modal.tsx";
 import type { ActionParam } from "./types.ts";
 
 /**
@@ -359,6 +360,7 @@ function JsonParamField({
   const seed = value ?? param.default;
   const [text, setText] = useState(() => (seed === undefined ? "" : JSON.stringify(seed, null, 2)));
   const [invalid, setInvalid] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   // Re-seed only when the field identity changes (a different param selected).
   // biome-ignore lint/correctness/useExhaustiveDependencies: reseed keyed on param identity, not draft value
@@ -367,22 +369,58 @@ function JsonParamField({
     setInvalid(false);
   }, [param.key]);
 
+  const onEdit = (next: string) => {
+    setText(next);
+  };
+  const onValid = (parsed: unknown) => {
+    setInvalid(false);
+    onChange(param.key, parsed);
+  };
+  const label = param.label ?? param.key;
+
   return (
     <div className="w6w-field">
-      <span>
-        {param.label ?? param.key}
-        {param.required ? " *" : ""}
+      <span className="w6w-field-labelrow">
+        <span>
+          {label}
+          {param.required ? " *" : ""}
+        </span>
+        <button
+          type="button"
+          className="w6w-icon-btn w6w-btn-sm"
+          title="Open in full view"
+          aria-label={`Open ${label} in full view`}
+          onClick={() => setExpanded(true)}
+        >
+          {/* diagonal expand arrows on a 24×24 viewBox */}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="15 3 21 3 21 9" />
+            <polyline points="9 21 3 21 3 15" />
+            <line x1="21" y1="3" x2="14" y2="10" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </svg>
+        </button>
       </span>
+      {/* Inline: content-sized, grows with content up to maxHeight, then scrolls
+          internally (so it never overlaps the next field). Full view via button. */}
       <JsonEditor
         value={text}
-        onChange={setText}
+        onChange={onEdit}
         readOnly={readOnly}
-        minHeight="120px"
+        minHeight="34px"
+        maxHeight="260px"
         aria-label={`${param.key} JSON`}
-        onValidChange={(parsed) => {
-          setInvalid(false);
-          onChange(param.key, parsed);
-        }}
+        onValidChange={onValid}
         onValidityChange={({ valid }) => setInvalid(!valid)}
       />
       {invalid && (
@@ -391,6 +429,33 @@ function JsonParamField({
         </span>
       )}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
+
+      {expanded && (
+        <Modal
+          title={label}
+          subtitle={<code>JSON</code>}
+          size="wide"
+          onClose={() => setExpanded(false)}
+        >
+          <div className="w6w-json-fullview">
+            <JsonEditor
+              value={text}
+              onChange={onEdit}
+              readOnly={readOnly}
+              height="100%"
+              minHeight="360px"
+              aria-label={`${param.key} JSON (full view)`}
+              onValidChange={onValid}
+              onValidityChange={({ valid }) => setInvalid(!valid)}
+            />
+          </div>
+          {invalid && (
+            <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+              Invalid JSON
+            </span>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

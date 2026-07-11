@@ -410,6 +410,7 @@ function ControlStepConfig({
               value={codeText}
               onChange={setCodeText}
               minHeight="240px"
+              height="100%"
               aria-label="Parameters JSON"
               onValidChange={(p) =>
                 p &&
@@ -952,6 +953,7 @@ function AppStepConfig({
               value={codeText}
               onChange={setCodeText}
               minHeight="240px"
+              height="100%"
               aria-label="Parameters JSON"
               onValidChange={(p) =>
                 p &&

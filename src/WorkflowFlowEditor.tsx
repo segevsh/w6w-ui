@@ -923,6 +923,7 @@ function StepEditModal({
                 onChange={setCodeText}
                 readOnly={readOnly}
                 minHeight="260px"
+                height="100%"
                 aria-label={`Step ${step.id} params JSON`}
                 onValidChange={(p) =>
                   p &&
