@@ -68,6 +68,12 @@ export interface ActionParam {
   /** Placeholder text for the input (e.g. the trailing prompt on a multiselect). */
   placeholder?: string;
   /**
+   * Conditional visibility — the param renders only when this predicate holds
+   * against a sibling field's value. Lets a schema declare conditional sections
+   * (e.g. Basic-auth fields shown only when `auth` is `"basic"`).
+   */
+  showIf?: ParamCondition;
+  /**
    * Constrained choices. Renders as a single-select dropdown for `select` (or any
    * param with options), and as a multi-select pill picker for `multiselect`.
    */
@@ -80,6 +86,24 @@ export interface ActionParam {
 export interface ParamOption {
   value: string | number;
   label: string;
+}
+
+/**
+ * A conditional-visibility predicate tested against a sibling param's value.
+ * Exactly one of `equals` / `in` / `notIn` / `truthy` is used (checked in that
+ * order). The compared value falls back to the sibling's `default` when unset.
+ */
+export interface ParamCondition {
+  /** Sibling param key whose value is tested. */
+  field: string;
+  /** Visible when the field's value strictly equals this. */
+  equals?: string | number | boolean;
+  /** Visible when the field's value is one of these. */
+  in?: Array<string | number | boolean>;
+  /** Visible when the field's value is NOT one of these. */
+  notIn?: Array<string | number | boolean>;
+  /** Visible when the field's value is truthy (`true`) or falsy (`false`). */
+  truthy?: boolean;
 }
 
 /** Type-specific render/behavior options for a param. */

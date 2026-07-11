@@ -3,6 +3,21 @@ import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import type { ActionParam } from "./types.ts";
 
+/**
+ * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
+ * current value (falling back to its default). Params with no `showIf` always show.
+ */
+function isParamVisible(param: ActionParam, getValue: (key: string) => unknown): boolean {
+  const c = param.showIf;
+  if (!c) return true;
+  const v = getValue(c.field);
+  if (c.equals !== undefined) return v === c.equals;
+  if (c.in) return c.in.some((x) => x === v);
+  if (c.notIn) return !c.notIn.some((x) => x === v);
+  if (c.truthy !== undefined) return c.truthy ? !!v : !v;
+  return true;
+}
+
 export interface ParamsFormProps {
   /** Declared params of the selected action. */
   params: ActionParam[];
@@ -24,8 +39,13 @@ export interface ParamsFormProps {
  * view; this form deals in literals.
  */
 export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormProps) {
-  const required = params.filter((p) => p.required);
-  const optional = params.filter((p) => !p.required);
+  // Effective value of a field for `showIf` checks: the entered value, else the
+  // field's declared default (so conditions hold before the user touches it).
+  const effective = (key: string) =>
+    values[key] !== undefined ? values[key] : params.find((p) => p.key === key)?.default;
+  const visible = params.filter((p) => isParamVisible(p, effective));
+  const required = visible.filter((p) => p.required);
+  const optional = visible.filter((p) => !p.required);
   const set = (key: string, value: unknown) => onChange({ ...values, [key]: value });
 
   if (params.length === 0) {
