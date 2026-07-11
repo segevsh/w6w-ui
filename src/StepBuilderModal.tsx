@@ -464,14 +464,19 @@ export function requiredParamsFilled(
   params: ActionParam[],
   values: Record<string, unknown>,
 ): boolean {
-  return params
-    .filter((p) => p.required)
-    .every((p) => {
-      const v = values[p.key] ?? p.default;
-      if (v === undefined || v === null) return false;
-      if (typeof v === "string") return v.trim() !== "";
-      return true;
-    });
+  return params.every((p) => {
+    // A `section` is a layout-only container whose children write flat at this
+    // level — recurse so a required child (e.g. a grouped Sender Email) still
+    // gates. The section param itself carries no value.
+    if (p.type === "section") {
+      return requiredParamsFilled(p.children ?? [], values);
+    }
+    if (!p.required) return true;
+    const v = values[p.key] ?? p.default;
+    if (v === undefined || v === null) return false;
+    if (typeof v === "string") return v.trim() !== "";
+    return true;
+  });
 }
 
 type TestState =
