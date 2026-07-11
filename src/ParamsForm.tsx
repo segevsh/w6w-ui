@@ -277,9 +277,10 @@ function JsonParamField({
 }
 
 /**
- * A `multiselect` param — pick several options from a dropdown. Each selection
- * becomes a pill with an `×` to remove it; the value is an array of the chosen
- * option values. The dropdown only lists options not already selected.
+ * A `multiselect` param — a Material-style chips input: the chosen options render
+ * as removable chips *inside* a single input-like box, followed by a dropdown
+ * (reading as placeholder text) that appends more. Value is an array of the
+ * chosen option values; the dropdown only lists options not already selected.
  */
 function MultiSelectField({
   param,
@@ -314,44 +315,59 @@ function MultiSelectField({
       selected.filter((x) => String(x) !== String(v)),
     );
 
+  const placeholder =
+    typeof param.placeholder === "string" && param.placeholder ? param.placeholder : "Select…";
+
   return (
     <div className="w6w-field">
       <span>
         {param.label ?? param.key}
         {param.required ? " *" : ""}
       </span>
-      {selected.length > 0 && (
-        <div className="w6w-pills">
-          {selected.map((v) => (
-            <span className="w6w-pill" key={String(v)}>
-              {labelFor(v)}
-              {!readOnly && (
-                <button
-                  type="button"
-                  className="w6w-pill-x"
-                  aria-label={`Remove ${labelFor(v)}`}
-                  title="Remove"
-                  onClick={() => remove(v)}
-                >
-                  ×
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-      {!readOnly && (
-        // Controlled to "" so it always reads as a placeholder; picking an option
-        // fires onChange, appends it, then resets.
-        <select value="" disabled={available.length === 0} onChange={(e) => add(e.target.value)}>
-          <option value="">{available.length > 0 ? "+ Add…" : "All options selected"}</option>
-          {available.map((o) => (
-            <option key={String(o.value)} value={String(o.value)}>
-              {o.label}
+      {/* One input-like box: chips inline, then the dropdown as the trailing
+          placeholder — chips appear to live inside the field's boundaries. */}
+      <div className={`w6w-multiselect${readOnly ? " is-readonly" : ""}`}>
+        {selected.map((v) => (
+          <span className="w6w-chip" key={String(v)}>
+            {labelFor(v)}
+            {!readOnly && (
+              <button
+                type="button"
+                className="w6w-chip-x"
+                aria-label={`Remove ${labelFor(v)}`}
+                title="Remove"
+                onClick={() => remove(v)}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        {!readOnly && (
+          // Controlled to "" so it always reads as the trailing placeholder;
+          // picking an option appends a chip and resets.
+          <select
+            className="w6w-multiselect-add"
+            value=""
+            disabled={available.length === 0}
+            aria-label={`Add to ${param.label ?? param.key}`}
+            onChange={(e) => add(e.target.value)}
+          >
+            <option value="">
+              {available.length > 0
+                ? selected.length
+                  ? "Add more…"
+                  : placeholder
+                : "All selected"}
             </option>
-          ))}
-        </select>
-      )}
+            {available.map((o) => (
+              <option key={String(o.value)} value={String(o.value)}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
     </div>
   );

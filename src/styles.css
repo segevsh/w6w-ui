@@ -81,39 +81,72 @@
   color: var(--w6w-muted);
   font-size: 0.8em;
 }
-/* Multi-select chosen values, shown as removable pills. */
-.w6w-pills {
+/* Material-style multi-select: chips live INSIDE a single input-like box,
+   followed by the dropdown which reads as the trailing placeholder. */
+.w6w-multiselect {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 2px;
-}
-.w6w-pill {
-  display: inline-flex;
   align-items: center;
   gap: 6px;
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
-  border-radius: 999px;
-  padding: 3px 6px 3px 10px;
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-height: 38px;
+}
+.w6w-multiselect:focus-within {
+  border-color: var(--w6w-accent);
+}
+.w6w-multiselect.is-readonly {
+  opacity: 0.7;
+}
+/* The add-dropdown blends into the box (no border/background) — compound
+   selector so it beats the global `.w6w-field select` styling. */
+.w6w-field .w6w-multiselect-add,
+.w6w-multiselect .w6w-multiselect-add {
+  flex: 1 1 90px;
+  min-width: 90px;
+  border: none;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 14px;
+  font-family: inherit;
+  padding: 2px 0;
+  outline: none;
+  cursor: pointer;
+}
+.w6w-multiselect .w6w-multiselect-add:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+/* A selected value, rendered as a filled chip inside the box. */
+.w6w-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  padding: 2px 4px 2px 8px;
   font-size: 13px;
+  line-height: 1.4;
   color: var(--w6w-text);
 }
-.w6w-pill-x {
+.w6w-chip-x {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
   border: none;
-  border-radius: 50%;
+  border-radius: 4px;
   background: transparent;
   color: var(--w6w-muted);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
-.w6w-pill-x:hover {
+.w6w-chip-x:hover {
   background: var(--w6w-border);
   color: var(--w6w-text);
 }

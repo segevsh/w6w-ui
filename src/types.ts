@@ -65,6 +65,8 @@ export interface ActionParam {
   required?: boolean;
   default?: unknown;
   hint?: string;
+  /** Placeholder text for the input (e.g. the trailing prompt on a multiselect). */
+  placeholder?: string;
   /**
    * Constrained choices. Renders as a single-select dropdown for `select` (or any
    * param with options), and as a multi-select pill picker for `multiselect`.
