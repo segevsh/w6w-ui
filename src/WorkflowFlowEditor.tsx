@@ -31,6 +31,8 @@ import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import {
   type BuiltStep,
+  type ConfigView,
+  ConfigViewToggle,
   StepBuilderModal,
   StepTestRun,
   requiredParamsFilled,
@@ -716,8 +718,6 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
-type PropsTab = "setup" | "configure" | "test";
-
 function StepEditModal({
   step: initialStep,
   onChange,
@@ -734,15 +734,20 @@ function StepEditModal({
   const api = useW6wApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
-  const [view, setView] = useState<EditView>(initialView);
-  const [propsTab, setPropsTab] = useState<PropsTab>("configure");
-  const [json, setJson] = useState(() => JSON.stringify(initialStep, null, 2));
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  // Editable "incoming state" for the Test tab — JSON merged into the invocation.
+  // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
+  // tab showing form (props) / JSON (code) / node settings (config).
+  const [tab, setTab] = useState<"setup" | "configure" | "test">(
+    initialView === "json" ? "configure" : initialView === "settings" ? "configure" : "configure",
+  );
+  const [configView, setConfigView] = useState<ConfigView>(
+    initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
+  );
+  const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
   const [testState, setTestState] = useState("{}");
+  // Inline step rename (pencil next to the name). `updateStep` fixes up edges.
+  const [renaming, setRenaming] = useState(false);
+  const [draftId, setDraftId] = useState(step.id);
 
-  // Param defs driving the Configure tab, plus the app's full action list and
-  // connections for the Setup tab. Internal nodes use their built-in schema.
   const [params, setParams] = useState<ActionParam[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
@@ -774,7 +779,6 @@ function StepEditModal({
     };
   }, [api, step.uses.app, step.uses.action, isInternal]);
 
-  // Connections for the app (Setup tab connection dropdown).
   useEffect(() => {
     if (isInternal || !step.uses.app) return;
     let canceled = false;
@@ -790,19 +794,22 @@ function StepEditModal({
   const commit = useCallback(
     (next: FlowStep) => {
       setStep(next);
-      setJson(JSON.stringify(next, null, 2));
       onChange(next);
     },
     [onChange],
   );
 
-  function switchTo(next: EditView) {
-    if (next === "json") setJson(JSON.stringify(step, null, 2)); // re-seed from truth
-    setView(next);
-  }
+  const changeConfigView = (v: ConfigView) => {
+    if (v === "code") setCodeText(JSON.stringify(step.with ?? {}, null, 2));
+    setConfigView(v);
+  };
+  const commitRename = () => {
+    const id = draftId.trim();
+    if (id && id !== step.id) commit({ ...step, id });
+    setRenaming(false);
+  };
 
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
-  // Merge the Test tab's incoming-state JSON into the invocation params.
   const testValues = (() => {
     try {
       const extra = JSON.parse(testState);
@@ -814,72 +821,76 @@ function StepEditModal({
     }
   })();
 
-  const iconBtn = (v: EditView, label: string, glyph: ReactNode) => (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={view === v}
-      className={`w6w-icon-btn${view === v ? " active" : ""}`}
-      onClick={() => switchTo(v)}
-    >
-      <ToolbarIcon>{glyph}</ToolbarIcon>
-    </button>
-  );
-
   return (
     <Modal
-      title={`Edit step: ${step.id}`}
+      title="Edit step"
       onClose={onClose}
       size="wide"
-      headerRight={
-        // Props (tabbed form) / JSON / Settings (node config) as compact icons.
-        <div className="w6w-view-toggle">
-          {iconBtn(
-            "props",
-            "Properties",
+      subtitle={
+        <span className="w6w-step-rename">
+          {renaming && !readOnly ? (
+            <input
+              // biome-ignore lint/a11y/noAutofocus: rename input opened on demand
+              autoFocus
+              value={draftId}
+              onChange={(e) => setDraftId(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") {
+                  setDraftId(step.id);
+                  setRenaming(false);
+                }
+              }}
+            />
+          ) : (
             <>
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <line x1="7" y1="8" x2="17" y2="8" />
-              <line x1="7" y1="12" x2="17" y2="12" />
-              <line x1="7" y1="16" x2="13" y2="16" />
-            </>,
+              <code>{step.id}</code>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="w6w-icon-btn w6w-btn-sm"
+                  title="Rename step"
+                  aria-label="Rename step"
+                  onClick={() => {
+                    setDraftId(step.id);
+                    setRenaming(true);
+                  }}
+                >
+                  <ToolbarIcon>
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  </ToolbarIcon>
+                </button>
+              )}
+            </>
           )}
-          {iconBtn(
-            "json",
-            "JSON view",
-            <>
-              <polyline points="16 18 22 12 16 6" />
-              <polyline points="8 6 2 12 8 18" />
-            </>,
-          )}
-          {iconBtn(
-            "settings",
-            "Node settings (retry, error handling, notes)",
-            <>
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </>,
-          )}
-        </div>
+        </span>
       }
     >
-      {view === "props" && (
-        <div className="w6w-stack">
+      <div className="w6w-stepconfig">
+        <div className="w6w-tabsbar">
           <div className="w6w-subtabs">
             {(["setup", "configure", "test"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
-                className={`w6w-subtab${propsTab === t ? " active" : ""}`}
-                onClick={() => setPropsTab(t)}
+                className={`w6w-subtab${tab === t ? " active" : ""}`}
+                onClick={() => setTab(t)}
               >
                 {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
               </button>
             ))}
           </div>
+          <ConfigViewToggle
+            view={configView}
+            onChange={changeConfigView}
+            disabled={tab !== "configure"}
+          />
+        </div>
 
-          {propsTab === "setup" && (
+        <div className="w6w-stepconfig-body">
+          {tab === "setup" && (
             <SetupTab
               step={step}
               app={apps.get(step.uses.app)}
@@ -896,19 +907,39 @@ function StepEditModal({
             />
           )}
 
-          {propsTab === "configure" &&
+          {tab === "configure" &&
             (params === null ? (
               <p className="w6w-muted w6w-small">Loading parameters…</p>
-            ) : (
+            ) : configView === "props" ? (
               <ParamsForm
                 params={params}
                 values={step.with ?? {}}
                 readOnly={readOnly}
                 onChange={(w) => commit({ ...step, with: w })}
               />
+            ) : configView === "code" ? (
+              <JsonEditor
+                value={codeText}
+                onChange={setCodeText}
+                readOnly={readOnly}
+                minHeight="260px"
+                aria-label={`Step ${step.id} params JSON`}
+                onValidChange={(p) =>
+                  p &&
+                  typeof p === "object" &&
+                  !Array.isArray(p) &&
+                  commit({ ...step, with: p as Record<string, unknown> })
+                }
+              />
+            ) : (
+              <NodeConfigForm
+                config={{ retry: step.retry, onError: step.onError, notes: step.notes }}
+                onChange={(c) => commit({ ...step, ...c })}
+                readOnly={readOnly}
+              />
             ))}
 
-          {propsTab === "test" && (
+          {tab === "test" && (
             <div className="w6w-stack">
               {testable ? (
                 <>
@@ -941,53 +972,22 @@ function StepEditModal({
             </div>
           )}
         </div>
-      )}
 
-      {view === "json" && (
-        <div className="w6w-stack">
-          <p className="w6w-muted w6w-small">
-            Edit the whole step as JSON. Changes apply on every valid edit.
-          </p>
-          <JsonEditor
-            value={json}
-            onChange={setJson}
-            readOnly={readOnly}
-            minHeight="300px"
-            aria-label={`Step ${step.id} JSON`}
-            onValidChange={(parsed) => {
-              if (isFlowStep(parsed)) {
-                setJsonError(null);
-                setStep(parsed);
-                onChange(parsed);
-              } else {
-                setJsonError("Not a valid step: needs id and uses.{app,action}.");
-              }
-            }}
-            onValidityChange={({ valid, error }) => {
-              if (!valid) setJsonError(error ?? "Invalid JSON");
-            }}
-          />
-          {jsonError && <div className="w6w-result w6w-error">{jsonError}</div>}
+        <div className="w6w-modal-actions w6w-stepconfig-footer">
+          {tab !== "test" ? (
+            <button
+              type="button"
+              className="w6w-btn"
+              onClick={() => setTab(tab === "setup" ? "configure" : "test")}
+            >
+              Next →
+            </button>
+          ) : (
+            <button type="button" className="w6w-btn" onClick={onClose}>
+              Done
+            </button>
+          )}
         </div>
-      )}
-
-      {view === "settings" && (
-        <div className="w6w-stack">
-          <div className="w6w-muted w6w-small">
-            Base settings for this node — applied on every run.
-          </div>
-          <NodeConfigForm
-            config={{ retry: step.retry, onError: step.onError, notes: step.notes }}
-            onChange={(c) => commit({ ...step, ...c })}
-            readOnly={readOnly}
-          />
-        </div>
-      )}
-
-      <div className="w6w-modal-actions">
-        <button type="button" className="w6w-btn" onClick={onClose}>
-          Done
-        </button>
       </div>
     </Modal>
   );
@@ -1080,16 +1080,5 @@ function SetupTab({
         </label>
       )}
     </div>
-  );
-}
-
-function isFlowStep(v: unknown): v is FlowStep {
-  return (
-    !!v &&
-    typeof v === "object" &&
-    typeof (v as FlowStep).id === "string" &&
-    typeof (v as FlowStep).uses === "object" &&
-    typeof (v as FlowStep).uses.app === "string" &&
-    typeof (v as FlowStep).uses.action === "string"
   );
 }

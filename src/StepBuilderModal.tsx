@@ -43,7 +43,7 @@ type Tab = "connected" | "apps" | "triggers" | "controls" | "utilities";
 type StepConfigTab = "setup" | "configure" | "test";
 
 /** The three representations of the Configure tab: form, raw JSON, node settings. */
-type ConfigView = "props" | "code" | "config";
+export type ConfigView = "props" | "code" | "config";
 
 /** A 15×15 stroked glyph on a 24×24 viewBox (matches the editor's toolbar icons). */
 function Glyph({ children }: { children: ReactNode }) {
@@ -68,7 +68,7 @@ function Glyph({ children }: { children: ReactNode }) {
  * The props / code / config view toggle, right-aligned in the tabs bar. Disabled
  * off the Configure tab (the three views all represent the action's config).
  */
-function ConfigViewToggle({
+export function ConfigViewToggle({
   view,
   onChange,
   disabled,
