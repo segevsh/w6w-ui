@@ -97,8 +97,34 @@ export interface InternalNodeDef {
    * so both app nodes and internal nodes display a consistent icon on the canvas.
    */
   icon: string;
+  /**
+   * Connection ports: how many inbound (entry) and outbound (exit) connections
+   * this node accepts. A port is the ability to receive/emit a connection —
+   * rendered as a React Flow Handle. Defaults to one of each (`{ in: 1, out: 1 }`)
+   * when omitted; a trigger overrides to `{ in: 0, out: 1 }` (nothing flows into
+   * the entry node). Fixed for now — not user-editable.
+   */
+  ports?: NodePorts;
   /** Config schema (same `ActionParam[]` shape apps declare) rendered by ParamsForm. */
   params: ActionParam[];
+}
+
+/** Inbound (entry) and outbound (exit) connection-port counts for a node. */
+export interface NodePorts {
+  in: number;
+  out: number;
+}
+
+/** The default a node gets when it declares no explicit `ports`: 1 in, 1 out. */
+export const DEFAULT_NODE_PORTS: NodePorts = { in: 1, out: 1 };
+
+/**
+ * Resolve a node's connection ports. Internal nodes may declare `ports`
+ * (triggers do, to drop the entry port); everything else — including every
+ * external app step — gets the `{ in: 1, out: 1 }` default.
+ */
+export function nodePorts(app: string, action: string): NodePorts {
+  return internalNodeDef(app, action)?.ports ?? DEFAULT_NODE_PORTS;
 }
 
 // Feather-style 24×24 stroked glyphs (inner markup only; the card supplies the
@@ -139,6 +165,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     displayName: "Manual trigger",
     group: "trigger",
     icon: ICON_TRIGGER,
+    ports: { in: 0, out: 1 },
     params: [],
   },
   {
@@ -148,6 +175,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     displayName: "Webhook",
     group: "trigger",
     icon: ICON_WEBHOOK,
+    ports: { in: 0, out: 1 },
     params: [
       {
         key: "methods",

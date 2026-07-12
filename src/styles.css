@@ -696,6 +696,16 @@ dialog.w6w-modal p {
   min-height: 0;
 }
 
+/* Workflow edges: highlight the selected/focused edge in the accent colour and
+   thicken it, so it's obvious which one Backspace/Delete will remove. The wide,
+   invisible interaction path keeps the click target generous. */
+.w6w-flow .react-flow__edge.selected .react-flow__edge-path,
+.w6w-flow .react-flow__edge:focus .react-flow__edge-path,
+.w6w-flow .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--w6w-accent);
+  stroke-width: 2.5;
+}
+
 /* Per-node control toolbar (React Flow NodeToolbar) */
 .w6w-node-toolbar {
   display: flex;

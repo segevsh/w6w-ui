@@ -1,5 +1,6 @@
 import {
   Background,
+  type Connection,
   Controls,
   type Edge,
   MiniMap,
@@ -47,10 +48,72 @@ import {
   internalNodeParams,
   isControlApp,
   isInternalApp,
+  nodePorts,
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
+
+/**
+ * The hard rules for an edge `source → target` — the ones no amount of
+ * replacement can satisfy: a real, *distinct* pair (no self-loops), no duplicate
+ * edge, the target accepts an entry port (blocks connecting *into* a trigger,
+ * which declares `in: 0`), and the source has an exit port. Port **capacity** is
+ * deliberately NOT checked here: a full single-slot port is freed by replacement
+ * (see `applyConnect`), so dragging a new wire from an already-connected node
+ * re-points it rather than being rejected. Used as the live `isValidConnection`.
+ */
+function canConnect(
+  source: string | null | undefined,
+  target: string | null | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+): boolean {
+  if (!source || !target || source === target) return false;
+  if (edges.some((e) => e.source === source && e.target === target)) return false;
+  const srcStep = nodes.find((n) => n.id === source)?.data.step;
+  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
+  if (!srcStep || !tgtStep) return false;
+  const srcPorts = nodePorts(srcStep.uses.app, srcStep.uses.action);
+  const tgtPorts = nodePorts(tgtStep.uses.app, tgtStep.uses.action);
+  return srcPorts.out >= 1 && tgtPorts.in >= 1;
+}
+
+/**
+ * Build the next edge set for a new `source → target` connection, **replacing**
+ * whatever already occupied the source's exit or the target's entry so
+ * single-slot ports stay at exactly one connection. Drops the oldest conflicting
+ * edge(s) to make room, then appends the new one. Returns `null` when the
+ * connection is disallowed by {@link canConnect}.
+ */
+function applyConnect(
+  source: string | null | undefined,
+  target: string | null | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+): Edge[] | null {
+  if (!canConnect(source, target, nodes, edges) || !source || !target) return null;
+  const srcStep = nodes.find((n) => n.id === source)?.data.step;
+  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
+  if (!srcStep || !tgtStep) return null;
+  const srcPorts = nodePorts(srcStep.uses.app, srcStep.uses.action);
+  const tgtPorts = nodePorts(tgtStep.uses.app, tgtStep.uses.action);
+  let next = edges;
+  // Free the source's exit port: drop the oldest same-source edges so adding one
+  // more stays within out-capacity (for the current 1-out model, replaces it).
+  const fromSrc = next.filter((e) => e.source === source);
+  if (fromSrc.length >= srcPorts.out) {
+    const drop = new Set(fromSrc.slice(0, fromSrc.length - srcPorts.out + 1).map((e) => e.id));
+    next = next.filter((e) => !drop.has(e.id));
+  }
+  // Free the target's entry port likewise.
+  const toTgt = next.filter((e) => e.target === target);
+  if (toTgt.length >= tgtPorts.in) {
+    const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
+    next = next.filter((e) => !drop.has(e.id));
+  }
+  return addEdge({ source, target, id: `${source}->${target}` }, next);
+}
 
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
@@ -137,6 +200,7 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
   const [nodes, setNodes, onNodesChange] = useNodesState<StepNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editView, setEditView] = useState<EditView>("props");
@@ -164,10 +228,19 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
     [value, onChange],
   );
 
+  // Live gate while dragging a connection — React Flow marks the drop invalid
+  // (and won't fire onConnect) when this returns false.
+  const isValidConnection = useCallback(
+    (c: Connection | Edge) => canConnect(c.source, c.target, nodes, edges),
+    [nodes, edges],
+  );
+
   const onConnect = useCallback(
     (params: Parameters<typeof addEdge>[0]) => {
       if (readOnly) return;
-      const next = addEdge({ ...params, id: `${params.source}->${params.target}` }, edges);
+      // applyConnect replaces a full single-slot port rather than ignoring the drop.
+      const next = applyConnect(params.source, params.target, nodes, edges);
+      if (!next) return;
       setEdges(next);
       emitChange(nodes, next);
     },
@@ -183,16 +256,21 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
       if (connectionState.isValid) return;
       const fromNode = connectionState.fromNode;
       if (!fromNode) return;
+      const handleType = connectionState.fromHandle?.type === "target" ? "target" : "source";
+      // Only spawn if the origin handle can participate at all — a source handle
+      // needs an exit port, a target handle an entry port. (A full single-slot
+      // port is fine: the auto-wire below replaces its existing edge.)
+      const originStep = nodes.find((n) => n.id === fromNode.id)?.data.step;
+      if (originStep) {
+        const p = nodePorts(originStep.uses.app, originStep.uses.action);
+        if ((handleType === "source" ? p.out : p.in) < 1) return;
+      }
       const point = "changedTouches" in event ? event.changedTouches[0] : event;
       const position = screenToFlowPosition({ x: point.clientX, y: point.clientY });
-      setPendingConnect({
-        nodeId: fromNode.id,
-        handleType: connectionState.fromHandle?.type === "target" ? "target" : "source",
-        position,
-      });
+      setPendingConnect({ nodeId: fromNode.id, handleType, position });
       setBuilderOpen(true);
     },
-    [readOnly, screenToFlowPosition],
+    [readOnly, screenToFlowPosition, nodes],
   );
 
   const deleteStep = useCallback(
@@ -208,6 +286,18 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
       emitChange(nextNodes, nextEdges);
     },
     [nodes, edges, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
+  );
+
+  const deleteEdge = useCallback(
+    (id: string) => {
+      if (readOnly) return;
+      const nextEdges = edges.filter((e) => e.id !== id);
+      if (nextEdges.length === edges.length) return;
+      setEdges(nextEdges);
+      if (selectedEdgeId === id) setSelectedEdgeId(null);
+      emitChange(nodes, nextEdges);
+    },
+    [nodes, edges, setEdges, emitChange, readOnly, selectedEdgeId],
   );
 
   const duplicateStep = useCallback(
@@ -258,13 +348,14 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
 
       // Auto-wire the edge back to the handle the drag started from. Dragging a
       // source handle points the edge at the new node; a target handle reverses it.
+      // Gated + replacing per the port rules (applyConnect) against the new node.
       let nextEdges = edges;
       if (pendingConnect) {
         const [source, target] =
           pendingConnect.handleType === "target"
             ? [id, pendingConnect.nodeId]
             : [pendingConnect.nodeId, id];
-        nextEdges = addEdge({ source, target, id: `${source}->${target}` }, edges);
+        nextEdges = applyConnect(source, target, nextNodes, edges) ?? edges;
       }
 
       setNodes(nextNodes);
@@ -380,11 +471,11 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
           style={{ width: "100%", height, position: "relative" }}
           onKeyDown={(e) => {
             if (e.key !== "Backspace" && e.key !== "Delete") return;
-            // Only delete a selected node when the key is aimed at the canvas —
-            // never while a modal is open or the user is editing a field. The
-            // modal <dialog> is a DOM descendant here, so its keystrokes bubble
-            // up; without this guard, backspacing a typo deletes the whole node.
-            if (editingId || builderOpen || !selectedId) return;
+            // Only delete the selected node/edge when the key is aimed at the
+            // canvas — never while a modal is open or the user is editing a field.
+            // The modal <dialog> is a DOM descendant here, so its keystrokes
+            // bubble up; without this guard, backspacing a typo deletes a node.
+            if (editingId || builderOpen || (!selectedId && !selectedEdgeId)) return;
             const t = e.target as HTMLElement;
             if (
               t.isContentEditable ||
@@ -396,7 +487,9 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
               return;
             }
             e.preventDefault();
-            deleteStep(selectedId);
+            // A selected node takes precedence (its confirm); else drop the edge.
+            if (selectedId) deleteStep(selectedId);
+            else if (selectedEdgeId) deleteEdge(selectedEdgeId);
           }}
         >
           <ReactFlow
@@ -406,7 +499,11 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onConnectEnd={onConnectEnd}
-            onSelectionChange={({ nodes: sel }) => setSelectedId(sel[0]?.id ?? null)}
+            isValidConnection={isValidConnection}
+            onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
+              setSelectedId(sel[0]?.id ?? null);
+              setSelectedEdgeId(edgeSel[0]?.id ?? null);
+            }}
             nodeTypes={nodeTypes}
             nodesDraggable={!readOnly}
             nodesConnectable={!readOnly}
@@ -628,15 +725,19 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const app = apps.get(step.uses.app);
   // The human app name (fall back to the raw id when the app isn't in the list).
   const appName = app?.displayName || step.uses.app || "—";
+  const ports = nodePorts(step.uses.app, step.uses.action);
   return (
     <div>
       <NodeControls id={id} runnable />
       <div
         style={{
+          // `relative` so the Handles center on the CARD, not the whole node
+          // (which also spans the meta line below) — keeps ports vertically centered.
+          position: "relative",
           border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
           background: "var(--w6w-panel)",
           color: "var(--w6w-text)",
-          borderRadius: 8,
+          borderRadius: 4,
           padding: "8px 12px",
           minWidth: 180,
           fontSize: 13,
@@ -645,7 +746,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        <Handle type="target" position={Position.Left} />
+        {ports.in > 0 && <Handle type="target" position={Position.Left} />}
         <AppIcon
           src={app?.iconSvg}
           srcDark={app?.iconSvgDark}
@@ -659,7 +760,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
-        <Handle type="source" position={Position.Right} />
+        {ports.out > 0 && <Handle type="source" position={Position.Right} />}
       </div>
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
@@ -677,16 +778,21 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const label = internalNodeLabel(step.uses.app, step.uses.action);
   const icon = internalNodeIcon(step.uses.app, step.uses.action);
+  // Ports: triggers have no entry (0 in, 1 out); other internals default to 1/1.
+  const ports = nodePorts(step.uses.app, step.uses.action);
   return (
     <div>
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
         style={{
+          // `relative` so the Handles center on the CARD, not the whole node
+          // (which also spans the meta line below) — keeps ports vertically centered.
+          position: "relative",
           border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
           background: "var(--w6w-panel-2)",
           color: "var(--w6w-text)",
-          borderRadius: 999,
+          borderRadius: 4,
           padding: "6px 14px 6px 8px",
           minWidth: 140,
           fontSize: 13,
@@ -695,7 +801,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        <Handle type="target" position={Position.Left} />
+        {ports.in > 0 && <Handle type="target" position={Position.Left} />}
         {icon && <InternalIcon icon={icon} />}
         <div style={{ minWidth: 0, textAlign: "left" }}>
           <div style={{ fontWeight: 600 }}>{label}</div>
@@ -703,7 +809,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
-        <Handle type="source" position={Position.Right} />
+        {ports.out > 0 && <Handle type="source" position={Position.Right} />}
       </div>
       {/* Meta line under the card: the step id (internal nodes carry no version). */}
       <div
