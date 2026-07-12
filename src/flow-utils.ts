@@ -30,7 +30,7 @@ function computeLayers(steps: FlowStep[], edges: FlowEdge[]): Map<string, number
     incoming.set(s.id, []);
   }
   for (const e of edges) {
-    if (incoming.has(e.to)) incoming.get(e.to)!.push(e.from);
+    incoming.get(e.to)?.push(e.from);
   }
   // Iterate to fixpoint. For a DAG this converges in O(V+E) passes.
   let changed = true;
