@@ -1,5 +1,6 @@
 import {
   Background,
+  type Connection,
   Controls,
   type Edge,
   MiniMap,
@@ -27,9 +28,12 @@ import {
   useState,
 } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
+import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import {
   type BuiltStep,
+  type ConfigView,
+  ConfigViewToggle,
   StepBuilderModal,
   StepTestRun,
   requiredParamsFilled,
@@ -44,10 +48,72 @@ import {
   internalNodeParams,
   isControlApp,
   isInternalApp,
+  nodePorts,
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionParam, AppSummary } from "./types.ts";
+import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
+
+/**
+ * The hard rules for an edge `source → target` — the ones no amount of
+ * replacement can satisfy: a real, *distinct* pair (no self-loops), no duplicate
+ * edge, the target accepts an entry port (blocks connecting *into* a trigger,
+ * which declares `in: 0`), and the source has an exit port. Port **capacity** is
+ * deliberately NOT checked here: a full single-slot port is freed by replacement
+ * (see `applyConnect`), so dragging a new wire from an already-connected node
+ * re-points it rather than being rejected. Used as the live `isValidConnection`.
+ */
+function canConnect(
+  source: string | null | undefined,
+  target: string | null | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+): boolean {
+  if (!source || !target || source === target) return false;
+  if (edges.some((e) => e.source === source && e.target === target)) return false;
+  const srcStep = nodes.find((n) => n.id === source)?.data.step;
+  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
+  if (!srcStep || !tgtStep) return false;
+  const srcPorts = nodePorts(srcStep.uses.app, srcStep.uses.action);
+  const tgtPorts = nodePorts(tgtStep.uses.app, tgtStep.uses.action);
+  return srcPorts.out >= 1 && tgtPorts.in >= 1;
+}
+
+/**
+ * Build the next edge set for a new `source → target` connection, **replacing**
+ * whatever already occupied the source's exit or the target's entry so
+ * single-slot ports stay at exactly one connection. Drops the oldest conflicting
+ * edge(s) to make room, then appends the new one. Returns `null` when the
+ * connection is disallowed by {@link canConnect}.
+ */
+function applyConnect(
+  source: string | null | undefined,
+  target: string | null | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+): Edge[] | null {
+  if (!canConnect(source, target, nodes, edges) || !source || !target) return null;
+  const srcStep = nodes.find((n) => n.id === source)?.data.step;
+  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
+  if (!srcStep || !tgtStep) return null;
+  const srcPorts = nodePorts(srcStep.uses.app, srcStep.uses.action);
+  const tgtPorts = nodePorts(tgtStep.uses.app, tgtStep.uses.action);
+  let next = edges;
+  // Free the source's exit port: drop the oldest same-source edges so adding one
+  // more stays within out-capacity (for the current 1-out model, replaces it).
+  const fromSrc = next.filter((e) => e.source === source);
+  if (fromSrc.length >= srcPorts.out) {
+    const drop = new Set(fromSrc.slice(0, fromSrc.length - srcPorts.out + 1).map((e) => e.id));
+    next = next.filter((e) => !drop.has(e.id));
+  }
+  // Free the target's entry port likewise.
+  const toTgt = next.filter((e) => e.target === target);
+  if (toTgt.length >= tgtPorts.in) {
+    const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
+    next = next.filter((e) => !drop.has(e.id));
+  }
+  return addEdge({ source, target, id: `${source}->${target}` }, next);
+}
 
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
@@ -74,8 +140,8 @@ export interface WorkflowFlowEditorProps {
  */
 const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
 
-/** Which view the step edit modal opens in. */
-type EditView = "form" | "json";
+/** Which view the step edit modal opens in: the tabbed form, raw JSON, or node settings. */
+type EditView = "props" | "json" | "settings";
 
 /** Per-node control handlers, provided to the node cards via context. */
 interface StepControls {
@@ -134,9 +200,10 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
   const [nodes, setNodes, onNodesChange] = useNodesState<StepNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editView, setEditView] = useState<EditView>("form");
+  const [editView, setEditView] = useState<EditView>("props");
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -161,10 +228,19 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
     [value, onChange],
   );
 
+  // Live gate while dragging a connection — React Flow marks the drop invalid
+  // (and won't fire onConnect) when this returns false.
+  const isValidConnection = useCallback(
+    (c: Connection | Edge) => canConnect(c.source, c.target, nodes, edges),
+    [nodes, edges],
+  );
+
   const onConnect = useCallback(
     (params: Parameters<typeof addEdge>[0]) => {
       if (readOnly) return;
-      const next = addEdge({ ...params, id: `${params.source}->${params.target}` }, edges);
+      // applyConnect replaces a full single-slot port rather than ignoring the drop.
+      const next = applyConnect(params.source, params.target, nodes, edges);
+      if (!next) return;
       setEdges(next);
       emitChange(nodes, next);
     },
@@ -180,16 +256,21 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
       if (connectionState.isValid) return;
       const fromNode = connectionState.fromNode;
       if (!fromNode) return;
+      const handleType = connectionState.fromHandle?.type === "target" ? "target" : "source";
+      // Only spawn if the origin handle can participate at all — a source handle
+      // needs an exit port, a target handle an entry port. (A full single-slot
+      // port is fine: the auto-wire below replaces its existing edge.)
+      const originStep = nodes.find((n) => n.id === fromNode.id)?.data.step;
+      if (originStep) {
+        const p = nodePorts(originStep.uses.app, originStep.uses.action);
+        if ((handleType === "source" ? p.out : p.in) < 1) return;
+      }
       const point = "changedTouches" in event ? event.changedTouches[0] : event;
       const position = screenToFlowPosition({ x: point.clientX, y: point.clientY });
-      setPendingConnect({
-        nodeId: fromNode.id,
-        handleType: connectionState.fromHandle?.type === "target" ? "target" : "source",
-        position,
-      });
+      setPendingConnect({ nodeId: fromNode.id, handleType, position });
       setBuilderOpen(true);
     },
-    [readOnly, screenToFlowPosition],
+    [readOnly, screenToFlowPosition, nodes],
   );
 
   const deleteStep = useCallback(
@@ -205,6 +286,18 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
       emitChange(nextNodes, nextEdges);
     },
     [nodes, edges, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
+  );
+
+  const deleteEdge = useCallback(
+    (id: string) => {
+      if (readOnly) return;
+      const nextEdges = edges.filter((e) => e.id !== id);
+      if (nextEdges.length === edges.length) return;
+      setEdges(nextEdges);
+      if (selectedEdgeId === id) setSelectedEdgeId(null);
+      emitChange(nodes, nextEdges);
+    },
+    [nodes, edges, setEdges, emitChange, readOnly, selectedEdgeId],
   );
 
   const duplicateStep = useCallback(
@@ -255,13 +348,14 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
 
       // Auto-wire the edge back to the handle the drag started from. Dragging a
       // source handle points the edge at the new node; a target handle reverses it.
+      // Gated + replacing per the port rules (applyConnect) against the new node.
       let nextEdges = edges;
       if (pendingConnect) {
         const [source, target] =
           pendingConnect.handleType === "target"
             ? [id, pendingConnect.nodeId]
             : [pendingConnect.nodeId, id];
-        nextEdges = addEdge({ source, target, id: `${source}->${target}` }, edges);
+        nextEdges = applyConnect(source, target, nextNodes, edges) ?? edges;
       }
 
       setNodes(nextNodes);
@@ -344,7 +438,7 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
   const controls = useMemo<StepControls>(
     () => ({
       onEdit: (id) => {
-        setEditView("form");
+        setEditView("props");
         setEditingId(id);
       },
       onEditJson: (id) => {
@@ -377,11 +471,11 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
           style={{ width: "100%", height, position: "relative" }}
           onKeyDown={(e) => {
             if (e.key !== "Backspace" && e.key !== "Delete") return;
-            // Only delete a selected node when the key is aimed at the canvas —
-            // never while a modal is open or the user is editing a field. The
-            // modal <dialog> is a DOM descendant here, so its keystrokes bubble
-            // up; without this guard, backspacing a typo deletes the whole node.
-            if (editingId || builderOpen || !selectedId) return;
+            // Only delete the selected node/edge when the key is aimed at the
+            // canvas — never while a modal is open or the user is editing a field.
+            // The modal <dialog> is a DOM descendant here, so its keystrokes
+            // bubble up; without this guard, backspacing a typo deletes a node.
+            if (editingId || builderOpen || (!selectedId && !selectedEdgeId)) return;
             const t = e.target as HTMLElement;
             if (
               t.isContentEditable ||
@@ -393,7 +487,9 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
               return;
             }
             e.preventDefault();
-            deleteStep(selectedId);
+            // A selected node takes precedence (its confirm); else drop the edge.
+            if (selectedId) deleteStep(selectedId);
+            else if (selectedEdgeId) deleteEdge(selectedEdgeId);
           }}
         >
           <ReactFlow
@@ -403,7 +499,11 @@ function Inner({ value, onChange, readOnly, height = 480, apps }: WorkflowFlowEd
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onConnectEnd={onConnectEnd}
-            onSelectionChange={({ nodes: sel }) => setSelectedId(sel[0]?.id ?? null)}
+            isValidConnection={isValidConnection}
+            onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
+              setSelectedId(sel[0]?.id ?? null);
+              setSelectedEdgeId(edgeSel[0]?.id ?? null);
+            }}
             nodeTypes={nodeTypes}
             nodesDraggable={!readOnly}
             nodesConnectable={!readOnly}
@@ -557,18 +657,6 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
       <button
         type="button"
         className="w6w-node-toolbar-btn"
-        title="Edit as JSON"
-        aria-label="Edit step as JSON"
-        onClick={() => ctrl.onEditJson(id)}
-      >
-        <ToolbarIcon>
-          <polyline points="16 18 22 12 16 6" />
-          <polyline points="8 6 2 12 8 18" />
-        </ToolbarIcon>
-      </button>
-      <button
-        type="button"
-        className="w6w-node-toolbar-btn"
         title="Duplicate"
         aria-label="Duplicate step"
         onClick={() => ctrl.onDuplicate(id)}
@@ -637,15 +725,19 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const app = apps.get(step.uses.app);
   // The human app name (fall back to the raw id when the app isn't in the list).
   const appName = app?.displayName || step.uses.app || "—";
+  const ports = nodePorts(step.uses.app, step.uses.action);
   return (
     <div>
       <NodeControls id={id} runnable />
       <div
         style={{
+          // `relative` so the Handles center on the CARD, not the whole node
+          // (which also spans the meta line below) — keeps ports vertically centered.
+          position: "relative",
           border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
           background: "var(--w6w-panel)",
           color: "var(--w6w-text)",
-          borderRadius: 8,
+          borderRadius: 4,
           padding: "8px 12px",
           minWidth: 180,
           fontSize: 13,
@@ -654,7 +746,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        <Handle type="target" position={Position.Left} />
+        {ports.in > 0 && <Handle type="target" position={Position.Left} />}
         <AppIcon
           src={app?.iconSvg}
           srcDark={app?.iconSvgDark}
@@ -668,7 +760,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
-        <Handle type="source" position={Position.Right} />
+        {ports.out > 0 && <Handle type="source" position={Position.Right} />}
       </div>
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
@@ -686,16 +778,21 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const label = internalNodeLabel(step.uses.app, step.uses.action);
   const icon = internalNodeIcon(step.uses.app, step.uses.action);
+  // Ports: triggers have no entry (0 in, 1 out); other internals default to 1/1.
+  const ports = nodePorts(step.uses.app, step.uses.action);
   return (
     <div>
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
         style={{
+          // `relative` so the Handles center on the CARD, not the whole node
+          // (which also spans the meta line below) — keeps ports vertically centered.
+          position: "relative",
           border: `1px solid ${selected ? "var(--w6w-accent)" : "var(--w6w-border)"}`,
           background: "var(--w6w-panel-2)",
           color: "var(--w6w-text)",
-          borderRadius: 999,
+          borderRadius: 4,
           padding: "6px 14px 6px 8px",
           minWidth: 140,
           fontSize: 13,
@@ -704,7 +801,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        <Handle type="target" position={Position.Left} />
+        {ports.in > 0 && <Handle type="target" position={Position.Left} />}
         {icon && <InternalIcon icon={icon} />}
         <div style={{ minWidth: 0, textAlign: "left" }}>
           <div style={{ fontWeight: 600 }}>{label}</div>
@@ -712,7 +809,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
-        <Handle type="source" position={Position.Right} />
+        {ports.out > 0 && <Handle type="source" position={Position.Right} />}
       </div>
       {/* Meta line under the card: the step id (internal nodes carry no version). */}
       <div
@@ -732,7 +829,7 @@ function StepEditModal({
   onChange,
   onClose,
   readOnly,
-  initialView = "form",
+  initialView = "props",
 }: {
   step: FlowStep;
   onChange: (next: FlowStep) => void;
@@ -741,21 +838,32 @@ function StepEditModal({
   initialView?: EditView;
 }) {
   const api = useW6wApi();
+  const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
-  const [view, setView] = useState<EditView>(initialView);
-  const [json, setJson] = useState(() => JSON.stringify(initialStep, null, 2));
-  const [jsonError, setJsonError] = useState<string | null>(null);
+  // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
+  // tab showing form (props) / JSON (code) / node settings (config).
+  const [tab, setTab] = useState<"setup" | "configure" | "test">(
+    initialView === "json" ? "configure" : initialView === "settings" ? "configure" : "configure",
+  );
+  const [configView, setConfigView] = useState<ConfigView>(
+    initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
+  );
+  const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
+  const [testState, setTestState] = useState("{}");
+  // Inline step rename (pencil next to the name). `updateStep` fixes up edges.
+  const [renaming, setRenaming] = useState(false);
+  const [draftId, setDraftId] = useState(step.id);
 
-  // Param defs driving the Form view. Internal pseudo-app nodes use their
-  // built-in schema; app actions fetch theirs from the registry. Either way the
-  // same ParamsForm renders the config.
   const [params, setParams] = useState<ActionParam[] | null>(null);
+  const [actions, setActions] = useState<ActionDef[] | null>(null);
+  const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
   const isInternal = isInternalApp(step.uses.app);
 
-  // Refetch action param defs whenever the app/action identity changes.
+  // Refetch actions + params whenever the app/action identity changes.
   useEffect(() => {
     if (isInternal) {
       setParams(internalNodeParams(step.uses.app, step.uses.action));
+      setActions(null);
       return;
     }
     if (!step.uses.app || !step.uses.action) {
@@ -766,10 +874,10 @@ function StepEditModal({
     setParams(null);
     api
       .getAppActions(step.uses.app)
-      .then((actions) => {
+      .then((acts) => {
         if (canceled) return;
-        const def = actions.find((a) => a.key === step.uses.action);
-        setParams(def?.params ?? []);
+        setActions(acts);
+        setParams(acts.find((a) => a.key === step.uses.action)?.params ?? []);
       })
       .catch(() => !canceled && setParams([]));
     return () => {
@@ -777,142 +885,307 @@ function StepEditModal({
     };
   }, [api, step.uses.app, step.uses.action, isInternal]);
 
-  // Commit a new step: update local state, re-seed JSON, and propagate up.
+  useEffect(() => {
+    if (isInternal || !step.uses.app) return;
+    let canceled = false;
+    api
+      .listConnectionsForApp(step.uses.app)
+      .then((c) => !canceled && setConns(c))
+      .catch(() => !canceled && setConns([]));
+    return () => {
+      canceled = true;
+    };
+  }, [api, step.uses.app, isInternal]);
+
   const commit = useCallback(
     (next: FlowStep) => {
       setStep(next);
-      setJson(JSON.stringify(next, null, 2));
       onChange(next);
     },
     [onChange],
   );
 
-  function switchTo(next: EditView) {
-    if (next === "json") setJson(JSON.stringify(step, null, 2)); // re-seed from truth
-    setView(next);
-  }
+  const changeConfigView = (v: ConfigView) => {
+    if (v === "code") setCodeText(JSON.stringify(step.with ?? {}, null, 2));
+    setConfigView(v);
+  };
+  const commitRename = () => {
+    const id = draftId.trim();
+    if (id && id !== step.id) commit({ ...step, id });
+    setRenaming(false);
+  };
+
+  const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
+  const testValues = (() => {
+    try {
+      const extra = JSON.parse(testState);
+      return extra && typeof extra === "object"
+        ? { ...(step.with ?? {}), ...(extra as Record<string, unknown>) }
+        : (step.with ?? {});
+    } catch {
+      return step.with ?? {};
+    }
+  })();
 
   return (
     <Modal
-      title={`Edit step: ${step.id}`}
+      title="Edit step"
       onClose={onClose}
       size="wide"
-      headerRight={
-        // Form ⇄ JSON as compact icon buttons, inline with the title.
-        <div className="w6w-view-toggle">
-          <button
-            type="button"
-            title="Form view"
-            aria-label="Form view"
-            aria-pressed={view === "form"}
-            className={`w6w-icon-btn${view === "form" ? " active" : ""}`}
-            onClick={() => switchTo("form")}
-          >
-            <ToolbarIcon>
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <line x1="7" y1="8" x2="17" y2="8" />
-              <line x1="7" y1="12" x2="17" y2="12" />
-              <line x1="7" y1="16" x2="13" y2="16" />
-            </ToolbarIcon>
-          </button>
-          <button
-            type="button"
-            title="JSON view"
-            aria-label="JSON view"
-            aria-pressed={view === "json"}
-            className={`w6w-icon-btn${view === "json" ? " active" : ""}`}
-            onClick={() => switchTo("json")}
-          >
-            <ToolbarIcon>
-              <polyline points="16 18 22 12 16 6" />
-              <polyline points="8 6 2 12 8 18" />
-            </ToolbarIcon>
-          </button>
-        </div>
+      subtitle={
+        <span className="w6w-step-rename">
+          {renaming && !readOnly ? (
+            <input
+              // biome-ignore lint/a11y/noAutofocus: rename input opened on demand
+              autoFocus
+              value={draftId}
+              onChange={(e) => setDraftId(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") {
+                  setDraftId(step.id);
+                  setRenaming(false);
+                }
+              }}
+            />
+          ) : (
+            <>
+              <code>{step.id}</code>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="w6w-icon-btn w6w-btn-sm"
+                  title="Rename step"
+                  aria-label="Rename step"
+                  onClick={() => {
+                    setDraftId(step.id);
+                    setRenaming(true);
+                  }}
+                >
+                  <ToolbarIcon>
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  </ToolbarIcon>
+                </button>
+              )}
+            </>
+          )}
+        </span>
       }
     >
-      {view === "form" ? (
-        <div className="w6w-stack">
-          {/* Identity — step id · app · action — read-only, on one line.
-              (Connection is set in the builder; it's not an editable field here.) */}
-          <div className="w6w-step-meta">
-            <code>{step.id}</code>
-            <span>·</span>
-            <code>{step.uses.app || "—"}</code>
-            <span>·</span>
-            <code>{step.uses.action || "—"}</code>
+      <div className="w6w-stepconfig">
+        <div className="w6w-tabsbar">
+          <div className="w6w-subtabs">
+            {(["setup", "configure", "test"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`w6w-subtab${tab === t ? " active" : ""}`}
+                onClick={() => setTab(t)}
+              >
+                {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
+              </button>
+            ))}
           </div>
-          <div>
-            <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-              {isInternal ? "Configuration" : "Parameters"}
-            </div>
-            {params === null ? (
+          <ConfigViewToggle
+            view={configView}
+            onChange={changeConfigView}
+            disabled={tab !== "configure"}
+          />
+        </div>
+
+        <div className="w6w-stepconfig-body">
+          {tab === "setup" && (
+            <SetupTab
+              step={step}
+              app={apps.get(step.uses.app)}
+              actions={actions}
+              conns={conns}
+              isInternal={isInternal}
+              readOnly={readOnly}
+              onChangeAction={(action) =>
+                commit({ ...step, uses: { ...step.uses, action }, with: {} })
+              }
+              onChangeConnection={(connection) =>
+                commit({ ...step, uses: { ...step.uses, connection } })
+              }
+            />
+          )}
+
+          {tab === "configure" &&
+            (params === null ? (
               <p className="w6w-muted w6w-small">Loading parameters…</p>
-            ) : (
+            ) : configView === "props" ? (
               <ParamsForm
                 params={params}
                 values={step.with ?? {}}
                 readOnly={readOnly}
                 onChange={(w) => commit({ ...step, with: w })}
               />
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="w6w-stack">
-          <p className="w6w-muted w6w-small">
-            Edit the whole step as JSON. Changes apply on every valid edit.
-          </p>
-          <JsonEditor
-            value={json}
-            onChange={setJson}
-            readOnly={readOnly}
-            minHeight="300px"
-            aria-label={`Step ${step.id} JSON`}
-            onValidChange={(parsed) => {
-              if (isFlowStep(parsed)) {
-                setJsonError(null);
-                setStep(parsed);
-                onChange(parsed);
-              } else {
-                setJsonError("Not a valid step: needs id and uses.{app,action}.");
-              }
-            }}
-            onValidityChange={({ valid, error }) => {
-              if (!valid) setJsonError(error ?? "Invalid JSON");
-            }}
-          />
-          {jsonError && <div className="w6w-result w6w-error">{jsonError}</div>}
-        </div>
-      )}
+            ) : configView === "code" ? (
+              <JsonEditor
+                value={codeText}
+                onChange={setCodeText}
+                readOnly={readOnly}
+                minHeight="260px"
+                height="100%"
+                aria-label={`Step ${step.id} params JSON`}
+                onValidChange={(p) =>
+                  p &&
+                  typeof p === "object" &&
+                  !Array.isArray(p) &&
+                  commit({ ...step, with: p as Record<string, unknown> })
+                }
+              />
+            ) : (
+              <NodeConfigForm
+                config={{ retry: step.retry, onError: step.onError, notes: step.notes }}
+                onChange={(c) => commit({ ...step, ...c })}
+                readOnly={readOnly}
+              />
+            ))}
 
-      {/* Inline test run — app actions + testable internal nodes (not flow control). */}
-      {step.uses.app && step.uses.action && !isControlApp(step.uses.app) && params && (
-        <StepTestRun
-          app={step.uses.app}
-          action={step.uses.action}
-          connectionId={step.uses.connection ?? undefined}
-          values={step.with ?? {}}
-          canRun={requiredParamsFilled(params, step.with ?? {})}
-        />
-      )}
+          {tab === "test" && (
+            <div className="w6w-stack">
+              {testable ? (
+                <>
+                  <label className="w6w-field">
+                    <span>Incoming state</span>
+                    <textarea
+                      rows={3}
+                      value={testState}
+                      readOnly={readOnly}
+                      spellCheck={false}
+                      onChange={(e) => setTestState(e.target.value)}
+                    />
+                    <span className="w6w-hint">
+                      Optional JSON merged into the test call (e.g. a script's <code>input</code>).
+                    </span>
+                  </label>
+                  <StepTestRun
+                    app={step.uses.app}
+                    action={step.uses.action}
+                    connectionId={step.uses.connection ?? undefined}
+                    values={testValues}
+                    canRun={!!params && requiredParamsFilled(params, testValues)}
+                  />
+                </>
+              ) : (
+                <p className="w6w-muted w6w-small">
+                  Flow-control nodes can't be tested on their own.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
 
-      <div className="w6w-modal-actions">
-        <button type="button" className="w6w-btn" onClick={onClose}>
-          Done
-        </button>
+        <div className="w6w-modal-actions w6w-stepconfig-footer">
+          {tab !== "test" ? (
+            <button
+              type="button"
+              className="w6w-btn"
+              onClick={() => setTab(tab === "setup" ? "configure" : "test")}
+            >
+              Next →
+            </button>
+          ) : (
+            <button type="button" className="w6w-btn" onClick={onClose}>
+              Done
+            </button>
+          )}
+        </div>
       </div>
     </Modal>
   );
 }
 
-function isFlowStep(v: unknown): v is FlowStep {
+/**
+ * The Setup tab — the step's app (read-only), its action (a dropdown for app
+ * steps), and its connection. Mirrors the top of a Zapier node.
+ */
+function SetupTab({
+  step,
+  app,
+  actions,
+  conns,
+  isInternal,
+  readOnly,
+  onChangeAction,
+  onChangeConnection,
+}: {
+  step: FlowStep;
+  app: AppSummary | undefined;
+  actions: ActionDef[] | null;
+  conns: ConnectionSummary[] | null;
+  isInternal: boolean;
+  readOnly?: boolean;
+  onChangeAction: (action: string) => void;
+  onChangeConnection: (connection: string | undefined) => void;
+}) {
   return (
-    !!v &&
-    typeof v === "object" &&
-    typeof (v as FlowStep).id === "string" &&
-    typeof (v as FlowStep).uses === "object" &&
-    typeof (v as FlowStep).uses.app === "string" &&
-    typeof (v as FlowStep).uses.action === "string"
+    <div className="w6w-stack">
+      <div className="w6w-field">
+        <span>App</span>
+        <div className="w6w-conn-label">
+          {!isInternal && app && (
+            <AppIcon
+              src={app.iconSvg}
+              srcDark={app.iconSvgDark}
+              brandColor={app.brandColor}
+              name={app.displayName}
+              size={20}
+            />
+          )}
+          <span className="w6w-conn-label-name">
+            {isInternal ? step.uses.app : (app?.displayName ?? step.uses.app)}
+          </span>
+        </div>
+      </div>
+
+      {isInternal ? (
+        <div className="w6w-field">
+          <span>Action</span>
+          <div className="w6w-muted w6w-small">
+            <code>{step.uses.action}</code>
+          </div>
+        </div>
+      ) : (
+        <label className="w6w-field">
+          <span>Action</span>
+          <select
+            value={step.uses.action}
+            disabled={readOnly || actions === null}
+            onChange={(e) => onChangeAction(e.target.value)}
+          >
+            {actions === null && <option>{step.uses.action}</option>}
+            {(actions ?? []).map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.title ?? a.key}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {!isInternal && (
+        <label className="w6w-field">
+          <span>Connection</span>
+          <select
+            value={step.uses.connection ?? ""}
+            disabled={readOnly}
+            onChange={(e) => onChangeConnection(e.target.value || undefined)}
+          >
+            <option value="">— none —</option>
+            {(conns ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.displayName || c.id}
+                {c.state ? ` (${c.state})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
   );
 }

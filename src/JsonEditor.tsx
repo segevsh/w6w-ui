@@ -1,5 +1,5 @@
 import { json, jsonParseLinter } from "@codemirror/lang-json";
-import { linter, lintGutter } from "@codemirror/lint";
+import { lintGutter, linter } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { useMemo } from "react";
@@ -23,6 +23,12 @@ export interface JsonEditorProps {
   minHeight?: string;
   /** Maximum editor height before scrolling. Defaults to no cap. */
   maxHeight?: string;
+  /**
+   * Explicit editor height. Pass `"100%"` to fill a flex parent (the whole-config
+   * "code" view). Omit to let the editor grow with its content between
+   * `minHeight` and `maxHeight` — an inline JSON/group field wants this.
+   */
+  height?: string;
 
   /** Read-only mode — useful for previewing a stored definition. */
   readOnly?: boolean;
@@ -94,11 +100,7 @@ export function JsonEditor(props: JsonEditorProps) {
   }
 
   return (
-    <div
-      className="w6w-json-editor"
-      style={{ minHeight: props.minHeight ?? "240px", maxHeight: props.maxHeight }}
-      aria-label={props["aria-label"] ?? "JSON editor"}
-    >
+    <div className="w6w-json-editor" aria-label={props["aria-label"] ?? "JSON editor"}>
       <CodeMirror
         value={props.value}
         onChange={handleChange}
@@ -106,6 +108,9 @@ export function JsonEditor(props: JsonEditorProps) {
         placeholder={props.placeholder}
         readOnly={props.readOnly}
         theme={resolveTheme(props.theme)}
+        height={props.height}
+        minHeight={props.minHeight ?? "240px"}
+        maxHeight={props.maxHeight}
         basicSetup={{
           lineNumbers: true,
           foldGutter: true,

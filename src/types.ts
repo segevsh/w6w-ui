@@ -54,28 +54,104 @@ export interface ActionParam {
     | "text"
     | "number"
     | "boolean"
+    | "select"
+    | "multiselect"
+    | "array"
     | "json"
     | "group"
     | "secret"
     | "code"
     | "vars"
+    | "section"
     | string;
   required?: boolean;
   default?: unknown;
   hint?: string;
+  /** Placeholder text for the input (e.g. the trailing prompt on a multiselect). */
+  placeholder?: string;
   /**
-   * Constrained choices. When present the field renders as a dropdown even for a
-   * `string` param — e.g. an HTTP method limited to GET/POST/… .
+   * Move this (optional) param under the collapsed "Additional parameters"
+   * section. Required + non-advanced params show up front. Ignored for required
+   * params (they always show).
+   */
+  advanced?: boolean;
+  /**
+   * Lay this param out on a shared row with adjacent params carrying the same
+   * `row` id — e.g. a username/password pair side by side.
+   */
+  row?: string;
+  /** Element schema when `type: "array"` (a scalar list or a list of objects). */
+  item?: ParamArrayItem;
+  /**
+   * Conditional visibility — the param renders only when this predicate holds
+   * against a sibling field's value. Lets a schema declare conditional sections
+   * (e.g. Basic-auth fields shown only when `auth` is `"basic"`).
+   */
+  showIf?: ParamCondition;
+  /**
+   * Constrained choices. Renders as a single-select dropdown for `select` (or any
+   * param with options), and as a multi-select pill picker for `multiselect`.
    */
   options?: ParamOption[];
   /** Type-specific render/behavior options. */
   config?: ParamConfig;
+  /**
+   * Nested params, walked by the renderer for `type: "group"` (nested object)
+   * and `type: "section"` (layout-only container whose children write to the
+   * ENCLOSING form values, not under this param's key).
+   */
+  children?: ActionParam[];
+  /**
+   * `type: "section"` only — the container behavior. `"collapsible"` renders a
+   * titled, collapsed-by-default disclosure; `"group"` a `layout` row/stack.
+   */
+  section?: "collapsible" | "group";
+  /** `section: "collapsible"` only — the `<summary>` heading. */
+  title?: string;
+  /** `section: "collapsible"` only — an optional secondary summary line. */
+  subtitle?: string;
+  /** `section: "group"` only — `"row"` side by side, `"stack"` vertical (default). */
+  layout?: "row" | "stack";
+  /** `section: "collapsible"` only — start collapsed (default `true`). */
+  collapsed?: boolean;
 }
 
 /** A single choice for a param rendered as a dropdown. */
 export interface ParamOption {
   value: string | number;
   label: string;
+}
+
+/**
+ * The element schema for a `type: "array"` param. Either a scalar list
+ * (`type: "string" | "number"`, each item a single value) or a list of objects
+ * (`type: "object"` with `fields`, each item a `{ [key]: value }` record whose
+ * fields render side by side).
+ */
+export interface ParamArrayItem {
+  type: "string" | "number" | "object" | string;
+  /** For object items — the fields of each element (rendered inline in a row). */
+  fields?: ActionParam[];
+  /** Placeholder for a scalar item's input. */
+  placeholder?: string;
+}
+
+/**
+ * A conditional-visibility predicate tested against a sibling param's value.
+ * Exactly one of `equals` / `in` / `notIn` / `truthy` is used (checked in that
+ * order). The compared value falls back to the sibling's `default` when unset.
+ */
+export interface ParamCondition {
+  /** Sibling param key whose value is tested. */
+  field: string;
+  /** Visible when the field's value strictly equals this. */
+  equals?: string | number | boolean;
+  /** Visible when the field's value is one of these. */
+  in?: Array<string | number | boolean>;
+  /** Visible when the field's value is NOT one of these. */
+  notIn?: Array<string | number | boolean>;
+  /** Visible when the field's value is truthy (`true`) or falsy (`false`). */
+  truthy?: boolean;
 }
 
 /** Type-specific render/behavior options for a param. */

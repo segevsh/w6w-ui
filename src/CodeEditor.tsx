@@ -12,6 +12,8 @@ export interface CodeEditorProps {
   minHeight?: string;
   /** Maximum editor height before scrolling. Defaults to no cap. */
   maxHeight?: string;
+  /** Explicit editor height. Pass `"100%"` to fill a flex parent. */
+  height?: string;
   /** Read-only mode. */
   readOnly?: boolean;
   /**
@@ -56,11 +58,7 @@ export function CodeEditor(props: CodeEditorProps) {
   );
 
   return (
-    <div
-      className="w6w-code-editor"
-      style={{ minHeight: props.minHeight ?? "160px", maxHeight: props.maxHeight }}
-      aria-label={props["aria-label"] ?? "Code editor"}
-    >
+    <div className="w6w-code-editor" aria-label={props["aria-label"] ?? "Code editor"}>
       <CodeMirror
         value={props.value}
         onChange={props.onChange}
@@ -68,6 +66,9 @@ export function CodeEditor(props: CodeEditorProps) {
         placeholder={props.placeholder}
         readOnly={props.readOnly}
         theme={resolveTheme(props.theme)}
+        height={props.height}
+        minHeight={props.minHeight ?? "160px"}
+        maxHeight={props.maxHeight}
         basicSetup={{
           lineNumbers: true,
           foldGutter: false,

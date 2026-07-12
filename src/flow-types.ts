@@ -14,7 +14,15 @@ export interface FlowStep {
     backoff?: "fixed" | "exponential";
     delayMs?: number;
   };
-  onError?: "fail" | "continue";
+  /**
+   * What to do when this step errors:
+   * - `fail` — stop the run (default)
+   * - `continue` — swallow the error and keep going
+   * - `continue-record` — keep going, but record the error into the run's end state
+   */
+  onError?: "fail" | "continue" | "continue-record";
+  /** Free-form author notes for this step. Not executed. */
+  notes?: string;
 }
 
 export interface FlowEdge {
@@ -55,6 +63,10 @@ export const DATA_APP = "@w6w/data";
 export const TRIGGER_APP = "@w6w/trigger";
 /** Host-run outbound HTTP(S) request. */
 export const HTTP_APP = "@w6w/http";
+/** Inbound HTTP(S) webhook trigger (entry node; provisions a receive URL). */
+export const WEBHOOK_APP = "@w6w/webhook";
+/** "Respond to Webhook" — shapes the HTTP response for `responseMode: responseNode`. */
+export const RESPOND_APP = "@w6w/respond";
 
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
@@ -85,8 +97,34 @@ export interface InternalNodeDef {
    * so both app nodes and internal nodes display a consistent icon on the canvas.
    */
   icon: string;
+  /**
+   * Connection ports: how many inbound (entry) and outbound (exit) connections
+   * this node accepts. A port is the ability to receive/emit a connection —
+   * rendered as a React Flow Handle. Defaults to one of each (`{ in: 1, out: 1 }`)
+   * when omitted; a trigger overrides to `{ in: 0, out: 1 }` (nothing flows into
+   * the entry node). Fixed for now — not user-editable.
+   */
+  ports?: NodePorts;
   /** Config schema (same `ActionParam[]` shape apps declare) rendered by ParamsForm. */
   params: ActionParam[];
+}
+
+/** Inbound (entry) and outbound (exit) connection-port counts for a node. */
+export interface NodePorts {
+  in: number;
+  out: number;
+}
+
+/** The default a node gets when it declares no explicit `ports`: 1 in, 1 out. */
+export const DEFAULT_NODE_PORTS: NodePorts = { in: 1, out: 1 };
+
+/**
+ * Resolve a node's connection ports. Internal nodes may declare `ports`
+ * (triggers do, to drop the entry port); everything else — including every
+ * external app step — gets the `{ in: 1, out: 1 }` default.
+ */
+export function nodePorts(app: string, action: string): NodePorts {
+  return internalNodeDef(app, action)?.ports ?? DEFAULT_NODE_PORTS;
 }
 
 // Feather-style 24×24 stroked glyphs (inner markup only; the card supplies the
@@ -112,6 +150,11 @@ const ICON_DATA =
 /** Globe — an outbound HTTP(S) request. */
 const ICON_HTTP =
   '<circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />';
+/** Connected nodes — an inbound webhook. */
+const ICON_WEBHOOK =
+  '<circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />';
+/** Reply arrow — respond to the caller. */
+const ICON_RESPOND = '<polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" />';
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
@@ -122,7 +165,136 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     displayName: "Manual trigger",
     group: "trigger",
     icon: ICON_TRIGGER,
+    ports: { in: 0, out: 1 },
     params: [],
+  },
+  {
+    app: WEBHOOK_APP,
+    action: "webhook",
+    label: "Webhook",
+    displayName: "Webhook",
+    group: "trigger",
+    icon: ICON_WEBHOOK,
+    ports: { in: 0, out: 1 },
+    params: [
+      {
+        key: "methods",
+        label: "HTTP Methods",
+        type: "multiselect",
+        required: true,
+        default: ["POST"],
+        hint: "Which HTTP methods this webhook accepts.",
+        options: [
+          { value: "GET", label: "GET" },
+          { value: "POST", label: "POST" },
+          { value: "PUT", label: "PUT" },
+          { value: "PATCH", label: "PATCH" },
+          { value: "DELETE", label: "DELETE" },
+          { value: "HEAD", label: "HEAD" },
+        ],
+      },
+      {
+        key: "auth",
+        label: "Authentication",
+        type: "select",
+        default: "none",
+        hint: "How incoming requests are authenticated.",
+        options: [
+          { value: "none", label: "None" },
+          { value: "basic", label: "Basic auth" },
+          { value: "header", label: "Header auth" },
+          { value: "jwt", label: "JWT (HMAC)" },
+        ],
+      },
+      {
+        key: "basicUser",
+        label: "Username",
+        type: "string",
+        row: "basic-auth",
+        showIf: { field: "auth", equals: "basic" },
+      },
+      {
+        key: "basicPassword",
+        label: "Password",
+        type: "secret",
+        row: "basic-auth",
+        showIf: { field: "auth", equals: "basic" },
+      },
+      {
+        key: "headerName",
+        label: "Header name",
+        type: "string",
+        row: "header-auth",
+        placeholder: "e.g. X-Api-Key",
+        showIf: { field: "auth", equals: "header" },
+      },
+      {
+        key: "headerValue",
+        label: "Header value",
+        type: "secret",
+        row: "header-auth",
+        showIf: { field: "auth", equals: "header" },
+      },
+      {
+        key: "jwtSecret",
+        label: "JWT secret",
+        type: "secret",
+        showIf: { field: "auth", equals: "jwt" },
+      },
+      {
+        key: "responseMode",
+        label: "Respond",
+        type: "select",
+        default: "onReceived",
+        hint: "When and how to respond to the caller.",
+        options: [
+          { value: "onReceived", label: "Immediately (ASAP)" },
+          { value: "lastNode", label: "When the run finishes" },
+          { value: "responseNode", label: "Using a Response node" },
+          { value: "streaming", label: "Streaming" },
+        ],
+      },
+      {
+        key: "responseCode",
+        label: "Response status code",
+        type: "number",
+        default: 200,
+        showIf: { field: "responseMode", notIn: ["responseNode"] },
+      },
+      {
+        key: "responseData",
+        label: "Response body (immediate)",
+        type: "text",
+        hint: 'Body for "Immediately" responses. Empty = { "message": "Workflow was started" }.',
+        showIf: { field: "responseMode", equals: "onReceived" },
+      },
+      { key: "rawBody", label: "Raw body", type: "boolean", default: false, advanced: true },
+      { key: "ignoreBots", label: "Ignore bots", type: "boolean", default: false, advanced: true },
+      {
+        key: "ipAllowList",
+        label: "IP allow list",
+        type: "array",
+        advanced: true,
+        item: { type: "string", placeholder: "e.g. 203.0.113.4" },
+        hint: "Client IPs allowed to call this webhook. Empty = allow all.",
+      },
+      { key: "binaryPropertyName", label: "Binary field name", type: "string", advanced: true },
+      { key: "cors", label: "CORS allowed origin", type: "string", advanced: true },
+      {
+        key: "responseHeaders",
+        label: "Response headers",
+        type: "array",
+        default: [],
+        advanced: true,
+        item: {
+          type: "object",
+          fields: [
+            { key: "name", label: "Name", type: "string" },
+            { key: "value", label: "Value", type: "string" },
+          ],
+        },
+      },
+    ],
   },
   {
     app: CONTROL_APP,
@@ -277,6 +449,49 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Body",
         default: "",
         hint: "Request body (raw text or a JSON string). Ignored for GET/HEAD.",
+      },
+    ],
+  },
+  {
+    app: RESPOND_APP,
+    action: "respond",
+    label: "Respond to Webhook",
+    displayName: "Respond to Webhook",
+    group: "request",
+    icon: ICON_RESPOND,
+    params: [
+      {
+        key: "respondWith",
+        label: "Respond with",
+        type: "select",
+        default: "json",
+        hint: "Shape of the response returned to the webhook caller.",
+        options: [
+          { value: "json", label: "JSON" },
+          { value: "text", label: "Text" },
+          { value: "noData", label: "No body" },
+        ],
+      },
+      { key: "responseCode", label: "Response status code", type: "number", default: 200 },
+      {
+        key: "responseBody",
+        label: "Response body",
+        type: "json",
+        default: {},
+        hint: "Body to return (object for JSON, string for Text).",
+      },
+      {
+        key: "responseHeaders",
+        label: "Response headers",
+        type: "array",
+        default: [],
+        item: {
+          type: "object",
+          fields: [
+            { key: "name", label: "Name", type: "string" },
+            { key: "value", label: "Value", type: "string" },
+          ],
+        },
       },
     ],
   },

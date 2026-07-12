@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
+import { JsonEditor } from "./JsonEditor.tsx";
+import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
@@ -21,8 +23,9 @@ import type {
   ThemeMode,
 } from "./types.ts";
 
-/** The step the builder emits — the editor assigns the final `id`. */
-export interface BuiltStep {
+/** The step the builder emits — the editor assigns the final `id`. `NodeConfig`
+ * carries the base settings (retry / onError / notes) set on the Config view. */
+export interface BuiltStep extends NodeConfig {
   uses: { app: string; action: string; connection?: string | null };
   with?: Record<string, unknown>;
 }
@@ -34,7 +37,90 @@ export interface StepBuilderModalProps {
   theme?: ThemeMode;
 }
 
-type Tab = "connected" | "apps" | "controls" | "utilities";
+type Tab = "connected" | "apps" | "triggers" | "controls" | "utilities";
+
+/** Config sub-tabs shared by the add-step config and the node editor. */
+type StepConfigTab = "setup" | "configure" | "test";
+
+/** The three representations of the Configure tab: form, raw JSON, node settings. */
+export type ConfigView = "props" | "code" | "config";
+
+/** A 15×15 stroked glyph on a 24×24 viewBox (matches the editor's toolbar icons). */
+function Glyph({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+/**
+ * The props / code / config view toggle, right-aligned in the tabs bar. Disabled
+ * off the Configure tab (the three views all represent the action's config).
+ */
+export function ConfigViewToggle({
+  view,
+  onChange,
+  disabled,
+}: {
+  view: ConfigView;
+  onChange: (v: ConfigView) => void;
+  disabled?: boolean;
+}) {
+  const btn = (v: ConfigView, label: string, glyph: ReactNode) => (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={view === v}
+      disabled={disabled}
+      className={`w6w-icon-btn${view === v && !disabled ? " active" : ""}`}
+      onClick={() => onChange(v)}
+    >
+      <Glyph>{glyph}</Glyph>
+    </button>
+  );
+  return (
+    <div className="w6w-view-toggle">
+      {btn(
+        "props",
+        "Form",
+        <>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <line x1="7" y1="8" x2="17" y2="8" />
+          <line x1="7" y1="12" x2="17" y2="12" />
+          <line x1="7" y1="16" x2="13" y2="16" />
+        </>,
+      )}
+      {btn(
+        "code",
+        "JSON",
+        <>
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </>,
+      )}
+      {btn(
+        "config",
+        "Node settings",
+        <>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </>,
+      )}
+    </div>
+  );
+}
 
 /**
  * Guided "add a step" flow. A sidebar toggles between **Apps** (pick app →
@@ -76,7 +162,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           </button>
         }
       >
-        <div className="w6w-stepbuilder-content">
+        <div className="w6w-stepbuilder-config">
           <ControlStepConfig node={selectedNode} onAdd={onAdd} onClose={onClose} />
         </div>
       </Modal>
@@ -105,18 +191,18 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
             size={22}
           />
         }
-        headerRight={
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-ghost"
-            onClick={() => setSelectedApp(null)}
-          >
-            ← Apps
-          </button>
-        }
       >
-        <div className="w6w-stepbuilder-content">
-          <AppStepConfig appId={selectedApp.id} onAdd={onAdd} onClose={onClose} theme={theme} />
+        <div className="w6w-stepbuilder-config">
+          {/* App-switching lives in the Setup tab's "Change" (à la Zapier), not a
+              top-right back button. */}
+          <AppStepConfig
+            appId={selectedApp.id}
+            app={selectedApp}
+            onAdd={onAdd}
+            onClose={onClose}
+            onChangeApp={() => setSelectedApp(null)}
+            theme={theme}
+          />
         </div>
       </Modal>
     );
@@ -142,6 +228,13 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           </button>
           <button
             type="button"
+            className={`w6w-stepbuilder-tab${tab === "triggers" ? " active" : ""}`}
+            onClick={() => setTab("triggers")}
+          >
+            Triggers
+          </button>
+          <button
+            type="button"
             className={`w6w-stepbuilder-tab${tab === "controls" ? " active" : ""}`}
             onClick={() => setTab("controls")}
           >
@@ -164,6 +257,8 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
             />
           ) : tab === "apps" ? (
             <AppPicker onSelectApp={setSelectedApp} theme={theme} />
+          ) : tab === "triggers" ? (
+            <TriggersFlow onSelect={setSelectedNode} />
           ) : tab === "controls" ? (
             <ControlsFlow onSelect={setSelectedNode} />
           ) : (
@@ -204,6 +299,19 @@ function NodeList({
   );
 }
 
+/** Triggers tab — entry nodes that start a workflow (manual, webhook, …). */
+function TriggersFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
+  const nodes = INTERNAL_NODES.filter((n) => n.group === "trigger");
+  return (
+    <div className="w6w-stack">
+      <p className="w6w-muted w6w-small">
+        Triggers start a workflow — run it manually or on an inbound webhook.
+      </p>
+      <NodeList nodes={nodes} onSelect={onSelect} />
+    </div>
+  );
+}
+
 /** Controls tab — engine-native flow control only (branch, loop, parallelize, wait). */
 function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
   const nodes = INTERNAL_NODES.filter((n) => n.group === "control");
@@ -217,13 +325,13 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
   );
 }
 
-/** Utilities tab — everything else: run a script, call HTTP(S), declare data, or trigger. */
+/** Utilities tab — compute + request nodes (script, data, HTTP, respond). */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.group !== "control");
+  const nodes = INTERNAL_NODES.filter((n) => n.group !== "control" && n.group !== "trigger");
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Utilities run a script, call an HTTP(S) endpoint, declare data, or trigger the workflow.
+        Utilities run a script, call an HTTP(S) endpoint, declare data, or respond to a webhook.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
@@ -247,38 +355,102 @@ function ControlStepConfig({
   const [withValues, setWithValues] = useState<Record<string, unknown>>(() =>
     internalNodeDefaults(node.app, node.action),
   );
+  // Internal nodes have no connection/action to pick, so there's no Setup tab —
+  // just Configure + Test (flow-control nodes aren't testable standalone).
+  const testable = !isControlApp(node.app);
+  const [tab, setTab] = useState<"configure" | "test">("configure");
+  const [configView, setConfigView] = useState<ConfigView>("props");
+  const [codeText, setCodeText] = useState("{}");
+  const [draftConfig, setDraftConfig] = useState<NodeConfig>({});
+  const configComplete = requiredParamsFilled(node.params, withValues);
+
+  const changeConfigView = (v: ConfigView) => {
+    if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
+    setConfigView(v);
+  };
+  const add = () =>
+    onAdd({ uses: { app: node.app, action: node.action }, with: withValues, ...draftConfig });
 
   return (
     <div className="w6w-stepconfig">
-      {/* Configuration — the only scrolling region. */}
-      <div className="w6w-stepconfig-body">
-        <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-          Configuration
+      <div className="w6w-tabsbar">
+        <div className="w6w-subtabs">
+          <button
+            type="button"
+            className={`w6w-subtab${tab === "configure" ? " active" : ""}`}
+            onClick={() => setTab("configure")}
+          >
+            Configure
+          </button>
+          {testable && (
+            <button
+              type="button"
+              disabled={!configComplete}
+              title={configComplete ? undefined : "Fill the required fields first"}
+              className={`w6w-subtab${tab === "test" ? " active" : ""}`}
+              onClick={() => configComplete && setTab("test")}
+            >
+              Test
+            </button>
+          )}
         </div>
-        <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
-      </div>
-      {/* Flow-control nodes can't run standalone (they need traversal context);
-          everything else (script/data/http/trigger) is testable in place. */}
-      {!isControlApp(node.app) && (
-        <StepTestRun
-          app={node.app}
-          action={node.action}
-          values={withValues}
-          canRun={requiredParamsFilled(node.params, withValues)}
+        <ConfigViewToggle
+          view={configView}
+          onChange={changeConfigView}
+          disabled={tab !== "configure"}
         />
-      )}
+      </div>
+
+      <div className="w6w-stepconfig-body">
+        {tab === "configure" &&
+          (configView === "props" ? (
+            <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
+          ) : configView === "code" ? (
+            <JsonEditor
+              value={codeText}
+              onChange={setCodeText}
+              minHeight="240px"
+              height="100%"
+              aria-label="Parameters JSON"
+              onValidChange={(p) =>
+                p &&
+                typeof p === "object" &&
+                !Array.isArray(p) &&
+                setWithValues(p as Record<string, unknown>)
+              }
+            />
+          ) : (
+            <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
+          ))}
+        {tab === "test" && testable && (
+          <StepTestRun
+            app={node.app}
+            action={node.action}
+            values={withValues}
+            canRun={configComplete}
+          />
+        )}
+      </div>
+
       {/* Footer — pinned to the modal bottom, outside the scroll area. */}
       <div className="w6w-modal-actions w6w-stepconfig-footer">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="w6w-btn"
-          onClick={() => onAdd({ uses: { app: node.app, action: node.action }, with: withValues })}
-        >
-          Add step
-        </button>
+        {tab === "configure" && testable ? (
+          <button
+            type="button"
+            className="w6w-btn"
+            disabled={!configComplete}
+            onClick={() => setTab("test")}
+          >
+            Next →
+          </button>
+        ) : (
+          <button type="button" className="w6w-btn" onClick={add}>
+            Add step
+          </button>
+        )}
       </div>
     </div>
   );
@@ -293,14 +465,19 @@ export function requiredParamsFilled(
   params: ActionParam[],
   values: Record<string, unknown>,
 ): boolean {
-  return params
-    .filter((p) => p.required)
-    .every((p) => {
-      const v = values[p.key] ?? p.default;
-      if (v === undefined || v === null) return false;
-      if (typeof v === "string") return v.trim() !== "";
-      return true;
-    });
+  return params.every((p) => {
+    // A `section` is a layout-only container whose children write flat at this
+    // level — recurse so a required child (e.g. a grouped Sender Email) still
+    // gates. The section param itself carries no value.
+    if (p.type === "section") {
+      return requiredParamsFilled(p.children ?? [], values);
+    }
+    if (!p.required) return true;
+    const v = values[p.key] ?? p.default;
+    if (v === undefined || v === null) return false;
+    if (typeof v === "string") return v.trim() !== "";
+    return true;
+  });
 }
 
 type TestState =
@@ -380,20 +557,26 @@ export function StepTestRun({
         </div>
       )}
       {state?.status === "done" && (
-        <pre
-          className="w6w-result"
-          style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-        >
-          {JSON.stringify(state.value, null, 2)}
-        </pre>
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Result (return value)</div>
+          <pre
+            className="w6w-result"
+            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
+          >
+            {JSON.stringify(state.value, null, 2)}
+          </pre>
+        </div>
       )}
       {logs && logs.length > 0 && (
-        <pre
-          className="w6w-result"
-          style={{ whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", margin: 0 }}
-        >
-          {logs.join("\n")}
-        </pre>
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Console output</div>
+          <pre
+            className="w6w-result w6w-testout-console"
+            style={{ whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", margin: 0 }}
+          >
+            {logs.join("\n")}
+          </pre>
+        </div>
       )}
     </div>
   );
@@ -484,13 +667,17 @@ function ConnectedAppsFlow({
 
 function AppStepConfig({
   appId,
+  app,
   onAdd,
   onClose,
+  onChangeApp,
   theme,
 }: {
   appId: string;
+  app?: AppSummary;
   onAdd: (s: BuiltStep) => void;
   onClose: () => void;
+  onChangeApp?: () => void;
   theme?: ThemeMode;
 }) {
   const api = useW6wApi();
@@ -506,6 +693,15 @@ function AppStepConfig({
   // Once a connection is chosen it renders as a static label; "Change" flips
   // back to the dropdown. No connection selected yet also forces the dropdown.
   const [changingConn, setChangingConn] = useState(false);
+  // Setup (app + connection + action) / Configure (params) / Test — same tabs as
+  // the node editor, so add + edit are consistent.
+  const [tab, setTab] = useState<StepConfigTab>("setup");
+  // The Configure tab's three representations (form / JSON / node settings).
+  const [configView, setConfigView] = useState<ConfigView>("props");
+  // Draft text backing the JSON ("code") view of the params.
+  const [codeText, setCodeText] = useState("{}");
+  // Base node settings (retry / onError / notes) set on the Config view.
+  const [draftConfig, setDraftConfig] = useState<NodeConfig>({});
 
   // Load auth methods, existing connections, and actions for the app in parallel.
   useEffect(() => {
@@ -542,7 +738,14 @@ function AppStepConfig({
   );
 
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
-  const canAdd = !!actionKey && connectionSatisfied;
+  // Setup is done when an action is picked and its connection (if any) is set;
+  // Configure is done when the action's required params are filled.
+  const setupComplete = !!actionKey && connectionSatisfied;
+  const configComplete =
+    setupComplete &&
+    !!selectedAction &&
+    requiredParamsFilled(selectedAction.params ?? [], withValues);
+  const canAdd = setupComplete;
 
   const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
   // Show the dropdown only before a connection is picked or while changing it;
@@ -558,146 +761,246 @@ function AppStepConfig({
         ...(needsConnection && connectionId ? { connection: connectionId } : {}),
       },
       with: withValues,
+      ...draftConfig,
     });
   }
 
+  const changeConfigView = (v: ConfigView) => {
+    if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
+    setConfigView(v);
+  };
+
   return (
     <div className="w6w-stepconfig">
-      {/* Fixed header — connection + action never scroll with the params form. */}
-      <div className="w6w-stepconfig-header">
-        {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
-        {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
+      {/* Tabs bar — full width: Setup/Configure/Test on the left, the props/code/
+          config view icons on the right (enabled only on the Configure tab). */}
+      <div className="w6w-tabsbar">
+        <div className="w6w-subtabs">
+          <button
+            type="button"
+            className={`w6w-subtab${tab === "setup" ? " active" : ""}`}
+            onClick={() => setTab("setup")}
+          >
+            Setup
+          </button>
+          <button
+            type="button"
+            disabled={!setupComplete}
+            title={setupComplete ? undefined : "Complete Setup first"}
+            className={`w6w-subtab${tab === "configure" ? " active" : ""}`}
+            onClick={() => setupComplete && setTab("configure")}
+          >
+            Configure
+          </button>
+          <button
+            type="button"
+            disabled={!configComplete}
+            title={configComplete ? undefined : "Fill the required fields first"}
+            className={`w6w-subtab${tab === "test" ? " active" : ""}`}
+            onClick={() => configComplete && setTab("test")}
+          >
+            Test
+          </button>
+        </div>
+        <ConfigViewToggle
+          view={configView}
+          onChange={changeConfigView}
+          disabled={tab !== "configure"}
+        />
+      </div>
 
-        <div className="w6w-stepconfig-row">
-          {/* Connection */}
-          {auths !== null &&
-            needsConnection &&
-            (!hasConnection ? (
-              <div className="w6w-result w6w-stepconfig-conn-empty">
-                <div style={{ marginBottom: 8 }}>
-                  This app needs a connection before its actions can run.
-                </div>
-                <button type="button" className="w6w-btn" onClick={() => setShowConnModal(true)}>
-                  Create connection
-                </button>
-              </div>
-            ) : showConnPicker ? (
-              <label className="w6w-field w6w-stepconfig-conn">
-                <span>Connection</span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <select
-                    value={connectionId}
-                    onChange={(e) => {
-                      setConnectionId(e.target.value);
-                      setChangingConn(false);
-                    }}
-                    style={{ flex: 1 }}
-                  >
-                    {(conns ?? []).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.displayName || c.id} {c.state ? `(${c.state})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="w6w-btn w6w-btn-ghost"
-                    onClick={() => setShowConnModal(true)}
-                  >
-                    + New
-                  </button>
-                </div>
-              </label>
-            ) : (
-              <div className="w6w-field w6w-stepconfig-conn">
-                <span>Connection</span>
-                <div className="w6w-conn-label">
-                  <span className="w6w-conn-label-name">
-                    {selectedConn?.displayName || selectedConn?.id || connectionId}
-                    {selectedConn?.state ? ` (${selectedConn.state})` : ""}
-                  </span>
+      <div className="w6w-stepconfig-body">
+        {/* Setup — app, connection, action. */}
+        {tab === "setup" && (
+          <div className="w6w-stack">
+            {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
+            {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
+
+            {/* App — click Change to go back to the app picker. */}
+            <div className="w6w-field">
+              <span>App</span>
+              <div className="w6w-conn-label">
+                {app && (
+                  <AppIcon
+                    src={app.iconSvg}
+                    srcDark={app.iconSvgDark}
+                    brandColor={app.brandColor}
+                    name={app.displayName}
+                    theme={theme}
+                    size={20}
+                  />
+                )}
+                <span className="w6w-conn-label-name">{app?.displayName ?? appId}</span>
+                {onChangeApp && (
                   <button
                     type="button"
                     className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                    onClick={() => setChangingConn(true)}
+                    onClick={onChangeApp}
                   >
                     Change
                   </button>
-                  <button
-                    type="button"
-                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                    onClick={() => setShowConnModal(true)}
-                  >
-                    + New
+                )}
+              </div>
+            </div>
+
+            {/* Connection */}
+            {auths !== null &&
+              needsConnection &&
+              (!hasConnection ? (
+                <div className="w6w-result w6w-stepconfig-conn-empty">
+                  <div style={{ marginBottom: 8 }}>
+                    This app needs a connection before its actions can run.
+                  </div>
+                  <button type="button" className="w6w-btn" onClick={() => setShowConnModal(true)}>
+                    Create connection
                   </button>
                 </div>
-              </div>
-            ))}
+              ) : showConnPicker ? (
+                <label className="w6w-field">
+                  <span>Connection</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <select
+                      value={connectionId}
+                      onChange={(e) => {
+                        setConnectionId(e.target.value);
+                        setChangingConn(false);
+                      }}
+                      style={{ flex: 1 }}
+                    >
+                      {(conns ?? []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.displayName || c.id} {c.state ? `(${c.state})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="w6w-btn w6w-btn-ghost"
+                      onClick={() => setShowConnModal(true)}
+                    >
+                      + New
+                    </button>
+                  </div>
+                </label>
+              ) : (
+                <div className="w6w-field">
+                  <span>Connection</span>
+                  <div className="w6w-conn-label">
+                    <span className="w6w-conn-label-name">
+                      {selectedConn?.displayName || selectedConn?.id || connectionId}
+                      {selectedConn?.state ? ` (${selectedConn.state})` : ""}
+                    </span>
+                    <button
+                      type="button"
+                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                      onClick={() => setChangingConn(true)}
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                      onClick={() => setShowConnModal(true)}
+                    >
+                      + New
+                    </button>
+                  </div>
+                </div>
+              ))}
 
-          {/* Actions */}
-          {actions !== null &&
-            (actions.length === 0 ? (
-              <p className="w6w-muted w6w-small">This app exposes no actions.</p>
-            ) : (
-              <label className="w6w-field w6w-stepconfig-action">
-                <span>Action{actionKey ? "" : " *"}</span>
-                <select
-                  value={actionKey}
-                  onChange={(e) => {
-                    setActionKey(e.target.value);
-                    setWithValues({});
-                  }}
-                >
-                  <option value="">— pick an action —</option>
-                  {sortedActions.map((a) => (
-                    <option key={a.key} value={a.key}>
-                      {a.title ?? a.key} ({a.key})
-                    </option>
-                  ))}
-                </select>
-                {selectedAction?.description && (
-                  <span className="w6w-hint">{selectedAction.description}</span>
-                )}
-              </label>
-            ))}
-        </div>
-      </div>
+            {/* Action */}
+            {actions !== null &&
+              (actions.length === 0 ? (
+                <p className="w6w-muted w6w-small">This app exposes no actions.</p>
+              ) : (
+                <label className="w6w-field">
+                  <span>Action{actionKey ? "" : " *"}</span>
+                  <select
+                    value={actionKey}
+                    onChange={(e) => {
+                      setActionKey(e.target.value);
+                      setWithValues({});
+                    }}
+                  >
+                    <option value="">— pick an action —</option>
+                    {sortedActions.map((a) => (
+                      <option key={a.key} value={a.key}>
+                        {a.title ?? a.key} ({a.key})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedAction?.description && (
+                    <span className="w6w-hint">{selectedAction.description}</span>
+                  )}
+                </label>
+              ))}
+          </div>
+        )}
 
-      {/* Params — the only scrolling region. */}
-      <div className="w6w-stepconfig-body">
-        {selectedAction && (
-          <div>
-            <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-              Parameters
-            </div>
+        {/* Configure — the action's config, as a form (props), raw JSON (code),
+            or the base node settings (config). */}
+        {tab === "configure" &&
+          (!selectedAction ? (
+            <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
+          ) : configView === "props" ? (
             <ParamsForm
               params={selectedAction.params ?? []}
               values={withValues}
               onChange={setWithValues}
             />
-          </div>
-        )}
+          ) : configView === "code" ? (
+            <JsonEditor
+              value={codeText}
+              onChange={setCodeText}
+              minHeight="240px"
+              height="100%"
+              aria-label="Parameters JSON"
+              onValidChange={(p) =>
+                p &&
+                typeof p === "object" &&
+                !Array.isArray(p) &&
+                setWithValues(p as Record<string, unknown>)
+              }
+            />
+          ) : (
+            <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
+          ))}
+
+        {/* Test — try the action with the current params. */}
+        {tab === "test" &&
+          (selectedAction ? (
+            <StepTestRun
+              app={appId}
+              action={selectedAction.key}
+              connectionId={needsConnection && connectionId ? connectionId : undefined}
+              values={withValues}
+              canRun={canAdd && requiredParamsFilled(selectedAction.params ?? [], withValues)}
+            />
+          ) : (
+            <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
+          ))}
       </div>
 
-      {/* Inline test run — available once an action + required params are set. */}
-      {selectedAction && (
-        <StepTestRun
-          app={appId}
-          action={selectedAction.key}
-          connectionId={needsConnection && connectionId ? connectionId : undefined}
-          values={withValues}
-          canRun={canAdd && requiredParamsFilled(selectedAction.params ?? [], withValues)}
-        />
-      )}
-
-      {/* Footer — pinned to the modal bottom, outside the scroll area. */}
+      {/* Footer — pinned to the modal bottom. Each tab has a Next button; the
+          last (Test) commits the step. */}
       <div className="w6w-modal-actions w6w-stepconfig-footer">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="w6w-btn" disabled={!canAdd} onClick={add}>
-          Add step
-        </button>
+        {tab === "test" ? (
+          <button type="button" className="w6w-btn" disabled={!canAdd} onClick={add}>
+            Add step
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="w6w-btn"
+            disabled={tab === "setup" ? !setupComplete : !configComplete}
+            onClick={() => setTab(tab === "setup" ? "configure" : "test")}
+          >
+            Next →
+          </button>
+        )}
       </div>
 
       {showConnModal && (
