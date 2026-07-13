@@ -35,8 +35,12 @@ import { parseTemplate, serializeTemplate } from "./expression-template.ts";
 export interface ExpressionInputProps {
   /** Current value — a plain string, an expression envelope, or a sealed secret. */
   value: ExprValue | string | SecretValue | undefined;
-  /** Fired with the next value: a plain string when pure-text, else an ExprValue. */
-  onChange: (next: ExprValue | string) => void;
+  /**
+   * Fired with the next value: a plain string when pure-text, an `ExprValue`
+   * for mixed content, or a sealed `SecretValue` once a masked field is
+   * encrypted on blur.
+   */
+  onChange: (next: ExprValue | string | SecretValue) => void;
   /** Placeholder shown when the field is empty. */
   placeholder?: string;
   /** Mask typed text as dots (used for secret-typed params). Chips are unaffected. */
@@ -201,12 +205,15 @@ export function ExpressionInput({
   // editor DOM is repainted then — and NOT on every keystroke (which would reset
   // the caret). Typing/insert/remove mutate the DOM directly + sync out.
   const [paintGen, setPaintGen] = useState(0);
+  const [sealing, setSealing] = useState(false);
   const wantFocus = useRef(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const insertRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const ctxOptions = useExpressionOptions();
   const resolved = options ?? ctxOptions;
+  const sealSecret = ctxOptions.sealSecret;
 
   // Paint the editor DOM from `parts` on programmatic changes only.
   // biome-ignore lint/correctness/useExhaustiveDependencies: repaint is gated on paintGen, never on `parts` (would clobber the caret mid-edit).
@@ -245,6 +252,35 @@ export function ExpressionInput({
     const next = readParts(el);
     setState((s) => ({ ...s, parts: next }));
     onChange(serialize(next));
+  };
+
+  // A secret-typed field must never leave clear text in the config JSON. When
+  // the field holds a plain typed value (not a reference/expr), seal it into an
+  // at-rest `{type:"secret"}` envelope via the host on blur — the client has no
+  // key. Named-secret refs and expressions are already safe and left alone.
+  const sealIfNeeded = async () => {
+    if (!masked || !sealSecret || readOnly || sealing) return;
+    const v = serialize(parts);
+    if (typeof v !== "string" || v === "") return;
+    setSealing(true);
+    try {
+      const env = await sealSecret(v);
+      setState({ parts: [], sealed: env });
+      onChange(env);
+    } catch {
+      // Sealing failed (host unreachable) — keep the typed value; the server
+      // still encrypts secret params at rest on save. Never surface the secret.
+    } finally {
+      setSealing(false);
+    }
+  };
+
+  // Seal only when focus truly leaves the widget (not when moving to the fx
+  // toggle or the insert menu).
+  const onLeave = (e: React.FocusEvent) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && wrapperRef.current?.contains(next)) return;
+    void sealIfNeeded();
   };
 
   // Insert a chip/text at the caret (or at the end if the caret isn't in the
@@ -443,7 +479,7 @@ export function ExpressionInput({
   );
 
   return (
-    <div className="w6w-expr">
+    <div className="w6w-expr" ref={wrapperRef} onBlur={onLeave}>
       <div className="w6w-expr-toolbar">
         {!readOnly && (
           <div className="w6w-expr-insert" ref={insertRef}>

@@ -12,11 +12,20 @@
  * cross this boundary — secret plaintext never reaches the client.
  */
 import { type ReactNode, createContext, useContext } from "react";
+import type { SecretValue } from "../types.ts";
 
 /** Known variable/secret names offered in an ExpressionInput's insert menu. */
 export interface ExpressionOptions {
   vars?: string[];
   secrets?: string[];
+  /**
+   * Seal a typed secret value into an at-rest `SecretValue` envelope via the
+   * host (the client has no key). Provided by studio (`POST /vault/seal`); when
+   * present, a secret-typed field encrypts on blur so its clear text never
+   * lands in the workflow/config JSON. Absent → the value stays a plain string
+   * and the server encrypts it on receive instead.
+   */
+  sealSecret?: (value: string) => Promise<SecretValue>;
 }
 
 const ExpressionOptionsCtx = createContext<ExpressionOptions>({});

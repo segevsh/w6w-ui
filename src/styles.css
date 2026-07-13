@@ -325,7 +325,7 @@
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
   padding: 1px 6px;
-  margin: 0 1px;
+  margin: 0 1ch;
   font-size: 12.5px;
   line-height: 1.4;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
