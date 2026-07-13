@@ -222,9 +222,88 @@
   background: var(--w6w-border);
   color: var(--w6w-text);
 }
-/* Expression input: a single input-like box whose contents are ordered
-   SEGMENTS — plain editable text plus var/secret/expr chips. Same visual
-   language as `.w6w-multiselect`; theme-aware via the shared tokens. */
+/* Expression input: a field whose contents are inline SEGMENTS — plain text
+   plus var/secret/expr chips, edited in place (contentEditable, like a Notion /
+   Zapier block field). A small toolbar carries the Insert menu + the {{ }} (fx)
+   mode toggle. Theme-aware via the shared tokens. */
+.w6w-expr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.w6w-expr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.w6w-expr-fx {
+  margin-left: auto;
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.w6w-expr-fx:hover {
+  color: var(--w6w-text);
+  border-color: var(--w6w-accent);
+}
+.w6w-expr-fx.is-active {
+  color: var(--w6w-accent);
+  border-color: var(--w6w-accent);
+}
+/* The inline editor surface (one continuous field) + the raw {{ }} input. */
+.w6w-expr-editor,
+.w6w-expr-raw {
+  width: 100%;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-height: 38px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.7;
+}
+.w6w-expr-raw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.w6w-expr-editor {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-expr-editor:focus,
+.w6w-expr-raw:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-expr-editor.is-readonly,
+.w6w-expr-input.is-readonly {
+  opacity: 0.7;
+}
+/* Placeholder for the empty contentEditable field. */
+.w6w-expr-editor.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--w6w-muted);
+  pointer-events: none;
+}
+/* Masked (secret) fields: mask typed TEXT as dots; chips are exempt — a chip
+   shows a name/label, never a secret value. */
+.w6w-expr-editor.is-masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+.w6w-expr-editor.is-masked .w6w-expr-chip {
+  -webkit-text-security: none;
+  text-security: none;
+}
+/* Sealed at-rest secret uses a simple flex wrapper (chip + Replace). */
 .w6w-expr-input {
   display: flex;
   flex-wrap: wrap;
@@ -236,38 +315,24 @@
   padding: 5px 8px;
   min-height: 38px;
 }
-.w6w-expr-input:focus-within {
-  border-color: var(--w6w-accent);
-}
-.w6w-expr-input.is-readonly {
-  opacity: 0.7;
-}
-/* Inline text segment — blends into the box (no border/background) so the
-   segments read as one continuous field. */
-.w6w-field .w6w-expr-text,
-.w6w-expr-input .w6w-expr-text {
-  border: none;
-  background: transparent;
-  color: var(--w6w-text);
-  font-size: 14px;
-  font-family: inherit;
-  padding: 2px 0;
-  outline: none;
-  min-width: 8px;
-}
-/* Chips: a var/secret/expr segment. Distinct look per kind. */
+/* Chips: a var/secret/expr segment. Distinct look per kind; sits inline in the
+   text flow. */
 .w6w-expr-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  vertical-align: baseline;
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
-  padding: 2px 6px;
-  font-size: 13px;
+  padding: 1px 6px;
+  margin: 0 1px;
+  font-size: 12.5px;
   line-height: 1.4;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--w6w-text);
   background: var(--w6w-panel);
+  white-space: nowrap;
+  user-select: none;
 }
 .w6w-expr-chip-var {
   border-color: var(--w6w-accent);
@@ -276,7 +341,6 @@
 .w6w-expr-chip-secret {
   border-color: var(--w6w-danger);
   color: var(--w6w-danger);
-  letter-spacing: 1px;
 }
 .w6w-expr-chip-expr {
   border-style: dashed;
@@ -285,28 +349,19 @@
   font-weight: 600;
   opacity: 0.8;
 }
-/* The raw-expression editor nested inside an `expr` chip. */
-.w6w-expr-chip .w6w-expr-expr-input {
-  border: none;
-  background: transparent;
-  color: var(--w6w-text);
-  font-family: inherit;
-  font-size: 13px;
-  padding: 0;
-  outline: none;
-  min-width: 24px;
+.w6w-expr-chip-label {
+  font-weight: 500;
 }
 .w6w-expr-chip-x {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: none;
+  width: 15px;
+  height: 15px;
   border-radius: 4px;
   background: transparent;
   color: inherit;
-  opacity: 0.7;
+  opacity: 0.6;
   font-size: 14px;
   line-height: 1;
   cursor: pointer;

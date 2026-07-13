@@ -1,36 +1,36 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   type ExprPart,
-  type ExprPartKind,
   type ExprValue,
   type SecretValue,
   isExprValue,
   isSecretValue,
 } from "../types.ts";
 import { useExpressionOptions } from "./ExpressionOptions.tsx";
+import { parseTemplate, serializeTemplate } from "./expression-template.ts";
 
 /**
  * ExpressionInput — a single field that reads like a textbox but whose contents
- * are ordered SEGMENTS. Each segment has its own look:
- *   - `text`   — plain editable text (the default, typed inline).
- *   - `var`    — a chip rendered as `{{ var.NAME }}`.
- *   - `secret` — a distinct chip rendered as `***` (masked; the client NEVER
- *                shows secret plaintext — task 2.3).
- *   - `expr`   — a chip holding an inline expression.
+ * are inline SEGMENTS, edited in place (think Notion / Zapier blocks: a chip
+ * lives *inside* the text flow, not between separate inputs). Each segment kind
+ * has its own look:
+ *   - `text`   — plain text typed inline.
+ *   - `var`    — a chip showing the variable/path (a project var `env` reads as
+ *                `vars.env`, matching the engine's data scope).
+ *   - `secret` — a chip showing the SECRET NAME with a lock (the value is never
+ *                fetched to the client; there is nothing to mask — the name is
+ *                not sensitive). A sealed at-rest secret has no name and shows
+ *                `••••` instead.
+ *   - `expr`   — a chip for a raw JSONLogic expression.
  *
- * Value in ↔ out (the client-side parser/serializer lives here):
- *   - Incoming `value` may be a plain string, an `ExprValue` envelope, or a
- *     `SecretValue` envelope (an already-encrypted secret at rest → shown as a
- *     masked `***` chip, never the ciphertext).
- *   - `onChange` emits the leanest faithful form: a pure single-text value
- *     serializes back to a plain string (backward-compat); mixed content
- *     serializes to `{ type: "expr", parts: [...] }`.
+ * Two editors over ONE value model:
+ *   - Chips (default) — the inline editor below.
+ *   - `{{ }}` raw mode (the `fx` toggle) — an n8n-style template string that is
+ *     just a serialization of the same parts (see `expression-template.ts`).
  *
- * The var/secret PICKER (task 3.2) offers the names in scope: pass them via the
- * `options` prop, or provide them once for a whole subtree through an
- * `ExpressionOptionsProvider` (how the workflow editor feeds project
- * vars/secrets). Names can also be entered by hand. For a secret-typed field
- * (`masked`) the Secrets group is surfaced first so picking one is one click.
+ * Value in ↔ out: incoming `value` is a plain string, an `ExprValue`, or a
+ * sealed `SecretValue`. `onChange` emits the leanest faithful form — a plain
+ * string when pure-text, else an `ExprValue`.
  */
 export interface ExpressionInputProps {
   /** Current value — a plain string, an expression envelope, or a sealed secret. */
@@ -39,76 +39,143 @@ export interface ExpressionInputProps {
   onChange: (next: ExprValue | string) => void;
   /** Placeholder shown when the field is empty. */
   placeholder?: string;
-  /** Mask typed text as dots (used for secret-typed params). */
+  /** Mask typed text as dots (used for secret-typed params). Chips are unaffected. */
   masked?: boolean;
   readOnly?: boolean;
   /**
    * Picker data (task 3.2): known names to offer in the insert menu. When
-   * omitted, names come from the nearest `ExpressionOptionsProvider` (the editor
-   * supplies project vars/secrets there); an explicit prop overrides it. Either
-   * way authors can still type a name by hand.
+   * omitted, names come from the nearest `ExpressionOptionsProvider`. Authors
+   * can also type a name/path by hand.
    */
   options?: { vars?: string[]; secrets?: string[] };
   "aria-label"?: string;
 }
 
-/** An {@link ExprPart} with a stable id so React keys survive edits/reorders. */
-interface EditorPart extends ExprPart {
-  id: string;
+interface SeedState {
+  parts: ExprPart[];
+  sealed: SecretValue | null;
 }
-
-let partSeq = 0;
-const nextId = () => `p${++partSeq}`;
-
-const textPart = (value = ""): EditorPart => ({ id: nextId(), kind: "text", value });
 
 /** Parse an incoming value into editable parts (+ any sealed secret to display). */
-function seed(value: ExpressionInputProps["value"]): {
-  parts: EditorPart[];
-  sealed: SecretValue | null;
-} {
+function seed(value: ExpressionInputProps["value"]): SeedState {
   if (isSecretValue(value)) return { parts: [], sealed: value };
-  if (isExprValue(value)) {
-    return {
-      parts: value.parts.map((p) => ({ ...p, id: nextId() })),
-      sealed: null,
-    };
-  }
+  if (isExprValue(value)) return { parts: value.parts.map((p) => ({ ...p })), sealed: null };
   const s = typeof value === "string" ? value : "";
-  return { parts: s ? [textPart(s)] : [], sealed: null };
+  return { parts: s ? [{ kind: "text", value: s }] : [], sealed: null };
 }
 
-/** Drop editor-only fields, keeping only what the wire shape carries per kind. */
-function toWirePart(p: EditorPart): ExprPart {
+/** Drop editor-only noise, keeping only what the wire shape carries per kind. */
+function toWirePart(p: ExprPart): ExprPart {
   if (p.kind === "text") return { kind: "text", value: p.value ?? "" };
   if (p.kind === "expr") return { kind: "expr", expr: p.expr };
   return { kind: p.kind, ref: p.ref ?? "" }; // var | secret
 }
 
 /**
- * Serialize parts to the leanest faithful value. Empty text segments are pruned;
- * a lone text segment collapses to a plain string (backward-compat); anything
- * mixed becomes an `ExprValue`.
+ * Serialize parts to the leanest faithful value: prune empty text, collapse a
+ * lone text segment to a plain string (backward-compat), else an `ExprValue`.
  */
-function serialize(parts: EditorPart[]): ExprValue | string {
+function serialize(parts: ExprPart[]): ExprValue | string {
   const cleaned = parts.filter((p) => p.kind !== "text" || (p.value ?? "") !== "");
   if (cleaned.length === 0) return "";
   if (cleaned.length === 1 && cleaned[0].kind === "text") return cleaned[0].value ?? "";
   return { type: "expr", parts: cleaned.map(toWirePart) };
 }
 
-/** Ensure the last segment is an editable text slot so typing can continue. */
-function withTrailingText(parts: EditorPart[]): EditorPart[] {
-  const last = parts[parts.length - 1];
-  if (last && last.kind === "text") return parts;
-  return [...parts, textPart()];
+const isEmptyParts = (parts: ExprPart[]) =>
+  parts.every((p) => p.kind === "text" && !(p.value ?? ""));
+
+/** A `var` chip shows the bare project-var name, but the full path otherwise. */
+const varLabel = (ref: string) => (ref.startsWith("vars.") ? ref.slice("vars.".length) : ref);
+
+function parseMaybeJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 }
 
-/** Human label for a chip. Secrets are ALWAYS masked — never the ref plaintext. */
-function chipLabel(p: EditorPart): string {
-  if (p.kind === "var") return `{{ var.${p.ref ?? ""} }}`;
-  if (p.kind === "secret") return "***";
-  return "ƒx";
+/** Build the non-editable inline chip DOM node for a part. */
+function makeChip(doc: Document, part: ExprPart): HTMLElement {
+  const span = doc.createElement("span");
+  span.contentEditable = "false";
+  span.className = `w6w-expr-chip w6w-expr-chip-${part.kind}`;
+  span.setAttribute("data-kind", part.kind);
+
+  const sigil = doc.createElement("span");
+  sigil.className = "w6w-expr-chip-sigil";
+  const label = doc.createElement("span");
+  label.className = "w6w-expr-chip-label";
+
+  if (part.kind === "var") {
+    span.setAttribute("data-ref", part.ref ?? "");
+    sigil.textContent = "{x}";
+    label.textContent = varLabel(part.ref ?? "");
+    span.title = `Variable: ${part.ref ?? ""}`;
+  } else if (part.kind === "secret") {
+    span.setAttribute("data-ref", part.ref ?? "");
+    sigil.textContent = "🔒";
+    label.textContent = part.ref ?? ""; // the NAME — never the value
+    span.title = `Secret: ${part.ref ?? ""}`;
+  } else {
+    const raw = typeof part.expr === "string" ? part.expr : JSON.stringify(part.expr ?? "");
+    span.setAttribute("data-expr", raw);
+    sigil.textContent = "ƒ";
+    label.textContent = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || "expr";
+    span.title = `Expression: ${raw}`;
+  }
+
+  span.append(sigil, label);
+
+  const x = doc.createElement("span");
+  x.className = "w6w-expr-chip-x";
+  x.setAttribute("data-x", "1");
+  x.setAttribute("role", "button");
+  x.setAttribute("aria-label", "Remove");
+  x.textContent = "×";
+  span.append(x);
+  return span;
+}
+
+/** Reconstruct parts from the editor DOM (the source of truth while editing). */
+function readParts(root: HTMLElement): ExprPart[] {
+  const parts: ExprPart[] = [];
+  const pushText = (t: string) => {
+    if (!t) return;
+    const last = parts[parts.length - 1];
+    if (last && last.kind === "text") last.value = (last.value ?? "") + t;
+    else parts.push({ kind: "text", value: t });
+  };
+  for (const node of root.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      pushText(node.textContent ?? "");
+      continue;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    const el = node as HTMLElement;
+    const kind = el.getAttribute("data-kind");
+    if (kind === "var" || kind === "secret") {
+      parts.push({ kind, ref: el.getAttribute("data-ref") ?? "" });
+    } else if (kind === "expr") {
+      parts.push({ kind: "expr", expr: parseMaybeJson(el.getAttribute("data-expr") ?? "") });
+    } else {
+      // <br>, pasted markup, etc. — take its text so nothing is silently lost.
+      pushText(el.textContent ?? "");
+    }
+  }
+  return parts;
+}
+
+function placeCaretAtEnd(el: HTMLElement) {
+  const doc = el.ownerDocument;
+  const sel = doc.getSelection();
+  if (!sel) return;
+  const range = doc.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 export function ExpressionInput({
@@ -120,25 +187,50 @@ export function ExpressionInput({
   options,
   "aria-label": ariaLabel,
 }: ExpressionInputProps) {
-  // Seed once from the initial value and own the parts thereafter — the parent
-  // re-keys this component per field (like the other ParamsForm widgets), so we
-  // don't fight our own onChange echoes. `sealed` holds an at-rest secret to
-  // display; editing is disabled until the author replaces it.
-  const [{ parts, sealed }, setState] = useState(() => {
-    const s = seed(value);
-    return { parts: readOnly ? s.parts : withTrailingText(s.parts), sealed: s.sealed };
-  });
+  // Seed once and own the content thereafter — the parent re-keys this widget
+  // per field, so we never fight our own onChange echoes.
+  const [state, setState] = useState<SeedState>(() => seed(value));
+  const { parts, sealed } = state;
+  const [mode, setMode] = useState<"chips" | "raw">("chips");
+  const [raw, setRaw] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [varName, setVarName] = useState("");
   const [secretName, setSecretName] = useState("");
+  const [exprText, setExprText] = useState("");
+  // Bumped only for PROGRAMMATIC content changes (reseed / raw→chips), so the
+  // editor DOM is repainted then — and NOT on every keystroke (which would reset
+  // the caret). Typing/insert/remove mutate the DOM directly + sync out.
+  const [paintGen, setPaintGen] = useState(0);
+  const wantFocus = useRef(false);
+  const editorRef = useRef<HTMLDivElement>(null);
   const insertRef = useRef<HTMLDivElement>(null);
-  // Fall back to the provider-supplied names when no explicit `options` prop was
-  // passed — an explicit prop wins so a caller can still scope names per field.
+
   const ctxOptions = useExpressionOptions();
   const resolved = options ?? ctxOptions;
 
+  // Paint the editor DOM from `parts` on programmatic changes only.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: repaint is gated on paintGen, never on `parts` (would clobber the caret mid-edit).
+  useLayoutEffect(() => {
+    const el = editorRef.current;
+    if (!el || mode !== "chips" || sealed) return;
+    const doc = el.ownerDocument;
+    el.textContent = "";
+    for (const p of parts) {
+      if (p.kind === "text") {
+        if (p.value) el.appendChild(doc.createTextNode(p.value));
+      } else {
+        el.appendChild(makeChip(doc, p));
+      }
+    }
+    if (wantFocus.current || doc.activeElement === el) {
+      el.focus();
+      placeCaretAtEnd(el);
+      wantFocus.current = false;
+    }
+  }, [paintGen, mode, sealed]);
+
   // Click-away closes the insert menu.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: MouseEvent) => {
       if (!insertRef.current?.contains(e.target as Node)) setMenuOpen(false);
@@ -147,45 +239,86 @@ export function ExpressionInput({
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuOpen]);
 
-  // Commit a new parts array: keep a trailing text slot for editing, push up the
-  // serialized value.
-  const commit = (next: EditorPart[]) => {
-    const withText = withTrailingText(next);
-    setState((s) => ({ ...s, parts: withText }));
-    onChange(serialize(withText));
+  const syncFromDom = () => {
+    const el = editorRef.current;
+    if (!el) return;
+    const next = readParts(el);
+    setState((s) => ({ ...s, parts: next }));
+    onChange(serialize(next));
   };
 
-  const patch = (id: string, changes: Partial<EditorPart>) =>
-    commit(parts.map((p) => (p.id === id ? { ...p, ...changes } : p)));
+  // Insert a chip/text at the caret (or at the end if the caret isn't in the
+  // field), then place the caret just after it and sync.
+  const insertPart = (part: ExprPart) => {
+    const el = editorRef.current;
+    if (!el || readOnly) return;
+    const doc = el.ownerDocument;
+    const node: Node =
+      part.kind === "text" ? doc.createTextNode(part.value ?? "") : makeChip(doc, part);
 
-  const remove = (id: string) => commit(parts.filter((p) => p.id !== id));
-
-  const insert = (part: EditorPart) => {
-    commit([...parts, part]);
+    const sel = doc.getSelection();
+    const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+    if (range && el.contains(range.commonAncestorContainer)) {
+      range.deleteContents();
+      range.insertNode(node);
+    } else {
+      el.appendChild(node);
+    }
+    const r = doc.createRange();
+    r.setStartAfter(node);
+    r.collapse(true);
+    sel?.removeAllRanges();
+    sel?.addRange(r);
+    el.focus();
+    syncFromDom();
     setMenuOpen(false);
     setVarName("");
     setSecretName("");
+    setExprText("");
   };
 
-  const insertReference = (kind: ExprPartKind, ref: string) => {
-    if (!ref.trim()) return;
-    insert({ id: nextId(), kind, ref: ref.trim() });
+  // Delete a chip when its × is clicked (backspace over an atomic chip is
+  // handled natively by the browser).
+  const onEditorClick = (e: React.MouseEvent) => {
+    const x = (e.target as HTMLElement).closest("[data-x]");
+    if (!x) return;
+    e.preventDefault();
+    x.closest(".w6w-expr-chip")?.remove();
+    syncFromDom();
   };
 
-  // An at-rest secret: show a single masked chip; ciphertext is never rendered.
-  // "Replace" clears it and drops into edit mode with an empty value.
+  const enterRaw = () => {
+    setRaw(serializeTemplate(parts));
+    setMode("raw");
+  };
+  const enterChips = () => {
+    wantFocus.current = true;
+    setPaintGen((g) => g + 1);
+    setMode("chips");
+  };
+  const onRawChange = (v: string) => {
+    setRaw(v);
+    const next = parseTemplate(v);
+    setState((s) => ({ ...s, parts: next }));
+    onChange(serialize(next));
+  };
+
+  // An at-rest secret: a single masked chip; the ciphertext is never rendered.
   if (sealed) {
     return (
-      <div className={`w6w-expr-input${readOnly ? " is-readonly" : ""}`}>
+      <div className={`w6w-expr-input${readOnly ? " is-readonly" : ""}`} aria-label={ariaLabel}>
         <span className="w6w-expr-chip w6w-expr-chip-secret" title="Encrypted secret">
-          ***
+          <span className="w6w-expr-chip-sigil">🔒</span>
+          <span className="w6w-expr-chip-label">••••••</span>
         </span>
         {!readOnly && (
           <button
             type="button"
             className="w6w-expr-replace"
             onClick={() => {
-              setState({ parts: withTrailingText([]), sealed: null });
+              wantFocus.current = true;
+              setState({ parts: [], sealed: null });
+              setPaintGen((g) => g + 1);
               onChange("");
             }}
           >
@@ -198,10 +331,8 @@ export function ExpressionInput({
 
   const vars = resolved.vars ?? [];
   const secrets = resolved.secrets ?? [];
-  const isEmpty = parts.every((p) => p.kind === "text" && !(p.value ?? ""));
+  const empty = isEmptyParts(parts);
 
-  // The two picker groups. For a secret-typed field (`masked`) the Secret group
-  // is surfaced first and flagged primary, so choosing a secret is one click.
   const varGroup = (
     <div className="w6w-expr-menu-group" key="vars">
       <span className="w6w-expr-menu-label">Variables</span>
@@ -210,9 +341,9 @@ export function ExpressionInput({
           key={v}
           type="button"
           className="w6w-expr-menu-item"
-          onClick={() => insertReference("var", v)}
+          onClick={() => insertPart({ kind: "var", ref: `vars.${v}` })}
         >
-          {`{{ var.${v} }}`}
+          {`{x} ${v}`}
         </button>
       ))}
       {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables yet</span>}
@@ -220,13 +351,13 @@ export function ExpressionInput({
         <input
           type="text"
           value={varName}
-          placeholder="name…"
-          aria-label="Variable name"
+          placeholder="path e.g. vars.env or steps.a.output.x"
+          aria-label="Variable path"
           onChange={(e) => setVarName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && varName.trim()) {
               e.preventDefault();
-              insertReference("var", varName);
+              insertPart({ kind: "var", ref: varName.trim() });
             }
           }}
         />
@@ -234,7 +365,7 @@ export function ExpressionInput({
           type="button"
           className="w6w-btn w6w-btn-ghost w6w-btn-sm"
           disabled={!varName.trim()}
-          onClick={() => insertReference("var", varName)}
+          onClick={() => insertPart({ kind: "var", ref: varName.trim() })}
         >
           Add
         </button>
@@ -250,9 +381,9 @@ export function ExpressionInput({
           key={s}
           type="button"
           className="w6w-expr-menu-item"
-          onClick={() => insertReference("secret", s)}
+          onClick={() => insertPart({ kind: "secret", ref: s })}
         >
-          {`${s} (***)`}
+          {`🔒 ${s}`}
         </button>
       ))}
       {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets yet</span>}
@@ -264,9 +395,9 @@ export function ExpressionInput({
           aria-label="Secret name"
           onChange={(e) => setSecretName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && secretName.trim()) {
               e.preventDefault();
-              insertReference("secret", secretName);
+              insertPart({ kind: "secret", ref: secretName.trim() });
             }
           }}
         />
@@ -274,7 +405,36 @@ export function ExpressionInput({
           type="button"
           className="w6w-btn w6w-btn-ghost w6w-btn-sm"
           disabled={!secretName.trim()}
-          onClick={() => insertReference("secret", secretName)}
+          onClick={() => insertPart({ kind: "secret", ref: secretName.trim() })}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+
+  const exprGroup = (
+    <div className="w6w-expr-menu-group" key="expr">
+      <span className="w6w-expr-menu-label">Expression</span>
+      <div className="w6w-expr-menu-add">
+        <input
+          type="text"
+          value={exprText}
+          placeholder='JSONLogic or path, e.g. {"+":[1,2]}'
+          aria-label="Expression"
+          onChange={(e) => setExprText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && exprText.trim()) {
+              e.preventDefault();
+              insertPart({ kind: "expr", expr: parseMaybeJson(exprText.trim()) });
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+          disabled={!exprText.trim()}
+          onClick={() => insertPart({ kind: "expr", expr: parseMaybeJson(exprText.trim()) })}
         >
           Add
         </button>
@@ -283,113 +443,72 @@ export function ExpressionInput({
   );
 
   return (
-    <div className={`w6w-expr-input${readOnly ? " is-readonly" : ""}`} aria-label={ariaLabel}>
-      {parts.map((p, i) => {
-        if (p.kind === "text") {
-          const text = p.value ?? "";
-          return (
-            <input
-              key={p.id}
-              className={`w6w-expr-text${masked ? " w6w-secret-input" : ""}`}
-              type="text"
-              value={text}
-              readOnly={readOnly}
-              // Size to content so segments sit inline like one continuous field.
-              size={Math.max(text.length, i === 0 && isEmpty ? (placeholder?.length ?? 8) : 1)}
-              placeholder={i === 0 && isEmpty ? placeholder : undefined}
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              data-1p-ignore="true"
-              data-lpignore="true"
-              data-form-type="other"
-              onChange={(e) => patch(p.id, { value: e.target.value })}
-            />
-          );
-        }
-        if (p.kind === "expr") {
-          const raw = typeof p.expr === "string" ? p.expr : JSON.stringify(p.expr ?? "");
-          return (
-            <span key={p.id} className="w6w-expr-chip w6w-expr-chip-expr" title="Expression">
-              <span className="w6w-expr-chip-sigil">ƒ</span>
-              <input
-                className="w6w-expr-expr-input"
-                type="text"
-                value={raw}
-                readOnly={readOnly}
-                size={Math.max(raw.length, 3)}
-                placeholder="expr"
-                aria-label="Expression"
-                // Stored as the raw authored string; the engine/server parses the
-                // JSONLogic at resolve time (core value model, task-later).
-                onChange={(e) => patch(p.id, { expr: e.target.value })}
-              />
-              {!readOnly && (
-                <button
-                  type="button"
-                  className="w6w-expr-chip-x"
-                  aria-label="Remove expression"
-                  title="Remove"
-                  onClick={() => remove(p.id)}
-                >
-                  ×
-                </button>
-              )}
-            </span>
-          );
-        }
-        // var | secret — a reference chip. Secret is masked as `***`.
-        return (
-          <span
-            key={p.id}
-            className={`w6w-expr-chip w6w-expr-chip-${p.kind}`}
-            title={p.kind === "secret" ? `Secret: ${p.ref ?? ""}` : `Variable: ${p.ref ?? ""}`}
-          >
-            {chipLabel(p)}
-            {!readOnly && (
-              <button
-                type="button"
-                className="w6w-expr-chip-x"
-                aria-label={`Remove ${p.kind}`}
-                title="Remove"
-                onClick={() => remove(p.id)}
-              >
-                ×
-              </button>
-            )}
-          </span>
-        );
-      })}
-
-      {!readOnly && (
-        <div className="w6w-expr-insert" ref={insertRef}>
-          <button
-            type="button"
-            className="w6w-expr-insert-btn"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="Insert variable, secret, or expression"
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            + Insert
-          </button>
-          {menuOpen && (
-            <div className="w6w-expr-menu" role="menu">
-              {masked ? [secretGroup, varGroup] : [varGroup, secretGroup]}
-
-              <div className="w6w-expr-menu-group">
-                <button
-                  type="button"
-                  className="w6w-expr-menu-item"
-                  onClick={() => insert({ id: nextId(), kind: "expr", expr: "" })}
-                >
-                  ƒ Expression…
-                </button>
+    <div className="w6w-expr">
+      <div className="w6w-expr-toolbar">
+        {!readOnly && (
+          <div className="w6w-expr-insert" ref={insertRef}>
+            <button
+              type="button"
+              className="w6w-expr-insert-btn"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title="Insert variable, secret, or expression"
+              onClick={() => setMenuOpen((o) => !o)}
+              disabled={mode === "raw"}
+            >
+              + Insert
+            </button>
+            {menuOpen && mode === "chips" && (
+              <div className="w6w-expr-menu" role="menu">
+                {masked ? [secretGroup, varGroup] : [varGroup, secretGroup]}
+                {exprGroup}
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          className={`w6w-expr-fx${mode === "raw" ? " is-active" : ""}`}
+          title={mode === "raw" ? "Back to fields" : "Edit as a {{ }} expression"}
+          aria-pressed={mode === "raw"}
+          onClick={mode === "raw" ? enterChips : enterRaw}
+        >
+          {mode === "raw" ? "abc" : "{{ }}"}
+        </button>
+      </div>
+
+      {mode === "raw" ? (
+        <input
+          className={`w6w-expr-raw${masked ? " w6w-secret-input" : ""}`}
+          type="text"
+          value={raw}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          aria-label={ariaLabel}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => onRawChange(e.target.value)}
+        />
+      ) : (
+        <div
+          ref={editorRef}
+          className={`w6w-expr-editor${masked ? " is-masked" : ""}${empty ? " is-empty" : ""}${
+            readOnly ? " is-readonly" : ""
+          }`}
+          contentEditable={!readOnly}
+          suppressContentEditableWarning
+          role="textbox"
+          tabIndex={readOnly ? -1 : 0}
+          aria-multiline="false"
+          aria-label={ariaLabel}
+          data-placeholder={placeholder ?? ""}
+          spellCheck={false}
+          onInput={syncFromDom}
+          onClick={onEditorClick}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.preventDefault(); // single-line value field
+          }}
+        />
       )}
     </div>
   );
