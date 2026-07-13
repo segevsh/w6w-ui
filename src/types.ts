@@ -205,3 +205,75 @@ export interface ConnectionSummary {
 
 /** Effective theme hint passed to icon components to pick a light/dark variant. */
 export type ThemeMode = "light" | "dark";
+
+/*
+ * ---------------------------------------------------------------------------
+ * Value model — the multipart/expression + secret envelopes for a step's
+ * `with` block. Mirrored (shape-for-shape) from `@w6w/types` `value.ts` so
+ * consumers who don't depend on `@w6w/types` don't have to. Keep in sync with
+ * core: packages/core/packages/types/src/value.ts.
+ * ---------------------------------------------------------------------------
+ */
+
+/** The segment kinds an {@link ExprValue} part can take. */
+export type ExprPartKind = "text" | "var" | "secret" | "expr";
+
+/**
+ * One segment of an {@link ExprValue}. The populated field depends on `kind`:
+ *   - `text`   → `value` holds a literal string chunk.
+ *   - `var`    → `ref` names a project variable.
+ *   - `secret` → `ref` names a vault secret (surfaced via the secret picker).
+ *   - `expr`   → `expr` holds inline JSONLogic evaluated against the run scope.
+ */
+export interface ExprPart {
+  kind: ExprPartKind;
+  /** Literal chunk, for `kind: "text"`. */
+  value?: string;
+  /** Name of the referenced variable/secret, for `kind: "var" | "secret"`. */
+  ref?: string;
+  /** Inline JSONLogic, for `kind: "expr"`. */
+  expr?: unknown;
+}
+
+/**
+ * A multipart value: an ordered list of {@link ExprPart} segments that
+ * concatenate to a string at resolve time.
+ */
+export interface ExprValue {
+  type: "expr";
+  parts: ExprPart[];
+}
+
+/**
+ * The at-rest form of a secret-typed scalar field: AES-GCM ciphertext + IV
+ * (both base64). Decrypted server-side; never decrypted in the client — the UI
+ * renders it as `***`.
+ */
+export interface SecretValue {
+  type: "secret";
+  ciphertext: string;
+  iv: string;
+}
+
+/** `true` if `v` is an {@link ExprValue} envelope. Safe on `unknown`. */
+export function isExprValue(v: unknown): v is ExprValue {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    (v as { type?: unknown }).type === "expr" &&
+    Array.isArray((v as { parts?: unknown }).parts)
+  );
+}
+
+/** `true` if `v` is a {@link SecretValue} envelope. Safe on `unknown`. */
+export function isSecretValue(v: unknown): v is SecretValue {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    (v as { type?: unknown }).type === "secret" &&
+    typeof (v as { ciphertext?: unknown }).ciphertext === "string" &&
+    typeof (v as { iv?: unknown }).iv === "string"
+  );
+}

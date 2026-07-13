@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
+import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { Modal } from "./components/Modal.tsx";
-import type { ActionParam } from "./types.ts";
+import type { ActionParam, ExprValue, SecretValue } from "./types.ts";
 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
@@ -304,9 +305,35 @@ function ParamField({
     );
   }
 
-  const isSecret = param.type === "secret";
-  // Secrets are credentials, not login passwords: never `type="password"` (which
-  // triggers the browser's save-password prompt + suggestions). Mask with CSS.
+  // `secret` — an encrypted / expression-capable field. Rendered via the
+  // segmented ExpressionInput (masked): the value may be a plain string, an
+  // `{type:"expr"}` envelope, or an at-rest `{type:"secret"}` (shown as `***`,
+  // never the ciphertext). The var/secret picker data source is wired later
+  // (task 3.2) via the `options` prop.
+  // TODO(expr-mode): opt string/text fields into expression mode by rendering
+  // ExpressionInput here too (e.g. when `param.config?.expression` is set),
+  // keeping the plain input as the default for now.
+  if (param.type === "secret") {
+    const current = (value ?? param.default) as ExprValue | string | SecretValue | undefined;
+    return (
+      <div className="w6w-field">
+        <span>
+          {label}
+          {req}
+        </span>
+        <ExpressionInput
+          value={current}
+          masked
+          readOnly={readOnly}
+          aria-label={label}
+          onChange={(next) => onChange(param.key, next)}
+        />
+        {param.hint && <span className="w6w-hint">{param.hint}</span>}
+      </div>
+    );
+  }
+
+  // Plain text / number input for everything else.
   const inputType = param.type === "number" ? "number" : "text";
   const raw = value ?? param.default ?? "";
   // Guard against object/array values landing in a text field (they'd render as
@@ -320,10 +347,8 @@ function ParamField({
       </span>
       <input
         type={inputType}
-        className={isSecret ? "w6w-secret-input" : undefined}
         value={display}
         readOnly={readOnly}
-        name={isSecret ? `w6w-cred-${param.key}` : undefined}
         autoComplete="off"
         autoCapitalize="off"
         autoCorrect="off"

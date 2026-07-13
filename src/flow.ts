@@ -13,6 +13,9 @@
 export { WorkflowFlowEditor } from "./WorkflowFlowEditor.tsx";
 export type { WorkflowFlowEditorProps } from "./WorkflowFlowEditor.tsx";
 
+export { ExpressionOptionsProvider } from "./components/ExpressionOptions.tsx";
+export type { ExpressionOptions } from "./components/ExpressionOptions.tsx";
+
 export type { FlowEdge, FlowStep, FlowWorkflow, InternalNodeDef } from "./flow-types.ts";
 export {
   CONTROL_APP,

@@ -1,7 +1,10 @@
 import { type ReactNode, useEffect, useRef } from "react";
 
 interface ModalProps {
-  title: string;
+  /** Title row content. A plain string also seeds the dialog's `aria-label`. */
+  title: ReactNode;
+  /** Accessible name for the dialog; defaults to `title` when it's a string. */
+  ariaLabel?: string;
   onClose: () => void;
   children: ReactNode;
   /**
@@ -30,6 +33,7 @@ const SIZE_CLASS: Record<NonNullable<ModalProps["size"]>, string> = {
 
 export function Modal({
   title,
+  ariaLabel,
   onClose,
   children,
   size = "default",
@@ -68,7 +72,11 @@ export function Modal({
 
   return (
     <div className="w6w-modal-backdrop">
-      <dialog ref={ref} className={`w6w-modal${SIZE_CLASS[size]}`} aria-label={title}>
+      <dialog
+        ref={ref}
+        className={`w6w-modal${SIZE_CLASS[size]}`}
+        aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
+      >
         <div className="w6w-modal-header">
           <h3 className="w6w-modal-title">
             {titleIcon}
