@@ -727,11 +727,11 @@ function ArrayField({
 /** One typed key/value entry in a `vars` param. */
 export interface DataVar {
   key: string;
-  type: "string" | "number" | "boolean" | "json";
+  type: "string" | "number" | "boolean" | "json" | "expression";
   value: unknown;
 }
 
-const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
+const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json", "expression"];
 
 /** Coerce a text input into the variable's declared type (best-effort). */
 function coerceVarValue(type: DataVar["type"], raw: string): unknown {
@@ -816,7 +816,19 @@ function VarsField({
                 </option>
               ))}
             </select>
-            {v.type === "boolean" ? (
+            {v.type === "expression" ? (
+              // A dynamic value: edited with the segmented ExpressionInput and
+              // stored as an `{type:"expr"}` envelope (or plain string). The
+              // engine resolves it against the run scope before the data node
+              // runs, so downstream steps see the computed value.
+              <ExpressionInput
+                value={v.value as ExprValue | string | undefined}
+                onChange={(next) => patch(i, { value: next })}
+                placeholder="expression…"
+                readOnly={readOnly}
+                aria-label="Expression value"
+              />
+            ) : v.type === "boolean" ? (
               <select
                 value={v.value === true ? "true" : "false"}
                 disabled={readOnly}
