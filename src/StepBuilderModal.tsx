@@ -5,6 +5,7 @@ import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
+import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
   INTERNAL_NODES,
@@ -145,6 +146,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
     return (
       <Modal
         title={selectedNode.label}
+        titleIcon={<InternalIcon icon={selectedNode.icon} size={22} />}
         subtitle={
           <code>
             {selectedNode.app} · {selectedNode.action}
@@ -289,10 +291,13 @@ function NodeList({
           className="w6w-stepbuilder-item"
           onClick={() => onSelect(n)}
         >
-          <strong>{n.label}</strong>
-          <code className="w6w-muted w6w-small">
-            {n.app} · {n.action}
-          </code>
+          <InternalIcon icon={n.icon} size={24} />
+          <span className="w6w-stepbuilder-item-main">
+            <strong>{n.label}</strong>
+            <code className="w6w-muted w6w-small">
+              {n.app} · {n.action}
+            </code>
+          </span>
         </button>
       ))}
     </div>

@@ -43,6 +43,7 @@ import {
   type ExpressionOptions,
   ExpressionOptionsProvider,
 } from "./components/ExpressionOptions.tsx";
+import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
   type FlowStep,
@@ -709,43 +710,6 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         </ToolbarIcon>
       </button>
     </NodeToolbar>
-  );
-}
-
-/**
- * An internal pseudo-app's glyph on a rounded tile, sized and shaped to match
- * `AppIcon`'s image tile so control nodes and app nodes read as the same family.
- * The glyph strokes with the panel's text color, so it tracks the active theme.
- */
-function InternalIcon({ icon, size = 28 }: { icon: string; size?: number }) {
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: size,
-        height: size,
-        borderRadius: 6,
-        flexShrink: 0,
-        background: "var(--w6w-icon-swatch, var(--w6w-panel-2))",
-        color: "var(--w6w-accent)",
-      }}
-    >
-      <svg
-        width={Math.round(size * 0.6)}
-        height={Math.round(size * 0.6)}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: static, in-repo SVG glyph markup (no user input)
-        dangerouslySetInnerHTML={{ __html: icon }}
-      />
-    </span>
   );
 }
 
