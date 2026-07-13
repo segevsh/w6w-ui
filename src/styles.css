@@ -491,7 +491,11 @@
   display: grid;
   grid-template-columns: 1fr 110px 1fr auto;
   gap: 6px;
-  align-items: center;
+  /* Align to the end so that on an `expression` row — where the value cell is a
+     taller ExpressionInput (toolbar above its editor) — the key/type/remove
+     cells line up with the editor at the bottom, not the toolbar. Single-line
+     rows are unaffected (every cell is the same height). */
+  align-items: end;
 }
 .w6w-datavar-row input,
 .w6w-datavar-row select {
