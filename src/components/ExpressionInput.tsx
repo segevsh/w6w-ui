@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
+import type { ExprValue, SecretValue } from "../types.ts";
 import { ExpressionEditorModal } from "./ExpressionEditorModal.tsx";
 import { useExpressionOptions } from "./ExpressionOptions.tsx";
+import { paintParts, placeCaretAtEnd, readParts } from "./expression-dom.ts";
 import { partsToValue, valueToParts } from "./expression-template.ts";
 
 /**
@@ -26,96 +27,6 @@ export interface ExpressionInputProps {
   /** Picker data; falls back to the nearest `ExpressionOptionsProvider`. */
   options?: { vars?: string[]; secrets?: string[] };
   "aria-label"?: string;
-}
-
-/** A `var` chip shows the bare project-var name, but the full path otherwise. */
-const varLabel = (ref: string) => (ref.startsWith("vars.") ? ref.slice("vars.".length) : ref);
-
-/** Build the non-editable inline chip DOM node for a part. */
-function makeChip(doc: Document, part: ExprPart): HTMLElement {
-  const span = doc.createElement("span");
-  span.contentEditable = "false";
-  span.className = `w6w-expr-chip w6w-expr-chip-${part.kind}`;
-  span.setAttribute("data-kind", part.kind);
-
-  const sigil = doc.createElement("span");
-  sigil.className = "w6w-expr-chip-sigil";
-  const label = doc.createElement("span");
-  label.className = "w6w-expr-chip-label";
-
-  if (part.kind === "var") {
-    span.setAttribute("data-ref", part.ref ?? "");
-    sigil.textContent = "{x}";
-    label.textContent = varLabel(part.ref ?? "");
-    span.title = `Variable: ${part.ref ?? ""}`;
-  } else if (part.kind === "secret") {
-    span.setAttribute("data-ref", part.ref ?? "");
-    sigil.textContent = "🔒";
-    label.textContent = part.ref ?? ""; // the NAME — never the value
-    span.title = `Secret: ${part.ref ?? ""}`;
-  } else {
-    const raw = typeof part.expr === "string" ? part.expr : JSON.stringify(part.expr ?? "");
-    span.setAttribute("data-expr", raw);
-    sigil.textContent = "ƒ";
-    label.textContent = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || "expr";
-    span.title = `Expression: ${raw}`;
-  }
-
-  span.append(sigil, label);
-
-  const x = doc.createElement("span");
-  x.className = "w6w-expr-chip-x";
-  x.setAttribute("data-x", "1");
-  x.setAttribute("role", "button");
-  x.setAttribute("aria-label", "Remove");
-  x.textContent = "×";
-  span.append(x);
-  return span;
-}
-
-/** Reconstruct parts from the editor DOM (the source of truth while editing). */
-function readParts(root: HTMLElement): ExprPart[] {
-  const parts: ExprPart[] = [];
-  const pushText = (t: string) => {
-    if (!t) return;
-    const last = parts[parts.length - 1];
-    if (last && last.kind === "text") last.value = (last.value ?? "") + t;
-    else parts.push({ kind: "text", value: t });
-  };
-  for (const node of root.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      pushText(node.textContent ?? "");
-      continue;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) continue;
-    const el = node as HTMLElement;
-    const kind = el.getAttribute("data-kind");
-    if (kind === "var" || kind === "secret") {
-      parts.push({ kind, ref: el.getAttribute("data-ref") ?? "" });
-    } else if (kind === "expr") {
-      const raw = el.getAttribute("data-expr") ?? "";
-      let expr: unknown = raw;
-      try {
-        expr = JSON.parse(raw);
-      } catch {
-        expr = raw;
-      }
-      parts.push({ kind: "expr", expr });
-    } else {
-      pushText(el.textContent ?? "");
-    }
-  }
-  return parts;
-}
-
-function placeCaretAtEnd(el: HTMLElement) {
-  const sel = el.ownerDocument.getSelection();
-  if (!sel) return;
-  const range = el.ownerDocument.createRange();
-  range.selectNodeContents(el);
-  range.collapse(false);
-  sel.removeAllRanges();
-  sel.addRange(range);
 }
 
 export function ExpressionInput({
@@ -150,16 +61,8 @@ export function ExpressionInput({
   useLayoutEffect(() => {
     const el = editorRef.current;
     if (!el || sealed) return;
-    const doc = el.ownerDocument;
-    el.textContent = "";
-    for (const p of parts) {
-      if (p.kind === "text") {
-        if (p.value) el.appendChild(doc.createTextNode(p.value));
-      } else {
-        el.appendChild(makeChip(doc, p));
-      }
-    }
-    if (wantFocus.current || doc.activeElement === el) {
+    paintParts(el, parts);
+    if (wantFocus.current || el.ownerDocument.activeElement === el) {
       el.focus();
       placeCaretAtEnd(el);
       wantFocus.current = false;

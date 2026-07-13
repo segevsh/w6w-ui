@@ -350,37 +350,57 @@
   font-weight: 600;
   color: var(--w6w-text);
 }
-.w6w-exprmodal-textarea {
+/* The WYSIWYG chip editor: tags flow inline with text (colored + spaced). */
+.w6w-exprmodal-chips {
   flex: 1;
-  min-height: 160px;
-  resize: none;
+  min-height: 180px;
+  overflow: auto;
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
   padding: 10px 12px;
   color: var(--w6w-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.w6w-exprmodal-textarea:focus {
+  font-size: 14px;
+  line-height: 2.1;
   outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-exprmodal-chips:focus {
   border-color: var(--w6w-accent);
+}
+.w6w-exprmodal-chips.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--w6w-muted);
+  pointer-events: none;
+}
+.w6w-exprmodal-chips.is-masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+.w6w-exprmodal-chips.is-masked .w6w-expr-chip {
+  -webkit-text-security: none;
+  text-security: none;
 }
 .w6w-exprmodal-preview {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.w6w-exprmodal-preview-body {
-  min-height: 56px;
-  max-height: 22vh;
+.w6w-exprmodal-template {
+  margin: 0;
+  min-height: 44px;
+  max-height: 18vh;
   overflow: auto;
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
   padding: 10px 12px;
-  line-height: 2;
+  color: var(--w6w-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 .w6w-exprmodal-actions {
@@ -493,13 +513,16 @@
 .w6w-expr-chip-var {
   border-color: var(--w6w-accent);
   color: var(--w6w-accent);
+  background: color-mix(in srgb, var(--w6w-accent) 14%, transparent);
 }
 .w6w-expr-chip-secret {
   border-color: var(--w6w-danger);
   color: var(--w6w-danger);
+  background: color-mix(in srgb, var(--w6w-danger) 14%, transparent);
 }
 .w6w-expr-chip-expr {
   border-style: dashed;
+  background: color-mix(in srgb, var(--w6w-text) 8%, transparent);
 }
 .w6w-expr-chip-sigil {
   font-weight: 600;
