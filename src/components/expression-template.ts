@@ -1,4 +1,10 @@
-import type { ExprPart } from "../types.ts";
+import {
+  type ExprPart,
+  type ExprValue,
+  type SecretValue,
+  isExprValue,
+  isSecretValue,
+} from "../types.ts";
 
 /**
  * The `{{ }}` inline-expression grammar — an n8n-style template string that is
@@ -73,6 +79,40 @@ export function parseTemplate(input: string): ExprPart[] {
   }
   flushText();
   return parts;
+}
+
+/** Strip editor-only noise, keeping only the wire fields each kind carries. */
+function toWirePart(p: ExprPart): ExprPart {
+  if (p.kind === "text") return { kind: "text", value: p.value ?? "" };
+  if (p.kind === "expr") return { kind: "expr", expr: p.expr };
+  return { kind: p.kind, ref: p.ref ?? "" }; // var | secret
+}
+
+/**
+ * Serialize parts to the leanest faithful VALUE: prune empty text, collapse a
+ * lone text segment to a plain string (backward-compat), else an `ExprValue`.
+ * Shared by the inline field and the expression editor modal.
+ */
+export function partsToValue(parts: ExprPart[]): ExprValue | string {
+  const cleaned = parts.filter((p) => p.kind !== "text" || (p.value ?? "") !== "");
+  if (cleaned.length === 0) return "";
+  if (cleaned.length === 1 && cleaned[0].kind === "text") return cleaned[0].value ?? "";
+  return { type: "expr", parts: cleaned.map(toWirePart) };
+}
+
+/**
+ * Parse an incoming value into editable parts (+ any sealed secret to display).
+ * The inverse of {@link partsToValue} for the editable forms; a sealed
+ * `SecretValue` has no parts (it's shown as a masked chip, never decrypted).
+ */
+export function valueToParts(value: ExprValue | string | SecretValue | undefined): {
+  parts: ExprPart[];
+  sealed: SecretValue | null;
+} {
+  if (isSecretValue(value)) return { parts: [], sealed: value };
+  if (isExprValue(value)) return { parts: value.parts.map((p) => ({ ...p })), sealed: null };
+  const s = typeof value === "string" ? value : "";
+  return { parts: s ? [{ kind: "text", value: s }] : [], sealed: null };
 }
 
 /** Serialize parts back to a `{{ }}` template string (inverse of {@link parseTemplate}). */

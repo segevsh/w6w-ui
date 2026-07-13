@@ -42,12 +42,14 @@ import { AppIcon } from "./components/AppIcon.tsx";
 import {
   type ExpressionOptions,
   ExpressionOptionsProvider,
+  type ExpressionStepSource,
 } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
   type FlowStep,
   type FlowWorkflow,
+  internalNodeDef,
   internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
@@ -118,6 +120,54 @@ function applyConnect(
     next = next.filter((e) => !drop.has(e.id));
   }
   return addEdge({ source, target, id: `${source}->${target}` }, next);
+}
+
+/**
+ * The workflow state a given step can reference: the outputs of every step that
+ * runs before it (its graph ancestors) plus whether a trigger precedes it. A
+ * trigger ancestor becomes `hasTrigger` (referenced as `trigger.event`), not a
+ * `steps.<id>.output` source. With no specific step (shouldn't happen for a
+ * field edit) every node is offered.
+ */
+function upstreamStateSources(
+  editingId: string | null,
+  nodes: StepNode[],
+  edges: Edge[],
+): { steps: ExpressionStepSource[]; hasTrigger: boolean } {
+  const parents = new Map<string, string[]>();
+  for (const e of edges) {
+    const arr = parents.get(e.target) ?? [];
+    arr.push(e.source);
+    parents.set(e.target, arr);
+  }
+  const ancestors = new Set<string>();
+  if (editingId) {
+    const stack = [editingId];
+    while (stack.length) {
+      const id = stack.pop() as string;
+      for (const p of parents.get(id) ?? []) {
+        if (!ancestors.has(p)) {
+          ancestors.add(p);
+          stack.push(p);
+        }
+      }
+    }
+  } else {
+    for (const n of nodes) ancestors.add(n.id);
+  }
+
+  const steps: ExpressionStepSource[] = [];
+  let hasTrigger = false;
+  for (const n of nodes) {
+    if (!ancestors.has(n.id)) continue;
+    const step = n.data.step;
+    if (internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger") {
+      hasTrigger = true;
+      continue;
+    }
+    steps.push({ id: step.id, label: step.id });
+  }
+  return { steps, hasTrigger };
 }
 
 export interface WorkflowFlowEditorProps {
@@ -482,10 +532,19 @@ function Inner({
     [],
   );
 
+  // The workflow state in scope for the step being edited: its upstream steps'
+  // outputs (`steps.<id>.output`) and, if a trigger precedes it, `trigger.event`.
+  // Merged with the host-supplied vars/secrets/sealSecret so the expression
+  // editor's left panel shows every source at once.
+  const mergedExprOptions = useMemo<ExpressionOptions>(() => {
+    const { steps, hasTrigger } = upstreamStateSources(editingId, nodes, edges);
+    return { ...(exprOptions ?? {}), steps, hasTrigger };
+  }, [exprOptions, editingId, nodes, edges]);
+
   return (
     <StepControlsCtx.Provider value={controls}>
       <AppsCtx.Provider value={appsById}>
-        <ExpressionOptionsProvider value={exprOptions ?? {}}>
+        <ExpressionOptionsProvider value={mergedExprOptions}>
           <div
             className="w6w-flow"
             style={{ width: "100%", height, position: "relative" }}

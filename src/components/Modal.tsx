@@ -9,9 +9,10 @@ interface ModalProps {
   children: ReactNode;
   /**
    * Dialog width. `"wide"` fits a sidebar + content layout; `"xl"` is a large
-   * work surface (e.g. the app picker) that should feel roomy, not cramped.
+   * work surface (e.g. the app picker); `"full"` is a near-fullscreen work
+   * surface (e.g. the expression editor) that fills most of the viewport.
    */
-  size?: "default" | "wide" | "xl";
+  size?: "default" | "wide" | "xl" | "full";
   /** Optional node rendered next to the title (e.g. an app icon). */
   titleIcon?: ReactNode;
   /** Optional muted meta rendered after the title (e.g. an app's id + version). */
@@ -29,6 +30,7 @@ const SIZE_CLASS: Record<NonNullable<ModalProps["size"]>, string> = {
   default: "",
   wide: " w6w-modal-wide",
   xl: " w6w-modal-xl",
+  full: " w6w-modal-full",
 };
 
 export function Modal({

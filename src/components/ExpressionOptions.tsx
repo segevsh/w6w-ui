@@ -14,10 +14,26 @@
 import { type ReactNode, createContext, useContext } from "react";
 import type { SecretValue } from "../types.ts";
 
+/** An upstream step whose output this field can reference (`steps.<id>.output`). */
+export interface ExpressionStepSource {
+  /** Step id — the key under `steps` in the run scope. */
+  id: string;
+  /** Human label (defaults to the id). */
+  label?: string;
+}
+
 /** Known variable/secret names offered in an ExpressionInput's insert menu. */
 export interface ExpressionOptions {
   vars?: string[];
   secrets?: string[];
+  /**
+   * The workflow state leading to this step: upstream steps whose output is in
+   * scope (`steps.<id>.output`). Present only in a workflow context; omitted for
+   * a standalone field.
+   */
+  steps?: ExpressionStepSource[];
+  /** Whether a trigger event is in scope (`trigger.event`). */
+  hasTrigger?: boolean;
   /**
    * Seal a typed secret value into an at-rest `SecretValue` envelope via the
    * host (the client has no key). Provided by studio (`POST /vault/seal`); when
