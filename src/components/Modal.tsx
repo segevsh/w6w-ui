@@ -1,14 +1,18 @@
 import { type ReactNode, useEffect, useRef } from "react";
 
 interface ModalProps {
-  title: string;
+  /** Title row content. A plain string also seeds the dialog's `aria-label`. */
+  title: ReactNode;
+  /** Accessible name for the dialog; defaults to `title` when it's a string. */
+  ariaLabel?: string;
   onClose: () => void;
   children: ReactNode;
   /**
    * Dialog width. `"wide"` fits a sidebar + content layout; `"xl"` is a large
-   * work surface (e.g. the app picker) that should feel roomy, not cramped.
+   * work surface (e.g. the app picker); `"full"` is a near-fullscreen work
+   * surface (e.g. the expression editor) that fills most of the viewport.
    */
-  size?: "default" | "wide" | "xl";
+  size?: "default" | "wide" | "xl" | "full";
   /** Optional node rendered next to the title (e.g. an app icon). */
   titleIcon?: ReactNode;
   /** Optional muted meta rendered after the title (e.g. an app's id + version). */
@@ -26,10 +30,12 @@ const SIZE_CLASS: Record<NonNullable<ModalProps["size"]>, string> = {
   default: "",
   wide: " w6w-modal-wide",
   xl: " w6w-modal-xl",
+  full: " w6w-modal-full",
 };
 
 export function Modal({
   title,
+  ariaLabel,
   onClose,
   children,
   size = "default",
@@ -68,7 +74,11 @@ export function Modal({
 
   return (
     <div className="w6w-modal-backdrop">
-      <dialog ref={ref} className={`w6w-modal${SIZE_CLASS[size]}`} aria-label={title}>
+      <dialog
+        ref={ref}
+        className={`w6w-modal${SIZE_CLASS[size]}`}
+        aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
+      >
         <div className="w6w-modal-header">
           <h3 className="w6w-modal-title">
             {titleIcon}

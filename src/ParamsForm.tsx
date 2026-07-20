@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
+import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { Modal } from "./components/Modal.tsx";
-import type { ActionParam } from "./types.ts";
+import type { ActionParam, ExprValue, SecretValue } from "./types.ts";
 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
@@ -304,9 +305,35 @@ function ParamField({
     );
   }
 
-  const isSecret = param.type === "secret";
-  // Secrets are credentials, not login passwords: never `type="password"` (which
-  // triggers the browser's save-password prompt + suggestions). Mask with CSS.
+  // `secret` — an encrypted / expression-capable field. Rendered via the
+  // segmented ExpressionInput (masked): the value may be a plain string, an
+  // `{type:"expr"}` envelope, or an at-rest `{type:"secret"}` (shown as `***`,
+  // never the ciphertext). The var/secret picker data source is wired later
+  // (task 3.2) via the `options` prop.
+  // TODO(expr-mode): opt string/text fields into expression mode by rendering
+  // ExpressionInput here too (e.g. when `param.config?.expression` is set),
+  // keeping the plain input as the default for now.
+  if (param.type === "secret") {
+    const current = (value ?? param.default) as ExprValue | string | SecretValue | undefined;
+    return (
+      <div className="w6w-field">
+        <span>
+          {label}
+          {req}
+        </span>
+        <ExpressionInput
+          value={current}
+          masked
+          readOnly={readOnly}
+          aria-label={label}
+          onChange={(next) => onChange(param.key, next)}
+        />
+        {param.hint && <span className="w6w-hint">{param.hint}</span>}
+      </div>
+    );
+  }
+
+  // Plain text / number input for everything else.
   const inputType = param.type === "number" ? "number" : "text";
   const raw = value ?? param.default ?? "";
   // Guard against object/array values landing in a text field (they'd render as
@@ -320,10 +347,8 @@ function ParamField({
       </span>
       <input
         type={inputType}
-        className={isSecret ? "w6w-secret-input" : undefined}
         value={display}
         readOnly={readOnly}
-        name={isSecret ? `w6w-cred-${param.key}` : undefined}
         autoComplete="off"
         autoCapitalize="off"
         autoCorrect="off"
@@ -587,6 +612,20 @@ function ArrayItemInput({
       </select>
     );
   }
+  if (field.type === "boolean") {
+    return (
+      <label className="w6w-array-check" title={field.label ?? field.key}>
+        <input
+          type="checkbox"
+          checked={Boolean(value ?? field.default ?? false)}
+          disabled={readOnly}
+          aria-label={field.label ?? field.key}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        <span>{field.label ?? field.key}</span>
+      </label>
+    );
+  }
   const isNumber = field.type === "number";
   return (
     <input
@@ -702,11 +741,11 @@ function ArrayField({
 /** One typed key/value entry in a `vars` param. */
 export interface DataVar {
   key: string;
-  type: "string" | "number" | "boolean" | "json";
+  type: "string" | "number" | "boolean" | "json" | "expression";
   value: unknown;
 }
 
-const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
+const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json", "expression"];
 
 /** Coerce a text input into the variable's declared type (best-effort). */
 function coerceVarValue(type: DataVar["type"], raw: string): unknown {
@@ -791,7 +830,19 @@ function VarsField({
                 </option>
               ))}
             </select>
-            {v.type === "boolean" ? (
+            {v.type === "expression" ? (
+              // A dynamic value: edited with the segmented ExpressionInput and
+              // stored as an `{type:"expr"}` envelope (or plain string). The
+              // engine resolves it against the run scope before the data node
+              // runs, so downstream steps see the computed value.
+              <ExpressionInput
+                value={v.value as ExprValue | string | undefined}
+                onChange={(next) => patch(i, { value: next })}
+                placeholder="expression…"
+                readOnly={readOnly}
+                aria-label="Expression value"
+              />
+            ) : v.type === "boolean" ? (
               <select
                 value={v.value === true ? "true" : "false"}
                 disabled={readOnly}

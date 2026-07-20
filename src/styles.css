@@ -115,6 +115,19 @@
 .w6w-array-cells > .w6w-array-input {
   flex: 1 1 120px;
 }
+.w6w-array-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--w6w-text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.w6w-array-check input {
+  margin: 0;
+}
 .w6w-field .w6w-array-input {
   flex: 1;
   min-width: 0;
@@ -222,12 +235,459 @@
   background: var(--w6w-border);
   color: var(--w6w-text);
 }
+/* Expression input: a field whose contents are inline SEGMENTS — plain text
+   plus var/secret/expr chips, edited in place (contentEditable, like a Notion /
+   Zapier block field). A small toolbar carries the Insert menu + the {{ }} (fx)
+   mode toggle. Theme-aware via the shared tokens. */
+.w6w-expr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Inline expression field: the editable surface + a ƒx button that opens the
+   full expression editor modal. */
+.w6w-expr-field {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.w6w-expr-field .w6w-expr-editor {
+  flex: 1;
+  min-width: 0;
+}
+.w6w-expr-edit {
+  flex-shrink: 0;
+  align-self: stretch;
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  background: var(--w6w-panel-2);
+  color: var(--w6w-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+.w6w-expr-edit:hover {
+  color: var(--w6w-accent);
+  border-color: var(--w6w-accent);
+}
+/* Sealed at-rest secret (masked chip + Replace). */
+.w6w-expr-sealed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-height: 38px;
+}
+.w6w-expr-sealed.is-readonly {
+  opacity: 0.7;
+}
+/* Expression editor modal: left data sources | right (editor over preview). */
+.w6w-exprmodal {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 14px;
+}
+.w6w-exprmodal-sources {
+  overflow: auto;
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  background: var(--w6w-panel-2);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.w6w-exprmodal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.w6w-exprmodal-group-label {
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w6w-muted);
+  margin-bottom: 2px;
+}
+.w6w-exprmodal-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.w6w-exprmodal-source:hover {
+  background: var(--w6w-panel);
+  border-color: var(--w6w-border);
+}
+.w6w-exprmodal-source.w6w-expr-chip-var {
+  color: var(--w6w-accent);
+}
+.w6w-exprmodal-source.w6w-expr-chip-secret {
+  color: var(--w6w-danger);
+}
+.w6w-exprmodal-source-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-exprmodal-main {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 12px;
+}
+.w6w-exprmodal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+.w6w-exprmodal-pane-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--w6w-text);
+}
+/* The WYSIWYG chip editor: tags flow inline with text (colored + spaced). */
+.w6w-exprmodal-chips {
+  flex: 1;
+  min-height: 180px;
+  overflow: auto;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  line-height: 2.1;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-exprmodal-chips:focus {
+  border-color: var(--w6w-accent);
+}
+.w6w-exprmodal-chips.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--w6w-muted);
+  pointer-events: none;
+}
+.w6w-exprmodal-chips.is-masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+.w6w-exprmodal-chips.is-masked .w6w-expr-chip {
+  -webkit-text-security: none;
+  text-security: none;
+}
+.w6w-exprmodal-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.w6w-exprmodal-template {
+  margin: 0;
+  min-height: 44px;
+  max-height: 18vh;
+  overflow: auto;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--w6w-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-exprmodal-actions {
+  display: flex;
+  gap: 8px;
+}
+.w6w-expr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.w6w-expr-fx {
+  margin-left: auto;
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.w6w-expr-fx:hover {
+  color: var(--w6w-text);
+  border-color: var(--w6w-accent);
+}
+.w6w-expr-fx.is-active {
+  color: var(--w6w-accent);
+  border-color: var(--w6w-accent);
+}
+/* The inline editor surface (one continuous field) + the raw {{ }} input. */
+.w6w-expr-editor,
+.w6w-expr-raw {
+  width: 100%;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-height: 38px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.7;
+}
+.w6w-expr-raw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.w6w-expr-editor {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-expr-editor:focus,
+.w6w-expr-raw:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-expr-editor.is-readonly,
+.w6w-expr-input.is-readonly {
+  opacity: 0.7;
+}
+/* Placeholder for the empty contentEditable field. */
+.w6w-expr-editor.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--w6w-muted);
+  pointer-events: none;
+}
+/* Masked (secret) fields: mask typed TEXT as dots; chips are exempt — a chip
+   shows a name/label, never a secret value. */
+.w6w-expr-editor.is-masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+.w6w-expr-editor.is-masked .w6w-expr-chip {
+  -webkit-text-security: none;
+  text-security: none;
+}
+/* Sealed at-rest secret uses a simple flex wrapper (chip + Replace). */
+.w6w-expr-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-height: 38px;
+}
+/* Chips: a var/secret/expr segment. Distinct look per kind; sits inline in the
+   text flow. */
+.w6w-expr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin: 0 1ch;
+  font-size: 12.5px;
+  line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--w6w-text);
+  background: var(--w6w-panel);
+  white-space: nowrap;
+  user-select: none;
+}
+.w6w-expr-chip-var {
+  border-color: var(--w6w-accent);
+  color: var(--w6w-accent);
+  background: color-mix(in srgb, var(--w6w-accent) 14%, transparent);
+}
+.w6w-expr-chip-secret {
+  border-color: var(--w6w-danger);
+  color: var(--w6w-danger);
+  background: color-mix(in srgb, var(--w6w-danger) 14%, transparent);
+}
+.w6w-expr-chip-expr {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--w6w-text) 8%, transparent);
+}
+.w6w-expr-chip-sigil {
+  font-weight: 600;
+  opacity: 0.8;
+}
+.w6w-expr-chip-label {
+  font-weight: 500;
+}
+.w6w-expr-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.w6w-expr-chip-x:hover {
+  opacity: 1;
+  background: var(--w6w-border);
+}
+.w6w-expr-replace {
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.w6w-expr-replace:hover {
+  color: var(--w6w-text);
+  background: var(--w6w-panel);
+}
+/* Insert affordance + popover menu (variable / secret / expression). */
+.w6w-expr-insert {
+  position: relative;
+  display: inline-flex;
+}
+.w6w-expr-insert-btn {
+  border: 1px dashed var(--w6w-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.w6w-expr-insert-btn:hover {
+  color: var(--w6w-text);
+  border-color: var(--w6w-accent);
+}
+.w6w-expr-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.w6w-expr-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.w6w-expr-menu-group + .w6w-expr-menu-group {
+  border-top: 1px solid var(--w6w-border);
+  padding-top: 8px;
+}
+.w6w-expr-menu-label {
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w6w-muted);
+}
+/* A secret-typed field surfaces the Secrets group first + highlighted, so
+   picking a secret is the obvious one-click path (task 3.2). */
+.w6w-expr-menu-group.is-primary {
+  background: var(--w6w-panel-2);
+  border-radius: 6px;
+  padding: 6px;
+  margin: -2px;
+}
+.w6w-expr-menu-group.is-primary .w6w-expr-menu-label {
+  color: var(--w6w-accent);
+}
+.w6w-expr-menu-empty {
+  font-size: 12px;
+  color: var(--w6w-muted);
+  padding: 2px 8px;
+  font-style: italic;
+}
+.w6w-expr-menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.w6w-expr-menu-item:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-expr-menu-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.w6w-expr-menu-add input {
+  flex: 1;
+  min-width: 0;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.w6w-expr-menu-add input:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+
 /* Typed key/value rows (the `vars` form element / `data` control step). */
 .w6w-datavar-row {
   display: grid;
   grid-template-columns: 1fr 110px 1fr auto;
   gap: 6px;
-  align-items: center;
+  /* Align to the end so that on an `expression` row — where the value cell is a
+     taller ExpressionInput (toolbar above its editor) — the key/type/remove
+     cells line up with the editor at the bottom, not the toolbar. Single-line
+     rows are unaffected (every cell is the same height). */
+  align-items: end;
 }
 .w6w-datavar-row input,
 .w6w-datavar-row select {
@@ -329,6 +789,13 @@ dialog.w6w-modal p {
 .w6w-modal-xl {
   max-width: 1040px;
   min-height: min(70vh, 620px);
+}
+.w6w-modal-full {
+  max-width: min(1200px, 96vw);
+  width: 96vw;
+  height: 92vh;
+  max-height: 92vh;
+  overflow: hidden;
 }
 .w6w-modal-header {
   display: flex;

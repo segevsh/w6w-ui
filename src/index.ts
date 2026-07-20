@@ -36,6 +36,18 @@ export { Modal } from "./components/Modal.tsx";
 export { AppIcon } from "./components/AppIcon.tsx";
 export { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
 
+export { ExpressionInput } from "./components/ExpressionInput.tsx";
+export type { ExpressionInputProps } from "./components/ExpressionInput.tsx";
+
+export {
+  ExpressionOptionsProvider,
+  useExpressionOptions,
+} from "./components/ExpressionOptions.tsx";
+export type {
+  ExpressionOptions,
+  ExpressionOptionsProviderProps,
+} from "./components/ExpressionOptions.tsx";
+
 export { startOAuthPopup } from "./oauth-popup.ts";
 export type { OAuthPopupResult } from "./oauth-popup.ts";
 
@@ -46,5 +58,10 @@ export type {
   AuthDef,
   AuthField,
   ConnectionSummary,
+  ExprPart,
+  ExprPartKind,
+  ExprValue,
+  SecretValue,
   ThemeMode,
 } from "./types.ts";
+export { isExprValue, isSecretValue } from "./types.ts";
