@@ -612,6 +612,20 @@ function ArrayItemInput({
       </select>
     );
   }
+  if (field.type === "boolean") {
+    return (
+      <label className="w6w-array-check" title={field.label ?? field.key}>
+        <input
+          type="checkbox"
+          checked={Boolean(value ?? field.default ?? false)}
+          disabled={readOnly}
+          aria-label={field.label ?? field.key}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        <span>{field.label ?? field.key}</span>
+      </label>
+    );
+  }
   const isNumber = field.type === "number";
   return (
     <input

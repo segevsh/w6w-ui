@@ -115,6 +115,19 @@
 .w6w-array-cells > .w6w-array-input {
   flex: 1 1 120px;
 }
+.w6w-array-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--w6w-text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.w6w-array-check input {
+  margin: 0;
+}
 .w6w-field .w6w-array-input {
   flex: 1;
   min-width: 0;

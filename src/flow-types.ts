@@ -166,7 +166,35 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     group: "trigger",
     icon: ICON_TRIGGER,
     ports: { in: 0, out: 1 },
-    params: [],
+    params: [
+      {
+        key: "fields",
+        label: "Fields",
+        type: "array",
+        default: [],
+        hint: 'The fields this trigger emits into the run. Reference them downstream as {"$": "steps.<trigger>.output.<key>"}.',
+        item: {
+          type: "object",
+          fields: [
+            { key: "key", label: "Key", type: "string", placeholder: "e.g. email" },
+            {
+              key: "type",
+              label: "Type",
+              type: "select",
+              default: "string",
+              options: [
+                { value: "string", label: "String" },
+                { value: "number", label: "Number" },
+                { value: "boolean", label: "Boolean" },
+                { value: "json", label: "JSON" },
+              ],
+            },
+            { key: "default", label: "Default", type: "string", placeholder: "optional" },
+            { key: "required", label: "Required", type: "boolean", default: false },
+          ],
+        },
+      },
+    ],
   },
   {
     app: WEBHOOK_APP,
