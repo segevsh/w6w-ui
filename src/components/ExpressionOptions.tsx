@@ -27,6 +27,18 @@ export interface ExpressionOptions {
   vars?: string[];
   secrets?: string[];
   /**
+   * Function/run input keys in scope (`inputs.<name>`). Present when the field
+   * is edited inside a Function (the engine resolves these from `RunScope.inputs`);
+   * omitted for a standalone field.
+   */
+  inputs?: string[];
+  /**
+   * Dataset names in scope (`datasets.<name>`). A store-independent affordance:
+   * whatever names the host passes are offered as insertable chips. Omitted when
+   * no datasets are available.
+   */
+  datasets?: string[];
+  /**
    * The workflow state leading to this step: upstream steps whose output is in
    * scope (`steps.<id>.output`). Present only in a workflow context; omitted for
    * a standalone field.
