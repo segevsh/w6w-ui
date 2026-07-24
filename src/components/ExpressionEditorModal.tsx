@@ -65,6 +65,8 @@ export function ExpressionEditorModal({
 
   const vars = options.vars ?? [];
   const secrets = options.secrets ?? [];
+  const inputs = options.inputs ?? [];
+  const datasets = options.datasets ?? [];
   const steps = options.steps ?? [];
   const hasState = steps.length > 0 || !!options.hasTrigger;
   const template = serializeTemplate(parts);
@@ -115,6 +117,22 @@ export function ExpressionEditorModal({
             {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
             {secrets.map((s) =>
               source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
+            )}
+          </div>
+
+          <div className="w6w-exprmodal-group">
+            <span className="w6w-exprmodal-group-label">Inputs</span>
+            {inputs.length === 0 && <span className="w6w-expr-menu-empty">No inputs</span>}
+            {inputs.map((i) =>
+              source(i, { kind: "var", ref: `inputs.${i}` }, "w6w-expr-chip-var", "⇥"),
+            )}
+          </div>
+
+          <div className="w6w-exprmodal-group">
+            <span className="w6w-exprmodal-group-label">Datasets</span>
+            {datasets.length === 0 && <span className="w6w-expr-menu-empty">No datasets</span>}
+            {datasets.map((d) =>
+              source(d, { kind: "var", ref: `datasets.${d}` }, "w6w-expr-chip-var", "▦"),
             )}
           </div>
 
