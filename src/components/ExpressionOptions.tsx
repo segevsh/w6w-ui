@@ -33,11 +33,11 @@ export interface ExpressionOptions {
    */
   inputs?: string[];
   /**
-   * Dataset names in scope (`datasets.<name>`). A store-independent affordance:
+   * Document names in scope (`documents.<name>`). A store-independent affordance:
    * whatever names the host passes are offered as insertable chips. Omitted when
-   * no datasets are available.
+   * no documents are available.
    */
-  datasets?: string[];
+  documents?: string[];
   /**
    * The workflow state leading to this step: upstream steps whose output is in
    * scope (`steps.<id>.output`). Present only in a workflow context; omitted for
@@ -46,6 +46,14 @@ export interface ExpressionOptions {
   steps?: ExpressionStepSource[];
   /** Whether a trigger event is in scope (`trigger.event`). */
   hasTrigger?: boolean;
+  /**
+   * Design-time sample values the Result preview substitutes for known refs,
+   * keyed by FULL ref (`"vars.from_email"`, `"documents.test"`). Seeded by the
+   * host from the project's real vars/documents so the preview shows actual
+   * values instead of the raw `{{ ref }}` template. Optional — a user-typed
+   * Sample value still overrides, and unknown refs keep the raw fallback.
+   */
+  sampleValues?: Record<string, unknown>;
   /**
    * Seal a typed secret value into an at-rest `SecretValue` envelope via the
    * host (the client has no key). Provided by studio (`POST /vault/seal`); when

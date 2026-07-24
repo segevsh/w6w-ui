@@ -70,10 +70,22 @@ export function ExpressionEditorModal({
   const vars = options.vars ?? [];
   const secrets = options.secrets ?? [];
   const inputs = options.inputs ?? [];
-  const datasets = options.datasets ?? [];
+  const documents = options.documents ?? [];
   const steps = options.steps ?? [];
   const hasState = steps.length > 0 || !!options.hasTrigger;
   const template = serializeTemplate(parts);
+
+  // The sample map the Result pane previews against: host-seeded defaults
+  // (real project vars/documents, keyed by full ref) overlaid by anything the
+  // author typed into the Sample values box, which takes precedence. Non-string
+  // seeds are stringified for the text preview.
+  const effectiveSamples = useMemo(() => {
+    const seeded: Record<string, string> = {};
+    for (const [ref, v] of Object.entries(options.sampleValues ?? {})) {
+      seeded[ref] = typeof v === "string" ? v : JSON.stringify(v);
+    }
+    return { ...seeded, ...samples };
+  }, [options.sampleValues, samples]);
 
   // The distinct var refs the current expression reads (first-seen order) — the
   // in-scope roots the author can supply sample values for.
@@ -106,7 +118,7 @@ export function ExpressionEditorModal({
             break;
           case "var": {
             const ref = p.ref ?? "";
-            out += ref in samples ? samples[ref] : `{{ ${ref} }}`;
+            out += ref in effectiveSamples ? effectiveSamples[ref] : `{{ ${ref} }}`;
             break;
           }
           case "secret":
@@ -123,7 +135,7 @@ export function ExpressionEditorModal({
       // Last-resort fallback — the pane must never throw.
       return template;
     }
-  }, [parts, samples, template]);
+  }, [parts, effectiveSamples, template]);
 
   const source = (label: string, part: ExprPart, cls: string, sigil: string) => (
     <button
@@ -162,7 +174,7 @@ export function ExpressionEditorModal({
             <span className="w6w-exprmodal-group-label">Variables</span>
             {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
             {vars.map((v) =>
-              source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "{x}"),
+              source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
             )}
           </div>
 
@@ -183,10 +195,10 @@ export function ExpressionEditorModal({
           </div>
 
           <div className="w6w-exprmodal-group">
-            <span className="w6w-exprmodal-group-label">Datasets</span>
-            {datasets.length === 0 && <span className="w6w-expr-menu-empty">No datasets</span>}
-            {datasets.map((d) =>
-              source(d, { kind: "var", ref: `datasets.${d}` }, "w6w-expr-chip-var", "▦"),
+            <span className="w6w-exprmodal-group-label">Documents</span>
+            {documents.length === 0 && <span className="w6w-expr-menu-empty">No documents</span>}
+            {documents.map((d) =>
+              source(d, { kind: "var", ref: `documents.${d}` }, "w6w-expr-chip-var", "▦"),
             )}
           </div>
 

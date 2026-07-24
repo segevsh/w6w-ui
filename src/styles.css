@@ -511,10 +511,14 @@
   align-items: center;
   gap: 4px;
   vertical-align: baseline;
+  box-sizing: border-box;
+  /* Never exceed the field's content box; the label truncates before the chip
+     can overrun the adjacent ƒx button. */
+  max-width: 100%;
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
   padding: 1px 6px;
-  margin: 0 1ch;
+  margin: 0 3px;
   font-size: 12.5px;
   line-height: 1.4;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -538,14 +542,20 @@
   background: color-mix(in srgb, var(--w6w-text) 8%, transparent);
 }
 .w6w-expr-chip-sigil {
+  flex: none;
   font-weight: 600;
   opacity: 0.8;
 }
 .w6w-expr-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 500;
 }
 .w6w-expr-chip-x {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 15px;
