@@ -475,35 +475,65 @@ export function ActionTestForm({
             )}
           </div>
 
-          {modalOpen ? (
-            <Modal
-              title={`Edit params — ${selectedAction.title ?? selectedAction.key}`}
-              onClose={() => setModalOpen(false)}
-              size="full"
-            >
-              {savedTestsRail ? (
-                <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>{paramsRegion}</div>
-                  <div style={{ width: 260, flexShrink: 0 }}>{savedTestsRail}</div>
+          {(() => {
+            // The tester body: params editor + Run/Save actions + result. Rendered
+            // inline when the modal is closed, and inside the pop-out modal (left
+            // pane, with the saved-tests rail on the right) when open — so Run and
+            // Save are available in BOTH views.
+            const body = (
+              <div className="w6w-stack" style={{ gap: 12 }}>
+                {paramsRegion}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="w6w-btn" disabled={running} onClick={run}>
+                    {running ? "Running…" : "Run action"}
+                  </button>
+                  {connectionId && (
+                    <button type="button" className="w6w-btn w6w-btn-ghost" onClick={openSaveModal}>
+                      Save test
+                    </button>
+                  )}
                 </div>
-              ) : (
-                paramsRegion
-              )}
-            </Modal>
-          ) : (
-            paramsRegion
-          )}
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" className="w6w-btn" disabled={running} onClick={run}>
-              {running ? "Running…" : "Run action"}
-            </button>
-            {connectionId && (
-              <button type="button" className="w6w-btn w6w-btn-ghost" onClick={openSaveModal}>
-                Save test
-              </button>
-            )}
-          </div>
+                {error && (
+                  <div className="w6w-result w6w-error">
+                    <strong>{error.headline}</strong>
+                    {error.hint && <div style={{ marginTop: 6 }}>{error.hint}</div>}
+                    {error.detail && (
+                      <div
+                        className="w6w-muted w6w-small"
+                        style={{ marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                      >
+                        {error.detail}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {result !== undefined && (
+                  <div className="w6w-stack" style={{ gap: 4 }}>
+                    <strong className="w6w-small">Result</strong>
+                    <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
+                  </div>
+                )}
+              </div>
+            );
+            return modalOpen ? (
+              <Modal
+                title={`Edit params — ${selectedAction.title ?? selectedAction.key}`}
+                onClose={() => setModalOpen(false)}
+                size="full"
+              >
+                {savedTestsRail ? (
+                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
+                    <div style={{ width: 260, flexShrink: 0 }}>{savedTestsRail}</div>
+                  </div>
+                ) : (
+                  body
+                )}
+              </Modal>
+            ) : (
+              body
+            );
+          })()}
 
           {nameModalOpen && (
             <Modal title="Save test" onClose={() => setNameModalOpen(false)}>
@@ -543,27 +573,6 @@ export function ActionTestForm({
                 </div>
               </form>
             </Modal>
-          )}
-
-          {error && (
-            <div className="w6w-result w6w-error">
-              <strong>{error.headline}</strong>
-              {error.hint && <div style={{ marginTop: 6 }}>{error.hint}</div>}
-              {error.detail && (
-                <div
-                  className="w6w-muted w6w-small"
-                  style={{ marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                >
-                  {error.detail}
-                </div>
-              )}
-            </div>
-          )}
-          {result !== undefined && (
-            <div className="w6w-stack" style={{ gap: 4 }}>
-              <strong className="w6w-small">Result</strong>
-              <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
-            </div>
           )}
         </>
       ) : (
