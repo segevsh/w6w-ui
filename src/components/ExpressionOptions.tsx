@@ -47,6 +47,14 @@ export interface ExpressionOptions {
   /** Whether a trigger event is in scope (`trigger.event`). */
   hasTrigger?: boolean;
   /**
+   * Design-time sample values the Result preview substitutes for known refs,
+   * keyed by FULL ref (`"vars.from_email"`, `"documents.test"`). Seeded by the
+   * host from the project's real vars/documents so the preview shows actual
+   * values instead of the raw `{{ ref }}` template. Optional — a user-typed
+   * Sample value still overrides, and unknown refs keep the raw fallback.
+   */
+  sampleValues?: Record<string, unknown>;
+  /**
    * Seal a typed secret value into an at-rest `SecretValue` envelope via the
    * host (the client has no key). Provided by studio (`POST /vault/seal`); when
    * present, a secret-typed field encrypts on blur so its clear text never
