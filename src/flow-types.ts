@@ -75,6 +75,13 @@ export const HTTP_APP = "@w6w/http";
 export const WEBHOOK_APP = "@w6w/webhook";
 /** "Respond to Webhook" — shapes the HTTP response for `responseMode: responseNode`. */
 export const RESPOND_APP = "@w6w/respond";
+/**
+ * Sub-workflow / Function caller (core rfcs/node-types.md · F-3). The host runs
+ * this node itself: it resolves `with.target` to a project-scoped `Callable` (a
+ * Function or a Workflow) and invokes it through `ctx.invokeCallable`, honoring
+ * the per-node `with.wait` flag. The engine never loads the target.
+ */
+export const CALL_APP = "@w6w/call";
 
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
@@ -179,6 +186,9 @@ const ICON_WEBHOOK =
 const ICON_RESPOND = '<polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" />';
 /** Funnel — many inbound branches joined into one. */
 const ICON_AGGREGATE = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />';
+/** External-link box — delegate out to another Workflow / Function. */
+const ICON_CALL =
+  '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />';
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
@@ -569,6 +579,64 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
           { value: "array", label: "Array" },
           { value: "object", label: "Object" },
         ],
+      },
+    ],
+  },
+  {
+    app: CALL_APP,
+    action: "call",
+    label: "Call workflow",
+    displayName: "Call",
+    group: "compute",
+    icon: ICON_CALL,
+    // Internal host node: invokes a project-scoped Callable (a Function or a
+    // Workflow) via `ctx.invokeCallable` (core rfcs/node-types.md · F-3). One
+    // inbound, one outbound — the sub-run is a single downstream continuation.
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        // The target's discriminant (HITL-D: resolved within the same project).
+        // A populated target picker is a deferred follow-up (FOLLOWUPS.md); v1
+        // pairs this kind with a plain id field below.
+        key: "targetKind",
+        label: "Target kind",
+        type: "select",
+        required: true,
+        default: "workflow",
+        hint: "Whether this node calls another Workflow or a Function.",
+        options: [
+          { value: "workflow", label: "Workflow" },
+          { value: "function", label: "Function" },
+        ],
+      },
+      {
+        key: "targetId",
+        label: "Target id",
+        type: "string",
+        required: true,
+        default: "",
+        placeholder: "e.g. wf_… or fn_…",
+        hint: "Id of the Workflow (wf_…) or Function (fn_…) to call, within this project.",
+      },
+      {
+        // SEAM PIN: the key is `inputs` (plural) — it maps to the engine's
+        // `InvokeCallableRequest.inputs` (the target's canonical inputs). Do
+        // NOT rename to `input`.
+        key: "inputs",
+        label: "Inputs",
+        type: "json",
+        default: {},
+        hint: "Payload passed to the target — an object keyed by the callee's declared inputs. Values may be expressions.",
+      },
+      {
+        // HITL-5: wait/no-wait is a per-node choice, independent of the target
+        // kind. `true` ⇒ block for the sub-run's output; `false` ⇒ return a run
+        // handle ({ runId }) and continue the parent graph.
+        key: "wait",
+        label: "Wait for completion",
+        type: "boolean",
+        default: true,
+        hint: "On: block until the sub-run finishes and expose its output. Off: return a run handle and continue.",
       },
     ],
   },
