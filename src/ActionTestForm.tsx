@@ -29,6 +29,75 @@ function defaultParamsFor(action: ActionDef | null | undefined): Record<string, 
   return out;
 }
 
+/** A rendered action error: a plain-language headline, an optional fix hint, and the raw provider detail. */
+interface InvokeError {
+  headline: string;
+  hint?: string;
+  detail?: string;
+}
+
+/**
+ * Pull the provider's own human-readable message out of a raw error string. App
+ * actions often throw like `SendGrid list index returned 403: {"errors":[{"message":"…"}]}`
+ * — parse the trailing JSON and surface just the human message, keeping the
+ * `"<App> … returned <status>"` prefix.
+ */
+function extractProviderMessage(msg: string): string {
+  const brace = msg.indexOf("{");
+  if (brace >= 0) {
+    try {
+      const j = JSON.parse(msg.slice(brace)) as {
+        errors?: { message?: string }[];
+        error?: { message?: string } | string;
+        message?: string;
+      };
+      const m =
+        j?.errors?.[0]?.message ??
+        (typeof j?.error === "object" ? j.error?.message : j?.error) ??
+        j?.message;
+      if (typeof m === "string" && m.trim()) {
+        const prefix = msg.slice(0, brace).replace(/[:\s]+$/, "");
+        return prefix ? `${prefix}: ${m.trim()}` : m.trim();
+      }
+    } catch {
+      // Not JSON — fall through and return the message as-is.
+    }
+  }
+  return msg;
+}
+
+/**
+ * Turn a thrown invoke error into a user-facing message. A permission/credential
+ * failure at the underlying provider (HTTP 401/403, or the message mentions
+ * scopes/forbidden/unauthorized) is stated plainly with what to fix, so the user
+ * isn't left staring at a raw upstream JSON blob.
+ */
+function describeInvokeError(e: unknown): InvokeError {
+  if (!(e instanceof ApiError)) {
+    return { headline: (e as Error)?.message ?? "The action failed to run." };
+  }
+  const detail = extractProviderMessage(e.message);
+  const haystack = `${e.status} ${e.code} ${e.message}`.toLowerCase();
+  const isPermission =
+    e.status === 401 ||
+    e.status === 403 ||
+    /\b(401|403)\b|forbidden|unauthorized|not authorized|permission|scope|access denied|invalid api key|invalid credential/.test(
+      haystack,
+    );
+  if (isPermission) {
+    return {
+      headline:
+        "Permission denied by the provider — this is a credential/scope problem, not a w6w error.",
+      hint:
+        "The connection's API key is missing the permissions this action needs. Fix it at the " +
+        "provider — e.g. SendGrid → Settings → API Keys → give the key the required scopes (or Full " +
+        "Access), or create a new key — then update this connection's credential and try again.",
+      detail,
+    };
+  }
+  return { headline: "The action returned an error.", detail };
+}
+
 /**
  * Schema-driven form to test/run a single action against a connection. Renders
  * the action's declared params through {@link ParamsForm} (the same primitive
@@ -69,7 +138,7 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
     setValuesByAction({ key: selectedKey, values: next });
 
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<InvokeError | null>(null);
   const [result, setResult] = useState<unknown>(undefined);
 
   const run = async () => {
@@ -81,7 +150,7 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
       const r = await api.invokeAction(appId, selectedAction.key, values, { connectionId });
       setResult(r.value);
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.code}: ${e.message}` : (e as Error).message);
+      setError(describeInvokeError(e));
     } finally {
       setRunning(false);
     }
@@ -129,7 +198,20 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
             </button>
           </div>
 
-          {error && <div className="w6w-result w6w-error">{error}</div>}
+          {error && (
+            <div className="w6w-result w6w-error">
+              <strong>{error.headline}</strong>
+              {error.hint && <div style={{ marginTop: 6 }}>{error.hint}</div>}
+              {error.detail && (
+                <div
+                  className="w6w-muted w6w-small"
+                  style={{ marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                >
+                  {error.detail}
+                </div>
+              )}
+            </div>
+          )}
           {result !== undefined && (
             <div className="w6w-stack" style={{ gap: 4 }}>
               <strong className="w6w-small">Result</strong>
