@@ -8,6 +8,14 @@
 export interface FlowStep {
   id: string;
   uses: { app: string; action: string; connection?: string | null };
+  /**
+   * Declared connection-port cardinality for this step (see core
+   * `rfcs/node-types.md` · Ports & cardinality). Omitted ⇒ `{ in: 1, out: 1 }`.
+   * A persisted value wins over the node's default — `in > 1` opts the step into
+   * accepting multiple inbound edges (e.g. a flow-control aggregator joining
+   * several upstream branches).
+   */
+  ports?: NodePorts;
   with?: Record<string, unknown>;
   retry?: {
     maxAttempts: number;
@@ -127,6 +135,20 @@ export function nodePorts(app: string, action: string): NodePorts {
   return internalNodeDef(app, action)?.ports ?? DEFAULT_NODE_PORTS;
 }
 
+/**
+ * Resolve a *step's* connection ports. A persisted `step.ports` wins — an author
+ * may have opted the step into a non-default cardinality (e.g. a fan-in
+ * aggregator that joins several upstream branches). Otherwise fall back to the
+ * node's declared default via `nodePorts(app, action)` (internal nodes may drop
+ * the entry port), and finally to `{ in: 1, out: 1 }` (`DEFAULT_NODE_PORTS`).
+ *
+ * This is the step-aware counterpart to `nodePorts`, which keys only off
+ * `(app, action)` and so forces every external app step to the default.
+ */
+export function nodePortsForStep(step: FlowStep): NodePorts {
+  return step.ports ?? nodePorts(step.uses.app, step.uses.action);
+}
+
 // Feather-style 24×24 stroked glyphs (inner markup only; the card supplies the
 // <svg> wrapper). One clean, recognizable glyph per internal primitive.
 /** Lightning bolt — a trigger firing. */
@@ -155,6 +177,8 @@ const ICON_WEBHOOK =
   '<circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />';
 /** Reply arrow — respond to the caller. */
 const ICON_RESPOND = '<polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" />';
+/** Funnel — many inbound branches joined into one. */
+const ICON_AGGREGATE = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />';
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
@@ -520,6 +544,31 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
             { key: "value", label: "Value", type: "string" },
           ],
         },
+      },
+    ],
+  },
+  {
+    app: CONTROL_APP,
+    action: "aggregate",
+    label: "Aggregate",
+    displayName: "Aggregate",
+    group: "control",
+    icon: ICON_AGGREGATE,
+    // Fan-in join: accepts several inbound branches and emits one combined
+    // output. `in > 1` opts the node into multiple inbound edges (see core
+    // rfcs/node-types.md · Ports & cardinality); `out: 1` is a single exit.
+    ports: { in: 10, out: 1 },
+    params: [
+      {
+        key: "mode",
+        label: "Mode",
+        type: "select",
+        default: "array",
+        hint: "How to combine the inbound branch outputs: an array of results, or an object keyed by source step.",
+        options: [
+          { value: "array", label: "Array" },
+          { value: "object", label: "Object" },
+        ],
       },
     ],
   },
