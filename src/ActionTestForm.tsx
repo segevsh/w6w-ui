@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
+import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6wApi.ts";
 import { useW6wApi } from "./provider.tsx";
 import type { ActionDef, ThemeMode } from "./types.ts";
@@ -133,6 +134,11 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
   const [jsonText, setJsonText] = useState("");
   const [jsonInvalid, setJsonInvalid] = useState(false);
 
+  // Pop-out: when open, the params region moves into a larger `Modal` canvas.
+  // It is the SAME region bound to the SAME `values`/`setValues`, just relocated,
+  // so edits stay in sync with the inline view.
+  const [modalOpen, setModalOpen] = useState(false);
+
   // Param values, re-seeded from defaults whenever the selected action changes.
   const selectedKey = selectedAction?.key ?? null;
   const [valuesByAction, setValuesByAction] = useState<{
@@ -174,6 +180,79 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
     }
   };
 
+  // The params region: the form↔JSON toggle plus the ParamsForm/JsonEditor block.
+  // Rendered in exactly one place at a time — inline when the pop-out is closed,
+  // inside the `Modal` when it's open — so there's a single instance bound to the
+  // single `values`/`setValues` state (no copy-on-open, edits stay in sync).
+  const paramsRegion = (
+    <div className="w6w-stack" style={{ gap: 6 }}>
+      <div
+        className="w6w-field-labelrow"
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+      >
+        <span className="w6w-muted w6w-small">Parameters</span>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            className={`w6w-btn w6w-btn-sm w6w-btn-ghost${viewMode === "form" ? " active" : ""}`}
+            aria-pressed={viewMode === "form"}
+            onClick={() => setViewMode("form")}
+          >
+            Form
+          </button>
+          <button
+            type="button"
+            className={`w6w-btn w6w-btn-sm w6w-btn-ghost${viewMode === "json" ? " active" : ""}`}
+            aria-pressed={viewMode === "json"}
+            onClick={enterJsonView}
+          >
+            JSON
+          </button>
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-sm w6w-btn-ghost"
+            aria-pressed={modalOpen}
+            title={
+              modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
+            }
+            aria-label={
+              modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
+            }
+            onClick={() => setModalOpen((v) => !v)}
+          >
+            {modalOpen ? "⤡" : "⤢"}
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "form" ? (
+        <ParamsForm params={selectedAction?.params ?? []} values={values} onChange={setValues} />
+      ) : (
+        <>
+          <JsonEditor
+            value={jsonText}
+            onChange={setJsonText}
+            minHeight={modalOpen ? "50vh" : "200px"}
+            aria-label="Params JSON"
+            onValidChange={(parsed) => {
+              // Only a JSON object maps onto the params `values` record; ignore a
+              // bare array/scalar so `values` stays a plain key→value object.
+              if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+                setValues(parsed as Record<string, unknown>);
+              }
+            }}
+            onValidityChange={({ valid }) => setJsonInvalid(!valid)}
+          />
+          {jsonInvalid && (
+            <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+              Invalid JSON
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="w6w-stack">
       {/* Action picker — only when the caller isn't controlling the selection. */}
@@ -208,66 +287,17 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
             )}
           </div>
 
-          <div className="w6w-stack" style={{ gap: 6 }}>
-            <div
-              className="w6w-field-labelrow"
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+          {modalOpen ? (
+            <Modal
+              title={`Edit params — ${selectedAction.title ?? selectedAction.key}`}
+              onClose={() => setModalOpen(false)}
+              size="full"
             >
-              <span className="w6w-muted w6w-small">Parameters</span>
-              <div style={{ display: "flex", gap: 4 }}>
-                <button
-                  type="button"
-                  className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
-                    viewMode === "form" ? " active" : ""
-                  }`}
-                  aria-pressed={viewMode === "form"}
-                  onClick={() => setViewMode("form")}
-                >
-                  Form
-                </button>
-                <button
-                  type="button"
-                  className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
-                    viewMode === "json" ? " active" : ""
-                  }`}
-                  aria-pressed={viewMode === "json"}
-                  onClick={enterJsonView}
-                >
-                  JSON
-                </button>
-              </div>
-            </div>
-
-            {viewMode === "form" ? (
-              <ParamsForm
-                params={selectedAction.params ?? []}
-                values={values}
-                onChange={setValues}
-              />
-            ) : (
-              <>
-                <JsonEditor
-                  value={jsonText}
-                  onChange={setJsonText}
-                  minHeight="200px"
-                  aria-label="Params JSON"
-                  onValidChange={(parsed) => {
-                    // Only a JSON object maps onto the params `values` record; ignore a
-                    // bare array/scalar so `values` stays a plain key→value object.
-                    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-                      setValues(parsed as Record<string, unknown>);
-                    }
-                  }}
-                  onValidityChange={({ valid }) => setJsonInvalid(!valid)}
-                />
-                {jsonInvalid && (
-                  <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
-                    Invalid JSON
-                  </span>
-                )}
-              </>
-            )}
-          </div>
+              {paramsRegion}
+            </Modal>
+          ) : (
+            paramsRegion
+          )}
 
           <div>
             <button type="button" className="w6w-btn" disabled={running} onClick={run}>
