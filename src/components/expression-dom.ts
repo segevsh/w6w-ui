@@ -25,7 +25,9 @@ export function makeChip(doc: Document, part: ExprPart): HTMLElement {
 
   if (part.kind === "var") {
     span.setAttribute("data-ref", part.ref ?? "");
-    sigil.textContent = "{x}";
+    // A small, quiet marker (accent colour carries the "variable" meaning) —
+    // never the literal `{x}`, which read as noise crowding the field.
+    sigil.textContent = "◆";
     label.textContent = varLabel(part.ref ?? "");
     span.title = `Variable: ${part.ref ?? ""}`;
   } else if (part.kind === "secret") {
