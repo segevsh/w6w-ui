@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { ApiError } from "./createW6wApi.ts";
 import { useW6wApi } from "./provider.tsx";
@@ -123,6 +124,15 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
   const selectedAction: ActionDef | null =
     action ?? actions.find((a) => a.key === pickedKey) ?? null;
 
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<InvokeError | null>(null);
+  const [result, setResult] = useState<unknown>(undefined);
+
+  // Params view: the schema-driven form, or the whole `values` object as raw JSON.
+  const [viewMode, setViewMode] = useState<"form" | "json">("form");
+  const [jsonText, setJsonText] = useState("");
+  const [jsonInvalid, setJsonInvalid] = useState(false);
+
   // Param values, re-seeded from defaults whenever the selected action changes.
   const selectedKey = selectedAction?.key ?? null;
   const [valuesByAction, setValuesByAction] = useState<{
@@ -130,16 +140,24 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
     values: Record<string, unknown>;
   }>(() => ({ key: selectedKey, values: defaultParamsFor(selectedAction) }));
   if (valuesByAction.key !== selectedKey) {
-    // Selection changed (controlled or via the picker) — reset the form.
+    // Selection changed (controlled or via the picker, without a remount) — reset the
+    // form values AND clear any stale result/error carried over from the previously
+    // selected action (a 403 from `list-get` must not linger while `mail-send` shows).
     setValuesByAction({ key: selectedKey, values: defaultParamsFor(selectedAction) });
+    setError(null);
+    setResult(undefined);
   }
   const values = valuesByAction.values;
   const setValues = (next: Record<string, unknown>) =>
     setValuesByAction({ key: selectedKey, values: next });
 
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<InvokeError | null>(null);
-  const [result, setResult] = useState<unknown>(undefined);
+  // Entering the JSON view seeds the editor from the current values; edits that
+  // parse to a plain object round-trip straight back into `values`.
+  const enterJsonView = () => {
+    setJsonText(JSON.stringify(values, null, 2));
+    setJsonInvalid(false);
+    setViewMode("json");
+  };
 
   const run = async () => {
     if (!selectedAction) return;
@@ -190,7 +208,66 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
             )}
           </div>
 
-          <ParamsForm params={selectedAction.params ?? []} values={values} onChange={setValues} />
+          <div className="w6w-stack" style={{ gap: 6 }}>
+            <div
+              className="w6w-field-labelrow"
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+            >
+              <span className="w6w-muted w6w-small">Parameters</span>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button
+                  type="button"
+                  className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                    viewMode === "form" ? " active" : ""
+                  }`}
+                  aria-pressed={viewMode === "form"}
+                  onClick={() => setViewMode("form")}
+                >
+                  Form
+                </button>
+                <button
+                  type="button"
+                  className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                    viewMode === "json" ? " active" : ""
+                  }`}
+                  aria-pressed={viewMode === "json"}
+                  onClick={enterJsonView}
+                >
+                  JSON
+                </button>
+              </div>
+            </div>
+
+            {viewMode === "form" ? (
+              <ParamsForm
+                params={selectedAction.params ?? []}
+                values={values}
+                onChange={setValues}
+              />
+            ) : (
+              <>
+                <JsonEditor
+                  value={jsonText}
+                  onChange={setJsonText}
+                  minHeight="200px"
+                  aria-label="Params JSON"
+                  onValidChange={(parsed) => {
+                    // Only a JSON object maps onto the params `values` record; ignore a
+                    // bare array/scalar so `values` stays a plain key→value object.
+                    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+                      setValues(parsed as Record<string, unknown>);
+                    }
+                  }}
+                  onValidityChange={({ valid }) => setJsonInvalid(!valid)}
+                />
+                {jsonInvalid && (
+                  <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+                    Invalid JSON
+                  </span>
+                )}
+              </>
+            )}
+          </div>
 
           <div>
             <button type="button" className="w6w-btn" disabled={running} onClick={run}>
