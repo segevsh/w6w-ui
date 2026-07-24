@@ -33,11 +33,11 @@ export interface ExpressionOptions {
    */
   inputs?: string[];
   /**
-   * Dataset names in scope (`datasets.<name>`). A store-independent affordance:
+   * Document names in scope (`documents.<name>`). A store-independent affordance:
    * whatever names the host passes are offered as insertable chips. Omitted when
-   * no datasets are available.
+   * no documents are available.
    */
-  datasets?: string[];
+  documents?: string[];
   /**
    * The workflow state leading to this step: upstream steps whose output is in
    * scope (`steps.<id>.output`). Present only in a workflow context; omitted for
