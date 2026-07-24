@@ -8,7 +8,7 @@
  *   <W6wUIProvider api={api}>...</W6wUIProvider>
  */
 import { type ReactNode, createContext, useContext } from "react";
-import type { ActionDef, AppSummary, AuthDef, ConnectionSummary } from "./types.ts";
+import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, SavedTest } from "./types.ts";
 
 /**
  * The surface every w6w-io component may call. Grows as we add components;
@@ -63,6 +63,25 @@ export interface W6wApi {
     params: Record<string, unknown>,
     opts?: { connectionId?: string },
   ): Promise<{ value: unknown }>;
+
+  /** List the saved action-test inputs stored against a connection. */
+  listSavedTests(connectionId: string): Promise<SavedTest[]>;
+
+  /** Save a new set of action-test inputs against a connection. */
+  createSavedTest(
+    connectionId: string,
+    body: { actionKey: string; name: string; values: Record<string, unknown> },
+  ): Promise<SavedTest>;
+
+  /** Rename a saved test or replace its stored input values. */
+  updateSavedTest(
+    connectionId: string,
+    id: string,
+    patch: { name?: string; values?: Record<string, unknown> },
+  ): Promise<SavedTest>;
+
+  /** Delete a saved test by id. */
+  deleteSavedTest(connectionId: string, id: string): Promise<void>;
 }
 
 const Ctx = createContext<W6wApi | null>(null);

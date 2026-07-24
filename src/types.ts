@@ -203,6 +203,18 @@ export interface ConnectionSummary {
   updatedAt?: string;
 }
 
+/** A saved set of action-test input values, scoped to a connection + action. */
+export interface SavedTest {
+  id: string;
+  connectionId: string;
+  appId: string;
+  actionKey: string;
+  name: string;
+  values: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Effective theme hint passed to icon components to pick a light/dark variant. */
 export type ThemeMode = "light" | "dark";
 
