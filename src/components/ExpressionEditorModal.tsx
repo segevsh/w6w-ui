@@ -75,6 +75,18 @@ export function ExpressionEditorModal({
   const hasState = steps.length > 0 || !!options.hasTrigger;
   const template = serializeTemplate(parts);
 
+  // The sample map the Result pane previews against: host-seeded defaults
+  // (real project vars/documents, keyed by full ref) overlaid by anything the
+  // author typed into the Sample values box, which takes precedence. Non-string
+  // seeds are stringified for the text preview.
+  const effectiveSamples = useMemo(() => {
+    const seeded: Record<string, string> = {};
+    for (const [ref, v] of Object.entries(options.sampleValues ?? {})) {
+      seeded[ref] = typeof v === "string" ? v : JSON.stringify(v);
+    }
+    return { ...seeded, ...samples };
+  }, [options.sampleValues, samples]);
+
   // The distinct var refs the current expression reads (first-seen order) — the
   // in-scope roots the author can supply sample values for.
   const usedRefs = useMemo(() => {
@@ -106,7 +118,7 @@ export function ExpressionEditorModal({
             break;
           case "var": {
             const ref = p.ref ?? "";
-            out += ref in samples ? samples[ref] : `{{ ${ref} }}`;
+            out += ref in effectiveSamples ? effectiveSamples[ref] : `{{ ${ref} }}`;
             break;
           }
           case "secret":
@@ -123,7 +135,7 @@ export function ExpressionEditorModal({
       // Last-resort fallback — the pane must never throw.
       return template;
     }
-  }, [parts, samples, template]);
+  }, [parts, effectiveSamples, template]);
 
   const source = (label: string, part: ExprPart, cls: string, sigil: string) => (
     <button
