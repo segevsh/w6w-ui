@@ -3,7 +3,7 @@ import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { Modal } from "./components/Modal.tsx";
-import type { ActionParam, ExprValue, SecretValue } from "./types.ts";
+import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
@@ -250,19 +250,22 @@ function ParamField({
   if (param.type === "text" || param.config?.multiline) {
     const current = (value ?? param.default ?? "") as string;
     return (
-      <label className="w6w-field">
-        <span>
-          {label}
-          {req}
-        </span>
+      <FxField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+      >
         <textarea
           rows={3}
           value={String(current)}
           readOnly={readOnly}
+          aria-label={label}
           onChange={(e) => onChange(param.key, e.target.value)}
         />
-        {param.hint && <span className="w6w-hint">{param.hint}</span>}
-      </label>
+      </FxField>
     );
   }
 
@@ -284,14 +287,18 @@ function ParamField({
     const current = value ?? param.default ?? param.options[0]?.value ?? "";
     const isNumber = param.type === "number";
     return (
-      <label className="w6w-field">
-        <span>
-          {label}
-          {req}
-        </span>
+      <FxField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+      >
         <select
           value={String(current)}
           disabled={readOnly}
+          aria-label={label}
           onChange={(e) => onChange(param.key, isNumber ? Number(e.target.value) : e.target.value)}
         >
           {param.options.map((o) => (
@@ -300,8 +307,7 @@ function ParamField({
             </option>
           ))}
         </select>
-        {param.hint && <span className="w6w-hint">{param.hint}</span>}
-      </label>
+      </FxField>
     );
   }
 
@@ -310,9 +316,9 @@ function ParamField({
   // `{type:"expr"}` envelope, or an at-rest `{type:"secret"}` (shown as `***`,
   // never the ciphertext). The var/secret picker data source is wired later
   // (task 3.2) via the `options` prop.
-  // TODO(expr-mode): opt string/text fields into expression mode by rendering
-  // ExpressionInput here too (e.g. when `param.config?.expression` is set),
-  // keeping the plain input as the default for now.
+  //
+  // General (non-secret) scalar fields get their own expression mode via the
+  // `fx` toggle on {@link FxField} — the plain widget stays the default there.
   if (param.type === "secret") {
     const current = (value ?? param.default) as ExprValue | string | SecretValue | undefined;
     return (
@@ -340,15 +346,19 @@ function ParamField({
   // "[object Object]"); show them JSON-stringified instead.
   const display = typeof raw === "object" && raw !== null ? JSON.stringify(raw) : String(raw ?? "");
   return (
-    <label className="w6w-field">
-      <span>
-        {label}
-        {req}
-      </span>
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
       <input
         type={inputType}
         value={display}
         readOnly={readOnly}
+        aria-label={label}
         autoComplete="off"
         autoCapitalize="off"
         autoCorrect="off"
@@ -361,8 +371,85 @@ function ParamField({
           onChange(param.key, param.type === "number" ? Number(e.target.value) : e.target.value)
         }
       />
+    </FxField>
+  );
+}
+
+/**
+ * Wraps a general scalar field (text/number `input`, `textarea`, or an
+ * `options` dropdown) with an `fx` affordance: a small toggle beside the label
+ * swaps the plain widget for the segmented {@link ExpressionInput} (unmasked —
+ * these are not secrets), so an author can bind the field to a variable/expression
+ * instead of a literal. Mirrors the `secret`-param path, which already renders
+ * ExpressionInput.
+ *
+ * The plain widget is the DEFAULT: the field only enters expression mode when the
+ * author engages `fx` (or when the stored value is already an `ExprValue`), so a
+ * number/select round-trips as its original scalar unless opted in (gap #6). The
+ * engine's `resolveWith` accepts an `ExprValue` or a literal for any `with` value,
+ * so a stored expression round-trips without an engine change.
+ */
+function FxField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  children,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  children: ReactNode;
+}) {
+  // Seed from the stored value so a persisted expression reopens in fx mode; the
+  // toggle owns the mode thereafter (the parent re-keys ParamField per field).
+  const [fx, setFx] = useState(() => isExprValue(value));
+
+  const toggle = () => {
+    // Leaving expr mode drops the value back to an empty scalar, so the plain
+    // widget never has to render (or store) a leftover `ExprValue` — keeping the
+    // invariant "fx off ⟹ plain scalar".
+    if (fx && isExprValue(value)) onChange(param.key, "");
+    setFx(!fx);
+  };
+
+  return (
+    <div className="w6w-field">
+      <span className="w6w-field-labelrow">
+        <span>
+          {label}
+          {req}
+        </span>
+        {!readOnly && (
+          <button
+            type="button"
+            className={`w6w-icon-btn w6w-btn-sm${fx ? " active" : ""}`}
+            title={fx ? "Use a plain value" : "Use an expression"}
+            aria-label={fx ? `Use a plain value for ${label}` : `Use an expression for ${label}`}
+            aria-pressed={fx}
+            onClick={toggle}
+          >
+            ƒx
+          </button>
+        )}
+      </span>
+      {fx ? (
+        <ExpressionInput
+          value={value as ExprValue | string | undefined}
+          readOnly={readOnly}
+          aria-label={label}
+          onChange={(next) => onChange(param.key, next)}
+        />
+      ) : (
+        children
+      )}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
-    </label>
+    </div>
   );
 }
 

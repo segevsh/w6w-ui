@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import type { ExpressionOptions } from "./ExpressionOptions.tsx";
 import { Modal } from "./Modal.tsx";
@@ -10,7 +10,8 @@ import { partsToValue, serializeTemplate, valueToParts } from "./expression-temp
  * scope (variables, secrets, and the workflow state leading to this step) — one
  * click inserts a colored TAG (chip) at the caret. Right: the expression editor
  * (top, where tags read distinctly from plain text) over the `{{ }}` template
- * form that gets saved (bottom).
+ * form that gets saved plus a live Result pane (bottom) that previews the
+ * expression against user-supplied sample values for the injected scope.
  *
  * The value it saves is the same `ExprValue | string` the inline field and the
  * engine already use (see `expression-template.ts` / `expression-dom.ts`).
@@ -38,6 +39,9 @@ export function ExpressionEditorModal({
   // directly and sync out, so the caret is never clobbered.
   const [paintGen] = useState(0);
   const editorRef = useRef<HTMLDivElement>(null);
+  // User-supplied sample values (keyed by var ref) that the Result pane previews
+  // the expression against. Design-time only — never sent to the engine.
+  const [samples, setSamples] = useState<Record<string, string>>({});
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paint once on mount; edits flow through the DOM.
   useLayoutEffect(() => {
@@ -65,9 +69,61 @@ export function ExpressionEditorModal({
 
   const vars = options.vars ?? [];
   const secrets = options.secrets ?? [];
+  const inputs = options.inputs ?? [];
+  const datasets = options.datasets ?? [];
   const steps = options.steps ?? [];
   const hasState = steps.length > 0 || !!options.hasTrigger;
   const template = serializeTemplate(parts);
+
+  // The distinct var refs the current expression reads (first-seen order) — the
+  // in-scope roots the author can supply sample values for.
+  const usedRefs = useMemo(() => {
+    const seen = new Set<string>();
+    const refs: string[] = [];
+    for (const p of parts) {
+      if (p.kind === "var" && p.ref && !seen.has(p.ref)) {
+        seen.add(p.ref);
+        refs.push(p.ref);
+      }
+    }
+    return refs;
+  }, [parts]);
+
+  // Best-effort client-side preview of the expression against the sample values.
+  // TODO(HITL-2): `@w6w/expr` is a Deno/JSR package that isn't resolvable in the
+  // ui Node/pnpm toolchain (not a dependency here), so inline JSONLogic (`expr`
+  // parts) can't be evaluated client-side — we fall back to rendering the
+  // resolved `{{ }}` template: substitute sample values for var refs, mask
+  // secrets, and keep the `{{ … }}` form for anything we can't resolve. Never
+  // throws on an un-evaluable expression.
+  const result = useMemo(() => {
+    try {
+      let out = "";
+      for (const p of parts) {
+        switch (p.kind) {
+          case "text":
+            out += p.value ?? "";
+            break;
+          case "var": {
+            const ref = p.ref ?? "";
+            out += ref in samples ? samples[ref] : `{{ ${ref} }}`;
+            break;
+          }
+          case "secret":
+            out += "•••";
+            break;
+          case "expr":
+            // No client-side evaluator (see TODO above) — show the template form.
+            out += serializeTemplate([p]);
+            break;
+        }
+      }
+      return out;
+    } catch {
+      // Last-resort fallback — the pane must never throw.
+      return template;
+    }
+  }, [parts, samples, template]);
 
   const source = (label: string, part: ExprPart, cls: string, sigil: string) => (
     <button
@@ -115,6 +171,22 @@ export function ExpressionEditorModal({
             {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
             {secrets.map((s) =>
               source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
+            )}
+          </div>
+
+          <div className="w6w-exprmodal-group">
+            <span className="w6w-exprmodal-group-label">Inputs</span>
+            {inputs.length === 0 && <span className="w6w-expr-menu-empty">No inputs</span>}
+            {inputs.map((i) =>
+              source(i, { kind: "var", ref: `inputs.${i}` }, "w6w-expr-chip-var", "⇥"),
+            )}
+          </div>
+
+          <div className="w6w-exprmodal-group">
+            <span className="w6w-exprmodal-group-label">Datasets</span>
+            {datasets.length === 0 && <span className="w6w-expr-menu-empty">No datasets</span>}
+            {datasets.map((d) =>
+              source(d, { kind: "var", ref: `datasets.${d}` }, "w6w-expr-chip-var", "▦"),
             )}
           </div>
 
@@ -178,6 +250,35 @@ export function ExpressionEditorModal({
               <span className="w6w-muted w6w-small"> — the {"{{ }}"} form that gets saved</span>
             </span>
             <pre className="w6w-exprmodal-template">{template || " "}</pre>
+          </div>
+          {usedRefs.length > 0 && (
+            <div className="w6w-exprmodal-preview">
+              <span className="w6w-exprmodal-pane-label">
+                Sample values
+                <span className="w6w-muted w6w-small">
+                  {" "}
+                  — try the expression against example data
+                </span>
+              </span>
+              {usedRefs.map((ref) => (
+                <label key={ref} className="w6w-field">
+                  <span>{ref}</span>
+                  <input
+                    type="text"
+                    value={samples[ref] ?? ""}
+                    placeholder="sample value"
+                    onChange={(e) => setSamples((s) => ({ ...s, [ref]: e.target.value }))}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="w6w-exprmodal-preview">
+            <span className="w6w-exprmodal-pane-label">
+              Result
+              <span className="w6w-muted w6w-small"> — live preview against the sample values</span>
+            </span>
+            <pre className="w6w-exprmodal-template">{result || " "}</pre>
           </div>
         </div>
       </div>

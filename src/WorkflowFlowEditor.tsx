@@ -55,7 +55,7 @@ import {
   internalNodeParams,
   isControlApp,
   isInternalApp,
-  nodePorts,
+  nodePortsForStep,
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { useW6wApi } from "./provider.tsx";
@@ -81,8 +81,9 @@ function canConnect(
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return false;
-  const srcPorts = nodePorts(srcStep.uses.app, srcStep.uses.action);
-  const tgtPorts = nodePorts(tgtStep.uses.app, tgtStep.uses.action);
+  // Per-step ports (T2.3.1): a persisted `ports.in > 1` lets multiple edges land.
+  const srcPorts = nodePortsForStep(srcStep);
+  const tgtPorts = nodePortsForStep(tgtStep);
   return srcPorts.out >= 1 && tgtPorts.in >= 1;
 }
 
@@ -103,8 +104,10 @@ function applyConnect(
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return null;
-  const srcPorts = nodePorts(srcStep.uses.app, srcStep.uses.action);
-  const tgtPorts = nodePorts(tgtStep.uses.app, tgtStep.uses.action);
+  // Per-step ports (T2.3.1): capacity honors a persisted `ports.in`/`ports.out`,
+  // so a fan-in node with `ports.in > 1` keeps prior edges instead of dropping them.
+  const srcPorts = nodePortsForStep(srcStep);
+  const tgtPorts = nodePortsForStep(tgtStep);
   let next = edges;
   // Free the source's exit port: drop the oldest same-source edges so adding one
   // more stays within out-capacity (for the current 1-out model, replaces it).
@@ -331,7 +334,7 @@ function Inner({
       // port is fine: the auto-wire below replaces its existing edge.)
       const originStep = nodes.find((n) => n.id === fromNode.id)?.data.step;
       if (originStep) {
-        const p = nodePorts(originStep.uses.app, originStep.uses.action);
+        const p = nodePortsForStep(originStep);
         if ((handleType === "source" ? p.out : p.in) < 1) return;
       }
       const point = "changedTouches" in event ? event.changedTouches[0] : event;
@@ -695,6 +698,39 @@ function Inner({
 
 // ── Node renderers ────────────────────────────────────────────────────────
 
+/**
+ * A single connection handle, drawn to distinguish a single port from a
+ * **multiple**-connection (fan-in / fan-out) port: a lone port keeps React
+ * Flow's default dot, while `multiple` (cardinality > 1) renders a taller,
+ * segmented bar so a node that accepts several inbound edges reads differently
+ * from a single-in node (see core rfcs/node-types.md · Ports & cardinality).
+ */
+function PortHandle({
+  type,
+  position,
+  multiple,
+}: {
+  type: "source" | "target";
+  position: Position;
+  multiple: boolean;
+}) {
+  return (
+    <Handle
+      type={type}
+      position={position}
+      className={multiple ? "w6w-handle-multi" : undefined}
+      style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
+      title={
+        multiple
+          ? type === "target"
+            ? "Accepts multiple incoming connections"
+            : "Multiple outgoing connections"
+          : undefined
+      }
+    />
+  );
+}
+
 /** A 24×24 stroked glyph for the node toolbar. */
 function ToolbarIcon({ children }: { children: ReactNode }) {
   return (
@@ -778,7 +814,8 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const app = apps.get(step.uses.app);
   // The human app name (fall back to the raw id when the app isn't in the list).
   const appName = app?.displayName || step.uses.app || "—";
-  const ports = nodePorts(step.uses.app, step.uses.action);
+  // Per-step ports (T2.3.1): a persisted `ports.in > 1` renders a multi-input handle.
+  const ports = nodePortsForStep(step);
   return (
     <div>
       <NodeControls id={id} runnable />
@@ -799,7 +836,9 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        {ports.in > 0 && <Handle type="target" position={Position.Left} />}
+        {ports.in > 0 && (
+          <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
+        )}
         <AppIcon
           src={app?.iconSvg}
           srcDark={app?.iconSvgDark}
@@ -813,7 +852,9 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
-        {ports.out > 0 && <Handle type="source" position={Position.Right} />}
+        {ports.out > 0 && (
+          <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
+        )}
       </div>
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
@@ -831,8 +872,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const label = internalNodeLabel(step.uses.app, step.uses.action);
   const icon = internalNodeIcon(step.uses.app, step.uses.action);
-  // Ports: triggers have no entry (0 in, 1 out); other internals default to 1/1.
-  const ports = nodePorts(step.uses.app, step.uses.action);
+  // Per-step ports (T2.3.1): triggers have no entry (0 in, 1 out); a fan-in node
+  // (e.g. aggregate, or `ports.in > 1`) renders a multi-input handle.
+  const ports = nodePortsForStep(step);
   return (
     <div>
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
@@ -854,7 +896,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        {ports.in > 0 && <Handle type="target" position={Position.Left} />}
+        {ports.in > 0 && (
+          <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
+        )}
         {icon && <InternalIcon icon={icon} />}
         <div style={{ minWidth: 0, textAlign: "left" }}>
           <div style={{ fontWeight: 600 }}>{label}</div>
@@ -862,7 +906,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
-        {ports.out > 0 && <Handle type="source" position={Position.Right} />}
+        {ports.out > 0 && (
+          <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
+        )}
       </div>
       {/* Meta line under the card: the step id (internal nodes carry no version). */}
       <div
@@ -1110,11 +1156,14 @@ function StepEditModal({
                 }
               />
             ) : (
-              <NodeConfigForm
-                config={{ retry: step.retry, onError: step.onError, notes: step.notes }}
-                onChange={(c) => commit({ ...step, ...c })}
-                readOnly={readOnly}
-              />
+              <div className="w6w-stack">
+                <NodeConfigForm
+                  config={{ retry: step.retry, onError: step.onError, notes: step.notes }}
+                  onChange={(c) => commit({ ...step, ...c })}
+                  readOnly={readOnly}
+                />
+                <StepPortsControl step={step} readOnly={readOnly} onChange={commit} />
+              </div>
             ))}
 
           {tab === "test" && (
@@ -1168,6 +1217,48 @@ function StepEditModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Default in-cardinality applied when a step is opted into multiple inbound edges. */
+const MULTI_IN_DEFAULT = 10;
+
+/**
+ * Opt a step into accepting **multiple** incoming edges by setting `step.ports.in`
+ * (see core rfcs/node-types.md · Ports & cardinality). Unchecking reverts to the
+ * node's default (drops the persisted `ports` so an untouched step stays `1/1`).
+ * Hidden for entry nodes (triggers) that declare no inbound port.
+ */
+function StepPortsControl({
+  step,
+  readOnly,
+  onChange,
+}: {
+  step: FlowStep;
+  readOnly?: boolean;
+  onChange: (next: FlowStep) => void;
+}) {
+  const ports = nodePortsForStep(step);
+  // Nothing flows into a node with no entry port (e.g. a trigger).
+  if (ports.in < 1) return null;
+  const multiple = ports.in > 1;
+  return (
+    <label className="w6w-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <input
+        type="checkbox"
+        checked={multiple}
+        disabled={readOnly}
+        onChange={(e) => {
+          if (e.target.checked) {
+            onChange({ ...step, ports: { in: MULTI_IN_DEFAULT, out: ports.out } });
+          } else {
+            const { ports: _drop, ...rest } = step;
+            onChange(rest);
+          }
+        }}
+      />
+      <span>Accept multiple incoming connections</span>
+    </label>
   );
 }
 
