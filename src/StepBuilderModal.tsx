@@ -36,6 +36,14 @@ export interface StepBuilderModalProps {
   /** Fired when the user confirms a step to add. */
   onAdd: (step: BuiltStep) => void;
   theme?: ThemeMode;
+  /**
+   * Restrict the picker to real app actions — hides the Triggers / Controls /
+   * Utilities (flow-control / internal `@w6w/*` node) tabs. Used where only an
+   * app action makes sense, e.g. binding a Function's implementation.
+   */
+  appsOnly?: boolean;
+  /** Modal heading. Defaults to "Add a step". */
+  title?: string;
 }
 
 type Tab = "connected" | "apps" | "triggers" | "controls" | "utilities";
@@ -131,7 +139,13 @@ export function ConfigViewToggle({
  *
  * Data + IO come from `useW6wApi()`, so mount it under `<W6wUIProvider>`.
  */
-export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProps) {
+export function StepBuilderModal({
+  onClose,
+  onAdd,
+  theme,
+  appsOnly,
+  title,
+}: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
   const [tab, setTab] = useState<Tab>("connected");
@@ -211,7 +225,7 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
   }
 
   return (
-    <Modal title="Add a step" onClose={onClose} size="xl">
+    <Modal title={title ?? "Add a step"} onClose={onClose} size="xl">
       <div className="w6w-stepbuilder">
         <nav className="w6w-stepbuilder-sidebar">
           <button
@@ -228,27 +242,31 @@ export function StepBuilderModal({ onClose, onAdd, theme }: StepBuilderModalProp
           >
             Apps
           </button>
-          <button
-            type="button"
-            className={`w6w-stepbuilder-tab${tab === "triggers" ? " active" : ""}`}
-            onClick={() => setTab("triggers")}
-          >
-            Triggers
-          </button>
-          <button
-            type="button"
-            className={`w6w-stepbuilder-tab${tab === "controls" ? " active" : ""}`}
-            onClick={() => setTab("controls")}
-          >
-            Controls
-          </button>
-          <button
-            type="button"
-            className={`w6w-stepbuilder-tab${tab === "utilities" ? " active" : ""}`}
-            onClick={() => setTab("utilities")}
-          >
-            Utilities
-          </button>
+          {!appsOnly && (
+            <>
+              <button
+                type="button"
+                className={`w6w-stepbuilder-tab${tab === "triggers" ? " active" : ""}`}
+                onClick={() => setTab("triggers")}
+              >
+                Triggers
+              </button>
+              <button
+                type="button"
+                className={`w6w-stepbuilder-tab${tab === "controls" ? " active" : ""}`}
+                onClick={() => setTab("controls")}
+              >
+                Controls
+              </button>
+              <button
+                type="button"
+                className={`w6w-stepbuilder-tab${tab === "utilities" ? " active" : ""}`}
+                onClick={() => setTab("utilities")}
+              >
+                Utilities
+              </button>
+            </>
+          )}
         </nav>
         <div className="w6w-stepbuilder-content">
           {tab === "connected" ? (
