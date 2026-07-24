@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6wApi.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionDef, ThemeMode } from "./types.ts";
+import type { ActionDef, SavedTest, ThemeMode } from "./types.ts";
 
 export interface ActionTestFormProps {
   /** App the action belongs to. */
@@ -20,6 +20,20 @@ export interface ActionTestFormProps {
   action?: ActionDef | null;
   /** Theme hint, accepted for parity with other ui-lib components. */
   theme?: ThemeMode;
+  /**
+   * Studio-integration seam: when provided (and its reference changes) the
+   * current action's params are seeded from a shallow copy of this object, so a
+   * host page can "open" a saved test pre-filled. The stored object is never
+   * mutated; a subsequent user edit is free to diverge. Optional — existing
+   * consumers keep compiling.
+   */
+  seedValues?: Record<string, unknown> | null;
+  /**
+   * Studio-integration seam: fired after a successful saved-test create/delete
+   * so the host page can invalidate its own `["saved-tests", connId]` query.
+   * The modal rail still refreshes its own list independently. Optional.
+   */
+  onSavedTestsChanged?: () => void;
 }
 
 /** Pull default values out of declared params so the form starts populated. */
@@ -110,7 +124,14 @@ function describeInvokeError(e: unknown): InvokeError {
  * chosen from a built-in `<select>` over `actions`. Param values reset whenever
  * the selected action changes.
  */
-export function ActionTestForm({ appId, actions, connectionId, action }: ActionTestFormProps) {
+export function ActionTestForm({
+  appId,
+  actions,
+  connectionId,
+  action,
+  seedValues,
+  onSavedTestsChanged,
+}: ActionTestFormProps) {
   const api = useW6wApi();
 
   // Actions sorted for the built-in picker (only used when uncontrolled).
@@ -153,6 +174,21 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
     setError(null);
     setResult(undefined);
   }
+
+  // Studio seam: when a new `seedValues` reference arrives (e.g. "open a saved
+  // test"), seed the current action's params from a SHALLOW COPY of it. Applied
+  // as a render-phase guard like the action-change reseed above; the passed
+  // object is never mutated and later edits are free to diverge.
+  const [lastSeed, setLastSeed] = useState<Record<string, unknown> | null | undefined>(seedValues);
+  if (seedValues !== lastSeed) {
+    setLastSeed(seedValues);
+    if (seedValues) {
+      setValuesByAction({ key: selectedKey, values: { ...seedValues } });
+      setError(null);
+      setResult(undefined);
+    }
+  }
+
   const values = valuesByAction.values;
   const setValues = (next: Record<string, unknown>) =>
     setValuesByAction({ key: selectedKey, values: next });
@@ -165,18 +201,88 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
     setViewMode("json");
   };
 
-  const run = async () => {
+  // The single invoke path — used by "Run action" and by re-running a saved test.
+  const runWith = async (params: Record<string, unknown>) => {
     if (!selectedAction) return;
     setRunning(true);
     setError(null);
     setResult(undefined);
     try {
-      const r = await api.invokeAction(appId, selectedAction.key, values, { connectionId });
+      const r = await api.invokeAction(appId, selectedAction.key, params, { connectionId });
       setResult(r.value);
     } catch (e) {
       setError(describeInvokeError(e));
     } finally {
       setRunning(false);
+    }
+  };
+  const run = () => runWith(values);
+
+  // Saved tests for this connection. `nonce` re-triggers the fetch after a
+  // create/delete so the rail reflects the change without a full remount.
+  const [savedTests, setSavedTests] = useState<SavedTest[] | null>(null);
+  const [savedTestsError, setSavedTestsError] = useState<string | null>(null);
+  const [savedTestsNonce, setSavedTestsNonce] = useState(0);
+  const refreshSavedTests = () => setSavedTestsNonce((n) => n + 1);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `savedTestsNonce` is a deliberate re-fetch trigger, not read inside the effect.
+  useEffect(() => {
+    if (!connectionId) {
+      setSavedTests(null);
+      return;
+    }
+    let canceled = false;
+    setSavedTestsError(null);
+    api
+      .listSavedTests(connectionId)
+      .then((list) => !canceled && setSavedTests(list))
+      .catch((e) => !canceled && setSavedTestsError((e as Error).message));
+    return () => {
+      canceled = true;
+    };
+  }, [api, connectionId, savedTestsNonce]);
+
+  // Only this action's saved tests belong on the rail.
+  const railTests = selectedKey
+    ? (savedTests ?? []).filter((t) => t.actionKey === selectedKey)
+    : [];
+
+  // Save the current params as a named test against the connection.
+  const saveTest = async () => {
+    if (!connectionId || !selectedAction) return;
+    const name = window.prompt("Name this saved test")?.trim();
+    if (!name) return;
+    try {
+      await api.createSavedTest(connectionId, { actionKey: selectedAction.key, name, values });
+      refreshSavedTests();
+      onSavedTestsChanged?.();
+    } catch (e) {
+      setSavedTestsError((e as Error).message);
+    }
+  };
+
+  // Load a saved test's values into the form (shallow copy — never mutate the
+  // stored row). "Run" additionally re-invokes with those values.
+  const loadSavedTest = (t: SavedTest) => {
+    setValuesByAction({ key: selectedKey, values: { ...t.values } });
+    setViewMode("form");
+    setError(null);
+    setResult(undefined);
+  };
+  const runSavedTest = (t: SavedTest) => {
+    const params = { ...t.values };
+    setValuesByAction({ key: selectedKey, values: params });
+    setViewMode("form");
+    return runWith(params);
+  };
+  const removeSavedTest = async (t: SavedTest) => {
+    if (!connectionId) return;
+    try {
+      await api.deleteSavedTest(connectionId, t.id);
+      refreshSavedTests();
+      onSavedTestsChanged?.();
+    } catch (e) {
+      setSavedTestsError((e as Error).message);
     }
   };
 
@@ -253,6 +359,76 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
     </div>
   );
 
+  // The saved-tests rail — the right pane of the pop-out. Only meaningful when a
+  // connection is fixed; hidden entirely otherwise (guarded on `connectionId`).
+  const savedTestsRail = connectionId ? (
+    <div className="w6w-stack" style={{ gap: 6 }}>
+      <div
+        className="w6w-field-labelrow"
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+      >
+        <span className="w6w-muted w6w-small">Saved tests</span>
+        <button type="button" className="w6w-btn w6w-btn-sm w6w-btn-ghost" onClick={saveTest}>
+          Save test
+        </button>
+      </div>
+      {savedTestsError && (
+        <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+          {savedTestsError}
+        </span>
+      )}
+      {railTests.length === 0 ? (
+        <p className="w6w-muted w6w-small">No saved tests for this action yet.</p>
+      ) : (
+        <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
+          {railTests.map((t) => (
+            <li
+              key={t.id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span
+                className="w6w-small"
+                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                title={t.name}
+              >
+                {t.name}
+              </span>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
+                  onClick={() => loadSavedTest(t)}
+                >
+                  Load
+                </button>
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
+                  disabled={running}
+                  onClick={() => runSavedTest(t)}
+                >
+                  Run
+                </button>
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
+                  onClick={() => removeSavedTest(t)}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className="w6w-stack">
       {/* Action picker — only when the caller isn't controlling the selection. */}
@@ -293,16 +469,28 @@ export function ActionTestForm({ appId, actions, connectionId, action }: ActionT
               onClose={() => setModalOpen(false)}
               size="full"
             >
-              {paramsRegion}
+              {savedTestsRail ? (
+                <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>{paramsRegion}</div>
+                  <div style={{ width: 260, flexShrink: 0 }}>{savedTestsRail}</div>
+                </div>
+              ) : (
+                paramsRegion
+              )}
             </Modal>
           ) : (
             paramsRegion
           )}
 
-          <div>
+          <div style={{ display: "flex", gap: 8 }}>
             <button type="button" className="w6w-btn" disabled={running} onClick={run}>
               {running ? "Running…" : "Run action"}
             </button>
+            {connectionId && (
+              <button type="button" className="w6w-btn w6w-btn-ghost" onClick={saveTest}>
+                Save test
+              </button>
+            )}
           </div>
 
           {error && (
