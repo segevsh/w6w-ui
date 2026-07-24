@@ -223,6 +223,9 @@ export function ActionTestForm({
   const [savedTests, setSavedTests] = useState<SavedTest[] | null>(null);
   const [savedTestsError, setSavedTestsError] = useState<string | null>(null);
   const [savedTestsNonce, setSavedTestsNonce] = useState(0);
+  // Name-a-saved-test dialog (in-app Modal — never the browser's prompt()).
+  const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [pendingName, setPendingName] = useState("");
   const refreshSavedTests = () => setSavedTestsNonce((n) => n + 1);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `savedTestsNonce` is a deliberate re-fetch trigger, not read inside the effect.
@@ -247,13 +250,22 @@ export function ActionTestForm({
     ? (savedTests ?? []).filter((t) => t.actionKey === selectedKey)
     : [];
 
-  // Save the current params as a named test against the connection.
-  const saveTest = async () => {
+  // Open the in-app name dialog to save the current params as a named test.
+  const openSaveModal = () => {
     if (!connectionId || !selectedAction) return;
-    const name = window.prompt("Name this saved test")?.trim();
+    setPendingName("");
+    setSavedTestsError(null);
+    setNameModalOpen(true);
+  };
+  // Persist the saved test with the name entered in the dialog.
+  const submitSaveTest = async () => {
+    if (!connectionId || !selectedAction) return;
+    const name = pendingName.trim();
     if (!name) return;
     try {
       await api.createSavedTest(connectionId, { actionKey: selectedAction.key, name, values });
+      setNameModalOpen(false);
+      setPendingName("");
       refreshSavedTests();
       onSavedTestsChanged?.();
     } catch (e) {
@@ -368,7 +380,7 @@ export function ActionTestForm({
         style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
       >
         <span className="w6w-muted w6w-small">Saved tests</span>
-        <button type="button" className="w6w-btn w6w-btn-sm w6w-btn-ghost" onClick={saveTest}>
+        <button type="button" className="w6w-btn w6w-btn-sm w6w-btn-ghost" onClick={openSaveModal}>
           Save test
         </button>
       </div>
@@ -487,11 +499,51 @@ export function ActionTestForm({
               {running ? "Running…" : "Run action"}
             </button>
             {connectionId && (
-              <button type="button" className="w6w-btn w6w-btn-ghost" onClick={saveTest}>
+              <button type="button" className="w6w-btn w6w-btn-ghost" onClick={openSaveModal}>
                 Save test
               </button>
             )}
           </div>
+
+          {nameModalOpen && (
+            <Modal title="Save test" onClose={() => setNameModalOpen(false)}>
+              <form
+                className="w6w-stack"
+                style={{ gap: 12 }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submitSaveTest();
+                }}
+              >
+                <label className="w6w-field">
+                  <span>Name this saved test</span>
+                  <input
+                    type="text"
+                    value={pendingName}
+                    placeholder="e.g. valid sender"
+                    onChange={(e) => setPendingName(e.target.value)}
+                  />
+                </label>
+                {savedTestsError && (
+                  <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+                    {savedTestsError}
+                  </span>
+                )}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost"
+                    onClick={() => setNameModalOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="w6w-btn" disabled={!pendingName.trim()}>
+                    Save
+                  </button>
+                </div>
+              </form>
+            </Modal>
+          )}
 
           {error && (
             <div className="w6w-result w6w-error">
