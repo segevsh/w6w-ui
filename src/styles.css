@@ -1291,3 +1291,44 @@ dialog.w6w-modal p {
   border-color: var(--w6w-danger);
   color: var(--w6w-danger);
 }
+
+/* Host-embedded ActionTestForm (studio's ConnectionTesterModal wraps it in its
+   OWN full modal). The widget then fills that modal as a full-height flex column:
+   the params + saved-tests region scrolls, and the action bar is a bottom-pinned,
+   non-scrolling footer. These classes are only applied in `embedded` mode, so the
+   inline / own-pop-out layout is untouched. */
+.w6w-tester-embedded-root {
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-embedded {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-embedded-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.w6w-tester-embedded-cols {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.w6w-tester-embedded-main {
+  flex: 1;
+  min-width: 0;
+}
+.w6w-tester-embedded-rail {
+  width: 260px;
+  flex-shrink: 0;
+}
+/* The action bar as a pinned footer: kept out of the scroll region and separated
+   with a top border so Run / Save / Delete stay visible however long the params. */
+.w6w-tester-actions-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--w6w-border);
+  padding-top: 12px;
+}
