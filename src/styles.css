@@ -749,6 +749,68 @@
   background: var(--w6w-panel-2);
 }
 
+/* List row — a clean, reusable list item (leading icon · title/subtitle · trailing).
+   Mirrors the ghost saved-test button rows it replaces. */
+.w6w-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--w6w-text);
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+}
+button.w6w-list-item {
+  font: inherit;
+  font-size: 14px;
+}
+.w6w-list-item:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-list-item:focus-visible {
+  outline: none;
+  border-color: var(--w6w-accent);
+  box-shadow: 0 0 0 2px var(--w6w-accent);
+}
+.w6w-list-item.active {
+  border-color: var(--w6w-accent);
+  background: var(--w6w-panel-2);
+}
+.w6w-list-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.w6w-list-item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.w6w-list-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-list-item-subtitle {
+  color: var(--w6w-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-list-item-trailing {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 /* App summary block */
 .w6w-app-summary {
   display: flex;
