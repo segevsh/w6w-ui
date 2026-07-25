@@ -54,6 +54,15 @@ export interface ActionTestFormProps {
    * (`…/test/:id`) and clear its own dirty state. Optional.
    */
   onTestSaved?: (test: SavedTest) => void;
+  /**
+   * Host-embedded mode. When `true` the caller already renders this widget inside
+   * its own modal (studio's `ConnectionTesterModal`), so the widget suppresses its
+   * OWN `<Modal>` + pop-out (⤢) toggle and instead fills the host container as a
+   * full-height flex column: the params + saved-tests region scrolls and the
+   * action bar is pinned to the bottom. Default `false` — non-embedded (inline /
+   * own pop-out) usages are unchanged.
+   */
+  embedded?: boolean;
 }
 
 /** Pull default values out of declared params so the form starts populated. */
@@ -154,6 +163,7 @@ export function ActionTestForm({
   seedTestId,
   onDirtyChange,
   onTestSaved,
+  embedded = false,
 }: ActionTestFormProps) {
   const api = useW6wApi();
 
@@ -425,20 +435,24 @@ export function ActionTestForm({
           >
             JSON
           </button>
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-            aria-pressed={modalOpen}
-            title={
-              modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
-            }
-            aria-label={
-              modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
-            }
-            onClick={() => setModalOpen((v) => !v)}
-          >
-            {modalOpen ? "⤡" : "⤢"}
-          </button>
+          {/* Pop-out toggle — suppressed in embedded mode: the host already
+              provides full-screen modal chrome, so a modal-in-modal ⤢ is redundant. */}
+          {!embedded && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-sm w6w-btn-ghost"
+              aria-pressed={modalOpen}
+              title={
+                modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
+              }
+              aria-label={
+                modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
+              }
+              onClick={() => setModalOpen((v) => !v)}
+            >
+              {modalOpen ? "⤡" : "⤢"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -519,7 +533,7 @@ export function ActionTestForm({
   ) : null;
 
   return (
-    <div className="w6w-stack">
+    <div className={`w6w-stack${embedded ? " w6w-tester-embedded-root" : ""}`}>
       {/* Action picker — only when the caller isn't controlling the selection. */}
       {!action &&
         (actions.length === 0 ? (
@@ -553,12 +567,11 @@ export function ActionTestForm({
           </div>
 
           {(() => {
-            // The tester body: params editor + Run/Save actions + result. Rendered
-            // inline when the modal is closed, and inside the pop-out modal (left
-            // pane, with the saved-tests rail on the right) when open — so Run and
-            // Save are available in BOTH views.
-            const body = (
-              <div className="w6w-stack" style={{ gap: 12 }}>
+            // The scrollable tester content: params editor + error + result. Shared
+            // by every layout (inline body, pop-out modal, embedded footer layout)
+            // so it stays a single instance bound to the single `values` state.
+            const paramsAndResult = (
+              <>
                 {paramsRegion}
                 {error && (
                   <div className="w6w-result w6w-error">
@@ -580,34 +593,65 @@ export function ActionTestForm({
                     <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
                   </div>
                 )}
-                {/* Bottom-anchored actions: Run / Save always; Delete only when an
-                    editing id is set (an already-saved test is loaded). */}
-                <div className="w6w-tester-actions" style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="w6w-btn" disabled={running} onClick={run}>
-                    {running ? "Running…" : "Run action"}
+              </>
+            );
+            // Bottom-anchored actions: Run / Save always; Delete only when an
+            // editing id is set (an already-saved test is loaded). In embedded mode
+            // this becomes a bottom-pinned, bordered footer outside the scroll region.
+            const actionBar = (
+              <div
+                className={`w6w-tester-actions${embedded ? " w6w-tester-actions-footer" : ""}`}
+                style={{ display: "flex", gap: 8 }}
+              >
+                <button type="button" className="w6w-btn" disabled={running} onClick={run}>
+                  {running ? "Running…" : "Run action"}
+                </button>
+                {connectionId && (
+                  <button type="button" className="w6w-btn w6w-btn-ghost" onClick={handleSaveClick}>
+                    Save test
                   </button>
-                  {connectionId && (
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost"
-                      onClick={handleSaveClick}
-                    >
-                      Save test
-                    </button>
-                  )}
-                  {connectionId && editingTestId && (
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost"
-                      style={{ marginLeft: "auto", color: "var(--w6w-danger)" }}
-                      onClick={() => void deleteCurrentTest()}
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
+                )}
+                {connectionId && editingTestId && (
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost"
+                    style={{ marginLeft: "auto", color: "var(--w6w-danger)" }}
+                    onClick={() => void deleteCurrentTest()}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             );
+            // The tester body: params + result + actions, stacked. Rendered inline
+            // when the pop-out modal is closed, and inside the pop-out modal (left
+            // pane, saved-tests rail on the right) when open.
+            const body = (
+              <div className="w6w-stack" style={{ gap: 12 }}>
+                {paramsAndResult}
+                {actionBar}
+              </div>
+            );
+            // Host-embedded: the host owns the modal chrome, so fill it as a
+            // full-height flex column — params + saved-tests rail scroll, the action
+            // bar is pinned to the bottom as a non-scrolling footer.
+            if (embedded) {
+              return (
+                <div className="w6w-tester-embedded">
+                  <div className="w6w-tester-embedded-scroll">
+                    {savedTestsRail ? (
+                      <div className="w6w-tester-embedded-cols">
+                        <div className="w6w-tester-embedded-main">{paramsAndResult}</div>
+                        <div className="w6w-tester-embedded-rail">{savedTestsRail}</div>
+                      </div>
+                    ) : (
+                      paramsAndResult
+                    )}
+                  </div>
+                  {actionBar}
+                </div>
+              );
+            }
             return modalOpen ? (
               <Modal
                 title={`Edit params — ${selectedAction.title ?? selectedAction.key}`}
