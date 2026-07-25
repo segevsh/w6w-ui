@@ -55,6 +55,12 @@ export interface ActionTestFormProps {
    */
   onTestSaved?: (test: SavedTest) => void;
   /**
+   * Studio-integration seam: fired after a successful delete of the saved test
+   * currently being edited, with the deleted id, so the host can navigate away
+   * from a now-dead `…/test/:id` URL. Optional — existing consumers keep compiling.
+   */
+  onDeleted?: (testId: string) => void;
+  /**
    * Host-embedded mode. When `true` the caller already renders this widget inside
    * its own modal (studio's `ConnectionTesterModal`), so the widget suppresses its
    * OWN `<Modal>` + pop-out (⤢) toggle and instead fills the host container as a
@@ -163,6 +169,7 @@ export function ActionTestForm({
   seedTestId,
   onDirtyChange,
   onTestSaved,
+  onDeleted,
   embedded = false,
 }: ActionTestFormProps) {
   const api = useW6wApi();
@@ -223,11 +230,15 @@ export function ActionTestForm({
     // Selection changed (controlled or via the picker, without a remount) — reset the
     // form values AND clear any stale result/error carried over from the previously
     // selected action (a 403 from `list-get` must not linger while `mail-send` shows).
-    // Switching actions starts a fresh unsaved test, so drop any editing id.
+    // Editing id: a genuine action-switch starts a fresh unsaved test (→ null), BUT a
+    // deep-link whose action arrives AFTER mount is NOT an action-switch — the selected
+    // action IS the seeded test's action. A truthy `seedTestId` therefore wins here, so
+    // the late null→key transition keeps `editingTestId === seedTestId` (Save PATCHes,
+    // Delete shows) instead of clobbering it to null and POSTing a duplicate row.
     const fresh = defaultParamsFor(selectedAction);
     setValuesByAction({ key: selectedKey, values: fresh });
     setBaseline(fresh);
-    setEditingTestId(null);
+    setEditingTestId(seedTestId ?? null);
     setError(null);
     setResult(undefined);
   }
@@ -247,8 +258,16 @@ export function ActionTestForm({
   // object is never mutated and later edits are free to diverge.
   const [lastSeed, setLastSeed] = useState<Record<string, unknown> | null | undefined>(seedValues);
   if (seedValues !== lastSeed) {
+    // Content-aware, not reference-keyed: a `["saved-tests"]` invalidation (fired by
+    // onTestSaved/onSavedTestsChanged after a Save) hands back a fresh OBJECT with the
+    // SAME content — that must NOT reseed the draft or clear the on-screen Run
+    // result/error. Reseed only when the incoming values differ STRUCTURALLY from the
+    // last applied seed. `lastSeed` advances to the new ref regardless, so we don't
+    // re-compare the same pair every render.
+    const structurallyChanged =
+      JSON.stringify(seedValues ?? null) !== JSON.stringify(lastSeed ?? null);
     setLastSeed(seedValues);
-    if (seedValues) {
+    if (seedValues && structurallyChanged) {
       const seeded = { ...seedValues };
       setValuesByAction({ key: selectedKey, values: seeded });
       setBaseline(seeded);
@@ -397,11 +416,15 @@ export function ActionTestForm({
   // editing id set). Clears the editing id so the form drops to unsaved state.
   const deleteCurrentTest = async () => {
     if (!connectionId || !editingTestId) return;
+    const deletedId = editingTestId;
     try {
-      await api.deleteSavedTest(connectionId, editingTestId);
+      await api.deleteSavedTest(connectionId, deletedId);
       setEditingTestId(null);
       refreshSavedTests();
       onSavedTestsChanged?.();
+      // Host hook: let the URL-driven host (studio's ConnectionTesterModal) navigate
+      // away from the now-dead `…/test/:deletedId` deep link.
+      onDeleted?.(deletedId);
     } catch (e) {
       setSavedTestsError((e as Error).message);
     }
