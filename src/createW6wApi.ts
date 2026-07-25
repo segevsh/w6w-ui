@@ -5,7 +5,7 @@
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
 import type { W6wApi } from "./provider.tsx";
-import type { ActionDef, AppSummary, AuthDef, ConnectionSummary } from "./types.ts";
+import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, SavedTest } from "./types.ts";
 
 export interface CreateW6wApiOptions {
   /** Absolute URL or path prefix — e.g. `"https://w6w.example.com"` or `"/api"`. */
@@ -116,5 +116,28 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
         `/apps/${encodeURIComponent(appId)}/actions/${encodeURIComponent(actionKey)}/invoke`,
         { method: "POST", body: JSON.stringify({ params, ...opts }) },
       ),
+
+    listSavedTests: (connectionId) =>
+      req<{ savedTests: SavedTest[] }>(
+        `/connections/${encodeURIComponent(connectionId)}/saved-tests`,
+      ).then((r) => r.savedTests ?? []),
+
+    createSavedTest: (connectionId, body) =>
+      req<{ savedTest: SavedTest }>(
+        `/connections/${encodeURIComponent(connectionId)}/saved-tests`,
+        { method: "POST", body: JSON.stringify(body) },
+      ).then((r) => r.savedTest),
+
+    updateSavedTest: (connectionId, id, patch) =>
+      req<{ savedTest: SavedTest }>(
+        `/connections/${encodeURIComponent(connectionId)}/saved-tests/${encodeURIComponent(id)}`,
+        { method: "PATCH", body: JSON.stringify(patch) },
+      ).then((r) => r.savedTest),
+
+    deleteSavedTest: (connectionId, id) =>
+      req<void>(
+        `/connections/${encodeURIComponent(connectionId)}/saved-tests/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ).then(() => undefined),
   };
 }
