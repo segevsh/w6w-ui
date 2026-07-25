@@ -34,6 +34,26 @@ export interface ActionTestFormProps {
    * The modal rail still refreshes its own list independently. Optional.
    */
   onSavedTestsChanged?: () => void;
+  /**
+   * Studio-integration seam (URL-driven host): the id of the saved test being
+   * edited, from a studio deep link (`…/test/:testId`). When it changes to a
+   * non-null id it is adopted as the current `editingTestId` — so the bottom Save
+   * PATCHes that row and the Delete button shows; when null the tester is a
+   * fresh/unsaved test. Optional — existing consumers keep compiling.
+   */
+  seedTestId?: string | null;
+  /**
+   * Studio-integration seam: fired whenever the current `values` diverge from
+   * (or return to) the seeded baseline. This is the unsaved-changes signal the
+   * studio host gates modal-close on (its ConfirmModal prompt). Optional.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Studio-integration seam: fired after a successful save (POST create or PATCH
+   * update) with the resulting `SavedTest`, so the host can sync the URL
+   * (`…/test/:id`) and clear its own dirty state. Optional.
+   */
+  onTestSaved?: (test: SavedTest) => void;
 }
 
 /** Pull default values out of declared params so the form starts populated. */
@@ -131,6 +151,9 @@ export function ActionTestForm({
   action,
   seedValues,
   onSavedTestsChanged,
+  seedTestId,
+  onDirtyChange,
+  onTestSaved,
 }: ActionTestFormProps) {
   const api = useW6wApi();
 
@@ -166,28 +189,46 @@ export function ActionTestForm({
   // below never fires on first render (`lastSeed` inits to the same ref) and the
   // seeded values are dropped.
   const selectedKey = selectedAction?.key ?? null;
+  const initialValues = seedValues ? { ...seedValues } : defaultParamsFor(selectedAction);
   const [valuesByAction, setValuesByAction] = useState<{
     key: string | null;
     values: Record<string, unknown>;
   }>(() => ({
     key: selectedKey,
-    values: seedValues ? { ...seedValues } : defaultParamsFor(selectedAction),
+    values: initialValues,
   }));
 
   // The id of the saved test currently being edited, or `null` for an unsaved
   // test. Drives the PATCH-vs-POST decision in `submitSaveTest`: a set id updates
-  // that row in place, `null` creates a new named row.
-  const [editingTestId, setEditingTestId] = useState<string | null>(null);
+  // that row in place, `null` creates a new named row. Seeded from `seedTestId`
+  // so a studio deep link (`…/test/:testId`) mounts already in edit mode.
+  const [editingTestId, setEditingTestId] = useState<string | null>(seedTestId ?? null);
+
+  // Dirty baseline: the values as last seeded/loaded/saved. `values` is compared
+  // against this to derive the host-facing `dirty` signal (`onDirtyChange`). Reset
+  // wherever a fresh set of values is adopted (action change, seed, load, save).
+  const [baseline, setBaseline] = useState<Record<string, unknown>>(initialValues);
 
   if (valuesByAction.key !== selectedKey) {
     // Selection changed (controlled or via the picker, without a remount) — reset the
     // form values AND clear any stale result/error carried over from the previously
     // selected action (a 403 from `list-get` must not linger while `mail-send` shows).
     // Switching actions starts a fresh unsaved test, so drop any editing id.
-    setValuesByAction({ key: selectedKey, values: defaultParamsFor(selectedAction) });
+    const fresh = defaultParamsFor(selectedAction);
+    setValuesByAction({ key: selectedKey, values: fresh });
+    setBaseline(fresh);
     setEditingTestId(null);
     setError(null);
     setResult(undefined);
+  }
+
+  // Studio seam: adopt a deep-linked saved-test id. When `seedTestId` changes to a
+  // non-null id, make it the current editing id (bottom Save PATCHes, Delete
+  // shows); a change to null returns the tester to a fresh/unsaved test.
+  const [lastSeedTestId, setLastSeedTestId] = useState<string | null | undefined>(seedTestId);
+  if (seedTestId !== lastSeedTestId) {
+    setLastSeedTestId(seedTestId);
+    setEditingTestId(seedTestId ?? null);
   }
 
   // Studio seam: when a new `seedValues` reference arrives (e.g. "open a saved
@@ -198,7 +239,9 @@ export function ActionTestForm({
   if (seedValues !== lastSeed) {
     setLastSeed(seedValues);
     if (seedValues) {
-      setValuesByAction({ key: selectedKey, values: { ...seedValues } });
+      const seeded = { ...seedValues };
+      setValuesByAction({ key: selectedKey, values: seeded });
+      setBaseline(seeded);
       setError(null);
       setResult(undefined);
     }
@@ -207,6 +250,17 @@ export function ActionTestForm({
   const values = valuesByAction.values;
   const setValues = (next: Record<string, unknown>) =>
     setValuesByAction({ key: selectedKey, values: next });
+
+  // Host-facing dirty signal: do the current values diverge from the seeded
+  // baseline? Compared by structural JSON so a load→edit→revert cycle clears it.
+  const dirty = useMemo(
+    () => JSON.stringify(values) !== JSON.stringify(baseline),
+    [values, baseline],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fire only when `dirty` flips, not on every `onDirtyChange` identity change.
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty]);
 
   // Entering the JSON view seeds the editor from the current values; edits that
   // parse to a plain object round-trip straight back into `values`.
@@ -265,12 +319,23 @@ export function ActionTestForm({
     ? (savedTests ?? []).filter((t) => t.actionKey === selectedKey)
     : [];
 
-  // Open the in-app name dialog to save the current params as a named test.
+  // Open the in-app name dialog to save the current params as a NEW named test.
   const openSaveModal = () => {
     if (!connectionId || !selectedAction) return;
     setPendingName("");
     setSavedTestsError(null);
     setNameModalOpen(true);
+  };
+  // Bottom Save affordance. When a saved test is loaded for editing
+  // (`editingTestId` set) the save is a silent PATCH — no throwaway name dialog
+  // (FU-1). With no editing id, open the name dialog to create a new named row.
+  const handleSaveClick = () => {
+    if (!connectionId || !selectedAction) return;
+    if (editingTestId) {
+      void submitSaveTest();
+    } else {
+      openSaveModal();
+    }
   };
   // Persist the current params. When a saved test is loaded for editing
   // (`editingTestId` set), PATCH that row in place — updating only `values` keeps
@@ -280,47 +345,51 @@ export function ActionTestForm({
   const submitSaveTest = async () => {
     if (!connectionId || !selectedAction) return;
     try {
+      let saved: SavedTest;
       if (editingTestId) {
-        await api.updateSavedTest(connectionId, editingTestId, { values });
+        saved = await api.updateSavedTest(connectionId, editingTestId, { values });
       } else {
         const name = pendingName.trim();
         if (!name) return;
-        const created = await api.createSavedTest(connectionId, {
+        saved = await api.createSavedTest(connectionId, {
           actionKey: selectedAction.key,
           name,
           values,
         });
-        setEditingTestId(created.id);
+        setEditingTestId(saved.id);
       }
+      // The just-saved values are the new clean baseline (dirty → false).
+      setBaseline({ ...values });
       setNameModalOpen(false);
       setPendingName("");
       refreshSavedTests();
       onSavedTestsChanged?.();
+      onTestSaved?.(saved);
     } catch (e) {
       setSavedTestsError((e as Error).message);
     }
   };
 
   // Load a saved test's values into the form (shallow copy — never mutate the
-  // stored row). "Run" additionally re-invokes with those values.
+  // stored row). Clicking a saved test's name loads it for editing: values +
+  // editing id are adopted and the load becomes the new clean baseline.
   const loadSavedTest = (t: SavedTest) => {
-    setValuesByAction({ key: selectedKey, values: { ...t.values } });
+    const loaded = { ...t.values };
+    setValuesByAction({ key: selectedKey, values: loaded });
+    setBaseline(loaded);
     // Remember which row is being edited so a subsequent save PATCHes it in place.
     setEditingTestId(t.id);
     setViewMode("form");
     setError(null);
     setResult(undefined);
   };
-  const runSavedTest = (t: SavedTest) => {
-    const params = { ...t.values };
-    setValuesByAction({ key: selectedKey, values: params });
-    setViewMode("form");
-    return runWith(params);
-  };
-  const removeSavedTest = async (t: SavedTest) => {
-    if (!connectionId) return;
+  // Delete the saved test currently being edited (Delete only shows with an
+  // editing id set). Clears the editing id so the form drops to unsaved state.
+  const deleteCurrentTest = async () => {
+    if (!connectionId || !editingTestId) return;
     try {
-      await api.deleteSavedTest(connectionId, t.id);
+      await api.deleteSavedTest(connectionId, editingTestId);
+      setEditingTestId(null);
       refreshSavedTests();
       onSavedTestsChanged?.();
     } catch (e) {
@@ -410,9 +479,6 @@ export function ActionTestForm({
         style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
       >
         <span className="w6w-muted w6w-small">Saved tests</span>
-        <button type="button" className="w6w-btn w6w-btn-sm w6w-btn-ghost" onClick={openSaveModal}>
-          Save test
-        </button>
       </div>
       {savedTestsError && (
         <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
@@ -424,46 +490,27 @@ export function ActionTestForm({
       ) : (
         <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
           {railTests.map((t) => (
-            <li
-              key={t.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <span
-                className="w6w-small"
-                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            <li key={t.id}>
+              {/* Clicking a saved test's name loads it for editing — no per-row
+                  Load/Run/Delete buttons; those actions live at the modal bottom. */}
+              <button
+                type="button"
+                className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                  editingTestId === t.id ? " active" : ""
+                }`}
+                aria-pressed={editingTestId === t.id}
                 title={t.name}
+                onClick={() => loadSavedTest(t)}
+                style={{
+                  width: "100%",
+                  justifyContent: "flex-start",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
               >
                 {t.name}
-              </span>
-              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-                  onClick={() => loadSavedTest(t)}
-                >
-                  Load
-                </button>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-                  disabled={running}
-                  onClick={() => runSavedTest(t)}
-                >
-                  Run
-                </button>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-                  onClick={() => removeSavedTest(t)}
-                >
-                  Delete
-                </button>
-              </div>
+              </button>
             </li>
           ))}
         </ul>
@@ -513,16 +560,6 @@ export function ActionTestForm({
             const body = (
               <div className="w6w-stack" style={{ gap: 12 }}>
                 {paramsRegion}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="w6w-btn" disabled={running} onClick={run}>
-                    {running ? "Running…" : "Run action"}
-                  </button>
-                  {connectionId && (
-                    <button type="button" className="w6w-btn w6w-btn-ghost" onClick={openSaveModal}>
-                      Save test
-                    </button>
-                  )}
-                </div>
                 {error && (
                   <div className="w6w-result w6w-error">
                     <strong>{error.headline}</strong>
@@ -543,6 +580,32 @@ export function ActionTestForm({
                     <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
                   </div>
                 )}
+                {/* Bottom-anchored actions: Run / Save always; Delete only when an
+                    editing id is set (an already-saved test is loaded). */}
+                <div className="w6w-tester-actions" style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="w6w-btn" disabled={running} onClick={run}>
+                    {running ? "Running…" : "Run action"}
+                  </button>
+                  {connectionId && (
+                    <button
+                      type="button"
+                      className="w6w-btn w6w-btn-ghost"
+                      onClick={handleSaveClick}
+                    >
+                      Save test
+                    </button>
+                  )}
+                  {connectionId && editingTestId && (
+                    <button
+                      type="button"
+                      className="w6w-btn w6w-btn-ghost"
+                      style={{ marginLeft: "auto", color: "var(--w6w-danger)" }}
+                      onClick={() => void deleteCurrentTest()}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
             );
             return modalOpen ? (
