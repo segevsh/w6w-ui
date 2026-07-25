@@ -161,16 +161,31 @@ export function ActionTestForm({
   const [modalOpen, setModalOpen] = useState(false);
 
   // Param values, re-seeded from defaults whenever the selected action changes.
+  // On a FRESH MOUNT with `seedValues` present (e.g. a deep-linked saved test),
+  // seed from a shallow copy of it rather than defaults — otherwise the seed guard
+  // below never fires on first render (`lastSeed` inits to the same ref) and the
+  // seeded values are dropped.
   const selectedKey = selectedAction?.key ?? null;
   const [valuesByAction, setValuesByAction] = useState<{
     key: string | null;
     values: Record<string, unknown>;
-  }>(() => ({ key: selectedKey, values: defaultParamsFor(selectedAction) }));
+  }>(() => ({
+    key: selectedKey,
+    values: seedValues ? { ...seedValues } : defaultParamsFor(selectedAction),
+  }));
+
+  // The id of the saved test currently being edited, or `null` for an unsaved
+  // test. Drives the PATCH-vs-POST decision in `submitSaveTest`: a set id updates
+  // that row in place, `null` creates a new named row.
+  const [editingTestId, setEditingTestId] = useState<string | null>(null);
+
   if (valuesByAction.key !== selectedKey) {
     // Selection changed (controlled or via the picker, without a remount) — reset the
     // form values AND clear any stale result/error carried over from the previously
     // selected action (a 403 from `list-get` must not linger while `mail-send` shows).
+    // Switching actions starts a fresh unsaved test, so drop any editing id.
     setValuesByAction({ key: selectedKey, values: defaultParamsFor(selectedAction) });
+    setEditingTestId(null);
     setError(null);
     setResult(undefined);
   }
@@ -257,13 +272,26 @@ export function ActionTestForm({
     setSavedTestsError(null);
     setNameModalOpen(true);
   };
-  // Persist the saved test with the name entered in the dialog.
+  // Persist the current params. When a saved test is loaded for editing
+  // (`editingTestId` set), PATCH that row in place — updating only `values` keeps
+  // its name and sidesteps the 409 duplicate-name guard a re-POST would trip.
+  // With no editing id, create a new named row from the dialog and remember its
+  // id so the next save updates in place rather than spawning a second row.
   const submitSaveTest = async () => {
     if (!connectionId || !selectedAction) return;
-    const name = pendingName.trim();
-    if (!name) return;
     try {
-      await api.createSavedTest(connectionId, { actionKey: selectedAction.key, name, values });
+      if (editingTestId) {
+        await api.updateSavedTest(connectionId, editingTestId, { values });
+      } else {
+        const name = pendingName.trim();
+        if (!name) return;
+        const created = await api.createSavedTest(connectionId, {
+          actionKey: selectedAction.key,
+          name,
+          values,
+        });
+        setEditingTestId(created.id);
+      }
       setNameModalOpen(false);
       setPendingName("");
       refreshSavedTests();
@@ -277,6 +305,8 @@ export function ActionTestForm({
   // stored row). "Run" additionally re-invokes with those values.
   const loadSavedTest = (t: SavedTest) => {
     setValuesByAction({ key: selectedKey, values: { ...t.values } });
+    // Remember which row is being edited so a subsequent save PATCHes it in place.
+    setEditingTestId(t.id);
     setViewMode("form");
     setError(null);
     setResult(undefined);
