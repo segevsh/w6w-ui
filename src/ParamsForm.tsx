@@ -3,7 +3,18 @@ import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
+import {
+  parseTemplate,
+  partsToValue,
+  serializeTemplate,
+} from "./components/expression-template.ts";
+import {
+  type ActionParam,
+  type ExprValue,
+  type SecretValue,
+  isExprValue,
+  isSecretValue,
+} from "./types.ts";
 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
@@ -406,15 +417,32 @@ function FxField({
   req: string;
   children: ReactNode;
 }) {
-  // Seed from the stored value so a persisted expression reopens in fx mode; the
-  // toggle owns the mode thereafter (the parent re-keys ParamField per field).
+  // Seed from the stored value so a persisted expression reopens in fx mode.
   const [fx, setFx] = useState(() => isExprValue(value));
 
+  // Re-derive fx-mode when the *current* value is an expression — even when that
+  // value arrives AFTER mount (a saved test seeded into a field that mounted
+  // empty). Without this the field renders the raw `{"type":"expr",…}` object as
+  // text instead of the ƒx chip. The toggle still owns turning fx back off; we
+  // only force it ON for an expression value.
+  useEffect(() => {
+    if (isExprValue(value)) setFx(true);
+  }, [value]);
+
   const toggle = () => {
-    // Leaving expr mode drops the value back to an empty scalar, so the plain
-    // widget never has to render (or store) a leftover `ExprValue` — keeping the
-    // invariant "fx off ⟹ plain scalar".
-    if (fx && isExprValue(value)) onChange(param.key, "");
+    if (fx) {
+      // expr → text: serialize the expression back to literal `{{ … }}` text so
+      // the content survives the switch. A sealed `SecretValue` has NO text form
+      // (never produced by serializeTemplate) — block the toggle and keep the
+      // chip so the secret reference isn't lost.
+      if (isSecretValue(value)) return;
+      if (isExprValue(value)) onChange(param.key, serializeTemplate(value.parts));
+    } else if (typeof value === "string" && value !== "") {
+      // text → expr: parse the current string through the template grammar so a
+      // `{{ … }}` literal renders as chips; a plain string stays a plain string
+      // (partsToValue collapses a lone text part). Never clears the content.
+      onChange(param.key, partsToValue(parseTemplate(value)));
+    }
     setFx(!fx);
   };
 
@@ -474,12 +502,24 @@ function JsonParamField({
   const [invalid, setInvalid] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  // Re-seed only when the field identity changes (a different param selected).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reseed keyed on param identity, not draft value
+  // Re-seed when the field identity changes OR the incoming value changes to
+  // something other than what the current draft already represents — i.e. an
+  // external load (a saved test opened into an already-mounted JSON field), not
+  // the echo of the user's own valid edit. Comparing against the parsed draft
+  // avoids clobbering the cursor/formatting on every keystroke.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `text` is read as the draft baseline but must NOT retrigger the effect (that would reseed mid-edit); reseed is keyed on the incoming value + param identity
   useEffect(() => {
-    setText(seed === undefined ? "" : JSON.stringify(seed, null, 2));
-    setInvalid(false);
-  }, [param.key]);
+    let current: unknown;
+    try {
+      current = text.trim() === "" ? undefined : JSON.parse(text);
+    } catch {
+      current = undefined; // invalid draft — let an external value win
+    }
+    if (JSON.stringify(current) !== JSON.stringify(seed)) {
+      setText(seed === undefined ? "" : JSON.stringify(seed, null, 2));
+      setInvalid(false);
+    }
+  }, [seed, param.key]);
 
   const onEdit = (next: string) => {
     setText(next);
