@@ -425,15 +425,31 @@
   align-items: center;
   gap: 8px;
 }
+/* fx toggle — an end-of-input decoration (beside the field) that swaps the plain
+   widget for the segmented ExpressionInput. Lives next to the value instead of up
+   in the label row, so the field and its affordance read as one unit. */
+.w6w-fx-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.w6w-fx-wrap > input,
+.w6w-fx-wrap > select,
+.w6w-fx-wrap > textarea,
+.w6w-fx-wrap > .w6w-expr {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .w6w-expr-fx {
-  margin-left: auto;
+  flex-shrink: 0;
+  min-height: 38px;
   border: 1px solid var(--w6w-border);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 8px;
+  background: var(--w6w-panel-2);
   color: var(--w6w-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding: 3px 8px;
+  padding: 0 10px;
   cursor: pointer;
 }
 .w6w-expr-fx:hover {
