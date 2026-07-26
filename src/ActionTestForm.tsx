@@ -5,6 +5,7 @@ import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6wApi.ts";
 import { useW6wApi } from "./provider.tsx";
+import type { TestRunSummary } from "./provider.tsx";
 import type { ActionDef, ApiCallRecord, SavedTest, ThemeMode } from "./types.ts";
 
 export interface ActionTestFormProps {
@@ -437,6 +438,7 @@ export function ActionTestForm({
           result: outcome.result,
         });
         refreshSavedTests();
+        refreshRunHistory();
         onSavedTestsChanged?.();
       } catch {
         // Ignore — the run itself already surfaced via result/error.
@@ -475,6 +477,41 @@ export function ActionTestForm({
   // Only this action's saved tests belong on the rail.
   const railTests = selectedKey
     ? (savedTests ?? []).filter((t) => t.actionKey === selectedKey)
+    : [];
+
+  // Connection run history from the unified `run_log` ledger (F-1). Complements
+  // the per-saved-test `lastRun*` badge with the full recent-run list. Fetched
+  // via the OPTIONAL `api.listTestRuns` — a consumer that doesn't implement it
+  // (studio, until T2.2.2) simply shows no history. `runHistoryNonce` re-triggers
+  // the fetch after a run is recorded so the list stays current.
+  const [runHistory, setRunHistory] = useState<TestRunSummary[] | null>(null);
+  const [runHistoryNonce, setRunHistoryNonce] = useState(0);
+  const refreshRunHistory = () => setRunHistoryNonce((n) => n + 1);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `runHistoryNonce` is a deliberate re-fetch trigger, not read inside the effect.
+  useEffect(() => {
+    const load = api.listTestRuns;
+    if (!connectionId || !load) {
+      setRunHistory(null);
+      return;
+    }
+    let canceled = false;
+    load(connectionId)
+      .then((list) => !canceled && setRunHistory(list))
+      // Best-effort: a history load failure must never break the tester.
+      .catch(() => !canceled && setRunHistory(null));
+    return () => {
+      canceled = true;
+    };
+  }, [api, connectionId, runHistoryNonce]);
+
+  // History rows for the current action (mirrors the saved-tests rail filter),
+  // most-recent first — the server orders newest-first but we don't rely on it.
+  const railRunHistory = selectedKey
+    ? (runHistory ?? [])
+        .filter((r) => r.actionKey === selectedKey)
+        .slice()
+        .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
     : [];
 
   // Open the in-app name dialog to save the current params as a NEW named test.
@@ -683,6 +720,44 @@ export function ActionTestForm({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Run history (F-1): the connection's recent tester runs for this action,
+          from the unified `run_log` ledger. Read-only rows (no onClick) — this is
+          a log, not a loadable input like the saved tests above. Only rendered
+          when the api exposes `listTestRuns` (optional member) and there is
+          history to show, so a consumer without it degrades to no section. */}
+      {api.listTestRuns && railRunHistory.length > 0 && (
+        <>
+          <div
+            className="w6w-field-labelrow"
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+          >
+            <span className="w6w-muted w6w-small">Recent runs</span>
+          </div>
+          <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
+            {railRunHistory.map((r) => (
+              <li key={r.id}>
+                <ListItem
+                  title={
+                    <span>
+                      <span style={{ color: r.ok ? "#2e9e5b" : "var(--w6w-danger)" }}>
+                        {r.ok ? "✓" : "✗"}
+                      </span>{" "}
+                      {r.actionKey}
+                    </span>
+                  }
+                  subtitle={
+                    <span>
+                      {r.summary ? `${r.summary} · ` : ""}
+                      {relativeTime(r.occurredAt)}
+                    </span>
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   ) : null;
