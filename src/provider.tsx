@@ -18,6 +18,20 @@ import type {
 } from "./types.ts";
 
 /**
+ * A single tester-run summary from the unified `run_log` ledger, keyed to a
+ * connection. Thin by design — the full result payload stays server-side in
+ * `saved_test_runs`; this is the history row shown in the test screens.
+ * `summary` is null when the run recorded no summary; `occurredAt` is ISO.
+ */
+export interface TestRunSummary {
+  id: string;
+  actionKey: string;
+  ok: boolean;
+  summary: string | null;
+  occurredAt: string;
+}
+
+/**
  * The surface every w6w-io component may call. Grows as we add components;
  * new members are added at the end so consumer implementations only need to
  * grow when they want to use the new component.
@@ -108,6 +122,18 @@ export interface W6wApi {
       result?: unknown;
     },
   ): Promise<void>;
+
+  /**
+   * List a connection's recent tester-run history from the unified `run_log`
+   * ledger (`GET /connections/:connId/test-runs` → the `.runs` array). Powers
+   * the run-history list in the test screens, complementing the per-test
+   * `lastRun*` badge with the full ledger.
+   *
+   * OPTIONAL: consumers that don't render history (or haven't wired it up yet)
+   * may omit it, so a missing member never poisons their typecheck. Callers
+   * MUST guard on its presence before invoking.
+   */
+  listTestRuns?(connectionId: string): Promise<TestRunSummary[]>;
 }
 
 const Ctx = createContext<W6wApi | null>(null);
