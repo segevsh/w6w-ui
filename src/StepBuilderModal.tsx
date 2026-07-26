@@ -4,6 +4,7 @@ import { AppPicker } from "./AppPicker.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
+import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
@@ -11,6 +12,8 @@ import {
   DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
+  TRIGGER_APP,
+  WEBHOOK_APP,
   internalNodeDefaults,
   isControlApp,
   isInternalApp,
@@ -48,6 +51,15 @@ export interface StepBuilderModalProps {
 }
 
 type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
+
+/**
+ * True for the two entry-trigger nodes whose Test tab fills the configured
+ * `fields` into `{ input }` (via {@link TriggerFillForm}) instead of running the
+ * raw config — a manual (`@w6w/trigger`) or webhook (`@w6w/webhook`) trigger.
+ */
+function isTriggerNode(app: string): boolean {
+  return app === TRIGGER_APP || app === WEBHOOK_APP;
+}
 
 /** Config sub-tabs shared by the add-step config and the node editor. */
 type StepConfigTab = "setup" | "configure" | "test";
@@ -487,14 +499,18 @@ function ControlStepConfig({
           ) : (
             <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
           ))}
-        {tab === "test" && testable && (
-          <StepTestRun
-            app={node.app}
-            action={node.action}
-            values={withValues}
-            canRun={configComplete}
-          />
-        )}
+        {tab === "test" &&
+          testable &&
+          (isTriggerNode(node.app) ? (
+            <TriggerFillForm app={node.app} action={node.action} fields={withValues.fields} />
+          ) : (
+            <StepTestRun
+              app={node.app}
+              action={node.action}
+              values={withValues}
+              canRun={configComplete}
+            />
+          ))}
       </div>
 
       {/* Footer — pinned to the modal bottom, outside the scroll area. */}

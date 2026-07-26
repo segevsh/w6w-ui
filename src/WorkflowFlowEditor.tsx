@@ -38,6 +38,7 @@ import {
   StepTestRun,
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
+import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import {
   type ExpressionOptions,
@@ -49,6 +50,8 @@ import { Modal } from "./components/Modal.tsx";
 import {
   type FlowStep,
   type FlowWorkflow,
+  TRIGGER_APP,
+  WEBHOOK_APP,
   internalNodeDef,
   internalNodeIcon,
   internalNodeLabel,
@@ -1015,6 +1018,9 @@ function StepEditModal({
   };
 
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
+  // A manual/webhook trigger's Test tab fills its configured `fields` into
+  // `{ input }` (via TriggerFillForm) rather than running the raw config.
+  const isTrigger = step.uses.app === TRIGGER_APP || step.uses.app === WEBHOOK_APP;
   const testValues = (() => {
     try {
       const extra = JSON.parse(testState);
@@ -1169,28 +1175,37 @@ function StepEditModal({
           {tab === "test" && (
             <div className="w6w-stack">
               {testable ? (
-                <>
-                  <label className="w6w-field">
-                    <span>Incoming state</span>
-                    <textarea
-                      rows={3}
-                      value={testState}
-                      readOnly={readOnly}
-                      spellCheck={false}
-                      onChange={(e) => setTestState(e.target.value)}
-                    />
-                    <span className="w6w-hint">
-                      Optional JSON merged into the test call (e.g. a script's <code>input</code>).
-                    </span>
-                  </label>
-                  <StepTestRun
+                isTrigger ? (
+                  <TriggerFillForm
                     app={step.uses.app}
                     action={step.uses.action}
-                    connectionId={step.uses.connection ?? undefined}
-                    values={testValues}
-                    canRun={!!params && requiredParamsFilled(params, testValues)}
+                    fields={step.with?.fields}
                   />
-                </>
+                ) : (
+                  <>
+                    <label className="w6w-field">
+                      <span>Incoming state</span>
+                      <textarea
+                        rows={3}
+                        value={testState}
+                        readOnly={readOnly}
+                        spellCheck={false}
+                        onChange={(e) => setTestState(e.target.value)}
+                      />
+                      <span className="w6w-hint">
+                        Optional JSON merged into the test call (e.g. a script's <code>input</code>
+                        ).
+                      </span>
+                    </label>
+                    <StepTestRun
+                      app={step.uses.app}
+                      action={step.uses.action}
+                      connectionId={step.uses.connection ?? undefined}
+                      values={testValues}
+                      canRun={!!params && requiredParamsFilled(params, testValues)}
+                    />
+                  </>
+                )
               ) : (
                 <p className="w6w-muted w6w-small">
                   Flow-control nodes can't be tested on their own.
