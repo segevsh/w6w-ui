@@ -40,7 +40,12 @@ export function AppIcon({ src, srcDark, brandColor, name, size = 32, theme }: Pr
           height: size,
           borderRadius: 6,
           flexShrink: 0,
-          objectFit: "cover",
+          // `contain` (not `cover`) keeps the whole glyph visible; the padding +
+          // border-box give it a consistent inset so square/edge-to-edge icons
+          // stop clipping the rounded frame.
+          objectFit: "contain",
+          padding: Math.max(2, Math.round(size * 0.12)),
+          boxSizing: "border-box",
           background: brandColor ?? "var(--w6w-icon-swatch, var(--w6w-panel-2))",
         }}
       />
