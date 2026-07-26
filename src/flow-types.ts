@@ -73,6 +73,8 @@ export const TRIGGER_APP = "@w6w/trigger";
 export const HTTP_APP = "@w6w/http";
 /** Inbound HTTP(S) webhook trigger (entry node; provisions a receive URL). */
 export const WEBHOOK_APP = "@w6w/webhook";
+/** Time-based scheduler trigger (entry node; fires the workflow on a schedule). */
+export const SCHEDULER_APP = "@w6w/scheduler";
 /** "Respond to Webhook" — shapes the HTTP response for `responseMode: responseNode`. */
 export const RESPOND_APP = "@w6w/respond";
 /**

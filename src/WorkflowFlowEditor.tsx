@@ -52,6 +52,7 @@ import { Modal } from "./components/Modal.tsx";
 import {
   type FlowStep,
   type FlowWorkflow,
+  SCHEDULER_APP,
   TRIGGER_APP,
   WEBHOOK_APP,
   internalNodeDef,
@@ -1072,7 +1073,10 @@ function StepEditModal({
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
-  const isTrigger = step.uses.app === TRIGGER_APP || step.uses.app === WEBHOOK_APP;
+  const isTrigger =
+    step.uses.app === TRIGGER_APP ||
+    step.uses.app === WEBHOOK_APP ||
+    step.uses.app === SCHEDULER_APP;
 
   // Gather each graph ancestor's latest saved step-test so the incoming-state pane
   // can offer it as a seed. Driven by `upstreamSteps` (from `upstreamStateSources`),
