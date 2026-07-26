@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
+import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6wApi.ts";
 import { useW6wApi } from "./provider.tsx";
@@ -69,6 +70,25 @@ export interface ActionTestFormProps {
    * own pop-out) usages are unchanged.
    */
   embedded?: boolean;
+}
+
+/**
+ * Minimal relative-time label ("just now", "5m ago", "3h ago", "2d ago", or a
+ * date for anything older) from an ISO timestamp. Kept inline — no formatter is
+ * imported here — and only used for the saved-tests rail subtitle.
+ */
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(then).toLocaleDateString();
 }
 
 /** Pull default values out of declared params so the form starts populated. */
@@ -528,26 +548,15 @@ export function ActionTestForm({
         <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
           {railTests.map((t) => (
             <li key={t.id}>
-              {/* Clicking a saved test's name loads it for editing — no per-row
-                  Load/Run/Delete buttons; those actions live at the modal bottom. */}
-              <button
-                type="button"
-                className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
-                  editingTestId === t.id ? " active" : ""
-                }`}
-                aria-pressed={editingTestId === t.id}
+              {/* Clicking a saved test loads it for editing — no per-row
+                  Load/Run/Delete buttons; those actions live at the modal bottom.
+                  Subtitle is the last-saved time for now; R-7 swaps it for last-run. */}
+              <ListItem
                 title={t.name}
+                subtitle={`saved ${relativeTime(t.updatedAt)}`}
+                active={t.id === editingTestId}
                 onClick={() => loadSavedTest(t)}
-                style={{
-                  width: "100%",
-                  justifyContent: "flex-start",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {t.name}
-              </button>
+              />
             </li>
           ))}
         </ul>
