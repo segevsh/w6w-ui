@@ -34,6 +34,8 @@ export type { CodeEditorProps } from "./CodeEditor.tsx";
 
 export { Modal } from "./components/Modal.tsx";
 export { AppIcon } from "./components/AppIcon.tsx";
+export { ListItem } from "./components/ListItem.tsx";
+export type { ListItemProps } from "./components/ListItem.tsx";
 export { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
 
 export { ExpressionInput } from "./components/ExpressionInput.tsx";
