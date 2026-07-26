@@ -208,19 +208,25 @@ function ParamField({
   if (param.type === "boolean") {
     const current = Boolean(value ?? param.default ?? false);
     return (
-      <label className="w6w-field">
-        <span>
+      <FxField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+      >
+        {/* Bare checkbox (label sits above via FxField). Wrapped in a label so
+            it isn't stretched by `.w6w-fx-wrap > input` and reads next to ƒx. */}
+        <label className="w6w-bool-field">
           <input
             type="checkbox"
             checked={current}
             disabled={readOnly}
             onChange={(e) => onChange(param.key, e.target.checked)}
-          />{" "}
-          {label}
-          {req}
-        </span>
-        {param.hint && <span className="w6w-hint">{param.hint}</span>}
-      </label>
+          />
+        </label>
+      </FxField>
     );
   }
 
@@ -407,6 +413,7 @@ function FxField({
   readOnly,
   label,
   req,
+  bare,
   children,
 }: {
   param: ActionParam;
@@ -415,6 +422,9 @@ function FxField({
   readOnly?: boolean;
   label: string;
   req: string;
+  /** Render only the toggle + widget (no label/hint chrome) — for compact
+   *  cells such as a `vars` row value that already live inside their own grid. */
+  bare?: boolean;
   children: ReactNode;
 }) {
   // Seed from the stored value so a persisted expression reopens in fx mode.
@@ -446,39 +456,46 @@ function FxField({
     setFx(!fx);
   };
 
+  // The ƒx toggle rides at the end of the input (an in-field decoration) rather
+  // than up in the label row — so the affordance sits next to the value it
+  // governs. It still swaps the plain widget for ExpressionInput.
+  const body = (
+    <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
+      {fx ? (
+        <ExpressionInput
+          value={value as ExprValue | string | undefined}
+          readOnly={readOnly}
+          aria-label={label}
+          onChange={(next) => onChange(param.key, next)}
+        />
+      ) : (
+        children
+      )}
+      {!readOnly && (
+        <button
+          type="button"
+          className={`w6w-expr-fx${fx ? " is-active" : ""}`}
+          title={fx ? "Use a plain value" : "Use an expression"}
+          aria-label={fx ? `Use a plain value for ${label}` : `Use an expression for ${label}`}
+          aria-pressed={fx}
+          onClick={toggle}
+        >
+          ƒx
+        </button>
+      )}
+    </div>
+  );
+
+  // Bare: just the toggle + widget, no label/hint chrome (the host cell owns them).
+  if (bare) return body;
+
   return (
     <div className="w6w-field">
       <span>
         {label}
         {req}
       </span>
-      {/* The ƒx toggle rides at the end of the input (an in-field decoration)
-          rather than up in the label row — so the affordance sits next to the
-          value it governs. It still swaps the plain widget for ExpressionInput. */}
-      <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
-        {fx ? (
-          <ExpressionInput
-            value={value as ExprValue | string | undefined}
-            readOnly={readOnly}
-            aria-label={label}
-            onChange={(next) => onChange(param.key, next)}
-          />
-        ) : (
-          children
-        )}
-        {!readOnly && (
-          <button
-            type="button"
-            className={`w6w-expr-fx${fx ? " is-active" : ""}`}
-            title={fx ? "Use a plain value" : "Use an expression"}
-            aria-label={fx ? `Use a plain value for ${label}` : `Use an expression for ${label}`}
-            aria-pressed={fx}
-            onClick={toggle}
-          >
-            ƒx
-          </button>
-        )}
-      </div>
+      {body}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
     </div>
   );
@@ -656,15 +673,21 @@ function MultiSelectField({
 
   const placeholder =
     typeof param.placeholder === "string" && param.placeholder ? param.placeholder : "Select…";
+  const label = param.label ?? param.key;
+  const req = param.required ? " *" : "";
 
   return (
-    <div className="w6w-field">
-      <span>
-        {param.label ?? param.key}
-        {param.required ? " *" : ""}
-      </span>
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
       {/* One input-like box: chips inline, then the dropdown as the trailing
-          placeholder — chips appear to live inside the field's boundaries. */}
+          placeholder — chips appear to live inside the field's boundaries. The
+          ƒx toggle (via FxField) swaps the whole box for an expression. */}
       <div className={`w6w-multiselect${readOnly ? " is-readonly" : ""}`}>
         {selected.map((v) => (
           <span className="w6w-chip" key={String(v)}>
@@ -707,8 +730,7 @@ function MultiSelectField({
           </select>
         )}
       </div>
-      {param.hint && <span className="w6w-hint">{param.hint}</span>}
-    </div>
+    </FxField>
   );
 }
 
@@ -871,9 +893,10 @@ function ArrayField({
 /**
  * One typed key/value entry in a `vars` param. `type` is a real value type only:
  * `expression` is a binding *mode* (see {@link FxField}/`ExprValue`), not a value
- * type, so it is no longer offered in the dropdown. Legacy rows persisted with
- * `type:"expression"` still round-trip — the render branch below degrades them
- * gracefully via a widened compare.
+ * type, so it is no longer offered in the dropdown. Each row value carries its own
+ * ƒx toggle (via {@link FxField} in `bare` mode), so any declared type can be bound
+ * to an expression; a legacy row persisted with `type:"expression"` (an `ExprValue`)
+ * still round-trips — FxField opens it in expression mode from the stored value.
  */
 export interface DataVar {
   key: string;
@@ -966,39 +989,40 @@ function VarsField({
                 </option>
               ))}
             </select>
-            {(v.type as string) === "expression" ? (
-              // Legacy-compat: `expression` is no longer a selectable type, but a
-              // row persisted with it must still round-trip. A dynamic value is
-              // edited with the segmented ExpressionInput and stored as an
-              // `{type:"expr"}` envelope (or plain string); the engine resolves it
-              // against the run scope before the data node runs, so downstream
-              // steps see the computed value. (The type dropdown shows blank for
-              // such a row until the author picks a real type, which converts it.)
-              <ExpressionInput
-                value={v.value as ExprValue | string | undefined}
-                onChange={(next) => patch(i, { value: next })}
-                placeholder="expression…"
-                readOnly={readOnly}
-                aria-label="Expression value"
-              />
-            ) : v.type === "boolean" ? (
-              <select
-                value={v.value === true ? "true" : "false"}
-                disabled={readOnly}
-                onChange={(e) => patch(i, { value: e.target.value === "true" })}
-              >
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            ) : (
-              <input
-                type={v.type === "number" ? "number" : "text"}
-                placeholder="value"
-                value={varValueToText(v.value)}
-                readOnly={readOnly}
-                onChange={(e) => patch(i, { value: coerceVarValue(v.type, e.target.value) })}
-              />
-            )}
+            {/* Per-value ƒx toggle: any declared type can be bound to an
+                expression (stored as an `{type:"expr"}` envelope, resolved
+                against the run scope before the data node runs). A legacy
+                `type:"expression"` row (an ExprValue) reopens in fx mode from
+                its stored value. `bare` drops the field chrome so the widget
+                fits the row's grid cell. */}
+            <FxField
+              bare
+              param={param}
+              value={v.value}
+              onChange={(_key, next) => patch(i, { value: next })}
+              readOnly={readOnly}
+              label={v.key || "value"}
+              req=""
+            >
+              {v.type === "boolean" ? (
+                <select
+                  value={v.value === true ? "true" : "false"}
+                  disabled={readOnly}
+                  onChange={(e) => patch(i, { value: e.target.value === "true" })}
+                >
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              ) : (
+                <input
+                  type={v.type === "number" ? "number" : "text"}
+                  placeholder="value"
+                  value={varValueToText(v.value)}
+                  readOnly={readOnly}
+                  onChange={(e) => patch(i, { value: coerceVarValue(v.type, e.target.value) })}
+                />
+              )}
+            </FxField>
             {!readOnly && (
               <button
                 type="button"
