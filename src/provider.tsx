@@ -32,6 +32,29 @@ export interface TestRunSummary {
 }
 
 /**
+ * A saved per-step test fixture — a reusable, project-owned named capture of a
+ * workflow step's resolved incoming state (`input`) and its params (`with`),
+ * keyed by `(workflowId, stepId)`. Mirrors the connection-scoped `SavedTest`,
+ * re-keyed to a workflow step. `lastRun*` denormalizes the most recent run.
+ */
+export interface StepTest {
+  id: string;
+  workflowId: string;
+  stepId: string;
+  name: string | null;
+  input: Record<string, unknown>;
+  with: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  /** When this fixture was last run (ISO), or null/undefined if never run. */
+  lastRunAt?: string | null;
+  /** The most recent run's status (e.g. `succeeded`/`failed`), or null. */
+  lastRunStatus?: string | null;
+  /** The most recent run's error payload, or null when it succeeded/never ran. */
+  lastRunError?: unknown;
+}
+
+/**
  * The surface every w6w-io component may call. Grows as we add components;
  * new members are added at the end so consumer implementations only need to
  * grow when they want to use the new component.
@@ -134,6 +157,47 @@ export interface W6wApi {
    * MUST guard on its presence before invoking.
    */
   listTestRuns?(connectionId: string): Promise<TestRunSummary[]>;
+
+  /**
+   * Save a reusable per-step test fixture against a workflow step. Captures the
+   * resolved incoming state (`input`) and the step's params (`with`); the server
+   * stores both verbatim, project-owned. Mirrors `createSavedTest`, re-keyed from
+   * a connection to a `(workflowId, stepId)`. POSTs to
+   * `/workflows/:workflowId/steps/:stepId/tests`.
+   */
+  saveStepTest(
+    workflowId: string,
+    stepId: string,
+    body: { name?: string; input: Record<string, unknown>; with: Record<string, unknown> },
+  ): Promise<StepTest>;
+
+  /**
+   * Record the outcome of a step-test run so every run (saved or ad-hoc) is
+   * logged authoritatively server-side. The run row mirrors `node_executions`
+   * (status/input/output/error). When `stepTestId` is present the fixture's
+   * `lastRun*` fields are updated too. Mirrors `recordTestRun`, re-keyed to a
+   * workflow step. POSTs to `/workflows/:workflowId/steps/:stepId/test-runs`.
+   */
+  recordStepTestRun(
+    workflowId: string,
+    stepId: string,
+    body: {
+      stepTestId?: string | null;
+      status: string;
+      input?: unknown;
+      output?: unknown;
+      error?: unknown;
+    },
+  ): Promise<void>;
+
+  /**
+   * List the saved test fixtures for a workflow step (project-owned, not
+   * subject-filtered). Added now so the ui-only incoming-state picker and
+   * test-gate tasks need no further studio change. Mirrors `listSavedTests`,
+   * re-keyed to a `(workflowId, stepId)`. GETs
+   * `/workflows/:workflowId/steps/:stepId/tests`.
+   */
+  listStepTests(workflowId: string, stepId: string): Promise<StepTest[]>;
 }
 
 const Ctx = createContext<W6wApi | null>(null);

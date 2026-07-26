@@ -4,7 +4,7 @@
  * and doesn't use this. Every method calls the w6w server directly and
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
-import type { TestRunSummary, W6wApi } from "./provider.tsx";
+import type { StepTest, TestRunSummary, W6wApi } from "./provider.tsx";
 import type {
   ActionDef,
   ApiCallRecord,
@@ -163,5 +163,22 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
       req<{ runs: TestRunSummary[] }>(
         `/connections/${encodeURIComponent(connectionId)}/test-runs`,
       ).then((r) => r.runs ?? []),
+
+    saveStepTest: (workflowId, stepId, body) =>
+      req<{ stepTest: StepTest }>(
+        `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/tests`,
+        { method: "POST", body: JSON.stringify(body) },
+      ).then((r) => r.stepTest),
+
+    listStepTests: (workflowId, stepId) =>
+      req<{ stepTests: StepTest[] }>(
+        `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/tests`,
+      ).then((r) => r.stepTests ?? []),
+
+    recordStepTestRun: (workflowId, stepId, body) =>
+      req<{ run: unknown }>(
+        `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/test-runs`,
+        { method: "POST", body: JSON.stringify(body) },
+      ).then(() => undefined),
   };
 }
