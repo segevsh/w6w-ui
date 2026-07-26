@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { requiredParamsFilled } from "./StepBuilderModal.tsx";
-import { useW6wApi } from "./provider.tsx";
+import { useW6wApi, useWorkflowProject } from "./provider.tsx";
 import type { ActionParam } from "./types.ts";
 
 /**
@@ -112,6 +112,9 @@ export function TriggerFillForm({
   fields: unknown;
 }) {
   const api = useW6wApi();
+  // The workflow's selected project scopes document-expression resolution in the
+  // trigger test (undefined outside the editor → server default project).
+  const project = useWorkflowProject();
   const defs = useMemo(() => asFieldDefs(fields), [fields]);
   const params = useMemo(() => fieldsToParams(defs), [defs]);
   const hasFields = params.length > 0;
@@ -133,7 +136,7 @@ export function TriggerFillForm({
     try {
       // The filled values become the trigger's output/run-input — the handler
       // reads `params.input` and returns it verbatim.
-      const result = await api.invokeAction(app, action, { input: filled }, {});
+      const result = await api.invokeAction(app, action, { input: filled }, { project });
       setState({
         status: "done",
         value: result.value,

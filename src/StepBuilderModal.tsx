@@ -18,7 +18,7 @@ import {
   isControlApp,
   isInternalApp,
 } from "./flow-types.ts";
-import { useW6wApi } from "./provider.tsx";
+import { useW6wApi, useWorkflowProject } from "./provider.tsx";
 import type {
   ActionDef,
   ActionParam,
@@ -646,6 +646,9 @@ export const StepTestRun = forwardRef<
   ref,
 ) {
   const api = useW6wApi();
+  // Resolve document expressions against the workflow's selected project (the
+  // editor provides it; undefined outside the editor → server default project).
+  const project = useWorkflowProject();
   const [state, setState] = useState<TestState | null>(null);
 
   const run = async () => {
@@ -654,12 +657,10 @@ export const StepTestRun = forwardRef<
     onBusyChange?.(true);
     let outcome: Exclude<TestState, { status: "running" }>;
     try {
-      const result = await api.invokeAction(
-        app,
-        action,
-        values,
-        connectionId ? { connectionId } : {},
-      );
+      const result = await api.invokeAction(app, action, values, {
+        ...(connectionId ? { connectionId } : {}),
+        project,
+      });
       outcome = {
         status: "done",
         value: result.value,

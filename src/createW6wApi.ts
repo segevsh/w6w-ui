@@ -127,7 +127,17 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
     invokeAction: (appId, actionKey, params, opts = {}) =>
       req<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>(
         `/apps/${encodeURIComponent(appId)}/actions/${encodeURIComponent(actionKey)}/invoke`,
-        { method: "POST", body: JSON.stringify({ params, ...opts }) },
+        // `project` scopes document-expression resolution to the workflow's
+        // selected project (undefined keys are dropped by JSON.stringify, so an
+        // absent project preserves the server's default-project behavior).
+        {
+          method: "POST",
+          body: JSON.stringify({
+            params,
+            connectionId: opts.connectionId,
+            project: opts.project,
+          }),
+        },
       ),
 
     listSavedTests: (connectionId) =>
