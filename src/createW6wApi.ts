@@ -4,7 +4,7 @@
  * and doesn't use this. Every method calls the w6w server directly and
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
-import type { W6wApi } from "./provider.tsx";
+import type { TestRunSummary, W6wApi } from "./provider.tsx";
 import type {
   ActionDef,
   ApiCallRecord,
@@ -158,5 +158,10 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
         method: "POST",
         body: JSON.stringify(body),
       }).then(() => undefined),
+
+    listTestRuns: (connectionId) =>
+      req<{ runs: TestRunSummary[] }>(
+        `/connections/${encodeURIComponent(connectionId)}/test-runs`,
+      ).then((r) => r.runs ?? []),
   };
 }
