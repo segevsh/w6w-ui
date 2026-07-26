@@ -322,16 +322,39 @@ export function ActionTestForm({
   // The single invoke path — used by "Run action" and by re-running a saved test.
   const runWith = async (params: Record<string, unknown>) => {
     if (!selectedAction) return;
+    const actionKey = selectedAction.key;
     setRunning(true);
     setError(null);
     setResult(undefined);
+    let outcome: { ok: boolean; summary: string; result?: unknown };
     try {
-      const r = await api.invokeAction(appId, selectedAction.key, params, { connectionId });
+      const r = await api.invokeAction(appId, actionKey, params, { connectionId });
       setResult(r.value);
+      outcome = { ok: true, summary: "OK", result: r.value };
     } catch (e) {
-      setError(describeInvokeError(e));
+      const err = describeInvokeError(e);
+      setError(err);
+      outcome = { ok: false, summary: err.headline };
     } finally {
       setRunning(false);
+    }
+    // Log every run (success or failure) against the connection, and update the
+    // saved test's last-run when this run came from an editing session. Best
+    // effort — a logging failure must not mask the run's own result.
+    if (connectionId) {
+      try {
+        await api.recordTestRun(connectionId, {
+          savedTestId: editingTestId ?? null,
+          actionKey,
+          ok: outcome.ok,
+          summary: outcome.summary.slice(0, 200),
+          result: outcome.result,
+        });
+        refreshSavedTests();
+        onSavedTestsChanged?.();
+      } catch {
+        // Ignore — the run itself already surfaced via result/error.
+      }
     }
   };
   const run = () => runWith(values);
@@ -550,10 +573,23 @@ export function ActionTestForm({
             <li key={t.id}>
               {/* Clicking a saved test loads it for editing — no per-row
                   Load/Run/Delete buttons; those actions live at the modal bottom.
-                  Subtitle is the last-saved time for now; R-7 swaps it for last-run. */}
+                  Subtitle shows the last run (✓/✗ + relative time), falling back
+                  to the last-saved time when the test has never been run. */}
               <ListItem
                 title={t.name}
-                subtitle={`saved ${relativeTime(t.updatedAt)}`}
+                subtitle={
+                  t.lastRunAt ? (
+                    <span>
+                      <span style={{ color: t.lastRunOk ? "#2e9e5b" : "var(--w6w-danger)" }}>
+                        {t.lastRunOk ? "✓" : "✗"}
+                      </span>{" "}
+                      {t.lastRunSummary ? `${t.lastRunSummary} · ` : ""}
+                      {relativeTime(t.lastRunAt)}
+                    </span>
+                  ) : (
+                    `saved ${relativeTime(t.updatedAt)}`
+                  )
+                }
                 active={t.id === editingTestId}
                 onClick={() => loadSavedTest(t)}
               />

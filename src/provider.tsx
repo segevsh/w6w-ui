@@ -82,6 +82,22 @@ export interface W6wApi {
 
   /** Delete a saved test by id. */
   deleteSavedTest(connectionId: string, id: string): Promise<void>;
+
+  /**
+   * Record the outcome of an action-test run against a connection. Appends a
+   * run-log row server-side; when `savedTestId` is present the saved test's
+   * `lastRun*` fields are updated too. POSTs to `/connections/:connId/test-runs`.
+   */
+  recordTestRun(
+    connId: string,
+    body: {
+      savedTestId?: string | null;
+      actionKey: string;
+      ok: boolean;
+      summary?: string;
+      result?: unknown;
+    },
+  ): Promise<void>;
 }
 
 const Ctx = createContext<W6wApi | null>(null);
