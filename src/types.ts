@@ -213,6 +213,12 @@ export interface SavedTest {
   values: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  /** When this saved test was last run (ISO), or null/undefined if never run. */
+  lastRunAt?: string | null;
+  /** Whether the most recent run succeeded, or null/undefined if never run. */
+  lastRunOk?: boolean | null;
+  /** Short headline for the most recent run's outcome, or null/undefined if never run. */
+  lastRunSummary?: string | null;
 }
 
 /** Effective theme hint passed to icon components to pick a light/dark variant. */

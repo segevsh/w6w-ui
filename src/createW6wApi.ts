@@ -139,5 +139,11 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
         `/connections/${encodeURIComponent(connectionId)}/saved-tests/${encodeURIComponent(id)}`,
         { method: "DELETE" },
       ).then(() => undefined),
+
+    recordTestRun: (connId, body) =>
+      req<{ run: unknown }>(`/connections/${encodeURIComponent(connId)}/test-runs`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }).then(() => undefined),
   };
 }
