@@ -235,6 +235,30 @@
   background: var(--w6w-border);
   color: var(--w6w-text);
 }
+
+/* Incoming-state seed picker: upstream steps' saved tests offered as one-click
+   seeds for the step's incoming state (WorkflowFlowEditor · StepEditModal). */
+.w6w-seed-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.w6w-seed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.w6w-seed-chip {
+  cursor: pointer;
+}
+.w6w-seed-chip:hover:not(:disabled) {
+  border-color: var(--w6w-text);
+}
+.w6w-seed-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 /* Expression input: a field whose contents are inline SEGMENTS — plain text
    plus var/secret/expr chips, edited in place (contentEditable, like a Notion /
    Zapier block field). A small toolbar carries the Insert menu + the {{ }} (fx)
