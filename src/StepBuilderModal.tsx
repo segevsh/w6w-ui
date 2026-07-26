@@ -8,6 +8,7 @@ import { AppIcon } from "./components/AppIcon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
+  DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
   internalNodeDefaults,
@@ -46,7 +47,7 @@ export interface StepBuilderModalProps {
   title?: string;
 }
 
-type Tab = "connected" | "apps" | "triggers" | "controls" | "utilities";
+type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
 
 /** Config sub-tabs shared by the add-step config and the node editor. */
 type StepConfigTab = "setup" | "configure" | "test";
@@ -242,6 +243,13 @@ export function StepBuilderModal({
           >
             Apps
           </button>
+          <button
+            type="button"
+            className={`w6w-stepbuilder-tab${tab === "ai" ? " active" : ""}`}
+            onClick={() => setTab("ai")}
+          >
+            AI
+          </button>
           {!appsOnly && (
             <>
               <button
@@ -265,6 +273,13 @@ export function StepBuilderModal({
               >
                 Utilities
               </button>
+              <button
+                type="button"
+                className={`w6w-stepbuilder-tab${tab === "data" ? " active" : ""}`}
+                onClick={() => setTab("data")}
+              >
+                Data
+              </button>
             </>
           )}
         </nav>
@@ -277,10 +292,20 @@ export function StepBuilderModal({
             />
           ) : tab === "apps" ? (
             <AppPicker onSelectApp={setSelectedApp} theme={theme} />
+          ) : tab === "ai" ? (
+            <AppPicker
+              onSelectApp={setSelectedApp}
+              theme={theme}
+              filter={(a) => a.categories?.includes("ai") ?? false}
+              searchPlaceholder="Search AI apps…"
+              emptyMessage="No AI apps registered yet."
+            />
           ) : tab === "triggers" ? (
             <TriggersFlow onSelect={setSelectedNode} />
           ) : tab === "controls" ? (
             <ControlsFlow onSelect={setSelectedNode} />
+          ) : tab === "data" ? (
+            <DataFlow onSelect={setSelectedNode} />
           ) : (
             <UtilitiesFlow onSelect={setSelectedNode} />
           )}
@@ -348,13 +373,30 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
   );
 }
 
-/** Utilities tab — compute + request nodes (script, data, HTTP, respond). */
+/** Utilities tab — compute + request nodes (script, HTTP, respond). The `@w6w/data`
+ * node lives in its own **Data** tab, so exclude it here. */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.group !== "control" && n.group !== "trigger");
+  const nodes = INTERNAL_NODES.filter(
+    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP,
+  );
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Utilities run a script, call an HTTP(S) endpoint, declare data, or respond to a webhook.
+        Utilities run a script, call an HTTP(S) endpoint, or respond to a webhook.
+      </p>
+      <NodeList nodes={nodes} onSelect={onSelect} />
+    </div>
+  );
+}
+
+/** Data tab — the `@w6w/data` node: declare typed key/value variables for
+ * downstream steps to reference. */
+function DataFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
+  const nodes = INTERNAL_NODES.filter((n) => n.app === DATA_APP);
+  return (
+    <div className="w6w-stack">
+      <p className="w6w-muted w6w-small">
+        Declare typed key/value variables for downstream steps to reference.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
