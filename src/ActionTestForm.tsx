@@ -5,7 +5,7 @@ import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6wApi.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionDef, SavedTest, ThemeMode } from "./types.ts";
+import type { ActionDef, ApiCallRecord, SavedTest, ThemeMode } from "./types.ts";
 
 export interface ActionTestFormProps {
   /** App the action belongs to. */
@@ -169,6 +169,81 @@ function describeInvokeError(e: unknown): InvokeError {
   return { headline: "The action returned an error.", detail };
 }
 
+/** The captured outbound calls the server attached to a failed invoke's body. */
+function apiCallsOf(e: unknown): ApiCallRecord[] {
+  const body = e instanceof ApiError ? (e.body as { apiCalls?: ApiCallRecord[] } | null) : null;
+  return body?.apiCalls ?? [];
+}
+
+/** Pretty-print a captured body when it is JSON; otherwise show it verbatim. */
+function formatBody(body: string | null | undefined): string {
+  if (!body) return "";
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    return body;
+  }
+}
+
+/**
+ * The wire log for a run: each outbound HTTP call the action made, with the
+ * request we sent and the response we got back. Collapsed by default — it is the
+ * ground truth you open when the result looks wrong (e.g. a template variable
+ * that came through unrendered), not something to read on every run.
+ *
+ * Credentials are already redacted server-side; nothing here re-inspects them.
+ */
+function ApiCallsPanel({ calls }: { calls: ApiCallRecord[] }) {
+  if (calls.length === 0) return null;
+  return (
+    <div className="w6w-stack" style={{ gap: 4 }}>
+      <strong className="w6w-small">
+        API {calls.length === 1 ? "call" : "calls"} ({calls.length})
+      </strong>
+      {calls.map((call, i) => (
+        <details
+          // Captured calls have no id of their own; index is stable within a run.
+          key={`${call.method}-${call.url ?? call.host}-${i}`}
+          className="w6w-result"
+          style={{ padding: 8 }}
+        >
+          <summary style={{ cursor: "pointer" }}>
+            <span className="w6w-small">
+              {call.method} {call.url ?? call.host} →{" "}
+              <strong>{call.error ? "failed" : call.status}</strong>
+              {call.durationMs !== undefined && (
+                <span className="w6w-muted"> · {call.durationMs}ms</span>
+              )}
+            </span>
+          </summary>
+          <div className="w6w-stack" style={{ gap: 6, marginTop: 8 }}>
+            {call.error && <div className="w6w-error w6w-small">{call.error}</div>}
+            <div className="w6w-muted w6w-small">Request headers</div>
+            <pre className="w6w-result">{JSON.stringify(call.requestHeaders ?? {}, null, 2)}</pre>
+            {call.requestBody && (
+              <>
+                <div className="w6w-muted w6w-small">Request body</div>
+                <pre className="w6w-result">{formatBody(call.requestBody)}</pre>
+              </>
+            )}
+            {call.responseBody && (
+              <>
+                <div className="w6w-muted w6w-small">Response body</div>
+                <pre className="w6w-result">{formatBody(call.responseBody)}</pre>
+              </>
+            )}
+            {call.truncated && (
+              <div className="w6w-muted w6w-small">
+                A captured body exceeded the size cap and was truncated.
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Schema-driven form to test/run a single action against a connection. Renders
  * the action's declared params through {@link ParamsForm} (the same primitive
@@ -209,6 +284,10 @@ export function ActionTestForm({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<InvokeError | null>(null);
   const [result, setResult] = useState<unknown>(undefined);
+  // The outbound HTTP calls the last run made (redacted request + response).
+  // Populated on success AND failure — a wrong payload is usually only visible
+  // on the wire, not in the value.
+  const [apiCalls, setApiCalls] = useState<ApiCallRecord[]>([]);
 
   // Params view: the schema-driven form, or the whole `values` object as raw JSON.
   const [viewMode, setViewMode] = useState<"form" | "json">("form");
@@ -261,6 +340,7 @@ export function ActionTestForm({
     setEditingTestId(seedTestId ?? null);
     setError(null);
     setResult(undefined);
+    setApiCalls([]);
   }
 
   // Studio seam: adopt a deep-linked saved-test id. When `seedTestId` changes to a
@@ -293,6 +373,7 @@ export function ActionTestForm({
       setBaseline(seeded);
       setError(null);
       setResult(undefined);
+      setApiCalls([]);
     }
   }
 
@@ -326,14 +407,19 @@ export function ActionTestForm({
     setRunning(true);
     setError(null);
     setResult(undefined);
+    setApiCalls([]);
     let outcome: { ok: boolean; summary: string; result?: unknown };
     try {
       const r = await api.invokeAction(appId, actionKey, params, { connectionId });
       setResult(r.value);
+      setApiCalls(r.apiCalls ?? []);
       outcome = { ok: true, summary: "OK", result: r.value };
     } catch (e) {
       const err = describeInvokeError(e);
       setError(err);
+      // The server returns the captured calls on the error body too — the
+      // request that failed is the thing worth looking at.
+      setApiCalls(apiCallsOf(e));
       outcome = { ok: false, summary: err.headline };
     } finally {
       setRunning(false);
@@ -454,6 +540,7 @@ export function ActionTestForm({
     setViewMode("form");
     setError(null);
     setResult(undefined);
+    setApiCalls([]);
   };
   // Delete the saved test currently being edited (Delete only shows with an
   // editing id set). Clears the editing id so the form drops to unsaved state.
@@ -661,6 +748,7 @@ export function ActionTestForm({
                     <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
                   </div>
                 )}
+                <ApiCallsPanel calls={apiCalls} />
               </>
             );
             // Bottom-anchored actions: Run / Save always; Delete only when an

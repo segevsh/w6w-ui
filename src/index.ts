@@ -56,6 +56,7 @@ export type { OAuthPopupResult } from "./oauth-popup.ts";
 export type {
   ActionDef,
   ActionParam,
+  ApiCallRecord,
   AppSummary,
   AuthDef,
   AuthField,

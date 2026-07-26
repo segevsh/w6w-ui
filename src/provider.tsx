@@ -8,7 +8,14 @@
  *   <W6wUIProvider api={api}>...</W6wUIProvider>
  */
 import { type ReactNode, createContext, useContext } from "react";
-import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, SavedTest } from "./types.ts";
+import type {
+  ActionDef,
+  ApiCallRecord,
+  AppSummary,
+  AuthDef,
+  ConnectionSummary,
+  SavedTest,
+} from "./types.ts";
 
 /**
  * The surface every w6w-io component may call. Grows as we add components;
@@ -56,13 +63,16 @@ export interface W6wApi {
   /**
    * Invoke a single action — used to test-run one step from the visual editor.
    * Pass `connectionId` to run with a stored connection's credential.
+   *
+   * `apiCalls` carries the outbound HTTP calls the action made (redacted); a
+   * failed invoke rejects with an `ApiError` whose `body` holds the same field.
    */
   invokeAction(
     appId: string,
     actionKey: string,
     params: Record<string, unknown>,
     opts?: { connectionId?: string },
-  ): Promise<{ value: unknown }>;
+  ): Promise<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>;
 
   /** List the saved action-test inputs stored against a connection. */
   listSavedTests(connectionId: string): Promise<SavedTest[]>;

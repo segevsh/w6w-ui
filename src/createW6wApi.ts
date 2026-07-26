@@ -5,7 +5,14 @@
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
 import type { W6wApi } from "./provider.tsx";
-import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, SavedTest } from "./types.ts";
+import type {
+  ActionDef,
+  ApiCallRecord,
+  AppSummary,
+  AuthDef,
+  ConnectionSummary,
+  SavedTest,
+} from "./types.ts";
 
 export interface CreateW6wApiOptions {
   /** Absolute URL or path prefix — e.g. `"https://w6w.example.com"` or `"/api"`. */
@@ -24,6 +31,12 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /**
+     * The parsed error response body, when the server sent one. Carries the
+     * fields that ride alongside an error — e.g. an invoke's `logs` and
+     * `apiCalls` — which the message alone would drop.
+     */
+    public body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -73,7 +86,7 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
     if (!res.ok) {
       const err = ((data as { error?: { code?: string; message?: string } } | null)?.error ??
         {}) as { code?: string; message?: string };
-      throw new ApiError(res.status, err.code ?? "error", err.message ?? res.statusText);
+      throw new ApiError(res.status, err.code ?? "error", err.message ?? res.statusText, data);
     }
     return data as T;
   }
@@ -112,7 +125,7 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
       req<{ connections: ConnectionSummary[] }>("/connections").then((r) => r.connections ?? []),
 
     invokeAction: (appId, actionKey, params, opts = {}) =>
-      req<{ value: unknown }>(
+      req<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>(
         `/apps/${encodeURIComponent(appId)}/actions/${encodeURIComponent(actionKey)}/invoke`,
         { method: "POST", body: JSON.stringify({ params, ...opts }) },
       ),
