@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
+import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6wApi.ts";
 import { useW6wApi } from "./provider.tsx";
-import type { ActionDef, SavedTest, ThemeMode } from "./types.ts";
+import type { TestRunSummary } from "./provider.tsx";
+import type { ActionDef, ApiCallRecord, SavedTest, ThemeMode } from "./types.ts";
 
 export interface ActionTestFormProps {
   /** App the action belongs to. */
@@ -34,6 +36,60 @@ export interface ActionTestFormProps {
    * The modal rail still refreshes its own list independently. Optional.
    */
   onSavedTestsChanged?: () => void;
+  /**
+   * Studio-integration seam (URL-driven host): the id of the saved test being
+   * edited, from a studio deep link (`…/test/:testId`). When it changes to a
+   * non-null id it is adopted as the current `editingTestId` — so the bottom Save
+   * PATCHes that row and the Delete button shows; when null the tester is a
+   * fresh/unsaved test. Optional — existing consumers keep compiling.
+   */
+  seedTestId?: string | null;
+  /**
+   * Studio-integration seam: fired whenever the current `values` diverge from
+   * (or return to) the seeded baseline. This is the unsaved-changes signal the
+   * studio host gates modal-close on (its ConfirmModal prompt). Optional.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * Studio-integration seam: fired after a successful save (POST create or PATCH
+   * update) with the resulting `SavedTest`, so the host can sync the URL
+   * (`…/test/:id`) and clear its own dirty state. Optional.
+   */
+  onTestSaved?: (test: SavedTest) => void;
+  /**
+   * Studio-integration seam: fired after a successful delete of the saved test
+   * currently being edited, with the deleted id, so the host can navigate away
+   * from a now-dead `…/test/:id` URL. Optional — existing consumers keep compiling.
+   */
+  onDeleted?: (testId: string) => void;
+  /**
+   * Host-embedded mode. When `true` the caller already renders this widget inside
+   * its own modal (studio's `ConnectionTesterModal`), so the widget suppresses its
+   * OWN `<Modal>` + pop-out (⤢) toggle and instead fills the host container as a
+   * full-height flex column: the params + saved-tests region scrolls and the
+   * action bar is pinned to the bottom. Default `false` — non-embedded (inline /
+   * own pop-out) usages are unchanged.
+   */
+  embedded?: boolean;
+}
+
+/**
+ * Minimal relative-time label ("just now", "5m ago", "3h ago", "2d ago", or a
+ * date for anything older) from an ISO timestamp. Kept inline — no formatter is
+ * imported here — and only used for the saved-tests rail subtitle.
+ */
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(then).toLocaleDateString();
 }
 
 /** Pull default values out of declared params so the form starts populated. */
@@ -114,6 +170,81 @@ function describeInvokeError(e: unknown): InvokeError {
   return { headline: "The action returned an error.", detail };
 }
 
+/** The captured outbound calls the server attached to a failed invoke's body. */
+function apiCallsOf(e: unknown): ApiCallRecord[] {
+  const body = e instanceof ApiError ? (e.body as { apiCalls?: ApiCallRecord[] } | null) : null;
+  return body?.apiCalls ?? [];
+}
+
+/** Pretty-print a captured body when it is JSON; otherwise show it verbatim. */
+function formatBody(body: string | null | undefined): string {
+  if (!body) return "";
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    return body;
+  }
+}
+
+/**
+ * The wire log for a run: each outbound HTTP call the action made, with the
+ * request we sent and the response we got back. Collapsed by default — it is the
+ * ground truth you open when the result looks wrong (e.g. a template variable
+ * that came through unrendered), not something to read on every run.
+ *
+ * Credentials are already redacted server-side; nothing here re-inspects them.
+ */
+function ApiCallsPanel({ calls }: { calls: ApiCallRecord[] }) {
+  if (calls.length === 0) return null;
+  return (
+    <div className="w6w-stack" style={{ gap: 4 }}>
+      <strong className="w6w-small">
+        API {calls.length === 1 ? "call" : "calls"} ({calls.length})
+      </strong>
+      {calls.map((call, i) => (
+        <details
+          // Captured calls have no id of their own; index is stable within a run.
+          key={`${call.method}-${call.url ?? call.host}-${i}`}
+          className="w6w-result"
+          style={{ padding: 8 }}
+        >
+          <summary style={{ cursor: "pointer" }}>
+            <span className="w6w-small">
+              {call.method} {call.url ?? call.host} →{" "}
+              <strong>{call.error ? "failed" : call.status}</strong>
+              {call.durationMs !== undefined && (
+                <span className="w6w-muted"> · {call.durationMs}ms</span>
+              )}
+            </span>
+          </summary>
+          <div className="w6w-stack" style={{ gap: 6, marginTop: 8 }}>
+            {call.error && <div className="w6w-error w6w-small">{call.error}</div>}
+            <div className="w6w-muted w6w-small">Request headers</div>
+            <pre className="w6w-result">{JSON.stringify(call.requestHeaders ?? {}, null, 2)}</pre>
+            {call.requestBody && (
+              <>
+                <div className="w6w-muted w6w-small">Request body</div>
+                <pre className="w6w-result">{formatBody(call.requestBody)}</pre>
+              </>
+            )}
+            {call.responseBody && (
+              <>
+                <div className="w6w-muted w6w-small">Response body</div>
+                <pre className="w6w-result">{formatBody(call.responseBody)}</pre>
+              </>
+            )}
+            {call.truncated && (
+              <div className="w6w-muted w6w-small">
+                A captured body exceeded the size cap and was truncated.
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Schema-driven form to test/run a single action against a connection. Renders
  * the action's declared params through {@link ParamsForm} (the same primitive
@@ -131,6 +262,11 @@ export function ActionTestForm({
   action,
   seedValues,
   onSavedTestsChanged,
+  seedTestId,
+  onDirtyChange,
+  onTestSaved,
+  onDeleted,
+  embedded = false,
 }: ActionTestFormProps) {
   const api = useW6wApi();
 
@@ -149,6 +285,10 @@ export function ActionTestForm({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<InvokeError | null>(null);
   const [result, setResult] = useState<unknown>(undefined);
+  // The outbound HTTP calls the last run made (redacted request + response).
+  // Populated on success AND failure — a wrong payload is usually only visible
+  // on the wire, not in the value.
+  const [apiCalls, setApiCalls] = useState<ApiCallRecord[]>([]);
 
   // Params view: the schema-driven form, or the whole `values` object as raw JSON.
   const [viewMode, setViewMode] = useState<"form" | "json">("form");
@@ -161,18 +301,56 @@ export function ActionTestForm({
   const [modalOpen, setModalOpen] = useState(false);
 
   // Param values, re-seeded from defaults whenever the selected action changes.
+  // On a FRESH MOUNT with `seedValues` present (e.g. a deep-linked saved test),
+  // seed from a shallow copy of it rather than defaults — otherwise the seed guard
+  // below never fires on first render (`lastSeed` inits to the same ref) and the
+  // seeded values are dropped.
   const selectedKey = selectedAction?.key ?? null;
+  const initialValues = seedValues ? { ...seedValues } : defaultParamsFor(selectedAction);
   const [valuesByAction, setValuesByAction] = useState<{
     key: string | null;
     values: Record<string, unknown>;
-  }>(() => ({ key: selectedKey, values: defaultParamsFor(selectedAction) }));
+  }>(() => ({
+    key: selectedKey,
+    values: initialValues,
+  }));
+
+  // The id of the saved test currently being edited, or `null` for an unsaved
+  // test. Drives the PATCH-vs-POST decision in `submitSaveTest`: a set id updates
+  // that row in place, `null` creates a new named row. Seeded from `seedTestId`
+  // so a studio deep link (`…/test/:testId`) mounts already in edit mode.
+  const [editingTestId, setEditingTestId] = useState<string | null>(seedTestId ?? null);
+
+  // Dirty baseline: the values as last seeded/loaded/saved. `values` is compared
+  // against this to derive the host-facing `dirty` signal (`onDirtyChange`). Reset
+  // wherever a fresh set of values is adopted (action change, seed, load, save).
+  const [baseline, setBaseline] = useState<Record<string, unknown>>(initialValues);
+
   if (valuesByAction.key !== selectedKey) {
     // Selection changed (controlled or via the picker, without a remount) — reset the
     // form values AND clear any stale result/error carried over from the previously
     // selected action (a 403 from `list-get` must not linger while `mail-send` shows).
-    setValuesByAction({ key: selectedKey, values: defaultParamsFor(selectedAction) });
+    // Editing id: a genuine action-switch starts a fresh unsaved test (→ null), BUT a
+    // deep-link whose action arrives AFTER mount is NOT an action-switch — the selected
+    // action IS the seeded test's action. A truthy `seedTestId` therefore wins here, so
+    // the late null→key transition keeps `editingTestId === seedTestId` (Save PATCHes,
+    // Delete shows) instead of clobbering it to null and POSTing a duplicate row.
+    const fresh = defaultParamsFor(selectedAction);
+    setValuesByAction({ key: selectedKey, values: fresh });
+    setBaseline(fresh);
+    setEditingTestId(seedTestId ?? null);
     setError(null);
     setResult(undefined);
+    setApiCalls([]);
+  }
+
+  // Studio seam: adopt a deep-linked saved-test id. When `seedTestId` changes to a
+  // non-null id, make it the current editing id (bottom Save PATCHes, Delete
+  // shows); a change to null returns the tester to a fresh/unsaved test.
+  const [lastSeedTestId, setLastSeedTestId] = useState<string | null | undefined>(seedTestId);
+  if (seedTestId !== lastSeedTestId) {
+    setLastSeedTestId(seedTestId);
+    setEditingTestId(seedTestId ?? null);
   }
 
   // Studio seam: when a new `seedValues` reference arrives (e.g. "open a saved
@@ -181,17 +359,39 @@ export function ActionTestForm({
   // object is never mutated and later edits are free to diverge.
   const [lastSeed, setLastSeed] = useState<Record<string, unknown> | null | undefined>(seedValues);
   if (seedValues !== lastSeed) {
+    // Content-aware, not reference-keyed: a `["saved-tests"]` invalidation (fired by
+    // onTestSaved/onSavedTestsChanged after a Save) hands back a fresh OBJECT with the
+    // SAME content — that must NOT reseed the draft or clear the on-screen Run
+    // result/error. Reseed only when the incoming values differ STRUCTURALLY from the
+    // last applied seed. `lastSeed` advances to the new ref regardless, so we don't
+    // re-compare the same pair every render.
+    const structurallyChanged =
+      JSON.stringify(seedValues ?? null) !== JSON.stringify(lastSeed ?? null);
     setLastSeed(seedValues);
-    if (seedValues) {
-      setValuesByAction({ key: selectedKey, values: { ...seedValues } });
+    if (seedValues && structurallyChanged) {
+      const seeded = { ...seedValues };
+      setValuesByAction({ key: selectedKey, values: seeded });
+      setBaseline(seeded);
       setError(null);
       setResult(undefined);
+      setApiCalls([]);
     }
   }
 
   const values = valuesByAction.values;
   const setValues = (next: Record<string, unknown>) =>
     setValuesByAction({ key: selectedKey, values: next });
+
+  // Host-facing dirty signal: do the current values diverge from the seeded
+  // baseline? Compared by structural JSON so a load→edit→revert cycle clears it.
+  const dirty = useMemo(
+    () => JSON.stringify(values) !== JSON.stringify(baseline),
+    [values, baseline],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fire only when `dirty` flips, not on every `onDirtyChange` identity change.
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty]);
 
   // Entering the JSON view seeds the editor from the current values; edits that
   // parse to a plain object round-trip straight back into `values`.
@@ -204,16 +404,45 @@ export function ActionTestForm({
   // The single invoke path — used by "Run action" and by re-running a saved test.
   const runWith = async (params: Record<string, unknown>) => {
     if (!selectedAction) return;
+    const actionKey = selectedAction.key;
     setRunning(true);
     setError(null);
     setResult(undefined);
+    setApiCalls([]);
+    let outcome: { ok: boolean; summary: string; result?: unknown };
     try {
-      const r = await api.invokeAction(appId, selectedAction.key, params, { connectionId });
+      const r = await api.invokeAction(appId, actionKey, params, { connectionId });
       setResult(r.value);
+      setApiCalls(r.apiCalls ?? []);
+      outcome = { ok: true, summary: "OK", result: r.value };
     } catch (e) {
-      setError(describeInvokeError(e));
+      const err = describeInvokeError(e);
+      setError(err);
+      // The server returns the captured calls on the error body too — the
+      // request that failed is the thing worth looking at.
+      setApiCalls(apiCallsOf(e));
+      outcome = { ok: false, summary: err.headline };
     } finally {
       setRunning(false);
+    }
+    // Log every run (success or failure) against the connection, and update the
+    // saved test's last-run when this run came from an editing session. Best
+    // effort — a logging failure must not mask the run's own result.
+    if (connectionId) {
+      try {
+        await api.recordTestRun(connectionId, {
+          savedTestId: editingTestId ?? null,
+          actionKey,
+          ok: outcome.ok,
+          summary: outcome.summary.slice(0, 200),
+          result: outcome.result,
+        });
+        refreshSavedTests();
+        refreshRunHistory();
+        onSavedTestsChanged?.();
+      } catch {
+        // Ignore — the run itself already surfaced via result/error.
+      }
     }
   };
   const run = () => runWith(values);
@@ -250,49 +479,119 @@ export function ActionTestForm({
     ? (savedTests ?? []).filter((t) => t.actionKey === selectedKey)
     : [];
 
-  // Open the in-app name dialog to save the current params as a named test.
+  // Connection run history from the unified `run_log` ledger (F-1). Complements
+  // the per-saved-test `lastRun*` badge with the full recent-run list. Fetched
+  // via the OPTIONAL `api.listTestRuns` — a consumer that doesn't implement it
+  // (studio, until T2.2.2) simply shows no history. `runHistoryNonce` re-triggers
+  // the fetch after a run is recorded so the list stays current.
+  const [runHistory, setRunHistory] = useState<TestRunSummary[] | null>(null);
+  const [runHistoryNonce, setRunHistoryNonce] = useState(0);
+  const refreshRunHistory = () => setRunHistoryNonce((n) => n + 1);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `runHistoryNonce` is a deliberate re-fetch trigger, not read inside the effect.
+  useEffect(() => {
+    const load = api.listTestRuns;
+    if (!connectionId || !load) {
+      setRunHistory(null);
+      return;
+    }
+    let canceled = false;
+    load(connectionId)
+      .then((list) => !canceled && setRunHistory(list))
+      // Best-effort: a history load failure must never break the tester.
+      .catch(() => !canceled && setRunHistory(null));
+    return () => {
+      canceled = true;
+    };
+  }, [api, connectionId, runHistoryNonce]);
+
+  // History rows for the current action (mirrors the saved-tests rail filter),
+  // most-recent first — the server orders newest-first but we don't rely on it.
+  const railRunHistory = selectedKey
+    ? (runHistory ?? [])
+        .filter((r) => r.actionKey === selectedKey)
+        .slice()
+        .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
+    : [];
+
+  // Open the in-app name dialog to save the current params as a NEW named test.
   const openSaveModal = () => {
     if (!connectionId || !selectedAction) return;
     setPendingName("");
     setSavedTestsError(null);
     setNameModalOpen(true);
   };
-  // Persist the saved test with the name entered in the dialog.
+  // Bottom Save affordance. When a saved test is loaded for editing
+  // (`editingTestId` set) the save is a silent PATCH — no throwaway name dialog
+  // (FU-1). With no editing id, open the name dialog to create a new named row.
+  const handleSaveClick = () => {
+    if (!connectionId || !selectedAction) return;
+    if (editingTestId) {
+      void submitSaveTest();
+    } else {
+      openSaveModal();
+    }
+  };
+  // Persist the current params. When a saved test is loaded for editing
+  // (`editingTestId` set), PATCH that row in place — updating only `values` keeps
+  // its name and sidesteps the 409 duplicate-name guard a re-POST would trip.
+  // With no editing id, create a new named row from the dialog and remember its
+  // id so the next save updates in place rather than spawning a second row.
   const submitSaveTest = async () => {
     if (!connectionId || !selectedAction) return;
-    const name = pendingName.trim();
-    if (!name) return;
     try {
-      await api.createSavedTest(connectionId, { actionKey: selectedAction.key, name, values });
+      let saved: SavedTest;
+      if (editingTestId) {
+        saved = await api.updateSavedTest(connectionId, editingTestId, { values });
+      } else {
+        const name = pendingName.trim();
+        if (!name) return;
+        saved = await api.createSavedTest(connectionId, {
+          actionKey: selectedAction.key,
+          name,
+          values,
+        });
+        setEditingTestId(saved.id);
+      }
+      // The just-saved values are the new clean baseline (dirty → false).
+      setBaseline({ ...values });
       setNameModalOpen(false);
       setPendingName("");
       refreshSavedTests();
       onSavedTestsChanged?.();
+      onTestSaved?.(saved);
     } catch (e) {
       setSavedTestsError((e as Error).message);
     }
   };
 
   // Load a saved test's values into the form (shallow copy — never mutate the
-  // stored row). "Run" additionally re-invokes with those values.
+  // stored row). Clicking a saved test's name loads it for editing: values +
+  // editing id are adopted and the load becomes the new clean baseline.
   const loadSavedTest = (t: SavedTest) => {
-    setValuesByAction({ key: selectedKey, values: { ...t.values } });
+    const loaded = { ...t.values };
+    setValuesByAction({ key: selectedKey, values: loaded });
+    setBaseline(loaded);
+    // Remember which row is being edited so a subsequent save PATCHes it in place.
+    setEditingTestId(t.id);
     setViewMode("form");
     setError(null);
     setResult(undefined);
+    setApiCalls([]);
   };
-  const runSavedTest = (t: SavedTest) => {
-    const params = { ...t.values };
-    setValuesByAction({ key: selectedKey, values: params });
-    setViewMode("form");
-    return runWith(params);
-  };
-  const removeSavedTest = async (t: SavedTest) => {
-    if (!connectionId) return;
+  // Delete the saved test currently being edited (Delete only shows with an
+  // editing id set). Clears the editing id so the form drops to unsaved state.
+  const deleteCurrentTest = async () => {
+    if (!connectionId || !editingTestId) return;
+    const deletedId = editingTestId;
     try {
-      await api.deleteSavedTest(connectionId, t.id);
+      await api.deleteSavedTest(connectionId, deletedId);
+      setEditingTestId(null);
       refreshSavedTests();
       onSavedTestsChanged?.();
+      // Host hook: let the URL-driven host (studio's ConnectionTesterModal) navigate
+      // away from the now-dead `…/test/:deletedId` deep link.
+      onDeleted?.(deletedId);
     } catch (e) {
       setSavedTestsError((e as Error).message);
     }
@@ -326,20 +625,24 @@ export function ActionTestForm({
           >
             JSON
           </button>
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-            aria-pressed={modalOpen}
-            title={
-              modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
-            }
-            aria-label={
-              modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
-            }
-            onClick={() => setModalOpen((v) => !v)}
-          >
-            {modalOpen ? "⤡" : "⤢"}
-          </button>
+          {/* Pop-out toggle — suppressed in embedded mode: the host already
+              provides full-screen modal chrome, so a modal-in-modal ⤢ is redundant. */}
+          {!embedded && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-sm w6w-btn-ghost"
+              aria-pressed={modalOpen}
+              title={
+                modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
+              }
+              aria-label={
+                modalOpen ? "Collapse the params editor" : "Open the params editor in a larger view"
+              }
+              onClick={() => setModalOpen((v) => !v)}
+            >
+              {modalOpen ? "⤡" : "⤢"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -380,9 +683,6 @@ export function ActionTestForm({
         style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
       >
         <span className="w6w-muted w6w-small">Saved tests</span>
-        <button type="button" className="w6w-btn w6w-btn-sm w6w-btn-ghost" onClick={openSaveModal}>
-          Save test
-        </button>
       </div>
       {savedTestsError && (
         <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
@@ -394,55 +694,76 @@ export function ActionTestForm({
       ) : (
         <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
           {railTests.map((t) => (
-            <li
-              key={t.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <span
-                className="w6w-small"
-                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            <li key={t.id}>
+              {/* Clicking a saved test loads it for editing — no per-row
+                  Load/Run/Delete buttons; those actions live at the modal bottom.
+                  Subtitle shows the last run (✓/✗ + relative time), falling back
+                  to the last-saved time when the test has never been run. */}
+              <ListItem
                 title={t.name}
-              >
-                {t.name}
-              </span>
-              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-                  onClick={() => loadSavedTest(t)}
-                >
-                  Load
-                </button>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-                  disabled={running}
-                  onClick={() => runSavedTest(t)}
-                >
-                  Run
-                </button>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm w6w-btn-ghost"
-                  onClick={() => removeSavedTest(t)}
-                >
-                  Delete
-                </button>
-              </div>
+                subtitle={
+                  t.lastRunAt ? (
+                    <span>
+                      <span style={{ color: t.lastRunOk ? "#2e9e5b" : "var(--w6w-danger)" }}>
+                        {t.lastRunOk ? "✓" : "✗"}
+                      </span>{" "}
+                      {t.lastRunSummary ? `${t.lastRunSummary} · ` : ""}
+                      {relativeTime(t.lastRunAt)}
+                    </span>
+                  ) : (
+                    `saved ${relativeTime(t.updatedAt)}`
+                  )
+                }
+                active={t.id === editingTestId}
+                onClick={() => loadSavedTest(t)}
+              />
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Run history (F-1): the connection's recent tester runs for this action,
+          from the unified `run_log` ledger. Read-only rows (no onClick) — this is
+          a log, not a loadable input like the saved tests above. Only rendered
+          when the api exposes `listTestRuns` (optional member) and there is
+          history to show, so a consumer without it degrades to no section. */}
+      {api.listTestRuns && railRunHistory.length > 0 && (
+        <>
+          <div
+            className="w6w-field-labelrow"
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+          >
+            <span className="w6w-muted w6w-small">Recent runs</span>
+          </div>
+          <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
+            {railRunHistory.map((r) => (
+              <li key={r.id}>
+                <ListItem
+                  title={
+                    <span>
+                      <span style={{ color: r.ok ? "#2e9e5b" : "var(--w6w-danger)" }}>
+                        {r.ok ? "✓" : "✗"}
+                      </span>{" "}
+                      {r.actionKey}
+                    </span>
+                  }
+                  subtitle={
+                    <span>
+                      {r.summary ? `${r.summary} · ` : ""}
+                      {relativeTime(r.occurredAt)}
+                    </span>
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   ) : null;
 
   return (
-    <div className="w6w-stack">
+    <div className={`w6w-stack${embedded ? " w6w-tester-embedded-root" : ""}`}>
       {/* Action picker — only when the caller isn't controlling the selection. */}
       {!action &&
         (actions.length === 0 ? (
@@ -476,23 +797,12 @@ export function ActionTestForm({
           </div>
 
           {(() => {
-            // The tester body: params editor + Run/Save actions + result. Rendered
-            // inline when the modal is closed, and inside the pop-out modal (left
-            // pane, with the saved-tests rail on the right) when open — so Run and
-            // Save are available in BOTH views.
-            const body = (
-              <div className="w6w-stack" style={{ gap: 12 }}>
+            // The scrollable tester content: params editor + error + result. Shared
+            // by every layout (inline body, pop-out modal, embedded footer layout)
+            // so it stays a single instance bound to the single `values` state.
+            const paramsAndResult = (
+              <>
                 {paramsRegion}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="w6w-btn" disabled={running} onClick={run}>
-                    {running ? "Running…" : "Run action"}
-                  </button>
-                  {connectionId && (
-                    <button type="button" className="w6w-btn w6w-btn-ghost" onClick={openSaveModal}>
-                      Save test
-                    </button>
-                  )}
-                </div>
                 {error && (
                   <div className="w6w-result w6w-error">
                     <strong>{error.headline}</strong>
@@ -513,8 +823,66 @@ export function ActionTestForm({
                     <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
                   </div>
                 )}
+                <ApiCallsPanel calls={apiCalls} />
+              </>
+            );
+            // Bottom-anchored actions: Run / Save always; Delete only when an
+            // editing id is set (an already-saved test is loaded). In embedded mode
+            // this becomes a bottom-pinned, bordered footer outside the scroll region.
+            const actionBar = (
+              <div
+                className={`w6w-tester-actions${embedded ? " w6w-tester-actions-footer" : ""}`}
+                style={{ display: "flex", gap: 8 }}
+              >
+                <button type="button" className="w6w-btn" disabled={running} onClick={run}>
+                  {running ? "Running…" : "Run action"}
+                </button>
+                {connectionId && (
+                  <button type="button" className="w6w-btn w6w-btn-ghost" onClick={handleSaveClick}>
+                    Save test
+                  </button>
+                )}
+                {connectionId && editingTestId && (
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost"
+                    style={{ marginLeft: "auto", color: "var(--w6w-danger)" }}
+                    onClick={() => void deleteCurrentTest()}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             );
+            // The tester body: params + result + actions, stacked. Rendered inline
+            // when the pop-out modal is closed, and inside the pop-out modal (left
+            // pane, saved-tests rail on the right) when open.
+            const body = (
+              <div className="w6w-stack" style={{ gap: 12 }}>
+                {paramsAndResult}
+                {actionBar}
+              </div>
+            );
+            // Host-embedded: the host owns the modal chrome, so fill it as a
+            // full-height flex column — params + saved-tests rail scroll, the action
+            // bar is pinned to the bottom as a non-scrolling footer.
+            if (embedded) {
+              return (
+                <div className="w6w-tester-embedded">
+                  <div className="w6w-tester-embedded-scroll">
+                    {savedTestsRail ? (
+                      <div className="w6w-tester-embedded-cols">
+                        <div className="w6w-tester-embedded-main">{paramsAndResult}</div>
+                        <div className="w6w-tester-embedded-rail">{savedTestsRail}</div>
+                      </div>
+                    ) : (
+                      paramsAndResult
+                    )}
+                  </div>
+                  {actionBar}
+                </div>
+              );
+            }
             return modalOpen ? (
               <Modal
                 title={`Edit params — ${selectedAction.title ?? selectedAction.key}`}

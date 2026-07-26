@@ -4,8 +4,15 @@
  * and doesn't use this. Every method calls the w6w server directly and
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
-import type { W6wApi } from "./provider.tsx";
-import type { ActionDef, AppSummary, AuthDef, ConnectionSummary, SavedTest } from "./types.ts";
+import type { StepTest, TestRunSummary, W6wApi } from "./provider.tsx";
+import type {
+  ActionDef,
+  ApiCallRecord,
+  AppSummary,
+  AuthDef,
+  ConnectionSummary,
+  SavedTest,
+} from "./types.ts";
 
 export interface CreateW6wApiOptions {
   /** Absolute URL or path prefix — e.g. `"https://w6w.example.com"` or `"/api"`. */
@@ -24,6 +31,12 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /**
+     * The parsed error response body, when the server sent one. Carries the
+     * fields that ride alongside an error — e.g. an invoke's `logs` and
+     * `apiCalls` — which the message alone would drop.
+     */
+    public body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -73,7 +86,7 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
     if (!res.ok) {
       const err = ((data as { error?: { code?: string; message?: string } } | null)?.error ??
         {}) as { code?: string; message?: string };
-      throw new ApiError(res.status, err.code ?? "error", err.message ?? res.statusText);
+      throw new ApiError(res.status, err.code ?? "error", err.message ?? res.statusText, data);
     }
     return data as T;
   }
@@ -112,9 +125,19 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
       req<{ connections: ConnectionSummary[] }>("/connections").then((r) => r.connections ?? []),
 
     invokeAction: (appId, actionKey, params, opts = {}) =>
-      req<{ value: unknown }>(
+      req<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>(
         `/apps/${encodeURIComponent(appId)}/actions/${encodeURIComponent(actionKey)}/invoke`,
-        { method: "POST", body: JSON.stringify({ params, ...opts }) },
+        // `project` scopes document-expression resolution to the workflow's
+        // selected project (undefined keys are dropped by JSON.stringify, so an
+        // absent project preserves the server's default-project behavior).
+        {
+          method: "POST",
+          body: JSON.stringify({
+            params,
+            connectionId: opts.connectionId,
+            project: opts.project,
+          }),
+        },
       ),
 
     listSavedTests: (connectionId) =>
@@ -138,6 +161,34 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
       req<void>(
         `/connections/${encodeURIComponent(connectionId)}/saved-tests/${encodeURIComponent(id)}`,
         { method: "DELETE" },
+      ).then(() => undefined),
+
+    recordTestRun: (connId, body) =>
+      req<{ run: unknown }>(`/connections/${encodeURIComponent(connId)}/test-runs`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }).then(() => undefined),
+
+    listTestRuns: (connectionId) =>
+      req<{ runs: TestRunSummary[] }>(
+        `/connections/${encodeURIComponent(connectionId)}/test-runs`,
+      ).then((r) => r.runs ?? []),
+
+    saveStepTest: (workflowId, stepId, body) =>
+      req<{ stepTest: StepTest }>(
+        `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/tests`,
+        { method: "POST", body: JSON.stringify(body) },
+      ).then((r) => r.stepTest),
+
+    listStepTests: (workflowId, stepId) =>
+      req<{ stepTests: StepTest[] }>(
+        `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/tests`,
+      ).then((r) => r.stepTests ?? []),
+
+    recordStepTestRun: (workflowId, stepId, body) =>
+      req<{ run: unknown }>(
+        `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/test-runs`,
+        { method: "POST", body: JSON.stringify(body) },
       ).then(() => undefined),
   };
 }

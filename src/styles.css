@@ -235,6 +235,30 @@
   background: var(--w6w-border);
   color: var(--w6w-text);
 }
+
+/* Incoming-state seed picker: upstream steps' saved tests offered as one-click
+   seeds for the step's incoming state (WorkflowFlowEditor · StepEditModal). */
+.w6w-seed-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.w6w-seed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.w6w-seed-chip {
+  cursor: pointer;
+}
+.w6w-seed-chip:hover:not(:disabled) {
+  border-color: var(--w6w-text);
+}
+.w6w-seed-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 /* Expression input: a field whose contents are inline SEGMENTS — plain text
    plus var/secret/expr chips, edited in place (contentEditable, like a Notion /
    Zapier block field). A small toolbar carries the Insert menu + the {{ }} (fx)
@@ -425,15 +449,38 @@
   align-items: center;
   gap: 8px;
 }
+/* fx toggle — an end-of-input decoration (beside the field) that swaps the plain
+   widget for the segmented ExpressionInput. Lives next to the value instead of up
+   in the label row, so the field and its affordance read as one unit. */
+.w6w-fx-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.w6w-fx-wrap > input,
+.w6w-fx-wrap > select,
+.w6w-fx-wrap > textarea,
+.w6w-fx-wrap > .w6w-expr {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* A boolean field's checkbox rides bare inside the fx-wrap (label sits above via
+   FxField). Keep it natural-width and vertically centered against the ƒx button. */
+.w6w-fx-wrap > .w6w-bool-field {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+}
 .w6w-expr-fx {
-  margin-left: auto;
+  flex-shrink: 0;
+  min-height: 38px;
   border: 1px solid var(--w6w-border);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 8px;
+  background: var(--w6w-panel-2);
   color: var(--w6w-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding: 3px 8px;
+  padding: 0 10px;
   cursor: pointer;
 }
 .w6w-expr-fx:hover {
@@ -747,6 +794,68 @@
 .w6w-btn-ghost.active {
   border-color: var(--w6w-accent);
   background: var(--w6w-panel-2);
+}
+
+/* List row — a clean, reusable list item (leading icon · title/subtitle · trailing).
+   Mirrors the ghost saved-test button rows it replaces. */
+.w6w-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--w6w-text);
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+}
+button.w6w-list-item {
+  font: inherit;
+  font-size: 14px;
+}
+.w6w-list-item:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-list-item:focus-visible {
+  outline: none;
+  border-color: var(--w6w-accent);
+  box-shadow: 0 0 0 2px var(--w6w-accent);
+}
+.w6w-list-item.active {
+  border-color: var(--w6w-accent);
+  background: var(--w6w-panel-2);
+}
+.w6w-list-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.w6w-list-item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.w6w-list-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-list-item-subtitle {
+  color: var(--w6w-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-list-item-trailing {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 /* App summary block */
@@ -1290,4 +1399,45 @@ dialog.w6w-modal p {
 .w6w-result.w6w-error {
   border-color: var(--w6w-danger);
   color: var(--w6w-danger);
+}
+
+/* Host-embedded ActionTestForm (studio's ConnectionTesterModal wraps it in its
+   OWN full modal). The widget then fills that modal as a full-height flex column:
+   the params + saved-tests region scrolls, and the action bar is a bottom-pinned,
+   non-scrolling footer. These classes are only applied in `embedded` mode, so the
+   inline / own-pop-out layout is untouched. */
+.w6w-tester-embedded-root {
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-embedded {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-embedded-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.w6w-tester-embedded-cols {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.w6w-tester-embedded-main {
+  flex: 1;
+  min-width: 0;
+}
+.w6w-tester-embedded-rail {
+  width: 260px;
+  flex-shrink: 0;
+}
+/* The action bar as a pinned footer: kept out of the scroll region and separated
+   with a top border so Run / Save / Delete stay visible however long the params. */
+.w6w-tester-actions-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--w6w-border);
+  padding-top: 12px;
 }

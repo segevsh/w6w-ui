@@ -3,7 +3,18 @@ import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
+import {
+  parseTemplate,
+  partsToValue,
+  serializeTemplate,
+} from "./components/expression-template.ts";
+import {
+  type ActionParam,
+  type ExprValue,
+  type SecretValue,
+  isExprValue,
+  isSecretValue,
+} from "./types.ts";
 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
@@ -197,19 +208,25 @@ function ParamField({
   if (param.type === "boolean") {
     const current = Boolean(value ?? param.default ?? false);
     return (
-      <label className="w6w-field">
-        <span>
+      <FxField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+      >
+        {/* Bare checkbox (label sits above via FxField). Wrapped in a label so
+            it isn't stretched by `.w6w-fx-wrap > input` and reads next to ƒx. */}
+        <label className="w6w-bool-field">
           <input
             type="checkbox"
             checked={current}
             disabled={readOnly}
             onChange={(e) => onChange(param.key, e.target.checked)}
-          />{" "}
-          {label}
-          {req}
-        </span>
-        {param.hint && <span className="w6w-hint">{param.hint}</span>}
-      </label>
+          />
+        </label>
+      </FxField>
     );
   }
 
@@ -396,6 +413,7 @@ function FxField({
   readOnly,
   label,
   req,
+  bare,
   children,
 }: {
   param: ActionParam;
@@ -404,40 +422,45 @@ function FxField({
   readOnly?: boolean;
   label: string;
   req: string;
+  /** Render only the toggle + widget (no label/hint chrome) — for compact
+   *  cells such as a `vars` row value that already live inside their own grid. */
+  bare?: boolean;
   children: ReactNode;
 }) {
-  // Seed from the stored value so a persisted expression reopens in fx mode; the
-  // toggle owns the mode thereafter (the parent re-keys ParamField per field).
+  // Seed from the stored value so a persisted expression reopens in fx mode.
   const [fx, setFx] = useState(() => isExprValue(value));
 
+  // Re-derive fx-mode when the *current* value is an expression — even when that
+  // value arrives AFTER mount (a saved test seeded into a field that mounted
+  // empty). Without this the field renders the raw `{"type":"expr",…}` object as
+  // text instead of the ƒx chip. The toggle still owns turning fx back off; we
+  // only force it ON for an expression value.
+  useEffect(() => {
+    if (isExprValue(value)) setFx(true);
+  }, [value]);
+
   const toggle = () => {
-    // Leaving expr mode drops the value back to an empty scalar, so the plain
-    // widget never has to render (or store) a leftover `ExprValue` — keeping the
-    // invariant "fx off ⟹ plain scalar".
-    if (fx && isExprValue(value)) onChange(param.key, "");
+    if (fx) {
+      // expr → text: serialize the expression back to literal `{{ … }}` text so
+      // the content survives the switch. A sealed `SecretValue` has NO text form
+      // (never produced by serializeTemplate) — block the toggle and keep the
+      // chip so the secret reference isn't lost.
+      if (isSecretValue(value)) return;
+      if (isExprValue(value)) onChange(param.key, serializeTemplate(value.parts));
+    } else if (typeof value === "string" && value !== "") {
+      // text → expr: parse the current string through the template grammar so a
+      // `{{ … }}` literal renders as chips; a plain string stays a plain string
+      // (partsToValue collapses a lone text part). Never clears the content.
+      onChange(param.key, partsToValue(parseTemplate(value)));
+    }
     setFx(!fx);
   };
 
-  return (
-    <div className="w6w-field">
-      <span className="w6w-field-labelrow">
-        <span>
-          {label}
-          {req}
-        </span>
-        {!readOnly && (
-          <button
-            type="button"
-            className={`w6w-icon-btn w6w-btn-sm${fx ? " active" : ""}`}
-            title={fx ? "Use a plain value" : "Use an expression"}
-            aria-label={fx ? `Use a plain value for ${label}` : `Use an expression for ${label}`}
-            aria-pressed={fx}
-            onClick={toggle}
-          >
-            ƒx
-          </button>
-        )}
-      </span>
+  // The ƒx toggle rides at the end of the input (an in-field decoration) rather
+  // than up in the label row — so the affordance sits next to the value it
+  // governs. It still swaps the plain widget for ExpressionInput.
+  const body = (
+    <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
       {fx ? (
         <ExpressionInput
           value={value as ExprValue | string | undefined}
@@ -448,6 +471,31 @@ function FxField({
       ) : (
         children
       )}
+      {!readOnly && (
+        <button
+          type="button"
+          className={`w6w-expr-fx${fx ? " is-active" : ""}`}
+          title={fx ? "Use a plain value" : "Use an expression"}
+          aria-label={fx ? `Use a plain value for ${label}` : `Use an expression for ${label}`}
+          aria-pressed={fx}
+          onClick={toggle}
+        >
+          ƒx
+        </button>
+      )}
+    </div>
+  );
+
+  // Bare: just the toggle + widget, no label/hint chrome (the host cell owns them).
+  if (bare) return body;
+
+  return (
+    <div className="w6w-field">
+      <span>
+        {label}
+        {req}
+      </span>
+      {body}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
     </div>
   );
@@ -474,12 +522,24 @@ function JsonParamField({
   const [invalid, setInvalid] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  // Re-seed only when the field identity changes (a different param selected).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reseed keyed on param identity, not draft value
+  // Re-seed when the field identity changes OR the incoming value changes to
+  // something other than what the current draft already represents — i.e. an
+  // external load (a saved test opened into an already-mounted JSON field), not
+  // the echo of the user's own valid edit. Comparing against the parsed draft
+  // avoids clobbering the cursor/formatting on every keystroke.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `text` is read as the draft baseline but must NOT retrigger the effect (that would reseed mid-edit); reseed is keyed on the incoming value + param identity
   useEffect(() => {
-    setText(seed === undefined ? "" : JSON.stringify(seed, null, 2));
-    setInvalid(false);
-  }, [param.key]);
+    let current: unknown;
+    try {
+      current = text.trim() === "" ? undefined : JSON.parse(text);
+    } catch {
+      current = undefined; // invalid draft — let an external value win
+    }
+    if (JSON.stringify(current) !== JSON.stringify(seed)) {
+      setText(seed === undefined ? "" : JSON.stringify(seed, null, 2));
+      setInvalid(false);
+    }
+  }, [seed, param.key]);
 
   const onEdit = (next: string) => {
     setText(next);
@@ -613,15 +673,21 @@ function MultiSelectField({
 
   const placeholder =
     typeof param.placeholder === "string" && param.placeholder ? param.placeholder : "Select…";
+  const label = param.label ?? param.key;
+  const req = param.required ? " *" : "";
 
   return (
-    <div className="w6w-field">
-      <span>
-        {param.label ?? param.key}
-        {param.required ? " *" : ""}
-      </span>
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
       {/* One input-like box: chips inline, then the dropdown as the trailing
-          placeholder — chips appear to live inside the field's boundaries. */}
+          placeholder — chips appear to live inside the field's boundaries. The
+          ƒx toggle (via FxField) swaps the whole box for an expression. */}
       <div className={`w6w-multiselect${readOnly ? " is-readonly" : ""}`}>
         {selected.map((v) => (
           <span className="w6w-chip" key={String(v)}>
@@ -664,8 +730,7 @@ function MultiSelectField({
           </select>
         )}
       </div>
-      {param.hint && <span className="w6w-hint">{param.hint}</span>}
-    </div>
+    </FxField>
   );
 }
 
@@ -825,14 +890,21 @@ function ArrayField({
   );
 }
 
-/** One typed key/value entry in a `vars` param. */
+/**
+ * One typed key/value entry in a `vars` param. `type` is a real value type only:
+ * `expression` is a binding *mode* (see {@link FxField}/`ExprValue`), not a value
+ * type, so it is no longer offered in the dropdown. Each row value carries its own
+ * ƒx toggle (via {@link FxField} in `bare` mode), so any declared type can be bound
+ * to an expression; a legacy row persisted with `type:"expression"` (an `ExprValue`)
+ * still round-trips — FxField opens it in expression mode from the stored value.
+ */
 export interface DataVar {
   key: string;
-  type: "string" | "number" | "boolean" | "json" | "expression";
+  type: "string" | "number" | "boolean" | "json";
   value: unknown;
 }
 
-const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json", "expression"];
+const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
 
 /** Coerce a text input into the variable's declared type (best-effort). */
 function coerceVarValue(type: DataVar["type"], raw: string): unknown {
@@ -917,36 +989,40 @@ function VarsField({
                 </option>
               ))}
             </select>
-            {v.type === "expression" ? (
-              // A dynamic value: edited with the segmented ExpressionInput and
-              // stored as an `{type:"expr"}` envelope (or plain string). The
-              // engine resolves it against the run scope before the data node
-              // runs, so downstream steps see the computed value.
-              <ExpressionInput
-                value={v.value as ExprValue | string | undefined}
-                onChange={(next) => patch(i, { value: next })}
-                placeholder="expression…"
-                readOnly={readOnly}
-                aria-label="Expression value"
-              />
-            ) : v.type === "boolean" ? (
-              <select
-                value={v.value === true ? "true" : "false"}
-                disabled={readOnly}
-                onChange={(e) => patch(i, { value: e.target.value === "true" })}
-              >
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            ) : (
-              <input
-                type={v.type === "number" ? "number" : "text"}
-                placeholder="value"
-                value={varValueToText(v.value)}
-                readOnly={readOnly}
-                onChange={(e) => patch(i, { value: coerceVarValue(v.type, e.target.value) })}
-              />
-            )}
+            {/* Per-value ƒx toggle: any declared type can be bound to an
+                expression (stored as an `{type:"expr"}` envelope, resolved
+                against the run scope before the data node runs). A legacy
+                `type:"expression"` row (an ExprValue) reopens in fx mode from
+                its stored value. `bare` drops the field chrome so the widget
+                fits the row's grid cell. */}
+            <FxField
+              bare
+              param={param}
+              value={v.value}
+              onChange={(_key, next) => patch(i, { value: next })}
+              readOnly={readOnly}
+              label={v.key || "value"}
+              req=""
+            >
+              {v.type === "boolean" ? (
+                <select
+                  value={v.value === true ? "true" : "false"}
+                  disabled={readOnly}
+                  onChange={(e) => patch(i, { value: e.target.value === "true" })}
+                >
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              ) : (
+                <input
+                  type={v.type === "number" ? "number" : "text"}
+                  placeholder="value"
+                  value={varValueToText(v.value)}
+                  readOnly={readOnly}
+                  onChange={(e) => patch(i, { value: coerceVarValue(v.type, e.target.value) })}
+                />
+              )}
+            </FxField>
             {!readOnly && (
               <button
                 type="button"

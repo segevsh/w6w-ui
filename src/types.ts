@@ -213,6 +213,36 @@ export interface SavedTest {
   values: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  /** When this saved test was last run (ISO), or null/undefined if never run. */
+  lastRunAt?: string | null;
+  /** Whether the most recent run succeeded, or null/undefined if never run. */
+  lastRunOk?: boolean | null;
+  /** Short headline for the most recent run's outcome, or null/undefined if never run. */
+  lastRunSummary?: string | null;
+}
+
+/**
+ * One outbound HTTP call an action made while running — the exact (redacted)
+ * request that went to the third-party API and the response that came back.
+ * Returned alongside an invoke's value/error and persisted server-side, so a
+ * run can be debugged and evaluated against the vendor's documented API.
+ */
+export interface ApiCallRecord {
+  host: string;
+  method: string;
+  /** 0 when the request never produced a response (`error` says why). */
+  status: number;
+  url?: string;
+  requestHeaders?: Record<string, string>;
+  /** `null` on a persisted row that captured no body. */
+  requestBody?: string | null;
+  responseHeaders?: Record<string, string>;
+  responseBody?: string | null;
+  responseBytes?: number;
+  durationMs?: number;
+  /** A captured body hit the size cap and was cut. */
+  truncated?: boolean;
+  error?: string | null;
 }
 
 /** Effective theme hint passed to icon components to pick a light/dark variant. */

@@ -25,6 +25,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
@@ -36,8 +37,10 @@ import {
   ConfigViewToggle,
   StepBuilderModal,
   StepTestRun,
+  type StepTestRunHandle,
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
+import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import {
   type ExpressionOptions,
@@ -49,6 +52,9 @@ import { Modal } from "./components/Modal.tsx";
 import {
   type FlowStep,
   type FlowWorkflow,
+  SCHEDULER_APP,
+  TRIGGER_APP,
+  WEBHOOK_APP,
   internalNodeDef,
   internalNodeIcon,
   internalNodeLabel,
@@ -58,7 +64,7 @@ import {
   nodePortsForStep,
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
-import { useW6wApi } from "./provider.tsx";
+import { type StepTest, WorkflowProjectProvider, useW6wApi } from "./provider.tsx";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 
 /**
@@ -197,6 +203,14 @@ export interface WorkflowFlowEditorProps {
    * The host (studio) fetches `/vars` + `/vault` and passes the names here.
    */
   exprOptions?: ExpressionOptions;
+  /**
+   * The workflow's currently-selected project id. Threaded into ad-hoc
+   * test-invokes so document expressions resolve against that project's docs
+   * (not the scope's default/starter project). The host (studio) passes the
+   * active project here; omitted → server default-project behavior. See T2.1.2 /
+   * HITL-4(b): the invoke path's ambient scope is already project-aware.
+   */
+  project?: string;
 }
 
 /**
@@ -260,6 +274,7 @@ function Inner({
   height = 480,
   apps,
   exprOptions,
+  project,
 }: WorkflowFlowEditorProps) {
   const api = useW6wApi();
   const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
@@ -473,6 +488,21 @@ function Inner({
     [nodes, edges, setNodes, setEdges, selectedId, editingId, emitChange],
   );
 
+  // Record a step-test run's outcome server-side (best-effort). Guarded so a
+  // ledger/persist failure never surfaces as a failed test-run to the user.
+  const recordStepRun = useCallback(
+    (
+      workflowId: string,
+      stepId: string,
+      outcome: { status: string; input?: unknown; output?: unknown; error?: unknown },
+    ) => {
+      void api.recordStepTestRun(workflowId, stepId, outcome).catch((err) => {
+        console.error("step test run record failed", err);
+      });
+    },
+    [api],
+  );
+
   // Test-run one step through the invoke API, using its own `with` params and
   // (for action steps) its stored connection. Control steps aren't invocable.
   const runStep = useCallback(
@@ -483,15 +513,17 @@ function Inner({
       const step = node.data.step;
       setRunResult({ stepId: id, status: "running" });
       try {
-        const result = await api.invokeAction(
-          step.uses.app,
-          step.uses.action,
-          step.with ?? {},
-          step.uses.connection ? { connectionId: step.uses.connection } : {},
-        );
+        const result = await api.invokeAction(step.uses.app, step.uses.action, step.with ?? {}, {
+          ...(step.uses.connection ? { connectionId: step.uses.connection } : {}),
+          // Scope document expressions to the workflow's selected project (T2.1.2).
+          project,
+        });
         // Script nodes may return captured console output alongside the value.
         const logs = (result as { logs?: string[] }).logs;
         setRunResult({ stepId: id, status: "done", value: result.value, logs });
+        // Write the outcome back as an ad-hoc step-test run so a canvas test-run
+        // is logged authoritatively (best-effort — never fail the run over it).
+        recordStepRun(value.id, id, { status: "succeeded", output: result.value });
       } catch (e) {
         // The api client wraps network/parse failures with context; duck-type the
         // code so the modal can show it next to the message.
@@ -502,9 +534,10 @@ function Inner({
           error: err.message ?? String(e),
           errorCode: err.code,
         });
+        recordStepRun(value.id, id, { status: "failed", error: err.message ?? String(e) });
       }
     },
-    [nodes, api],
+    [nodes, api, value.id, recordStepRun, project],
   );
 
   const controls = useMemo<StepControls>(
@@ -547,150 +580,159 @@ function Inner({
   return (
     <StepControlsCtx.Provider value={controls}>
       <AppsCtx.Provider value={appsById}>
-        <ExpressionOptionsProvider value={mergedExprOptions}>
-          <div
-            className="w6w-flow"
-            style={{ width: "100%", height, position: "relative" }}
-            onKeyDown={(e) => {
-              if (e.key !== "Backspace" && e.key !== "Delete") return;
-              // Only delete the selected node/edge when the key is aimed at the
-              // canvas — never while a modal is open or the user is editing a field.
-              // The modal <dialog> is a DOM descendant here, so its keystrokes
-              // bubble up; without this guard, backspacing a typo deletes a node.
-              if (editingId || builderOpen || (!selectedId && !selectedEdgeId)) return;
-              const t = e.target as HTMLElement;
-              if (
-                t.isContentEditable ||
-                t.tagName === "INPUT" ||
-                t.tagName === "TEXTAREA" ||
-                t.tagName === "SELECT" ||
-                t.closest("dialog, .w6w-modal") !== null
-              ) {
-                return;
-              }
-              e.preventDefault();
-              // A selected node takes precedence (its confirm); else drop the edge.
-              if (selectedId) deleteStep(selectedId);
-              else if (selectedEdgeId) deleteEdge(selectedEdgeId);
-            }}
-          >
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onConnectEnd={onConnectEnd}
-              isValidConnection={isValidConnection}
-              onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
-                setSelectedId(sel[0]?.id ?? null);
-                setSelectedEdgeId(edgeSel[0]?.id ?? null);
+        <WorkflowProjectProvider project={project}>
+          <ExpressionOptionsProvider value={mergedExprOptions}>
+            <div
+              className="w6w-flow"
+              style={{ width: "100%", height, position: "relative" }}
+              onKeyDown={(e) => {
+                if (e.key !== "Backspace" && e.key !== "Delete") return;
+                // Only delete the selected node/edge when the key is aimed at the
+                // canvas — never while a modal is open or the user is editing a field.
+                // The modal <dialog> is a DOM descendant here, so its keystrokes
+                // bubble up; without this guard, backspacing a typo deletes a node.
+                if (editingId || builderOpen || (!selectedId && !selectedEdgeId)) return;
+                const t = e.target as HTMLElement;
+                if (
+                  t.isContentEditable ||
+                  t.tagName === "INPUT" ||
+                  t.tagName === "TEXTAREA" ||
+                  t.tagName === "SELECT" ||
+                  t.closest("dialog, .w6w-modal") !== null
+                ) {
+                  return;
+                }
+                e.preventDefault();
+                // A selected node takes precedence (its confirm); else drop the edge.
+                if (selectedId) deleteStep(selectedId);
+                else if (selectedEdgeId) deleteEdge(selectedEdgeId);
               }}
-              nodeTypes={nodeTypes}
-              nodesDraggable={!readOnly}
-              nodesConnectable={!readOnly}
-              elementsSelectable
-              fitView
-              // Deletion is owned solely by the guarded onKeyDown handler above
-              // (canvas-only, with a confirm). Disable React Flow's built-in
-              // Backspace/Delete so it can't silently remove a node — e.g. while a
-              // modal is open or the user is editing a field.
-              deleteKeyCode={null}
-              proOptions={{ hideAttribution: true }}
             >
-              <Background gap={16} />
-              <Controls showInteractive={false} />
-              <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
-              {!readOnly && (
-                <Panel position="top-left">
-                  <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
-                    + Step
-                  </button>
-                </Panel>
-              )}
-            </ReactFlow>
-
-            {builderOpen && (
-              <StepBuilderModal
-                onClose={() => {
-                  setBuilderOpen(false);
-                  setPendingConnect(null);
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onConnectEnd={onConnectEnd}
+                isValidConnection={isValidConnection}
+                onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
+                  setSelectedId(sel[0]?.id ?? null);
+                  setSelectedEdgeId(edgeSel[0]?.id ?? null);
                 }}
-                onAdd={addBuiltStep}
-              />
-            )}
+                nodeTypes={nodeTypes}
+                nodesDraggable={!readOnly}
+                nodesConnectable={!readOnly}
+                elementsSelectable
+                fitView
+                // Deletion is owned solely by the guarded onKeyDown handler above
+                // (canvas-only, with a confirm). Disable React Flow's built-in
+                // Backspace/Delete so it can't silently remove a node — e.g. while a
+                // modal is open or the user is editing a field.
+                deleteKeyCode={null}
+                proOptions={{ hideAttribution: true }}
+              >
+                <Background gap={16} />
+                <Controls showInteractive={false} />
+                <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
+                {!readOnly && (
+                  <Panel position="top-left">
+                    <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
+                      + Step
+                    </button>
+                  </Panel>
+                )}
+              </ReactFlow>
 
-            {editingStep && editingId && (
-              // No `key` on purpose: renaming a step updates `editingId`, and a keyed
-              // remount would drop focus mid-keystroke. The modal seeds its own state
-              // once and unmounts (editingId → null) between edits of different nodes.
-              <StepEditModal
-                step={editingStep}
-                readOnly={readOnly}
-                initialView={editView}
-                onChange={(next) => updateStep(editingId, next)}
-                onClose={() => setEditingId(null)}
-              />
-            )}
+              {builderOpen && (
+                <StepBuilderModal
+                  onClose={() => {
+                    setBuilderOpen(false);
+                    setPendingConnect(null);
+                  }}
+                  onAdd={addBuiltStep}
+                />
+              )}
 
-            {runResult && (
-              <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
-                {runResult.status === "running" && <p className="w6w-muted w6w-small">Running…</p>}
-                {runResult.status === "error" && (
-                  <div className="w6w-result w6w-error">
-                    {runResult.errorCode && (
-                      <div className="w6w-small" style={{ opacity: 0.75, marginBottom: 4 }}>
-                        <code>{runResult.errorCode}</code>
+              {editingStep && editingId && (
+                // No `key` on purpose: renaming a step updates `editingId`, and a keyed
+                // remount would drop focus mid-keystroke. The modal seeds its own state
+                // once and unmounts (editingId → null) between edits of different nodes.
+                <StepEditModal
+                  workflowId={value.id}
+                  step={editingStep}
+                  // Graph ancestors of the editing step, from `upstreamStateSources`
+                  // (via `mergedExprOptions`) — the incoming-state picker seeds from
+                  // each ancestor's latest saved step-test rather than re-walking the graph.
+                  upstreamSteps={mergedExprOptions.steps ?? []}
+                  readOnly={readOnly}
+                  initialView={editView}
+                  onChange={(next) => updateStep(editingId, next)}
+                  onClose={() => setEditingId(null)}
+                />
+              )}
+
+              {runResult && (
+                <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
+                  {runResult.status === "running" && (
+                    <p className="w6w-muted w6w-small">Running…</p>
+                  )}
+                  {runResult.status === "error" && (
+                    <div className="w6w-result w6w-error">
+                      {runResult.errorCode && (
+                        <div className="w6w-small" style={{ opacity: 0.75, marginBottom: 4 }}>
+                          <code>{runResult.errorCode}</code>
+                        </div>
+                      )}
+                      {runResult.error || "The step failed with no error message."}
+                    </div>
+                  )}
+                  {runResult.status === "done" && (
+                    <div>
+                      <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+                        Result
                       </div>
-                    )}
-                    {runResult.error || "The step failed with no error message."}
-                  </div>
-                )}
-                {runResult.status === "done" && (
-                  <div>
-                    <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-                      Result
+                      <pre
+                        className="w6w-result"
+                        style={{
+                          whiteSpace: "pre-wrap",
+                          maxHeight: 360,
+                          overflow: "auto",
+                          margin: 0,
+                        }}
+                      >
+                        {JSON.stringify(runResult.value, null, 2)}
+                      </pre>
                     </div>
-                    <pre
-                      className="w6w-result"
-                      style={{
-                        whiteSpace: "pre-wrap",
-                        maxHeight: 360,
-                        overflow: "auto",
-                        margin: 0,
-                      }}
-                    >
-                      {JSON.stringify(runResult.value, null, 2)}
-                    </pre>
-                  </div>
-                )}
-                {runResult.logs && runResult.logs.length > 0 && (
-                  <div>
-                    <div className="w6w-muted w6w-small" style={{ margin: "10px 0 6px" }}>
-                      Console output
+                  )}
+                  {runResult.logs && runResult.logs.length > 0 && (
+                    <div>
+                      <div className="w6w-muted w6w-small" style={{ margin: "10px 0 6px" }}>
+                        Console output
+                      </div>
+                      <pre
+                        className="w6w-result"
+                        style={{
+                          whiteSpace: "pre-wrap",
+                          maxHeight: 200,
+                          overflow: "auto",
+                          margin: 0,
+                        }}
+                      >
+                        {runResult.logs.join("\n")}
+                      </pre>
                     </div>
-                    <pre
-                      className="w6w-result"
-                      style={{
-                        whiteSpace: "pre-wrap",
-                        maxHeight: 200,
-                        overflow: "auto",
-                        margin: 0,
-                      }}
-                    >
-                      {runResult.logs.join("\n")}
-                    </pre>
+                  )}
+                  <div className="w6w-modal-actions">
+                    <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
+                      Close
+                    </button>
                   </div>
-                )}
-                <div className="w6w-modal-actions">
-                  <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
-                    Close
-                  </button>
-                </div>
-              </Modal>
-            )}
-          </div>
-        </ExpressionOptionsProvider>
+                </Modal>
+              )}
+            </div>
+          </ExpressionOptionsProvider>
+        </WorkflowProjectProvider>
       </AppsCtx.Provider>
     </StepControlsCtx.Provider>
   );
@@ -924,13 +966,18 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
 function StepEditModal({
+  workflowId,
   step: initialStep,
+  upstreamSteps,
   onChange,
   onClose,
   readOnly,
   initialView = "props",
 }: {
+  workflowId: string;
   step: FlowStep;
+  /** Graph ancestors of this step (from `upstreamStateSources`); the incoming-state picker seeds from their saved tests. */
+  upstreamSteps: ExpressionStepSource[];
   onChange: (next: FlowStep) => void;
   onClose: () => void;
   readOnly?: boolean;
@@ -949,6 +996,15 @@ function StepEditModal({
   );
   const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
   const [testState, setTestState] = useState("{}");
+  // The editing step's graph ancestors that carry a saved step-test, latest first,
+  // used to seed the incoming state from an upstream step's captured snapshot.
+  const [seedSources, setSeedSources] = useState<
+    { stepId: string; label: string; test: StepTest }[]
+  >([]);
+  // Drives the footer "Test" button, which triggers the body's <StepTestRun> so
+  // the run + persist logic isn't duplicated across two affordances.
+  const testRunRef = useRef<StepTestRunHandle>(null);
+  const [testBusy, setTestBusy] = useState(false);
   // Inline step rename (pencil next to the name). `updateStep` fixes up edges.
   const [renaming, setRenaming] = useState(false);
   const [draftId, setDraftId] = useState(step.id);
@@ -1015,6 +1071,57 @@ function StepEditModal({
   };
 
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
+  // A manual/webhook trigger's Test tab fills its configured `fields` into
+  // `{ input }` (via TriggerFillForm) rather than running the raw config.
+  const isTrigger =
+    step.uses.app === TRIGGER_APP ||
+    step.uses.app === WEBHOOK_APP ||
+    step.uses.app === SCHEDULER_APP;
+
+  // Gather each graph ancestor's latest saved step-test so the incoming-state pane
+  // can offer it as a seed. Driven by `upstreamSteps` (from `upstreamStateSources`),
+  // not a re-walked graph. `listStepTests` returns oldest-first, so the last entry
+  // is the most recent fixture.
+  //
+  // TODO(BLK-2): the step_tests store persists a fixture's captured incoming state
+  // (`input`) + params (`with`) and the last run's status/error — but NOT the run's
+  // output. So a seed uses the ancestor's captured `input` as its upstream-state
+  // snapshot (falling back forward-compatibly to `lastRunOutput` if the store ever
+  // exposes it). See BLK-2.
+  useEffect(() => {
+    if (!testable || isTrigger || upstreamSteps.length === 0) {
+      setSeedSources([]);
+      return;
+    }
+    let canceled = false;
+    Promise.all(
+      upstreamSteps.map(async (s) => {
+        try {
+          const tests = await api.listStepTests(workflowId, s.id);
+          const latest = tests.length ? tests[tests.length - 1] : null;
+          return latest ? { stepId: s.id, label: s.label, test: latest } : null;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((res) => {
+      if (canceled) return;
+      setSeedSources(
+        res.filter((r): r is { stepId: string; label: string; test: StepTest } => r !== null),
+      );
+    });
+    return () => {
+      canceled = true;
+    };
+  }, [api, workflowId, upstreamSteps, testable, isTrigger]);
+
+  // Seed the incoming-state editor from an ancestor's saved test. Uses its recorded
+  // output when the store exposes one; otherwise the captured incoming state (see BLK-2).
+  const seedFromAncestor = useCallback((test: StepTest) => {
+    const output = (test as { lastRunOutput?: unknown }).lastRunOutput ?? test.input;
+    setTestState(JSON.stringify(output ?? {}, null, 2));
+  }, []);
+
   const testValues = (() => {
     try {
       const extra = JSON.parse(testState);
@@ -1025,6 +1132,19 @@ function StepEditModal({
       return step.with ?? {};
     }
   })();
+  // The resolved incoming state saved alongside the fixture. Today it's the
+  // optional "Incoming state" JSON; T3.2.2's picker will seed it from upstream.
+  const testInput = (() => {
+    try {
+      const extra = JSON.parse(testState);
+      return extra && typeof extra === "object" && !Array.isArray(extra)
+        ? (extra as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  })();
+  const canTest = !!params && requiredParamsFilled(params, testValues);
 
   // Header icon mirrors the canvas node: the app's icon for app steps, the
   // internal glyph for triggers/actions/control nodes (same as the node cards).
@@ -1169,28 +1289,66 @@ function StepEditModal({
           {tab === "test" && (
             <div className="w6w-stack">
               {testable ? (
-                <>
-                  <label className="w6w-field">
-                    <span>Incoming state</span>
-                    <textarea
-                      rows={3}
-                      value={testState}
-                      readOnly={readOnly}
-                      spellCheck={false}
-                      onChange={(e) => setTestState(e.target.value)}
-                    />
-                    <span className="w6w-hint">
-                      Optional JSON merged into the test call (e.g. a script's <code>input</code>).
-                    </span>
-                  </label>
-                  <StepTestRun
+                isTrigger ? (
+                  <TriggerFillForm
                     app={step.uses.app}
                     action={step.uses.action}
-                    connectionId={step.uses.connection ?? undefined}
-                    values={testValues}
-                    canRun={!!params && requiredParamsFilled(params, testValues)}
+                    fields={step.with?.fields}
                   />
-                </>
+                ) : (
+                  <>
+                    <div className="w6w-field">
+                      <span>Incoming state</span>
+                      {seedSources.length > 0 && (
+                        <div className="w6w-seed-picker">
+                          <span className="w6w-hint">Seed from an upstream step's saved test:</span>
+                          <div className="w6w-seed-chips">
+                            {seedSources.map((s) => (
+                              <button
+                                key={s.stepId}
+                                type="button"
+                                className="w6w-chip w6w-seed-chip"
+                                title={`Use ${s.label}'s saved test as the incoming state`}
+                                disabled={readOnly}
+                                onClick={() => seedFromAncestor(s.test)}
+                              >
+                                <code>{s.label}</code>
+                                {s.test.lastRunStatus ? (
+                                  <span className="w6w-muted w6w-small">
+                                    {" · "}
+                                    {s.test.lastRunStatus}
+                                  </span>
+                                ) : null}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <textarea
+                        rows={3}
+                        value={testState}
+                        readOnly={readOnly}
+                        spellCheck={false}
+                        onChange={(e) => setTestState(e.target.value)}
+                      />
+                      <span className="w6w-hint">
+                        JSON merged into the test call (e.g. a script's <code>input</code>). Pick an
+                        upstream step above to seed it, then edit as needed.
+                      </span>
+                    </div>
+                    <StepTestRun
+                      ref={testRunRef}
+                      app={step.uses.app}
+                      action={step.uses.action}
+                      connectionId={step.uses.connection ?? undefined}
+                      values={testValues}
+                      canRun={canTest}
+                      hideRunButton
+                      persist={{ workflowId, stepId: step.id, input: testInput }}
+                      onBusyChange={setTestBusy}
+                    />
+                  </>
+                )
               ) : (
                 <p className="w6w-muted w6w-small">
                   Flow-control nodes can't be tested on their own.
@@ -1210,9 +1368,24 @@ function StepEditModal({
               Next →
             </button>
           ) : (
-            <button type="button" className="w6w-btn" onClick={onClose}>
-              Done
-            </button>
+            <>
+              <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
+                Done
+              </button>
+              {testable && !isTrigger && (
+                // Runs the step and persists the outcome (records a run + saves
+                // the fixture) via the body's <StepTestRun>, so a step test is
+                // saved and re-runnable. `readOnly` viewers can't write tests.
+                <button
+                  type="button"
+                  className="w6w-btn"
+                  disabled={readOnly || !canTest || testBusy}
+                  onClick={() => testRunRef.current?.run()}
+                >
+                  {testBusy ? "Testing…" : "Test"}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

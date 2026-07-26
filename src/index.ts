@@ -6,7 +6,7 @@
  */
 
 export { W6wUIProvider, useW6wApi } from "./provider.tsx";
-export type { W6wApi, W6wUIProviderProps } from "./provider.tsx";
+export type { StepTest, TestRunSummary, W6wApi, W6wUIProviderProps } from "./provider.tsx";
 
 export { createW6wApi, ApiError } from "./createW6wApi.ts";
 export type { CreateW6wApiOptions } from "./createW6wApi.ts";
@@ -34,6 +34,8 @@ export type { CodeEditorProps } from "./CodeEditor.tsx";
 
 export { Modal } from "./components/Modal.tsx";
 export { AppIcon } from "./components/AppIcon.tsx";
+export { ListItem } from "./components/ListItem.tsx";
+export type { ListItemProps } from "./components/ListItem.tsx";
 export { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
 
 export { ExpressionInput } from "./components/ExpressionInput.tsx";
@@ -54,6 +56,7 @@ export type { OAuthPopupResult } from "./oauth-popup.ts";
 export type {
   ActionDef,
   ActionParam,
+  ApiCallRecord,
   AppSummary,
   AuthDef,
   AuthField,
