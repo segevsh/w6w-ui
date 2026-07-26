@@ -1,20 +1,24 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
+import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
+  DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
+  TRIGGER_APP,
+  WEBHOOK_APP,
   internalNodeDefaults,
   isControlApp,
   isInternalApp,
 } from "./flow-types.ts";
-import { useW6wApi } from "./provider.tsx";
+import { useW6wApi, useWorkflowProject } from "./provider.tsx";
 import type {
   ActionDef,
   ActionParam,
@@ -44,9 +48,28 @@ export interface StepBuilderModalProps {
   appsOnly?: boolean;
   /** Modal heading. Defaults to "Add a step". */
   title?: string;
+  /**
+   * Workflow-step context, when the builder is opened for a step that already
+   * lives in a workflow. When present the `testRequired` save-gate can discover a
+   * previously-saved **passing** test for the step via {@link W6wApi.listStepTests}.
+   * Absent in the plain add-step flow (the step has no id yet) — there the gate is
+   * satisfied by running a passing test in-session.
+   */
+  workflowId?: string;
+  /** Step id paired with {@link StepBuilderModalProps.workflowId}. */
+  stepId?: string;
 }
 
-type Tab = "connected" | "apps" | "triggers" | "controls" | "utilities";
+type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
+
+/**
+ * True for the two entry-trigger nodes whose Test tab fills the configured
+ * `fields` into `{ input }` (via {@link TriggerFillForm}) instead of running the
+ * raw config — a manual (`@w6w/trigger`) or webhook (`@w6w/webhook`) trigger.
+ */
+function isTriggerNode(app: string): boolean {
+  return app === TRIGGER_APP || app === WEBHOOK_APP;
+}
 
 /** Config sub-tabs shared by the add-step config and the node editor. */
 type StepConfigTab = "setup" | "configure" | "test";
@@ -145,6 +168,8 @@ export function StepBuilderModal({
   theme,
   appsOnly,
   title,
+  workflowId,
+  stepId,
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
@@ -218,6 +243,8 @@ export function StepBuilderModal({
             onClose={onClose}
             onChangeApp={() => setSelectedApp(null)}
             theme={theme}
+            workflowId={workflowId}
+            stepId={stepId}
           />
         </div>
       </Modal>
@@ -242,6 +269,13 @@ export function StepBuilderModal({
           >
             Apps
           </button>
+          <button
+            type="button"
+            className={`w6w-stepbuilder-tab${tab === "ai" ? " active" : ""}`}
+            onClick={() => setTab("ai")}
+          >
+            AI
+          </button>
           {!appsOnly && (
             <>
               <button
@@ -265,6 +299,13 @@ export function StepBuilderModal({
               >
                 Utilities
               </button>
+              <button
+                type="button"
+                className={`w6w-stepbuilder-tab${tab === "data" ? " active" : ""}`}
+                onClick={() => setTab("data")}
+              >
+                Data
+              </button>
             </>
           )}
         </nav>
@@ -277,10 +318,20 @@ export function StepBuilderModal({
             />
           ) : tab === "apps" ? (
             <AppPicker onSelectApp={setSelectedApp} theme={theme} />
+          ) : tab === "ai" ? (
+            <AppPicker
+              onSelectApp={setSelectedApp}
+              theme={theme}
+              filter={(a) => a.categories?.includes("ai") ?? false}
+              searchPlaceholder="Search AI apps…"
+              emptyMessage="No AI apps registered yet."
+            />
           ) : tab === "triggers" ? (
             <TriggersFlow onSelect={setSelectedNode} />
           ) : tab === "controls" ? (
             <ControlsFlow onSelect={setSelectedNode} />
+          ) : tab === "data" ? (
+            <DataFlow onSelect={setSelectedNode} />
           ) : (
             <UtilitiesFlow onSelect={setSelectedNode} />
           )}
@@ -348,13 +399,30 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
   );
 }
 
-/** Utilities tab — compute + request nodes (script, data, HTTP, respond). */
+/** Utilities tab — compute + request nodes (script, HTTP, respond). The `@w6w/data`
+ * node lives in its own **Data** tab, so exclude it here. */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.group !== "control" && n.group !== "trigger");
+  const nodes = INTERNAL_NODES.filter(
+    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP,
+  );
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Utilities run a script, call an HTTP(S) endpoint, declare data, or respond to a webhook.
+        Utilities run a script, call an HTTP(S) endpoint, or respond to a webhook.
+      </p>
+      <NodeList nodes={nodes} onSelect={onSelect} />
+    </div>
+  );
+}
+
+/** Data tab — the `@w6w/data` node: declare typed key/value variables for
+ * downstream steps to reference. */
+function DataFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
+  const nodes = INTERNAL_NODES.filter((n) => n.app === DATA_APP);
+  return (
+    <div className="w6w-stack">
+      <p className="w6w-muted w6w-small">
+        Declare typed key/value variables for downstream steps to reference.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
@@ -445,14 +513,18 @@ function ControlStepConfig({
           ) : (
             <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
           ))}
-        {tab === "test" && testable && (
-          <StepTestRun
-            app={node.app}
-            action={node.action}
-            values={withValues}
-            canRun={configComplete}
-          />
-        )}
+        {tab === "test" &&
+          testable &&
+          (isTriggerNode(node.app) ? (
+            <TriggerFillForm app={node.app} action={node.action} fields={withValues.fields} />
+          ) : (
+            <StepTestRun
+              app={node.app}
+              action={node.action}
+              values={withValues}
+              canRun={configComplete}
+            />
+          ))}
       </div>
 
       {/* Footer — pinned to the modal bottom, outside the scroll area. */}
@@ -503,72 +575,151 @@ export function requiredParamsFilled(
   });
 }
 
+/**
+ * Whether adding this step is gated on a **passing** saved test — the per-app
+ * `testRequired` save-gate. Defaults to **required**; an app/node surface may
+ * opt out by carrying `testRequired: false`.
+ *
+ * The flag is read defensively off the app/node surface because the core app
+ * manifest does not carry a `testRequired` field yet (a recorded follow-up); an
+ * absent flag therefore means **required**, so today every app step must pass a
+ * test before it can be added.
+ */
+export function isTestRequired(surface: unknown): boolean {
+  const flag = (surface as { testRequired?: unknown } | null | undefined)?.testRequired;
+  return typeof flag === "boolean" ? flag : true;
+}
+
 type TestState =
   | { status: "running" }
   | { status: "done"; value: unknown; logs?: string[] }
   | { status: "error"; error: string; errorCode?: string; logs?: string[] };
 
 /**
+ * Where a test run should be persisted. When present, `StepTestRun` saves the
+ * fixture (`saveStepTest`) and records the run's outcome (`recordStepTestRun`)
+ * against the given workflow step after each invoke. `input` is the resolved
+ * incoming state captured alongside the params (`values` → `with`). Absent in
+ * the add-step builder (the step isn't in a workflow yet).
+ */
+export interface StepTestPersist {
+  workflowId: string;
+  stepId: string;
+  input: Record<string, unknown>;
+}
+
+/** Imperative handle so a host (e.g. the step modal footer) can trigger the run. */
+export interface StepTestRunHandle {
+  run: () => void;
+}
+
+/**
  * Inline "Test run" — invokes the action/node with the current params (and, for
  * app actions, the chosen connection) so the user can try a step from inside the
  * builder before adding it. Pressable only once required fields are filled.
+ *
+ * When `persist` is supplied (the node editor's Test tab), each run also saves
+ * the fixture and records the outcome server-side, so a step test becomes saved
+ * and re-runnable. `hideRunButton` suppresses the inline button when the host
+ * drives the run from elsewhere (the modal footer) via the imperative handle.
  */
-export function StepTestRun({
-  app,
-  action,
-  connectionId,
-  values,
-  canRun,
-}: {
-  app: string;
-  action: string;
-  connectionId?: string;
-  values: Record<string, unknown>;
-  canRun: boolean;
-}) {
+export const StepTestRun = forwardRef<
+  StepTestRunHandle,
+  {
+    app: string;
+    action: string;
+    connectionId?: string;
+    values: Record<string, unknown>;
+    canRun: boolean;
+    hideRunButton?: boolean;
+    persist?: StepTestPersist;
+    /** Notified when the run starts/finishes so a host button can reflect it. */
+    onBusyChange?: (busy: boolean) => void;
+    /**
+     * Notified with the outcome of each finished run (`true` = passed). Lets a
+     * host satisfy the `testRequired` save-gate from an in-session test run.
+     */
+    onResult?: (passed: boolean) => void;
+  }
+>(function StepTestRun(
+  { app, action, connectionId, values, canRun, hideRunButton, persist, onBusyChange, onResult },
+  ref,
+) {
   const api = useW6wApi();
+  // Resolve document expressions against the workflow's selected project (the
+  // editor provides it; undefined outside the editor → server default project).
+  const project = useWorkflowProject();
   const [state, setState] = useState<TestState | null>(null);
 
   const run = async () => {
+    if (!canRun || state?.status === "running") return;
     setState({ status: "running" });
+    onBusyChange?.(true);
+    let outcome: Exclude<TestState, { status: "running" }>;
     try {
-      const result = await api.invokeAction(
-        app,
-        action,
-        values,
-        connectionId ? { connectionId } : {},
-      );
-      setState({
+      const result = await api.invokeAction(app, action, values, {
+        ...(connectionId ? { connectionId } : {}),
+        project,
+      });
+      outcome = {
         status: "done",
         value: result.value,
         logs: (result as { logs?: string[] }).logs,
-      });
+      };
     } catch (e) {
       const err = e as { message?: string; code?: string; logs?: string[] };
-      setState({
+      outcome = {
         status: "error",
         error: err.message ?? String(e),
         errorCode: err.code,
         logs: err.logs,
-      });
+      };
     }
+    setState(outcome);
+    onResult?.(outcome.status === "done");
+    // Persist the fixture + record the outcome when the host targets a workflow
+    // step. Best-effort: a failed save must never mask the run's own result.
+    if (persist) {
+      try {
+        const saved = await api.saveStepTest(persist.workflowId, persist.stepId, {
+          input: persist.input,
+          with: values,
+        });
+        await api.recordStepTestRun(persist.workflowId, persist.stepId, {
+          stepTestId: saved.id,
+          status: outcome.status === "done" ? "succeeded" : "failed",
+          input: persist.input,
+          output: outcome.status === "done" ? outcome.value : undefined,
+          error: outcome.status === "error" ? outcome.error : undefined,
+        });
+      } catch (err) {
+        console.error("step test persist failed", err);
+      }
+    }
+    onBusyChange?.(false);
   };
+
+  useImperativeHandle(ref, () => ({ run }));
 
   const logs = state && state.status !== "running" ? state.logs : undefined;
 
   return (
     <div className="w6w-steptest">
-      <div className="w6w-steptest-bar">
-        <button
-          type="button"
-          className="w6w-btn w6w-btn-ghost"
-          disabled={!canRun || state?.status === "running"}
-          onClick={run}
-        >
-          {state?.status === "running" ? "Running…" : "▶ Test run"}
-        </button>
-        {!canRun && <span className="w6w-muted w6w-small">Fill the required fields to test.</span>}
-      </div>
+      {!hideRunButton && (
+        <div className="w6w-steptest-bar">
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            disabled={!canRun || state?.status === "running"}
+            onClick={run}
+          >
+            {state?.status === "running" ? "Running…" : "▶ Test run"}
+          </button>
+          {!canRun && (
+            <span className="w6w-muted w6w-small">Fill the required fields to test.</span>
+          )}
+        </div>
+      )}
       {state?.status === "error" && (
         <div className="w6w-result w6w-error">
           {state.errorCode && (
@@ -603,7 +754,7 @@ export function StepTestRun({
       )}
     </div>
   );
-}
+});
 
 // ── Connected apps tab (default) ─────────────────────────────────────────────
 
@@ -695,6 +846,8 @@ function AppStepConfig({
   onClose,
   onChangeApp,
   theme,
+  workflowId,
+  stepId,
 }: {
   appId: string;
   app?: AppSummary;
@@ -702,6 +855,8 @@ function AppStepConfig({
   onClose: () => void;
   onChangeApp?: () => void;
   theme?: ThemeMode;
+  workflowId?: string;
+  stepId?: string;
 }) {
   const api = useW6wApi();
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
@@ -760,6 +915,26 @@ function AppStepConfig({
     (a.title ?? a.key).localeCompare(b.title ?? b.key, undefined, { sensitivity: "base" }),
   );
 
+  // Per-app `testRequired` save-gate — defaults to required, read off the app
+  // surface. `testPassed` is satisfied either by an in-session passing test run
+  // (below) or by a previously-saved passing test discovered via `listStepTests`
+  // when the builder carries a workflow-step context.
+  const testRequired = isTestRequired(app);
+  const [testPassed, setTestPassed] = useState(false);
+  useEffect(() => {
+    if (!testRequired || !workflowId || !stepId) return;
+    let canceled = false;
+    api
+      .listStepTests(workflowId, stepId)
+      .then((tests) => {
+        if (!canceled && tests.some((t) => t.lastRunStatus === "succeeded")) setTestPassed(true);
+      })
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, testRequired, workflowId, stepId]);
+
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
   // Setup is done when an action is picked and its connection (if any) is set;
   // Configure is done when the action's required params are filled.
@@ -768,7 +943,9 @@ function AppStepConfig({
     setupComplete &&
     !!selectedAction &&
     requiredParamsFilled(selectedAction.params ?? [], withValues);
-  const canAdd = setupComplete;
+  // Adding the step needs Setup done and — when `testRequired` — a passing test.
+  const testGateOk = !testRequired || testPassed;
+  const canAdd = setupComplete && testGateOk;
 
   const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
   // Show the dropdown only before a connection is picked or while changing it;
@@ -943,6 +1120,8 @@ function AppStepConfig({
                     onChange={(e) => {
                       setActionKey(e.target.value);
                       setWithValues({});
+                      // A new action hasn't been tested — re-arm the save-gate.
+                      setTestPassed(false);
                     }}
                   >
                     <option value="">— pick an action —</option>
@@ -997,7 +1176,10 @@ function AppStepConfig({
               action={selectedAction.key}
               connectionId={needsConnection && connectionId ? connectionId : undefined}
               values={withValues}
-              canRun={canAdd && requiredParamsFilled(selectedAction.params ?? [], withValues)}
+              canRun={
+                setupComplete && requiredParamsFilled(selectedAction.params ?? [], withValues)
+              }
+              onResult={setTestPassed}
             />
           ) : (
             <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
@@ -1011,9 +1193,22 @@ function AppStepConfig({
           Cancel
         </button>
         {tab === "test" ? (
-          <button type="button" className="w6w-btn" disabled={!canAdd} onClick={add}>
-            Add step
-          </button>
+          <>
+            {testRequired && !testPassed && (
+              <span className="w6w-muted w6w-small">Run a passing test to add this step.</span>
+            )}
+            <button
+              type="button"
+              className="w6w-btn"
+              disabled={!canAdd}
+              title={
+                testRequired && !testPassed ? "Run a passing test to add this step" : undefined
+              }
+              onClick={add}
+            >
+              Add step
+            </button>
+          </>
         ) : (
           <button
             type="button"

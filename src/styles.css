@@ -235,6 +235,30 @@
   background: var(--w6w-border);
   color: var(--w6w-text);
 }
+
+/* Incoming-state seed picker: upstream steps' saved tests offered as one-click
+   seeds for the step's incoming state (WorkflowFlowEditor · StepEditModal). */
+.w6w-seed-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.w6w-seed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.w6w-seed-chip {
+  cursor: pointer;
+}
+.w6w-seed-chip:hover:not(:disabled) {
+  border-color: var(--w6w-text);
+}
+.w6w-seed-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 /* Expression input: a field whose contents are inline SEGMENTS — plain text
    plus var/secret/expr chips, edited in place (contentEditable, like a Notion /
    Zapier block field). A small toolbar carries the Insert menu + the {{ }} (fx)
@@ -425,15 +449,38 @@
   align-items: center;
   gap: 8px;
 }
+/* fx toggle — an end-of-input decoration (beside the field) that swaps the plain
+   widget for the segmented ExpressionInput. Lives next to the value instead of up
+   in the label row, so the field and its affordance read as one unit. */
+.w6w-fx-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.w6w-fx-wrap > input,
+.w6w-fx-wrap > select,
+.w6w-fx-wrap > textarea,
+.w6w-fx-wrap > .w6w-expr {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* A boolean field's checkbox rides bare inside the fx-wrap (label sits above via
+   FxField). Keep it natural-width and vertically centered against the ƒx button. */
+.w6w-fx-wrap > .w6w-bool-field {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+}
 .w6w-expr-fx {
-  margin-left: auto;
+  flex-shrink: 0;
+  min-height: 38px;
   border: 1px solid var(--w6w-border);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 8px;
+  background: var(--w6w-panel-2);
   color: var(--w6w-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding: 3px 8px;
+  padding: 0 10px;
   cursor: pointer;
 }
 .w6w-expr-fx:hover {
