@@ -448,15 +448,28 @@ function FxField({
 
   return (
     <div className="w6w-field">
-      <span className="w6w-field-labelrow">
-        <span>
-          {label}
-          {req}
-        </span>
+      <span>
+        {label}
+        {req}
+      </span>
+      {/* The ƒx toggle rides at the end of the input (an in-field decoration)
+          rather than up in the label row — so the affordance sits next to the
+          value it governs. It still swaps the plain widget for ExpressionInput. */}
+      <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
+        {fx ? (
+          <ExpressionInput
+            value={value as ExprValue | string | undefined}
+            readOnly={readOnly}
+            aria-label={label}
+            onChange={(next) => onChange(param.key, next)}
+          />
+        ) : (
+          children
+        )}
         {!readOnly && (
           <button
             type="button"
-            className={`w6w-icon-btn w6w-btn-sm${fx ? " active" : ""}`}
+            className={`w6w-expr-fx${fx ? " is-active" : ""}`}
             title={fx ? "Use a plain value" : "Use an expression"}
             aria-label={fx ? `Use a plain value for ${label}` : `Use an expression for ${label}`}
             aria-pressed={fx}
@@ -465,17 +478,7 @@ function FxField({
             ƒx
           </button>
         )}
-      </span>
-      {fx ? (
-        <ExpressionInput
-          value={value as ExprValue | string | undefined}
-          readOnly={readOnly}
-          aria-label={label}
-          onChange={(next) => onChange(param.key, next)}
-        />
-      ) : (
-        children
-      )}
+      </div>
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
     </div>
   );
@@ -865,14 +868,20 @@ function ArrayField({
   );
 }
 
-/** One typed key/value entry in a `vars` param. */
+/**
+ * One typed key/value entry in a `vars` param. `type` is a real value type only:
+ * `expression` is a binding *mode* (see {@link FxField}/`ExprValue`), not a value
+ * type, so it is no longer offered in the dropdown. Legacy rows persisted with
+ * `type:"expression"` still round-trip — the render branch below degrades them
+ * gracefully via a widened compare.
+ */
 export interface DataVar {
   key: string;
-  type: "string" | "number" | "boolean" | "json" | "expression";
+  type: "string" | "number" | "boolean" | "json";
   value: unknown;
 }
 
-const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json", "expression"];
+const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
 
 /** Coerce a text input into the variable's declared type (best-effort). */
 function coerceVarValue(type: DataVar["type"], raw: string): unknown {
@@ -957,11 +966,14 @@ function VarsField({
                 </option>
               ))}
             </select>
-            {v.type === "expression" ? (
-              // A dynamic value: edited with the segmented ExpressionInput and
-              // stored as an `{type:"expr"}` envelope (or plain string). The
-              // engine resolves it against the run scope before the data node
-              // runs, so downstream steps see the computed value.
+            {(v.type as string) === "expression" ? (
+              // Legacy-compat: `expression` is no longer a selectable type, but a
+              // row persisted with it must still round-trip. A dynamic value is
+              // edited with the segmented ExpressionInput and stored as an
+              // `{type:"expr"}` envelope (or plain string); the engine resolves it
+              // against the run scope before the data node runs, so downstream
+              // steps see the computed value. (The type dropdown shows blank for
+              // such a row until the author picks a real type, which converts it.)
               <ExpressionInput
                 value={v.value as ExprValue | string | undefined}
                 onChange={(next) => patch(i, { value: next })}
