@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
@@ -567,28 +567,58 @@ type TestState =
   | { status: "error"; error: string; errorCode?: string; logs?: string[] };
 
 /**
+ * Where a test run should be persisted. When present, `StepTestRun` saves the
+ * fixture (`saveStepTest`) and records the run's outcome (`recordStepTestRun`)
+ * against the given workflow step after each invoke. `input` is the resolved
+ * incoming state captured alongside the params (`values` → `with`). Absent in
+ * the add-step builder (the step isn't in a workflow yet).
+ */
+export interface StepTestPersist {
+  workflowId: string;
+  stepId: string;
+  input: Record<string, unknown>;
+}
+
+/** Imperative handle so a host (e.g. the step modal footer) can trigger the run. */
+export interface StepTestRunHandle {
+  run: () => void;
+}
+
+/**
  * Inline "Test run" — invokes the action/node with the current params (and, for
  * app actions, the chosen connection) so the user can try a step from inside the
  * builder before adding it. Pressable only once required fields are filled.
+ *
+ * When `persist` is supplied (the node editor's Test tab), each run also saves
+ * the fixture and records the outcome server-side, so a step test becomes saved
+ * and re-runnable. `hideRunButton` suppresses the inline button when the host
+ * drives the run from elsewhere (the modal footer) via the imperative handle.
  */
-export function StepTestRun({
-  app,
-  action,
-  connectionId,
-  values,
-  canRun,
-}: {
-  app: string;
-  action: string;
-  connectionId?: string;
-  values: Record<string, unknown>;
-  canRun: boolean;
-}) {
+export const StepTestRun = forwardRef<
+  StepTestRunHandle,
+  {
+    app: string;
+    action: string;
+    connectionId?: string;
+    values: Record<string, unknown>;
+    canRun: boolean;
+    hideRunButton?: boolean;
+    persist?: StepTestPersist;
+    /** Notified when the run starts/finishes so a host button can reflect it. */
+    onBusyChange?: (busy: boolean) => void;
+  }
+>(function StepTestRun(
+  { app, action, connectionId, values, canRun, hideRunButton, persist, onBusyChange },
+  ref,
+) {
   const api = useW6wApi();
   const [state, setState] = useState<TestState | null>(null);
 
   const run = async () => {
+    if (!canRun || state?.status === "running") return;
     setState({ status: "running" });
+    onBusyChange?.(true);
+    let outcome: Exclude<TestState, { status: "running" }>;
     try {
       const result = await api.invokeAction(
         app,
@@ -596,37 +626,64 @@ export function StepTestRun({
         values,
         connectionId ? { connectionId } : {},
       );
-      setState({
+      outcome = {
         status: "done",
         value: result.value,
         logs: (result as { logs?: string[] }).logs,
-      });
+      };
     } catch (e) {
       const err = e as { message?: string; code?: string; logs?: string[] };
-      setState({
+      outcome = {
         status: "error",
         error: err.message ?? String(e),
         errorCode: err.code,
         logs: err.logs,
-      });
+      };
     }
+    setState(outcome);
+    // Persist the fixture + record the outcome when the host targets a workflow
+    // step. Best-effort: a failed save must never mask the run's own result.
+    if (persist) {
+      try {
+        const saved = await api.saveStepTest(persist.workflowId, persist.stepId, {
+          input: persist.input,
+          with: values,
+        });
+        await api.recordStepTestRun(persist.workflowId, persist.stepId, {
+          stepTestId: saved.id,
+          status: outcome.status === "done" ? "succeeded" : "failed",
+          input: persist.input,
+          output: outcome.status === "done" ? outcome.value : undefined,
+          error: outcome.status === "error" ? outcome.error : undefined,
+        });
+      } catch (err) {
+        console.error("step test persist failed", err);
+      }
+    }
+    onBusyChange?.(false);
   };
+
+  useImperativeHandle(ref, () => ({ run }));
 
   const logs = state && state.status !== "running" ? state.logs : undefined;
 
   return (
     <div className="w6w-steptest">
-      <div className="w6w-steptest-bar">
-        <button
-          type="button"
-          className="w6w-btn w6w-btn-ghost"
-          disabled={!canRun || state?.status === "running"}
-          onClick={run}
-        >
-          {state?.status === "running" ? "Running…" : "▶ Test run"}
-        </button>
-        {!canRun && <span className="w6w-muted w6w-small">Fill the required fields to test.</span>}
-      </div>
+      {!hideRunButton && (
+        <div className="w6w-steptest-bar">
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            disabled={!canRun || state?.status === "running"}
+            onClick={run}
+          >
+            {state?.status === "running" ? "Running…" : "▶ Test run"}
+          </button>
+          {!canRun && (
+            <span className="w6w-muted w6w-small">Fill the required fields to test.</span>
+          )}
+        </div>
+      )}
       {state?.status === "error" && (
         <div className="w6w-result w6w-error">
           {state.errorCode && (
@@ -661,7 +718,7 @@ export function StepTestRun({
       )}
     </div>
   );
-}
+});
 
 // ── Connected apps tab (default) ─────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
@@ -36,6 +37,7 @@ import {
   ConfigViewToggle,
   StepBuilderModal,
   StepTestRun,
+  type StepTestRunHandle,
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
@@ -476,6 +478,21 @@ function Inner({
     [nodes, edges, setNodes, setEdges, selectedId, editingId, emitChange],
   );
 
+  // Record a step-test run's outcome server-side (best-effort). Guarded so a
+  // ledger/persist failure never surfaces as a failed test-run to the user.
+  const recordStepRun = useCallback(
+    (
+      workflowId: string,
+      stepId: string,
+      outcome: { status: string; input?: unknown; output?: unknown; error?: unknown },
+    ) => {
+      void api.recordStepTestRun(workflowId, stepId, outcome).catch((err) => {
+        console.error("step test run record failed", err);
+      });
+    },
+    [api],
+  );
+
   // Test-run one step through the invoke API, using its own `with` params and
   // (for action steps) its stored connection. Control steps aren't invocable.
   const runStep = useCallback(
@@ -495,6 +512,9 @@ function Inner({
         // Script nodes may return captured console output alongside the value.
         const logs = (result as { logs?: string[] }).logs;
         setRunResult({ stepId: id, status: "done", value: result.value, logs });
+        // Write the outcome back as an ad-hoc step-test run so a canvas test-run
+        // is logged authoritatively (best-effort — never fail the run over it).
+        recordStepRun(value.id, id, { status: "succeeded", output: result.value });
       } catch (e) {
         // The api client wraps network/parse failures with context; duck-type the
         // code so the modal can show it next to the message.
@@ -505,9 +525,10 @@ function Inner({
           error: err.message ?? String(e),
           errorCode: err.code,
         });
+        recordStepRun(value.id, id, { status: "failed", error: err.message ?? String(e) });
       }
     },
-    [nodes, api],
+    [nodes, api, value.id, recordStepRun],
   );
 
   const controls = useMemo<StepControls>(
@@ -628,6 +649,7 @@ function Inner({
               // remount would drop focus mid-keystroke. The modal seeds its own state
               // once and unmounts (editingId → null) between edits of different nodes.
               <StepEditModal
+                workflowId={value.id}
                 step={editingStep}
                 readOnly={readOnly}
                 initialView={editView}
@@ -927,12 +949,14 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
 function StepEditModal({
+  workflowId,
   step: initialStep,
   onChange,
   onClose,
   readOnly,
   initialView = "props",
 }: {
+  workflowId: string;
   step: FlowStep;
   onChange: (next: FlowStep) => void;
   onClose: () => void;
@@ -952,6 +976,10 @@ function StepEditModal({
   );
   const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
   const [testState, setTestState] = useState("{}");
+  // Drives the footer "Test" button, which triggers the body's <StepTestRun> so
+  // the run + persist logic isn't duplicated across two affordances.
+  const testRunRef = useRef<StepTestRunHandle>(null);
+  const [testBusy, setTestBusy] = useState(false);
   // Inline step rename (pencil next to the name). `updateStep` fixes up edges.
   const [renaming, setRenaming] = useState(false);
   const [draftId, setDraftId] = useState(step.id);
@@ -1031,6 +1059,19 @@ function StepEditModal({
       return step.with ?? {};
     }
   })();
+  // The resolved incoming state saved alongside the fixture. Today it's the
+  // optional "Incoming state" JSON; T3.2.2's picker will seed it from upstream.
+  const testInput = (() => {
+    try {
+      const extra = JSON.parse(testState);
+      return extra && typeof extra === "object" && !Array.isArray(extra)
+        ? (extra as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  })();
+  const canTest = !!params && requiredParamsFilled(params, testValues);
 
   // Header icon mirrors the canvas node: the app's icon for app steps, the
   // internal glyph for triggers/actions/control nodes (same as the node cards).
@@ -1198,11 +1239,15 @@ function StepEditModal({
                       </span>
                     </label>
                     <StepTestRun
+                      ref={testRunRef}
                       app={step.uses.app}
                       action={step.uses.action}
                       connectionId={step.uses.connection ?? undefined}
                       values={testValues}
-                      canRun={!!params && requiredParamsFilled(params, testValues)}
+                      canRun={canTest}
+                      hideRunButton
+                      persist={{ workflowId, stepId: step.id, input: testInput }}
+                      onBusyChange={setTestBusy}
                     />
                   </>
                 )
@@ -1225,9 +1270,24 @@ function StepEditModal({
               Next →
             </button>
           ) : (
-            <button type="button" className="w6w-btn" onClick={onClose}>
-              Done
-            </button>
+            <>
+              <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
+                Done
+              </button>
+              {testable && !isTrigger && (
+                // Runs the step and persists the outcome (records a run + saves
+                // the fixture) via the body's <StepTestRun>, so a step test is
+                // saved and re-runnable. `readOnly` viewers can't write tests.
+                <button
+                  type="button"
+                  className="w6w-btn"
+                  disabled={readOnly || !canTest || testBusy}
+                  onClick={() => testRunRef.current?.run()}
+                >
+                  {testBusy ? "Testing…" : "Test"}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
