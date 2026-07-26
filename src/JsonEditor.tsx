@@ -3,6 +3,7 @@ import { lintGutter, linter } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { useMemo } from "react";
+import { useEffectiveTheme } from "./theme.ts";
 import type { ThemeMode } from "./types.ts";
 
 export interface JsonEditorProps {
@@ -56,6 +57,7 @@ export interface JsonEditorProps {
  * ```
  */
 export function JsonEditor(props: JsonEditorProps) {
+  const theme = useEffectiveTheme(props.theme);
   const extensions = useMemo(
     () => [
       json(),
@@ -107,7 +109,7 @@ export function JsonEditor(props: JsonEditorProps) {
         extensions={extensions}
         placeholder={props.placeholder}
         readOnly={props.readOnly}
-        theme={resolveTheme(props.theme)}
+        theme={theme}
         height={props.height}
         minHeight={props.minHeight ?? "240px"}
         maxHeight={props.maxHeight}
@@ -122,13 +124,4 @@ export function JsonEditor(props: JsonEditorProps) {
       />
     </div>
   );
-}
-
-/** Resolve CodeMirror's theme prop from an optional explicit ThemeMode. */
-function resolveTheme(explicit?: ThemeMode): "light" | "dark" {
-  if (explicit) return explicit;
-  if (typeof document === "undefined") return "light";
-  const attr = document.documentElement.getAttribute("data-theme");
-  if (attr === "dark" || attr === "light") return attr;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }

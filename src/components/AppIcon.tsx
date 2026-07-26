@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffectiveTheme } from "../theme.ts";
 import type { ThemeMode } from "../types.ts";
 
 interface Props {
@@ -78,47 +78,4 @@ export function AppIcon({ src, srcDark, brandColor, name, size = 32, theme }: Pr
       {initials}
     </span>
   );
-}
-
-/**
- * Resolves the effective theme. Priority: explicit prop > `data-theme` on
- * <html> > `prefers-color-scheme`. Subscribes to changes so a runtime theme
- * toggle (e.g. studio's ThemeToggle) is reflected without a remount.
- */
-function useEffectiveTheme(explicit?: ThemeMode): ThemeMode {
-  const [mode, setMode] = useState<ThemeMode>(() => detectTheme(explicit));
-
-  useEffect(() => {
-    if (explicit) {
-      setMode(explicit);
-      return;
-    }
-    if (typeof window === "undefined") return;
-
-    const update = () => setMode(detectTheme(undefined));
-
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
-    mql.addEventListener("change", update);
-
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-
-    return () => {
-      mql.removeEventListener("change", update);
-      observer.disconnect();
-    };
-  }, [explicit]);
-
-  return mode;
-}
-
-function detectTheme(explicit: ThemeMode | undefined): ThemeMode {
-  if (explicit) return explicit;
-  if (typeof document === "undefined") return "light";
-  const attr = document.documentElement.getAttribute("data-theme");
-  if (attr === "dark" || attr === "light") return attr;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }

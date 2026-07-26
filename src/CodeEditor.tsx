@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { useMemo } from "react";
+import { useEffectiveTheme } from "./theme.ts";
 import type { ThemeMode } from "./types.ts";
 
 export interface CodeEditorProps {
@@ -33,6 +34,7 @@ export interface CodeEditorProps {
  * beyond the CodeMirror core the JSON editor already pulls in.
  */
 export function CodeEditor(props: CodeEditorProps) {
+  const theme = useEffectiveTheme(props.theme);
   const extensions = useMemo(
     () => [
       EditorView.theme({
@@ -65,7 +67,7 @@ export function CodeEditor(props: CodeEditorProps) {
         extensions={extensions}
         placeholder={props.placeholder}
         readOnly={props.readOnly}
-        theme={resolveTheme(props.theme)}
+        theme={theme}
         height={props.height}
         minHeight={props.minHeight ?? "160px"}
         maxHeight={props.maxHeight}
@@ -79,13 +81,4 @@ export function CodeEditor(props: CodeEditorProps) {
       />
     </div>
   );
-}
-
-/** Resolve CodeMirror's theme prop from an optional explicit ThemeMode. */
-function resolveTheme(explicit?: ThemeMode): "light" | "dark" {
-  if (explicit) return explicit;
-  if (typeof document === "undefined") return "light";
-  const attr = document.documentElement.getAttribute("data-theme");
-  if (attr === "dark" || attr === "light") return attr;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
