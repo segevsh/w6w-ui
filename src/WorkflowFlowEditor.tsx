@@ -63,7 +63,7 @@ import {
   nodePortsForStep,
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
-import { useW6wApi } from "./provider.tsx";
+import { type StepTest, useW6wApi } from "./provider.tsx";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 
 /**
@@ -651,6 +651,10 @@ function Inner({
               <StepEditModal
                 workflowId={value.id}
                 step={editingStep}
+                // Graph ancestors of the editing step, from `upstreamStateSources`
+                // (via `mergedExprOptions`) — the incoming-state picker seeds from
+                // each ancestor's latest saved step-test rather than re-walking the graph.
+                upstreamSteps={mergedExprOptions.steps ?? []}
                 readOnly={readOnly}
                 initialView={editView}
                 onChange={(next) => updateStep(editingId, next)}
@@ -951,6 +955,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 function StepEditModal({
   workflowId,
   step: initialStep,
+  upstreamSteps,
   onChange,
   onClose,
   readOnly,
@@ -958,6 +963,8 @@ function StepEditModal({
 }: {
   workflowId: string;
   step: FlowStep;
+  /** Graph ancestors of this step (from `upstreamStateSources`); the incoming-state picker seeds from their saved tests. */
+  upstreamSteps: ExpressionStepSource[];
   onChange: (next: FlowStep) => void;
   onClose: () => void;
   readOnly?: boolean;
@@ -976,6 +983,11 @@ function StepEditModal({
   );
   const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
   const [testState, setTestState] = useState("{}");
+  // The editing step's graph ancestors that carry a saved step-test, latest first,
+  // used to seed the incoming state from an upstream step's captured snapshot.
+  const [seedSources, setSeedSources] = useState<
+    { stepId: string; label: string; test: StepTest }[]
+  >([]);
   // Drives the footer "Test" button, which triggers the body's <StepTestRun> so
   // the run + persist logic isn't duplicated across two affordances.
   const testRunRef = useRef<StepTestRunHandle>(null);
@@ -1049,6 +1061,51 @@ function StepEditModal({
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
   const isTrigger = step.uses.app === TRIGGER_APP || step.uses.app === WEBHOOK_APP;
+
+  // Gather each graph ancestor's latest saved step-test so the incoming-state pane
+  // can offer it as a seed. Driven by `upstreamSteps` (from `upstreamStateSources`),
+  // not a re-walked graph. `listStepTests` returns oldest-first, so the last entry
+  // is the most recent fixture.
+  //
+  // TODO(BLK-2): the step_tests store persists a fixture's captured incoming state
+  // (`input`) + params (`with`) and the last run's status/error — but NOT the run's
+  // output. So a seed uses the ancestor's captured `input` as its upstream-state
+  // snapshot (falling back forward-compatibly to `lastRunOutput` if the store ever
+  // exposes it). See BLK-2.
+  useEffect(() => {
+    if (!testable || isTrigger || upstreamSteps.length === 0) {
+      setSeedSources([]);
+      return;
+    }
+    let canceled = false;
+    Promise.all(
+      upstreamSteps.map(async (s) => {
+        try {
+          const tests = await api.listStepTests(workflowId, s.id);
+          const latest = tests.length ? tests[tests.length - 1] : null;
+          return latest ? { stepId: s.id, label: s.label, test: latest } : null;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((res) => {
+      if (canceled) return;
+      setSeedSources(
+        res.filter((r): r is { stepId: string; label: string; test: StepTest } => r !== null),
+      );
+    });
+    return () => {
+      canceled = true;
+    };
+  }, [api, workflowId, upstreamSteps, testable, isTrigger]);
+
+  // Seed the incoming-state editor from an ancestor's saved test. Uses its recorded
+  // output when the store exposes one; otherwise the captured incoming state (see BLK-2).
+  const seedFromAncestor = useCallback((test: StepTest) => {
+    const output = (test as { lastRunOutput?: unknown }).lastRunOutput ?? test.input;
+    setTestState(JSON.stringify(output ?? {}, null, 2));
+  }, []);
+
   const testValues = (() => {
     try {
       const extra = JSON.parse(testState);
@@ -1224,8 +1281,33 @@ function StepEditModal({
                   />
                 ) : (
                   <>
-                    <label className="w6w-field">
+                    <div className="w6w-field">
                       <span>Incoming state</span>
+                      {seedSources.length > 0 && (
+                        <div className="w6w-seed-picker">
+                          <span className="w6w-hint">Seed from an upstream step's saved test:</span>
+                          <div className="w6w-seed-chips">
+                            {seedSources.map((s) => (
+                              <button
+                                key={s.stepId}
+                                type="button"
+                                className="w6w-chip w6w-seed-chip"
+                                title={`Use ${s.label}'s saved test as the incoming state`}
+                                disabled={readOnly}
+                                onClick={() => seedFromAncestor(s.test)}
+                              >
+                                <code>{s.label}</code>
+                                {s.test.lastRunStatus ? (
+                                  <span className="w6w-muted w6w-small">
+                                    {" · "}
+                                    {s.test.lastRunStatus}
+                                  </span>
+                                ) : null}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <textarea
                         rows={3}
                         value={testState}
@@ -1234,10 +1316,10 @@ function StepEditModal({
                         onChange={(e) => setTestState(e.target.value)}
                       />
                       <span className="w6w-hint">
-                        Optional JSON merged into the test call (e.g. a script's <code>input</code>
-                        ).
+                        JSON merged into the test call (e.g. a script's <code>input</code>). Pick an
+                        upstream step above to seed it, then edit as needed.
                       </span>
-                    </label>
+                    </div>
                     <StepTestRun
                       ref={testRunRef}
                       app={step.uses.app}
