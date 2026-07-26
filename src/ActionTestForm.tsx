@@ -704,7 +704,9 @@ export function ActionTestForm({
                 subtitle={
                   t.lastRunAt ? (
                     <span>
-                      <span style={{ color: t.lastRunOk ? "#2e9e5b" : "var(--w6w-danger)" }}>
+                      <span
+                        style={{ color: t.lastRunOk ? "var(--w6w-success)" : "var(--w6w-danger)" }}
+                      >
                         {t.lastRunOk ? "✓" : "✗"}
                       </span>{" "}
                       {t.lastRunSummary ? `${t.lastRunSummary} · ` : ""}
@@ -741,7 +743,7 @@ export function ActionTestForm({
                 <ListItem
                   title={
                     <span>
-                      <span style={{ color: r.ok ? "#2e9e5b" : "var(--w6w-danger)" }}>
+                      <span style={{ color: r.ok ? "var(--w6w-success)" : "var(--w6w-danger)" }}>
                         {r.ok ? "✓" : "✗"}
                       </span>{" "}
                       {r.actionKey}

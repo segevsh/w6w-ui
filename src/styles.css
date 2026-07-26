@@ -2,18 +2,77 @@
  * @w6w/ui — styles for the pure-presentation components.
  *
  * Everything is namespaced under `.w6w-*` class names so this stylesheet
- * won't collide with your app's CSS. Theme with CSS custom properties:
+ * won't collide with your app's CSS.
  *
- *   :root {
- *     --w6w-panel: #ffffff;
- *     --w6w-accent: #3355e6;
- *   }
+ * THEMING
+ * -------
+ * The library ships a complete DEFAULT theme in BOTH light and dark:
+ *   - Light is the base.
+ *   - Dark applies automatically when the OS prefers dark
+ *     (`prefers-color-scheme: dark`).
+ *   - Either mode can be forced with `data-theme="light" | "dark"` on any
+ *     ancestor (usually <html>) — the same signal the JS components read
+ *     (AppIcon / CodeEditor / JsonEditor: explicit prop > data-theme > OS pref),
+ *     so CSS and components always agree.
  *
- * Only override the tokens you want to change; the rest fall back to the
- * defaults defined here.
+ * A HOST can override any subset of the tokens — set the ones you care about and
+ * the rest keep their themed defaults:
+ *
+ *   :root { --w6w-accent: #3355e6; }              // one token, both modes
+ *   html[data-theme="dark"] { --w6w-panel: #000 } // mode-specific
+ *
+ * Every default below is declared through `:where(...)` (specificity 0), so ANY
+ * host rule — even a plain `:root { ... }` — wins without !important. Tokens are
+ * defined on :root so every `.w6w-*` component inherits them out of the box.
  */
 
-:where(.w6w-modal-backdrop, .w6w-modal, .w6w-btn, .w6w-field, .w6w-app-summary, .w6w-stack, .w6w-result, .w6w-muted, .w6w-small) {
+/* Light — the base defaults. */
+:where(:root) {
+  --w6w-bg: #f7f8fa;
+  --w6w-panel: #ffffff;
+  --w6w-panel-2: #f0f2f6;
+  --w6w-border: #d9dee5;
+  --w6w-text: #1a1d24;
+  --w6w-muted: #5f6875;
+  --w6w-accent: #3355e6;
+  --w6w-danger: #c1362f;
+  --w6w-success: #2e9e5b;
+  --w6w-icon-swatch: #f0f2f6;
+  --w6w-radius: 10px;
+}
+
+/* Dark — followed automatically from the OS preference (unless a host has
+   forced a mode via data-theme, which is handled by the blocks below). */
+@media (prefers-color-scheme: dark) {
+  :where(:root) {
+    --w6w-bg: #0f1115;
+    --w6w-panel: #181b22;
+    --w6w-panel-2: #1f232c;
+    --w6w-border: #2a2f3a;
+    --w6w-text: #e6e8ee;
+    --w6w-muted: #9aa3b2;
+    --w6w-accent: #5b8cff;
+    --w6w-danger: #ff6b6b;
+    --w6w-success: #3fbf77;
+    --w6w-icon-swatch: #1f232c;
+  }
+}
+
+/* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
+   a forced data-theme always beats the OS preference. */
+:where([data-theme="light"]) {
+  --w6w-bg: #f7f8fa;
+  --w6w-panel: #ffffff;
+  --w6w-panel-2: #f0f2f6;
+  --w6w-border: #d9dee5;
+  --w6w-text: #1a1d24;
+  --w6w-muted: #5f6875;
+  --w6w-accent: #3355e6;
+  --w6w-danger: #c1362f;
+  --w6w-success: #2e9e5b;
+  --w6w-icon-swatch: #f0f2f6;
+}
+:where([data-theme="dark"]) {
   --w6w-bg: #0f1115;
   --w6w-panel: #181b22;
   --w6w-panel-2: #1f232c;
@@ -22,7 +81,8 @@
   --w6w-muted: #9aa3b2;
   --w6w-accent: #5b8cff;
   --w6w-danger: #ff6b6b;
-  --w6w-radius: 10px;
+  --w6w-success: #3fbf77;
+  --w6w-icon-swatch: #1f232c;
 }
 
 .w6w-muted {
