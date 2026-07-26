@@ -174,6 +174,10 @@ const ICON_PARALLEL =
 /** Clock — a timed wait. */
 const ICON_WAIT = '<circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" />';
 /** Angle brackets — inline code. */
+const ICON_SCHEDULER =
+  '<rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" />' +
+  '<line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />' +
+  '<polyline points="12 13 12 16 14 17" />';
 const ICON_SCRIPT = '<polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />';
 /** Database cylinder — typed data. */
 const ICON_DATA =
@@ -357,6 +361,58 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
             { key: "value", label: "Value", type: "string" },
           ],
         },
+      },
+    ],
+  },
+  {
+    app: SCHEDULER_APP,
+    action: "schedule",
+    label: "Schedule",
+    displayName: "Scheduler",
+    group: "trigger",
+    icon: ICON_SCHEDULER,
+    // An entry node: nothing flows in, one branch flows out.
+    ports: { in: 0, out: 1 },
+    params: [
+      {
+        key: "mode",
+        label: "Mode",
+        type: "select",
+        required: true,
+        default: "cron",
+        hint: "How the schedule fires.",
+        options: [
+          { value: "once", label: "Once" },
+          { value: "cron", label: "Cron" },
+          { value: "interval", label: "Interval" },
+        ],
+      },
+      {
+        key: "cron",
+        label: "Cron expression",
+        type: "string",
+        placeholder: "e.g. 0 9 * * 1-5",
+        showIf: { field: "mode", equals: "cron" },
+      },
+      {
+        key: "runAt",
+        label: "Run at",
+        type: "string",
+        placeholder: "e.g. 2026-01-01T09:00:00Z",
+        showIf: { field: "mode", equals: "once" },
+      },
+      {
+        key: "intervalSeconds",
+        label: "Interval (seconds)",
+        type: "number",
+        showIf: { field: "mode", equals: "interval" },
+      },
+      {
+        key: "timezone",
+        label: "Timezone",
+        type: "string",
+        default: "UTC",
+        advanced: true,
       },
     ],
   },
