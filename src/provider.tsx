@@ -99,7 +99,9 @@ export interface W6wApi {
 
   /**
    * Invoke a single action — used to test-run one step from the visual editor.
-   * Pass `connectionId` to run with a stored connection's credential.
+   * Pass `connectionId` to run with a stored connection's credential. Pass
+   * `project` to resolve document expressions against the workflow's selected
+   * project (omitted → the scope's default/starter project).
    *
    * `apiCalls` carries the outbound HTTP calls the action made (redacted); a
    * failed invoke rejects with an `ApiError` whose `body` holds the same field.
@@ -108,7 +110,7 @@ export interface W6wApi {
     appId: string,
     actionKey: string,
     params: Record<string, unknown>,
-    opts?: { connectionId?: string },
+    opts?: { connectionId?: string; project?: string },
   ): Promise<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>;
 
   /** List the saved action-test inputs stored against a connection. */
@@ -225,4 +227,29 @@ export function useW6wApi(): W6wApi {
     );
   }
   return api;
+}
+
+/**
+ * The workflow's currently-selected project id, provided by the editor so an
+ * ad-hoc test-invoke resolves document expressions against that project (not the
+ * scope's default/starter project). `undefined` — no project provided — keeps the
+ * server's default-project behavior. Deliberately not throwing when absent: test
+ * panels render outside the editor too (e.g. connection screens).
+ */
+const WorkflowProjectCtx = createContext<string | undefined>(undefined);
+
+/** Scopes test-invokes under it to `project`; the editor wraps its body with this. */
+export function WorkflowProjectProvider({
+  project,
+  children,
+}: {
+  project?: string;
+  children: ReactNode;
+}) {
+  return <WorkflowProjectCtx.Provider value={project}>{children}</WorkflowProjectCtx.Provider>;
+}
+
+/** The selected workflow project id in scope, or `undefined` outside the editor. */
+export function useWorkflowProject(): string | undefined {
+  return useContext(WorkflowProjectCtx);
 }
