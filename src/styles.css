@@ -37,6 +37,10 @@
   --w6w-accent: #3355e6;
   --w6w-danger: #c1362f;
   --w6w-success: #2e9e5b;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #c77700;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
   --w6w-radius: 10px;
 }
@@ -54,6 +58,10 @@
     --w6w-accent: #5b8cff;
     --w6w-danger: #ff6b6b;
     --w6w-success: #3fbf77;
+    --w6w-health-ok: var(--w6w-success);
+    --w6w-health-degraded: #f0a020;
+    --w6w-health-down: var(--w6w-danger);
+    --w6w-health-unknown: #9aa3b2;
     --w6w-icon-swatch: #1f232c;
   }
 }
@@ -70,6 +78,10 @@
   --w6w-accent: #3355e6;
   --w6w-danger: #c1362f;
   --w6w-success: #2e9e5b;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #c77700;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
 }
 :where([data-theme="dark"]) {
@@ -82,6 +94,10 @@
   --w6w-accent: #5b8cff;
   --w6w-danger: #ff6b6b;
   --w6w-success: #3fbf77;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #f0a020;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #9aa3b2;
   --w6w-icon-swatch: #1f232c;
 }
 
@@ -916,6 +932,48 @@ button.w6w-list-item {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+}
+
+/* Health status pill — a small, theme-aware badge for one health state
+   (ok · degraded · down · unknown). Colour comes from the `--w6w-health-*`
+   tokens so a host can restyle every state by overriding those; the dot tints
+   with the state while the pill keeps a soft tinted background + border. */
+.w6w-health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--w6w-health-color) 40%, var(--w6w-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--w6w-health-color) 12%, transparent);
+  color: var(--w6w-text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  --w6w-health-color: var(--w6w-health-unknown);
+}
+.w6w-health-pill-ok {
+  --w6w-health-color: var(--w6w-health-ok);
+}
+.w6w-health-pill-degraded {
+  --w6w-health-color: var(--w6w-health-degraded);
+}
+.w6w-health-pill-down {
+  --w6w-health-color: var(--w6w-health-down);
+}
+.w6w-health-pill-unknown {
+  --w6w-health-color: var(--w6w-health-unknown);
+}
+.w6w-health-pill-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--w6w-health-color);
+}
+.w6w-health-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* App summary block */

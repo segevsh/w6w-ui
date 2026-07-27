@@ -36,6 +36,8 @@ export { Modal } from "./components/Modal.tsx";
 export { AppIcon } from "./components/AppIcon.tsx";
 export { ListItem } from "./components/ListItem.tsx";
 export type { ListItemProps } from "./components/ListItem.tsx";
+export { HealthStatusPill } from "./components/HealthStatusPill.tsx";
+export type { HealthPillState, HealthStatusPillProps } from "./components/HealthStatusPill.tsx";
 export { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
 
 export { ExpressionInput } from "./components/ExpressionInput.tsx";
