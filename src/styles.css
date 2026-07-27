@@ -1559,3 +1559,71 @@ dialog.w6w-modal p {
   border-top: 1px solid var(--w6w-border);
   padding-top: 12px;
 }
+
+/* Uptime strip — one cell per day, "how has this service behaved lately" at a
+   glance. Colour comes from the same `--w6w-health-*` tokens as the health pill,
+   through the same single `--w6w-health-color` indirection (set once on the cell,
+   remapped by the per-state class below), so overriding a token restyles the pill
+   and the strip together.
+
+   Colour is never the only signal: the FILL HEIGHT encodes severity, so the row
+   stays readable in greyscale and for a colour-blind viewer — `ok` a short
+   baseline bar, `degraded` taller, `down` the full cell, and `unknown` a hatched
+   outline with no solid fill (nothing was measured: not a good day, not a bad
+   one). Each cell also carries a `title` with its day and state. */
+.w6w-uptime-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  height: 22px;
+  min-width: 0;
+  align-items: stretch;
+}
+.w6w-uptime-cell {
+  --w6w-health-color: var(--w6w-health-unknown);
+  --w6w-uptime-fill: 100%;
+  position: relative;
+  min-width: 2px;
+  border-radius: 2px;
+  /* The unfilled remainder of the day, so the strip reads as a continuous row
+     rather than as floating bars. */
+  background: color-mix(in srgb, var(--w6w-border) 55%, transparent);
+  overflow: hidden;
+}
+.w6w-uptime-cell::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--w6w-uptime-fill);
+  border-radius: inherit;
+  background: var(--w6w-health-color);
+}
+.w6w-uptime-cell-ok {
+  --w6w-health-color: var(--w6w-health-ok);
+  --w6w-uptime-fill: 35%;
+}
+.w6w-uptime-cell-degraded {
+  --w6w-health-color: var(--w6w-health-degraded);
+  --w6w-uptime-fill: 65%;
+}
+.w6w-uptime-cell-down {
+  --w6w-health-color: var(--w6w-health-down);
+  --w6w-uptime-fill: 100%;
+}
+.w6w-uptime-cell-unknown {
+  --w6w-health-color: var(--w6w-health-unknown);
+  --w6w-uptime-fill: 100%;
+}
+/* No solid fill for `unknown` — a hatch, so an unmeasured day can never be
+   mistaken for a healthy or a failing one, with or without colour. */
+.w6w-uptime-cell-unknown::after {
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--w6w-health-color) 45%, transparent) 0 2px,
+    transparent 2px 5px
+  );
+  border: 1px solid color-mix(in srgb, var(--w6w-health-color) 35%, var(--w6w-border));
+}
