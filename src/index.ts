@@ -39,6 +39,8 @@ export type { ListItemProps } from "./components/ListItem.tsx";
 export { HealthStatusPill } from "./components/HealthStatusPill.tsx";
 export type { HealthPillState, HealthStatusPillProps } from "./components/HealthStatusPill.tsx";
 export { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
+export { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
+export type { ApiCallsPanelProps } from "./components/ApiCallsPanel.tsx";
 
 export { ExpressionInput } from "./components/ExpressionInput.tsx";
 export type { ExpressionInputProps } from "./components/ExpressionInput.tsx";
