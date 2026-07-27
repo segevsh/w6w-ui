@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
+import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6wApi.ts";
@@ -174,75 +175,6 @@ function describeInvokeError(e: unknown): InvokeError {
 function apiCallsOf(e: unknown): ApiCallRecord[] {
   const body = e instanceof ApiError ? (e.body as { apiCalls?: ApiCallRecord[] } | null) : null;
   return body?.apiCalls ?? [];
-}
-
-/** Pretty-print a captured body when it is JSON; otherwise show it verbatim. */
-function formatBody(body: string | null | undefined): string {
-  if (!body) return "";
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2);
-  } catch {
-    return body;
-  }
-}
-
-/**
- * The wire log for a run: each outbound HTTP call the action made, with the
- * request we sent and the response we got back. Collapsed by default — it is the
- * ground truth you open when the result looks wrong (e.g. a template variable
- * that came through unrendered), not something to read on every run.
- *
- * Credentials are already redacted server-side; nothing here re-inspects them.
- */
-function ApiCallsPanel({ calls }: { calls: ApiCallRecord[] }) {
-  if (calls.length === 0) return null;
-  return (
-    <div className="w6w-stack" style={{ gap: 4 }}>
-      <strong className="w6w-small">
-        API {calls.length === 1 ? "call" : "calls"} ({calls.length})
-      </strong>
-      {calls.map((call, i) => (
-        <details
-          // Captured calls have no id of their own; index is stable within a run.
-          key={`${call.method}-${call.url ?? call.host}-${i}`}
-          className="w6w-result"
-          style={{ padding: 8 }}
-        >
-          <summary style={{ cursor: "pointer" }}>
-            <span className="w6w-small">
-              {call.method} {call.url ?? call.host} →{" "}
-              <strong>{call.error ? "failed" : call.status}</strong>
-              {call.durationMs !== undefined && (
-                <span className="w6w-muted"> · {call.durationMs}ms</span>
-              )}
-            </span>
-          </summary>
-          <div className="w6w-stack" style={{ gap: 6, marginTop: 8 }}>
-            {call.error && <div className="w6w-error w6w-small">{call.error}</div>}
-            <div className="w6w-muted w6w-small">Request headers</div>
-            <pre className="w6w-result">{JSON.stringify(call.requestHeaders ?? {}, null, 2)}</pre>
-            {call.requestBody && (
-              <>
-                <div className="w6w-muted w6w-small">Request body</div>
-                <pre className="w6w-result">{formatBody(call.requestBody)}</pre>
-              </>
-            )}
-            {call.responseBody && (
-              <>
-                <div className="w6w-muted w6w-small">Response body</div>
-                <pre className="w6w-result">{formatBody(call.responseBody)}</pre>
-              </>
-            )}
-            {call.truncated && (
-              <div className="w6w-muted w6w-small">
-                A captured body exceeded the size cap and was truncated.
-              </div>
-            )}
-          </div>
-        </details>
-      ))}
-    </div>
-  );
 }
 
 /**
