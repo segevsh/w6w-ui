@@ -748,6 +748,11 @@ function Inner({
         }
       }),
     ).then((res) => {
+      // LOAD-BEARING, and its failure mode is silent: without this guard a slow
+      // list that resolves after the editor was closed and reopened overwrites
+      // the fresh samples with the ones it read before — the pane then previews a
+      // POPULATED, STALE value, which is worse than showing none. Pinned by
+      // `artifacts/T5.1.3-r2-checks.sh` §X (mutant M11).
       if (canceled) return;
       const next: Record<string, unknown> = {};
       for (const r of res) {
