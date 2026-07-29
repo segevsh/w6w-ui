@@ -55,7 +55,22 @@ export function makeChip(doc: Document, part: ExprPart): HTMLElement {
   return span;
 }
 
-/** Reconstruct parts from an editor's DOM (the source of truth while editing). */
+/**
+ * Elements `contentEditable` builds one-per-line. A block child means "the
+ * content before me ended a line", so it contributes an implicit newline.
+ */
+const BLOCK_TAGS = new Set(["div", "p"]);
+
+/**
+ * Reconstruct parts from an editor's DOM (the source of truth while editing).
+ *
+ * The walk is **recursive**: a native Enter wraps the caret's line in a `<div>`
+ * (or drops a `<br>`), and anything nested inside it — chips included — must
+ * survive. Reading `textContent` at that point would flatten a chip to its
+ * label and silently destroy the reference it carries, so every unrecognised
+ * element is descended into instead. `<br>` and block children map to a literal
+ * `"\n"`; `pushText` coalesces those into the surrounding text part.
+ */
 export function readParts(root: HTMLElement): ExprPart[] {
   const parts: ExprPart[] = [];
   const pushText = (t: string) => {
@@ -64,17 +79,21 @@ export function readParts(root: HTMLElement): ExprPart[] {
     if (last && last.kind === "text") last.value = (last.value ?? "") + t;
     else parts.push({ kind: "text", value: t });
   };
-  for (const node of root.childNodes) {
+
+  const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       pushText(node.textContent ?? "");
-      continue;
+      return;
     }
-    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
+
     const kind = el.getAttribute("data-kind");
     if (kind === "var" || kind === "secret") {
       parts.push({ kind, ref: el.getAttribute("data-ref") ?? "" });
-    } else if (kind === "expr") {
+      return;
+    }
+    if (kind === "expr") {
       const raw = el.getAttribute("data-expr") ?? "";
       let expr: unknown = raw;
       try {
@@ -83,10 +102,21 @@ export function readParts(root: HTMLElement): ExprPart[] {
         expr = raw;
       }
       parts.push({ kind: "expr", expr });
-    } else {
-      pushText(el.textContent ?? "");
+      return;
     }
-  }
+
+    // Browsers report `BR` / `DIV` uppercase for HTML documents.
+    const tag = (el.tagName ?? "").toLowerCase();
+    if (tag === "br") {
+      pushText("\n");
+      return;
+    }
+    // A *leading* block is the first line, not a break after something.
+    if (BLOCK_TAGS.has(tag) && parts.length > 0) pushText("\n");
+    for (const child of el.childNodes) walk(child);
+  };
+
+  for (const node of root.childNodes) walk(node);
   return parts;
 }
 
