@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ExpressionEditorModal } from "./components/ExpressionEditorModal.tsx";
@@ -195,6 +195,9 @@ function ParamField({
   // A checkbox always carries a value (true/false), so "required" has no meaning
   // for it — don't decorate booleans with the required asterisk.
   const req = param.required && param.type !== "boolean" ? " *" : "";
+  // Stable id so the INLINE variant's label can point at the control it names
+  // (the label no longer wraps it — the ƒx sits between them).
+  const controlId = useId();
 
   if (param.type === "boolean") {
     const current = Boolean(value ?? param.default ?? false);
@@ -206,17 +209,20 @@ function ParamField({
         readOnly={readOnly}
         label={label}
         req={req}
+        // A checkbox does NOT fill the field box a text input fills, so it opts
+        // out of that box HERE, at the seam — the wrapper renders a different
+        // class rather than having the chrome clawed back off by a more
+        // specific rule. Layout becomes the row: <checkbox> <ƒx> <label>.
+        variant="inline"
+        controlId={controlId}
       >
-        {/* Bare checkbox (label sits above via FxField). Wrapped in a label so
-            it isn't stretched by `.w6w-fx-wrap > input` and reads next to ƒx. */}
-        <label className="w6w-bool-field">
-          <input
-            type="checkbox"
-            checked={current}
-            disabled={readOnly}
-            onChange={(e) => onChange(param.key, e.target.checked)}
-          />
-        </label>
+        <input
+          id={controlId}
+          type="checkbox"
+          checked={current}
+          disabled={readOnly}
+          onChange={(e) => onChange(param.key, e.target.checked)}
+        />
       </FxField>
     );
   }
@@ -399,6 +405,15 @@ function ParamField({
  * button below, which opens the modal WITHOUT writing to the form. Expression
  * mode renders `ExpressionInput`, whose own ƒx reopens the same modal — so the
  * field never shows two ƒx controls at once.
+ *
+ * TWO CHROME VARIANTS, picked by the CALLER from the control it is passing:
+ * `"boxed"` (default) is the text-field box above — right for any widget that
+ * FILLS the box (input, textarea, select, the multiselect chip box). `"inline"`
+ * is for a widget that does not: a `boolean`'s ~13px checkbox left the rest of a
+ * full-width panel empty. The inline variant renders a DIFFERENT wrapper class
+ * (`.w6w-fx-inline`, which simply declares no chrome) instead of over-riding
+ * `.w6w-fx-wrap` with a more specific rule, and lays the row out as the review
+ * asked: `<checkbox> <ƒx> <label>`, with no stacked label above it.
  */
 function FxField({
   param,
@@ -408,6 +423,8 @@ function FxField({
   label,
   req,
   bare,
+  variant = "boxed",
+  controlId,
   children,
 }: {
   param: ActionParam;
@@ -419,6 +436,12 @@ function FxField({
   /** Render only the toggle + widget (no label/hint chrome) — for compact
    *  cells such as a `vars` row value that already live inside their own grid. */
   bare?: boolean;
+  /** Chrome + layout of the wrapper. See the note above: `"inline"` is for a
+   *  control that does not fill a text-field box (today: a checkbox). */
+  variant?: "boxed" | "inline";
+  /** `id` of the control `children` renders, so the inline row's label can name
+   *  it (`htmlFor`) — the label is a sibling there, not a wrapper. */
+  controlId?: string;
   children: ReactNode;
 }) {
   // Expression mode is DERIVED from the stored value — never a local flag.
@@ -449,9 +472,15 @@ function FxField({
   // selectors in styles.css — so widget + ƒx read as one box, not as a button
   // beside a field. A widget that owns a box itself (`.w6w-multiselect`, the
   // `.w6w-expr-field` inside ExpressionInput) is flattened there too.
+  //
+  // The inline variant applies to the PLAIN widget only: once the field holds
+  // an expression it renders `ExpressionInput`, which IS a text-like control
+  // that fills a box — so it goes back to the standard boxed field with its
+  // label above, exactly like every other expression-bound field.
+  const inline = variant === "inline" && !fx;
   const body = (
     <>
-      <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
+      <div className={inline ? "w6w-fx-inline" : `w6w-fx-wrap${fx ? " is-fx" : ""}`}>
         {fx ? (
           // Expression mode: ExpressionInput already carries the ONE ƒx here
           // (its own edit button), which reopens this same modal. Rendering a
@@ -477,6 +506,14 @@ function FxField({
                 ƒx
               </button>
             )}
+            {/* Inline variant: the label rides HERE, after the ƒx — it is the
+                field's ONLY label (the stacked one below is not rendered). */}
+            {inline && (
+              <label className="w6w-fx-inline-label" htmlFor={controlId}>
+                {label}
+                {req}
+              </label>
+            )}
           </>
         )}
       </div>
@@ -501,10 +538,14 @@ function FxField({
 
   return (
     <div className="w6w-field">
-      <span>
-        {label}
-        {req}
-      </span>
+      {/* Inline: the label lives INSIDE the row (above), so the stacked one is
+          not rendered at all — one label per field, never two. */}
+      {!inline && (
+        <span>
+          {label}
+          {req}
+        </span>
+      )}
       {body}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
     </div>
