@@ -142,7 +142,49 @@ export function readParts(root: HTMLElement): ExprPart[] {
 }
 
 /**
- * Give a line break at the very END of an editor somewhere to render.
+ * Append the filler `<br>` that lets a `"\n"` ENDING this block render.
+ *
+ * Idempotent — a block already closed by a `<br>` is left alone. That guard is
+ * load-bearing, not tidiness: a second filler would no longer be the block's
+ * last child, so `readParts` would read it as a real newline and the value would
+ * grow a blank line per keystroke-that-triggers-a-fill.
+ *
+ * The `tagName` test is deliberately narrower than "is an element": a block
+ * ending in a CHIP (also an element) still needs a filler, because a chip is
+ * `contentEditable="false"` and gives the caret nowhere to land either.
+ */
+function fillBlock(block: HTMLElement): void {
+  const last = block.lastChild as HTMLElement | null;
+  if (last && (last.tagName ?? "").toLowerCase() === "br") return;
+  block.appendChild(block.ownerDocument.createElement("br"));
+}
+
+/**
+ * The block the caret currently sits in, within `editor` — the editor itself
+ * when the caret is at its top level, or is not inside it at all.
+ *
+ * The filler has to go in the SAME block as the newline it exists to render.
+ * After a paste, the caret's line is an inner `<div>` (`one<div>three</div>`),
+ * so filling the root instead would leave the `"\n"` trailing inside the div
+ * with nothing to render it — the very failure the filler exists to prevent.
+ */
+function caretBlock(editor: HTMLElement): HTMLElement {
+  const sel = editor.ownerDocument.getSelection();
+  const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+  if (!range || !editor.contains(range.endContainer)) return editor;
+  let node: Node | null = range.endContainer;
+  while (node && node !== editor) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      if (BLOCK_TAGS.has((el.tagName ?? "").toLowerCase())) return el;
+    }
+    node = node.parentNode;
+  }
+  return editor;
+}
+
+/**
+ * Give a line break at the very END of the caret's line somewhere to render.
  *
  * A `"\n"` that is the last thing in a `white-space: pre-wrap` block paints
  * nothing, and the caret cannot land past it — the author presses Enter, sees no
@@ -153,9 +195,7 @@ export function readParts(root: HTMLElement): ExprPart[] {
  * fact, kept in one file.
  */
 export function ensureFillerBreak(editor: HTMLElement): void {
-  const last = editor.lastChild as HTMLElement | null;
-  if (last && (last.tagName ?? "").toLowerCase() === "br") return;
-  editor.appendChild(editor.ownerDocument.createElement("br"));
+  fillBlock(caretBlock(editor));
 }
 
 /** Paint an editor's DOM from parts (text nodes + chips). */
@@ -169,14 +209,32 @@ export function paintParts(el: HTMLElement, parts: ExprPart[]): void {
       el.appendChild(makeChip(doc, p));
     }
   }
+  // A painted value ENDING in a newline needs the filler just as much as a
+  // freshly typed one does — this is the same block, rebuilt from parts. Without
+  // it the break survives the round trip in the VALUE but not on SCREEN, and the
+  // author's next keystroke lands before it: "a\n" + typing "b" saved "ab\n".
+  const last = parts[parts.length - 1];
+  if (last?.kind === "text" && last.value?.endsWith("\n")) fillBlock(el);
 }
 
+/**
+ * Put the caret at the end of the CONTENT — which is before a trailing filler
+ * `<br>`, never after it. After it is a position that looks identical on screen
+ * but sits outside the block's last child, so the next character typed would
+ * push the filler off the end and turn it into a real newline.
+ */
 export function placeCaretAtEnd(el: HTMLElement): void {
   const sel = el.ownerDocument.getSelection();
   if (!sel) return;
   const range = el.ownerDocument.createRange();
-  range.selectNodeContents(el);
-  range.collapse(false);
+  const last = el.lastChild as HTMLElement | null;
+  if (last && (last.tagName ?? "").toLowerCase() === "br") {
+    range.setStartBefore(last);
+    range.collapse(true);
+  } else {
+    range.selectNodeContents(el);
+    range.collapse(false);
+  }
   sel.removeAllRanges();
   sel.addRange(range);
 }

@@ -6,7 +6,7 @@
 // browser global it touches is `Node`, shimmed below.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readParts } from "./expression-dom.ts";
+import { ensureFillerBreak, paintParts, readParts } from "./expression-dom.ts";
 
 (globalThis as unknown as { Node: unknown }).Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 };
 
@@ -50,6 +50,50 @@ const exprChip = (raw: string) =>
   el("span", { "data-kind": "expr", "data-expr": raw }, [text("ƒ"), text(raw), text("×")]);
 
 const root = (children: StubNode[]) => children as unknown as HTMLElement["childNodes"];
+
+/**
+ * A minimal editing HOST for the DOM-*writing* helpers (`ensureFillerBreak`,
+ * `paintParts`), which need more than the read-only stubs above: `lastChild`,
+ * `appendChild`, a settable `textContent`, and
+ * `ownerDocument.{createElement,createTextNode,getSelection}`.
+ *
+ * No caret is installed, so `getSelection()` returns null and the caret's block
+ * resolves to the host itself — which is exactly the shape the paint path and a
+ * top-level Enter have. Targeting an INNER block needs a real Selection, so that
+ * half is covered in the browser instead (`T3.1.2-browser-check.sh` §J).
+ */
+function host(children: StubNode[] = []) {
+  const doc = {
+    createElement: (tagName: string) => el(tagName, {}, []),
+    createTextNode: (value: string) => text(value),
+    getSelection: () => null,
+  };
+  const h = {
+    nodeType: 1,
+    tagName: "DIV",
+    childNodes: children,
+    ownerDocument: doc,
+    getAttribute: () => null,
+    contains: () => false,
+    appendChild(n: StubNode) {
+      children.push(n);
+      return n;
+    },
+    get lastChild() {
+      return children[children.length - 1] ?? null;
+    },
+    get textContent() {
+      return children.map((c) => c.textContent ?? "").join("");
+    },
+    set textContent(v: string) {
+      children.length = 0;
+      if (v) children.push(text(v));
+    },
+  };
+  return h as unknown as HTMLElement & { childNodes: StubNode[] };
+}
+
+const tagOf = (n: StubNode | null) => (n as StubNode | null)?.tagName ?? null;
 
 const read = (children: StubNode[]) =>
   readParts({ childNodes: root(children) } as unknown as HTMLElement);
@@ -204,4 +248,51 @@ test("tag matching is case-insensitive in both directions", () => {
   assert.deepEqual(read([text("a"), lower("br", []), text("b")]), [
     { kind: "text", value: "a\nb" },
   ]);
+});
+
+// --- `ensureFillerBreak` / the paint path (ROUND 2). `ensureFillerBreak` had
+// ZERO coverage after round 1: two mutants of it survived all 16 cases above
+// AND all 34 browser assertions, and both escape into a user-visible defect.
+
+test("ensureFillerBreak is IDEMPOTENT — a second call adds nothing", () => {
+  // Drop the guard and every fill appends another <br>. Only the last one is
+  // skipped by `readParts`, so each extra becomes a REAL newline: double-Enter
+  // saves "a\n\nb\n". The guard is correctness, not tidiness.
+  const h = host([text("a\n")]);
+  ensureFillerBreak(h);
+  ensureFillerBreak(h);
+  assert.equal(h.childNodes.length, 2);
+  assert.equal(tagOf(h.childNodes[1]), "BR");
+  assert.deepEqual(readParts(h), [{ kind: "text", value: "a\n" }]);
+});
+
+test("ensureFillerBreak still fills a block ending in a CHIP", () => {
+  // The guard must test for a <br> specifically, NOT for "is an element". A
+  // chip is an element too, and being `contentEditable="false"` it gives the
+  // caret nowhere to land — so it needs the filler just as much as text does.
+  const h = host([varChip("vars.x")]);
+  ensureFillerBreak(h);
+  assert.equal(h.childNodes.length, 2);
+  assert.equal(tagOf(h.childNodes[1]), "BR");
+});
+
+test("paintParts fills a repainted value that ENDS in a newline", () => {
+  // THE F1 REGRESSION. The filler used to be emitted on the keydown path only,
+  // so a value repainted after save→reopen had none: the caret parked before
+  // the trailing "\n" and the next keystroke landed on the previous line —
+  // "a\n" + typing "b" saved "ab\n".
+  const h = host();
+  paintParts(h, [{ kind: "text", value: "a\n" }]);
+  assert.equal(h.childNodes.length, 2);
+  assert.equal(tagOf(h.childNodes[1]), "BR");
+  // …and the filler must not leak back into the value on the next read.
+  assert.deepEqual(readParts(h), [{ kind: "text", value: "a\n" }]);
+});
+
+test("paintParts adds NO filler when the value does not end in a newline", () => {
+  const h = host();
+  paintParts(h, [{ kind: "text", value: "ab" }]);
+  assert.equal(h.childNodes.length, 1);
+  assert.equal(tagOf(h.childNodes[0]), null); // a text node, not a <br>
+  assert.deepEqual(readParts(h), [{ kind: "text", value: "ab" }]);
 });
