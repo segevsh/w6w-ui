@@ -31,6 +31,7 @@ import {
 import { JsonEditor } from "./JsonEditor.tsx";
 import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
+import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
 import {
   type BuiltStep,
   type ConfigView,
@@ -66,8 +67,18 @@ import {
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { type StepTest, WorkflowProjectProvider, useW6wApi } from "./provider.tsx";
-import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
+import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
+
+/**
+ * Whether a step is an entry/trigger node — the one predicate, shared by the
+ * step editor's Test tab and the canvas ▶ collect phase. A trigger's configured
+ * `fields` are *definitions*, so both surfaces project them into a fillable form
+ * and send the filled values as `{ input }` rather than running the raw config.
+ */
+function isTriggerApp(app: string): boolean {
+  return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
+}
 
 /**
  * The hard rules for an edge `source → target` — the ones no amount of
@@ -299,10 +310,16 @@ export function WorkflowFlowEditor(props: WorkflowFlowEditorProps) {
   );
 }
 
-/** Live state of a single-step test run, shown in a modal. */
+/**
+ * Live state of a single-step test run, shown in **one** modal that walks three
+ * phases against this one state slot: `collect` (fill the step's properties),
+ * `running`, then `done` / `error`. ▶ opens `collect` — it no longer invokes on
+ * click, so a trigger's declared fields are filled before the run instead of the
+ * run coming back `{}`.
+ */
 interface StepRunState {
   stepId: string;
-  status: "running" | "done" | "error";
+  status: "collect" | "running" | "done" | "error";
   value?: unknown;
   error?: string;
   errorCode?: string;
@@ -545,32 +562,77 @@ function Inner({
     [nodes, edges, setNodes, setEdges, selectedId, editingId, emitChange],
   );
 
-  // Record a step-test run's outcome server-side (best-effort). Guarded so a
-  // ledger/persist failure never surfaces as a failed test-run to the user.
-  const recordStepRun = useCallback(
+  // Remember the values a Run was made with, then record the run AGAINST that
+  // fixture — the same two-call sequence the Test path uses (`StepTestRun` in
+  // StepBuilderModal), so a Run and a Test write the same kind of `step_tests`
+  // row for the same step and each surface pre-fills from whichever ran last.
+  //
+  // The `stepTestId` is the load-bearing half: `recordStepTestRun` only updates
+  // the fixture's `last_run_*` columns when it is present, and this call used to
+  // post without one — so a canvas run was logged but never written back onto
+  // the fixture. Best-effort throughout: a persist failure is logged and never
+  // surfaces as a failed run.
+  const persistStepRun = useCallback(
     (
-      workflowId: string,
       stepId: string,
-      outcome: { status: string; input?: unknown; output?: unknown; error?: unknown },
+      fixture: { input: Record<string, unknown>; with: Record<string, unknown> },
+      outcome: { status: string; output?: unknown; error?: unknown },
     ) => {
-      void api.recordStepTestRun(workflowId, stepId, outcome).catch((err) => {
-        console.error("step test run record failed", err);
+      void (async () => {
+        const saved = await api.saveStepTest(value.id, stepId, {
+          input: fixture.input,
+          with: fixture.with,
+        });
+        await api.recordStepTestRun(value.id, stepId, {
+          stepTestId: saved.id,
+          status: outcome.status,
+          input: fixture.input,
+          output: outcome.output,
+          error: outcome.error,
+        });
+      })().catch((err) => {
+        console.error("step run persist failed", err);
       });
     },
-    [api],
+    [api, value.id],
   );
 
-  // Test-run one step through the invoke API, using its own `with` params and
-  // (for action steps) its stored connection. Control steps aren't invocable.
+  // Test-running one step is two-phase, mirroring delete's request/perform split:
+  // `runStep` (the ▶ control) only *opens* the collect phase, and
+  // `performRunStep` — reached solely from the collect form's Run button — does
+  // the invoke with the values the user just filled in. Control steps aren't
+  // invocable. Signature is unchanged: `onRun` is still `(id: string) => void`.
   const runStep = useCallback(
-    async (id: string) => {
+    (id: string) => {
       const node = nodes.find((n) => n.id === id);
       // Flow-control nodes can't run standalone; app + compute/trigger nodes can.
       if (!node || isControlApp(node.data.step.uses.app)) return;
+      setRunResult({ stepId: id, status: "collect" });
+    },
+    [nodes],
+  );
+
+  // Invoke one step through the invoke API with the properties collected in the
+  // modal's collect phase, and (for action steps) its stored connection.
+  const performRunStep = useCallback(
+    async (id: string, values: Record<string, unknown>) => {
+      const node = nodes.find((n) => n.id === id);
+      if (!node) return;
       const step = node.data.step;
+      const isTrigger = isTriggerApp(step.uses.app);
+      // A trigger's filled fields ARE the run's starting state: the handler
+      // returns `params.input` verbatim, so anything else comes back `{}`. Every
+      // other step takes the collected values merged over its stored `with`.
+      const payload = isTrigger ? { input: values } : { ...(step.with ?? {}), ...values };
+      // The fixture saved alongside the run. `with` is what the operator typed —
+      // that is what both surfaces pre-fill from. `input` is the run's resolved
+      // incoming state: for a trigger the filled values *are* it, and an app or
+      // compute step's Run collects none (the Test tab's "Incoming state" box is
+      // the only place one is entered today).
+      const fixture = { input: isTrigger ? values : {}, with: values };
       setRunResult({ stepId: id, status: "running" });
       try {
-        const result = await api.invokeAction(step.uses.app, step.uses.action, step.with ?? {}, {
+        const result = await api.invokeAction(step.uses.app, step.uses.action, payload, {
           ...(step.uses.connection ? { connectionId: step.uses.connection } : {}),
           // Scope document expressions to the workflow's selected project (T2.1.2).
           project,
@@ -578,9 +640,9 @@ function Inner({
         // Script nodes may return captured console output alongside the value.
         const logs = (result as { logs?: string[] }).logs;
         setRunResult({ stepId: id, status: "done", value: result.value, logs });
-        // Write the outcome back as an ad-hoc step-test run so a canvas test-run
-        // is logged authoritatively (best-effort — never fail the run over it).
-        recordStepRun(value.id, id, { status: "succeeded", output: result.value });
+        // Remember the values and log the run against the fixture they were
+        // saved as (best-effort — never fail the run over it).
+        persistStepRun(id, fixture, { status: "succeeded", output: result.value });
       } catch (e) {
         // The api client wraps network/parse failures with context; duck-type the
         // code so the modal can show it next to the message.
@@ -591,10 +653,12 @@ function Inner({
           error: err.message ?? String(e),
           errorCode: err.code,
         });
-        recordStepRun(value.id, id, { status: "failed", error: err.message ?? String(e) });
+        // A failed run still remembers what was entered — the operator's next
+        // attempt starts from the values that failed, not from blank.
+        persistStepRun(id, fixture, { status: "failed", error: err.message ?? String(e) });
       }
     },
-    [nodes, api, value.id, recordStepRun, project],
+    [nodes, api, persistStepRun, project],
   );
 
   const controls = useMemo<StepControls>(
@@ -616,6 +680,13 @@ function Inner({
   );
 
   const editingStep = nodes.find((n) => n.id === editingId)?.data.step ?? null;
+  // The step the run modal is open on, resolved live so the collect phase reads
+  // the current `with` (a trigger's declared `fields`) rather than a snapshot.
+  const runningStep = runResult
+    ? (nodes.find((n) => n.id === runResult.stepId)?.data.step ?? null)
+    : null;
+  // Phase 1 of the run modal: fill the step's properties, nothing invoked yet.
+  const collecting = runResult?.status === "collect" && !!runningStep;
 
   const nodeTypes = useMemo(
     () => ({
@@ -730,7 +801,20 @@ function Inner({
               )}
 
               {runResult && (
-                <Modal title={`Test run: ${runResult.stepId}`} onClose={() => setRunResult(null)}>
+                <Modal
+                  title={`${collecting ? "Run step" : "Test run"}: ${runResult.stepId}`}
+                  onClose={() => setRunResult(null)}
+                >
+                  {collecting && runningStep && (
+                    <StepRunCollect
+                      // Keyed on the step so switching nodes re-seeds the form.
+                      key={runResult.stepId}
+                      workflowId={value.id}
+                      step={runningStep}
+                      onCancel={() => setRunResult(null)}
+                      onRun={(values) => performRunStep(runResult.stepId, values)}
+                    />
+                  )}
                   {runResult.status === "running" && (
                     <p className="w6w-muted w6w-small">Running…</p>
                   )}
@@ -780,11 +864,15 @@ function Inner({
                       </pre>
                     </div>
                   )}
-                  <div className="w6w-modal-actions">
-                    <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
-                      Close
-                    </button>
-                  </div>
+                  {/* The collect phase renders its own actions (Run + Cancel),
+                      gated on the required fields being filled. */}
+                  {!collecting && (
+                    <div className="w6w-modal-actions">
+                      <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
+                        Close
+                      </button>
+                    </div>
+                  )}
                 </Modal>
               )}
 
@@ -808,6 +896,163 @@ function Inner({
         </WorkflowProjectProvider>
       </AppsCtx.Provider>
     </StepControlsCtx.Provider>
+  );
+}
+
+/**
+ * Phase 1 of the canvas ▶ run: **collect the step's properties**, then hand them
+ * to the host to invoke. Rendered inside the run modal, which is the chrome —
+ * {@link PropertyEntryForm} is chrome-less by contract, so it is mounted bare
+ * here (it opens no modal of its own) and brings the per-field widgets, the
+ * fields ⇄ raw-JSON toggle and the per-field `ƒx` the Test tab already has.
+ *
+ * Where the params come from, in the same order the editor resolves them:
+ *  - a **trigger** projects its configured `fields` *definitions* into params
+ *    (`fieldsToParams`) and seeds from their declared defaults (`seedValues`);
+ *    the filled values become the run's starting state (`{ input }`);
+ *  - an **internal** node uses its built-in schema (`internalNodeParams`);
+ *  - an **app action** fetches the action definition, exactly as `StepEditModal`
+ *    does, and shows "Loading parameters…" until it lands.
+ *
+ * The trigger check comes first on purpose: a trigger *is* an internal node, and
+ * its internal schema is the `fields` **editor**, not the fields themselves.
+ *
+ * On top of those, the step's **last saved values** win: whatever was entered
+ * the last time this step was tested or run comes back pre-filled (T4.1.3), from
+ * the same project-owned `step_tests` fixture the Test tab writes.
+ */
+function StepRunCollect({
+  workflowId,
+  step,
+  onRun,
+  onCancel,
+}: {
+  /** Fixture key, with `step.id` — where the remembered values are read from. */
+  workflowId: string;
+  step: FlowStep;
+  /** Fired with the collected values when the user presses Run. */
+  onRun: (values: Record<string, unknown>) => void;
+  onCancel: () => void;
+}) {
+  const api = useW6wApi();
+  const isTrigger = isTriggerApp(step.uses.app);
+  const isInternal = isInternalApp(step.uses.app);
+  const defs = useMemo(
+    () => (isTrigger ? asFieldDefs(step.with?.fields) : []),
+    [isTrigger, step.with],
+  );
+
+  // Known synchronously for triggers and internal nodes; `null` means "an app
+  // action, still to be fetched" so only that path shows a loading line.
+  const localParams = useMemo<ActionParam[] | null>(() => {
+    if (isTrigger) return fieldsToParams(defs);
+    if (isInternal) return internalNodeParams(step.uses.app, step.uses.action);
+    return null;
+  }, [isTrigger, isInternal, defs, step.uses.app, step.uses.action]);
+  const [fetched, setFetched] = useState<ActionParam[] | null>(null);
+  const params = localParams ?? fetched;
+
+  // Mirrors StepEditModal's "refetch actions + params" effect rather than
+  // inventing a second fetch pattern.
+  useEffect(() => {
+    if (localParams) return;
+    if (!step.uses.app || !step.uses.action) {
+      setFetched([]);
+      return;
+    }
+    let canceled = false;
+    setFetched(null);
+    api
+      .getAppActions(step.uses.app)
+      .then((acts) => {
+        if (canceled) return;
+        setFetched(acts.find((a) => a.key === step.uses.action)?.params ?? []);
+      })
+      .catch(() => !canceled && setFetched([]));
+    return () => {
+      canceled = true;
+    };
+  }, [api, localParams, step.uses.app, step.uses.action]);
+
+  // One value bag, seeded once: a trigger's declared defaults, or the step's own
+  // stored params for everything else.
+  const [values, setValues] = useState<Record<string, unknown>>(() =>
+    isTrigger ? seedValues(asFieldDefs(step.with?.fields)) : { ...(step.with ?? {}) },
+  );
+
+  // …then layered with what was entered the last time this step was tested or
+  // run. `listStepTests` is oldest-first, so the LAST entry is the most recent
+  // fixture — the same convention the step editor's upstream-seed effect uses.
+  // An `ExprValue` (`{type:"expr",…}`) round-trips untouched: `FxField` derives
+  // expression mode from the value, so it comes back as a chip, not as text.
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    api
+      .listStepTests(workflowId, step.id)
+      .then((tests) => {
+        if (canceled) return;
+        const latest = tests.length ? tests[tests.length - 1] : null;
+        if (latest?.with) setValues((v) => ({ ...v, ...latest.with }));
+        setSeeded(true);
+      })
+      // Never block or break the form: no fixture (or a failed list) just leaves
+      // the declared defaults in place, silently.
+      .catch(() => {
+        if (!canceled) setSeeded(true);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [api, workflowId, step.id]);
+
+  // A raw-JSON draft that is not a values map (unparseable, or an array/scalar/
+  // `null`) never reaches `values` — the entry form holds it back and says so
+  // here. Run is a REAL execution, so it must not silently run the *previous*
+  // payload while the operator is looking at a different one.
+  const [draftValid, setDraftValid] = useState(true);
+  // …and on top of that the same required-gate the Test tab uses — never a
+  // second required-check.
+  const canRun = !!params && seeded && draftValid && requiredParamsFilled(params, values);
+
+  return (
+    <div className="w6w-stack">
+      {params === null || !seeded ? (
+        <p className="w6w-muted w6w-small">
+          {params === null ? "Loading parameters…" : "Loading saved values…"}
+        </p>
+      ) : (
+        <>
+          <PropertyEntryForm
+            params={params}
+            values={values}
+            onChange={setValues}
+            onValidityChange={setDraftValid}
+          />
+          {isTrigger && params.length === 0 && (
+            <span className="w6w-hint">
+              This trigger declares no fields — provide a sample payload to run with. It becomes the
+              trigger's output state (<code>input</code>).
+            </span>
+          )}
+        </>
+      )}
+      <div className="w6w-modal-actions">
+        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        {!canRun && params !== null && seeded && (
+          <span className="w6w-muted w6w-small">
+            {draftValid
+              ? "Fill the required fields to test."
+              : "The payload must be a JSON object to run."}
+          </span>
+        )}
+        <button type="button" className="w6w-btn" disabled={!canRun} onClick={() => onRun(values)}>
+          ▶ Run
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1146,10 +1391,7 @@ function StepEditModal({
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
-  const isTrigger =
-    step.uses.app === TRIGGER_APP ||
-    step.uses.app === WEBHOOK_APP ||
-    step.uses.app === SCHEDULER_APP;
+  const isTrigger = isTriggerApp(step.uses.app);
 
   // Gather each graph ancestor's latest saved step-test so the incoming-state pane
   // can offer it as a seed. Driven by `upstreamSteps` (from `upstreamStateSources`),
@@ -1367,6 +1609,10 @@ function StepEditModal({
                     app={step.uses.app}
                     action={step.uses.action}
                     fields={step.with?.fields}
+                    // Same fixture key the non-trigger Test path passes to
+                    // <StepTestRun> below, so the values entered here are
+                    // remembered and come back on the canvas ▶ Run form.
+                    persist={{ workflowId, stepId: step.id, input: testInput }}
                   />
                 ) : (
                   <>

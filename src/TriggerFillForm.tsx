@@ -1,84 +1,8 @@
-import { useMemo, useState } from "react";
-import { JsonEditor } from "./JsonEditor.tsx";
-import { ParamsForm } from "./ParamsForm.tsx";
-import { requiredParamsFilled } from "./StepBuilderModal.tsx";
+import { useEffect, useMemo, useState } from "react";
+import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
+import { type StepTestPersist, requiredParamsFilled } from "./StepBuilderModal.tsx";
 import { useW6wApi, useWorkflowProject } from "./provider.tsx";
-import type { ActionParam } from "./types.ts";
-
-/**
- * One field configured on a manual (`@w6w/trigger`) or webhook (`@w6w/webhook`)
- * trigger — the `fields` param stores an array of these *definitions*
- * (`{ key, type, default, required }`), not values. The Test tab derives a
- * fillable form from them (see {@link TriggerFillForm}).
- */
-interface TriggerFieldDef {
-  key?: string;
-  /** Declared value type — maps to an existing `ParamsForm` widget. */
-  type?: string;
-  /** Author-declared default (stored as text on the trigger config). */
-  default?: unknown;
-  required?: boolean;
-}
-
-/** Read a trigger's `fields` param value as an array of field definitions. */
-function asFieldDefs(fields: unknown): TriggerFieldDef[] {
-  return Array.isArray(fields) ? (fields as TriggerFieldDef[]) : [];
-}
-
-/** Map a field def's declared type onto one of the `ParamsForm` scalar widgets. */
-function fieldWidget(type: string | undefined): ActionParam["type"] {
-  return type === "number" || type === "boolean" || type === "json" ? type : "string";
-}
-
-/**
- * Coerce a field's author-declared default (stored as text) into a value of the
- * field's declared type, so the derived form seeds a sensible starting value and
- * the required gate sees it as filled. Returns `undefined` for an empty/invalid
- * default (the operator then supplies the value).
- */
-function coerceDefault(type: string | undefined, raw: unknown): unknown {
-  if (raw === undefined || raw === null || raw === "") return undefined;
-  if (type === "number") {
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : undefined;
-  }
-  if (type === "boolean") return raw === true || raw === "true";
-  if (type === "json") {
-    try {
-      return JSON.parse(String(raw));
-    } catch {
-      return undefined;
-    }
-  }
-  return String(raw);
-}
-
-/**
- * Project a trigger's `fields` definitions into a `ParamsForm`-compatible param
- * list — one input per declared field, keyed by the field's `key`, rendered with
- * the existing per-type widget. Unnamed fields are skipped.
- */
-function fieldsToParams(defs: TriggerFieldDef[]): ActionParam[] {
-  return defs
-    .filter((f) => typeof f.key === "string" && f.key.trim() !== "")
-    .map((f) => ({
-      key: f.key as string,
-      label: f.key as string,
-      type: fieldWidget(f.type),
-      required: !!f.required,
-    }));
-}
-
-/** Seed the fill-form values from each declared field's (coerced) default. */
-function seedValues(defs: TriggerFieldDef[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const f of defs) {
-    if (typeof f.key !== "string" || f.key.trim() === "") continue;
-    const v = coerceDefault(f.type, f.default);
-    if (v !== undefined) out[f.key] = v;
-  }
-  return out;
-}
+import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 
 type TestState =
   | { status: "running" }
@@ -91,25 +15,49 @@ type TestState =
  * fields**, not running the raw config (which is why the trigger's output used to
  * come back `{}` — the invoke never carried an `input`).
  *
- * It derives a value form from the trigger's `fields` (reusing the existing
- * per-type field renderers via {@link ParamsForm}), enforces each field's
+ * It projects the trigger's `fields` into params (see `./trigger-fields.ts`) and
+ * hands them to {@link PropertyEntryForm} — the one property-entry surface, which
+ * gives it the per-field widgets, per-field `ƒx`, and the fields ⇄ raw-JSON
+ * toggle. This component keeps only the *run*: it enforces each field's
  * `required` via {@link requiredParamsFilled} before enabling Test, and invokes
  * with `{ input: {…filled} }` so the handler (which passes `params.input`
  * through) returns the populated values as the trigger's output state.
  *
  * A trigger with no declared fields (e.g. a webhook, whose payload is arbitrary)
- * falls back to a raw JSON payload editor so the operator can still supply a
- * starting state — the same `{ input }` projection applies.
+ * gets the raw JSON payload editor — that is the entry form's own empty-params
+ * path, not a second code path here — so the operator can still supply a
+ * starting state, and the same `{ input }` projection applies.
+ *
+ * **Remembered values (T4.1.3).** With `persist` supplied, the values are not
+ * just used for the invoke: they are saved as the step's latest `step_tests`
+ * fixture (`with`) and the run is recorded **against that fixture's id**, and the
+ * form seeds itself from the latest fixture next time it opens. The store is
+ * project-owned and shared per workflow — any editor of the workflow sees the
+ * same saved values, which is the answer to HITL-2. The canvas ▶ Run collect
+ * form reads and writes the same fixture, so values entered on either surface
+ * come back on the other.
+ *
+ * That persistence is **local to testing**. It does not reach a production
+ * workflow run: `POST /workflows/:id/run` takes only `{variables, trigger}` and
+ * the trigger handler sees `params.input === undefined` there (filed as
+ * `.ai/projects/backlog/26-07-29-01-trigger-run-payload.md`).
  */
 export function TriggerFillForm({
   app,
   action,
   fields,
+  persist,
 }: {
   app: string;
   action: string;
   /** The trigger's `fields` param value (an array of field definitions). */
   fields: unknown;
+  /**
+   * Where to remember the entered values. Absent in the add-step builder — that
+   * step is not in a workflow yet, so there is no `(workflowId, stepId)` to key
+   * a fixture by and this form neither reads nor writes one.
+   */
+  persist?: StepTestPersist;
 }) {
   const api = useW6wApi();
   // The workflow's selected project scopes document-expression resolution in the
@@ -119,37 +67,100 @@ export function TriggerFillForm({
   const params = useMemo(() => fieldsToParams(defs), [defs]);
   const hasFields = params.length > 0;
 
-  // Declared-field path: one input per field, gated on `required`.
+  // One value bag for both paths: declared fields fill it by key, a webhook's
+  // raw payload replaces it wholesale.
   const [values, setValues] = useState<Record<string, unknown>>(() => seedValues(defs));
-  // No-fields path (webhook / empty trigger): a raw JSON payload.
-  const [payloadText, setPayloadText] = useState("{}");
-  const [payload, setPayload] = useState<Record<string, unknown>>({});
-  const [payloadValid, setPayloadValid] = useState(true);
 
   const [state, setState] = useState<TestState | null>(null);
 
-  const filled = hasFields ? values : payload;
-  const canRun = hasFields ? requiredParamsFilled(params, values) : payloadValid;
+  // Pre-fill from the step's last saved fixture. Depends on the ids rather than
+  // on `persist` itself — the host builds that object inline, so its identity
+  // changes every render.
+  const persistWorkflowId = persist?.workflowId;
+  const persistStepId = persist?.stepId;
+  // Nothing to wait for when there is no fixture key (the add-step builder).
+  const [seeded, setSeeded] = useState(!persistWorkflowId || !persistStepId);
+  useEffect(() => {
+    if (!persistWorkflowId || !persistStepId) {
+      setSeeded(true);
+      return;
+    }
+    let canceled = false;
+    api
+      .listStepTests(persistWorkflowId, persistStepId)
+      .then((tests) => {
+        if (canceled) return;
+        // `listStepTests` is oldest-first, so the LAST entry is the most recent
+        // fixture — the same convention the editor's upstream-seed effect uses.
+        // Layered over the declared defaults so a field added since the last run
+        // still arrives with its default rather than blank. An `ExprValue`
+        // (`{type:"expr",…}`) is stored and restored as-is: `FxField` derives
+        // expression mode from the value, so it comes back as a chip.
+        const latest = tests.length ? tests[tests.length - 1] : null;
+        if (latest?.with) setValues((v) => ({ ...v, ...latest.with }));
+        setSeeded(true);
+      })
+      // A missing/failed list must never block the form — fall back to the
+      // declared defaults, silently, exactly as the seed effect does.
+      .catch(() => {
+        if (!canceled) setSeeded(true);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [api, persistWorkflowId, persistStepId]);
+
+  // A raw-JSON draft that is not a values map never reaches `values`. Testing
+  // now WRITES the saved fixture the Run form pre-fills from, so running the
+  // previous payload while the operator looks at a different one would persist
+  // the wrong values too — the same interlock Run uses (T4.1.2's validity-out).
+  const [draftValid, setDraftValid] = useState(true);
+  // With no declared params the required-check is vacuously true — a webhook
+  // payload has nothing to require.
+  const canRun = draftValid && requiredParamsFilled(params, values);
 
   const run = async () => {
     setState({ status: "running" });
+    let outcome: Exclude<TestState, { status: "running" }>;
     try {
       // The filled values become the trigger's output/run-input — the handler
       // reads `params.input` and returns it verbatim.
-      const result = await api.invokeAction(app, action, { input: filled }, { project });
-      setState({
+      const result = await api.invokeAction(app, action, { input: values }, { project });
+      outcome = {
         status: "done",
         value: result.value,
         logs: (result as { logs?: string[] }).logs,
-      });
+      };
     } catch (e) {
       const err = e as { message?: string; code?: string; logs?: string[] };
-      setState({
+      outcome = {
         status: "error",
         error: err.message ?? String(e),
         errorCode: err.code,
         logs: err.logs,
-      });
+      };
+    }
+    setState(outcome);
+    // Remember what was entered, and record the run AGAINST that fixture — the
+    // same two-call sequence `StepTestRun` uses on the non-trigger Test path.
+    // Without the `stepTestId` the fixture's `last_run_*` columns are never
+    // written. Best-effort: a persist failure never masks the run's own result.
+    if (persist) {
+      try {
+        const saved = await api.saveStepTest(persist.workflowId, persist.stepId, {
+          input: persist.input,
+          with: values,
+        });
+        await api.recordStepTestRun(persist.workflowId, persist.stepId, {
+          stepTestId: saved.id,
+          status: outcome.status === "done" ? "succeeded" : "failed",
+          input: persist.input,
+          output: outcome.status === "done" ? outcome.value : undefined,
+          error: outcome.status === "error" ? outcome.error : undefined,
+        });
+      } catch (err) {
+        console.error("step test persist failed", err);
+      }
     }
   };
 
@@ -157,27 +168,25 @@ export function TriggerFillForm({
 
   return (
     <div className="w6w-stack">
-      {hasFields ? (
-        <ParamsForm params={params} values={values} onChange={setValues} />
+      {/* Held until the saved values land, so the form is never shown with the
+          defaults and then re-written under the operator's cursor. */}
+      {!seeded ? (
+        <p className="w6w-muted w6w-small">Loading saved values…</p>
       ) : (
-        <div className="w6w-field">
-          <span>Payload</span>
-          <JsonEditor
-            value={payloadText}
-            onChange={setPayloadText}
-            minHeight="140px"
-            aria-label="Trigger payload JSON"
-            onValidChange={(p) => {
-              const ok = !!p && typeof p === "object" && !Array.isArray(p);
-              setPayloadValid(ok);
-              if (ok) setPayload(p as Record<string, unknown>);
-            }}
+        <>
+          <PropertyEntryForm
+            params={params}
+            values={values}
+            onChange={setValues}
+            onValidityChange={setDraftValid}
           />
-          <span className="w6w-hint">
-            This trigger declares no fields — provide a sample payload to test with. It becomes the
-            trigger's output state (<code>input</code>).
-          </span>
-        </div>
+          {!hasFields && (
+            <span className="w6w-hint">
+              This trigger declares no fields — provide a sample payload to test with. It becomes
+              the trigger's output state (<code>input</code>).
+            </span>
+          )}
+        </>
       )}
 
       <div className="w6w-steptest">
@@ -185,16 +194,16 @@ export function TriggerFillForm({
           <button
             type="button"
             className="w6w-btn w6w-btn-ghost"
-            disabled={!canRun || state?.status === "running"}
+            disabled={!seeded || !canRun || state?.status === "running"}
             onClick={run}
           >
             {state?.status === "running" ? "Running…" : "▶ Test run"}
           </button>
-          {!canRun && (
+          {seeded && !canRun && (
             <span className="w6w-muted w6w-small">
-              {hasFields
+              {draftValid
                 ? "Fill the required fields to test."
-                : "Enter a valid JSON payload to test."}
+                : "The payload must be a JSON object to test."}
             </span>
           )}
         </div>
