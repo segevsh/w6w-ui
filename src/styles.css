@@ -1631,6 +1631,27 @@ dialog.w6w-modal p {
   --xy-controls-button-border-color: var(--w6w-border);
 }
 
+/* An error edge — `Edge.when: "error"` (core rfcs/workflow.md · "Amendment —
+   2026-07-29: failure-conditioned edges"). Dashed and drawn in the shared
+   --w6w-danger token (never a hard-coded hex) so the failure lane reads
+   differently from the success lane, and correctly, in BOTH themes.
+
+   ORDER MATTERS — this must stay ABOVE the selected/focused block below.
+   Both selectors are (0,4,0), i.e. exactly equal specificity, so source order
+   decides the winner. Selection has to be able to repaint the edge in the
+   accent colour; put this block after that one and a selected error edge stops
+   highlighting, which reads as a bug. */
+.w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-path {
+  stroke: var(--w6w-danger);
+  stroke-dasharray: 6 4;
+}
+.w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-text {
+  fill: var(--w6w-danger);
+}
+.w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-textbg {
+  fill: var(--w6w-panel);
+}
+
 /* Workflow edges: highlight the selected/focused edge in the accent colour and
    thicken it, so it's obvious which one Backspace/Delete will remove. The wide,
    invisible interaction path keeps the click target generous. */

@@ -36,6 +36,23 @@ export interface FlowStep {
 export interface FlowEdge {
   from: string;
   to: string;
+  /**
+   * Which outcome of the `from` step this edge carries (core
+   * `rfcs/workflow.md` · "Amendment — 2026-07-29: failure-conditioned edges
+   * (`Edge.when`)"). **Omitted ⇒ `"success"`**, so every pre-existing edge is a
+   * success edge and needs no migration.
+   * - `"success"` — activates when `from` succeeds. Per the house
+   *   omit-the-default idiom it is written as **absent**, never spelled out:
+   *   this editor emits no `when` for a success edge, which is what keeps an
+   *   untouched definition byte-identical across a load/save cycle.
+   * - `"error"` — activates when `from` fails, and overrides that step's
+   *   `onError`.
+   *
+   * Mirrors `Edge.when` in `@w6w/workflow-types` by hand — see the header note:
+   * these types are deliberately a structural subset, with no compiler tie, so
+   * the spelling here must stay identical to the engine's.
+   */
+  when?: "success" | "error";
 }
 
 export interface FlowWorkflow {

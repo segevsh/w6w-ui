@@ -71,12 +71,36 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
     };
   });
 
-  const flowEdges: Edge[] = edges.map((e) => ({
-    id: `${e.from}->${e.to}`,
-    source: e.from,
-    target: e.to,
-    animated: false,
-  }));
+  const flowEdges: Edge[] = edges.map((e) => {
+    // Omitted ⇒ "success" (core rfcs/workflow.md · Edge.when amendment). The
+    // lane rides on `data` so flowToWorkflow can read it straight back off the
+    // React Flow edge; the className + label are how an error edge is told
+    // apart on the canvas (styles.css `.w6w-edge-error`) — no custom edge
+    // component is involved.
+    const when = e.when ?? "success";
+    if (when !== "error") {
+      return {
+        id: `${e.from}->${e.to}`,
+        source: e.from,
+        target: e.to,
+        animated: false,
+        data: { when },
+      };
+    }
+    // The model permits a success edge AND an error edge between the same pair,
+    // so an error edge's id is qualified — two edges sharing one id would be
+    // collapsed by React Flow's store and one lane would be silently lost. A
+    // success edge's id is left exactly as before.
+    return {
+      id: `${e.from}->${e.to}:error`,
+      source: e.from,
+      target: e.to,
+      animated: false,
+      data: { when },
+      className: "w6w-edge-error",
+      label: "on error",
+    };
+  });
 
   return { nodes, edges: flowEdges };
 }
@@ -107,7 +131,16 @@ export function flowToWorkflow(
     if (s) nextSteps.push(s);
   }
 
-  const nextEdges: FlowEdge[] = edges.map((e) => ({ from: e.source, to: e.target }));
+  // Read the lane back off the React Flow edge (put there by workflowToFlow /
+  // by applyConnect at creation). `"success"` is written as ABSENT — the house
+  // omit-the-default idiom — so a definition with no error edge round-trips
+  // byte-identically to what was loaded.
+  const nextEdges: FlowEdge[] = edges.map((e) => {
+    const when = (e.data as { when?: FlowEdge["when"] } | undefined)?.when;
+    return when === "error"
+      ? { from: e.source, to: e.target, when }
+      : { from: e.source, to: e.target };
+  });
 
   return { ...original, steps: nextSteps, edges: nextEdges };
 }

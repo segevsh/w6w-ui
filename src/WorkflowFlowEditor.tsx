@@ -147,7 +147,10 @@ function applyConnect(
     const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
     next = next.filter((e) => !drop.has(e.id));
   }
-  return addEdge({ source, target, id: `${source}->${target}` }, next);
+  // Stamp the lane at creation: a freshly drawn wire is a success edge, and
+  // flowToWorkflow reads `data.when` back off the edge (it would see
+  // `undefined` otherwise). "success" is emitted as ABSENT on the way out.
+  return addEdge({ source, target, id: `${source}->${target}`, data: { when: "success" } }, next);
 }
 
 /**
