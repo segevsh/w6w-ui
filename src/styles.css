@@ -191,22 +191,47 @@
 .w6w-array-cells > .w6w-array-input {
   flex: 1 1 120px;
 }
+/* An object-item array row's boolean cell: `<label><checkbox><span>`. It is a
+   `<label>`, so `margin: 0` is load-bearing for the same reason it is on
+   `.w6w-fx-inline-label` further down — a host page layers an unscoped
+   `label { margin-bottom: 10px }` after this file (studio's does, at
+   `studio/src/styles.css:499`) and owns any property this block leaves
+   undeclared. `.w6w-array-cells` is a flex row at the default `align-items:
+   stretch`, so a bottom margin does not translate this cell, it SHORTENS its
+   stretched box — and because this block centres its own contents, the checkbox
+   and its caption then ride upward off the row's centre line. Measured before
+   this declaration existed, in [ui+studio]: checkbox cy 792 against the sibling
+   text cell's 799 — 7.0px out, while a ui-only render showed 0.0px. */
 .w6w-array-check {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+  margin: 0;
   font-size: 13px;
   color: var(--w6w-text);
   white-space: nowrap;
   cursor: pointer;
 }
-.w6w-array-check input {
+/* `> input[type="checkbox"]`, not `input`: a bare `.w6w-array-check input` is
+   (0,1,1), which TIES with a host `input[type="checkbox"] { margin-right: 6px }`
+   (studio/src/styles.css:785) and then loses on source order — measured
+   `margin-right: 6px` reaching this checkbox with the `margin: 0` below already
+   present. The compound form is (0,2,1) and wins outright. Same shape as
+   `.w6w-fx-inline > input[type="checkbox"]`, which is why that one was never
+   affected. */
+.w6w-array-check > input[type="checkbox"] {
   margin: 0;
 }
 .w6w-field .w6w-array-input {
   flex: 1;
   min-width: 0;
+  /* Load-bearing, same class as `.w6w-array-check` above: a host
+     `input[type="text"] { margin-top: 4px }` otherwise lands here and drops this
+     cell 2px below its own row's checkbox cell. Measured in [ui+studio]:
+     checkbox cy 797 against this input's 799. This selector is (0,2,0) and beats
+     the host's (0,1,1). */
+  margin: 0;
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
@@ -591,23 +616,36 @@
   border-radius: 0;
   padding: 4px 2px;
   outline: none;
-  /* `margin` and `min-height` are LOAD-BEARING here, for the same reason
+  /* EVERY property in this block is load-bearing, for the same reason
      `.w6w-fx-inline-label`'s `margin: 0` is (see below): a host page layers its
      own unscoped `input[type="text"], textarea { … }` rule AFTER this file
-     (studio's does, at `studio/src/styles.css:513-533` and `:788`), so every
-     property this block leaves undeclared is the host's — including inside a box
-     this library draws. Both were measured leaking, in [ui+studio], before these
-     two declarations existed:
-       margin     — a host `margin-top: 4px` in an `align-items: center` row
-                    drops the control 2px below the ƒx it shares the row with
-                    (string, number and the bare vars cell; select/multiselect
-                    were unaffected only because the host rule does not list
-                    them). Rendered: control cy 67 vs ƒx cy 65.
-       min-height — a host `textarea { min-height: 80px }` sized the INSIDE of
-                    this box, making the one multi-line field 80px/94px against
-                    the 62px/72px the same markup renders elsewhere, and pushing
-                    the ƒx 4px off the control's first line. The box is the
-                    library's to size; `rows` is the control's.
+     (studio's does, at `studio/src/styles.css:513-533`, `:759-771` and `:788`),
+     so every property this block leaves undeclared is the host's — including
+     inside a box this library draws. The two below were measured leaking, in
+     [ui+studio], before they were declared — and they fix DIFFERENT things:
+
+       margin     — ALIGNMENT. A host `margin-top: 4px` in an `align-items:
+                    center` row drops the control 2px below the ƒx it shares the
+                    row with (string, number and the bare vars cell; select and
+                    multiselect escaped only because the host rule does not list
+                    them). Rendered: control cy 67 vs ƒx cy 65. On the textarea
+                    row — `align-items: flex-start` — the same 4px showed up as
+                    the ƒx sitting 4px off the control's first line. `margin: 0`
+                    is the whole of that fix.
+
+       min-height — SIZE, and nothing else. Do not re-justify this one as
+                    alignment: the counterfactual was rendered (this `margin: 0`
+                    kept, `min-height: 0` removed) and the row measures a 0.0px
+                    top delta with the host's 80px floor fully in effect. What it
+                    fixes is that a host `textarea { min-height: 80px }`, written
+                    for that host's own bare textareas, was sizing the INSIDE of
+                    a box it cannot see — 80px/94px against the 62px/72px the
+                    same markup renders elsewhere, i.e. one of five control types
+                    29% taller than the library drew it. The box is the library's
+                    to size; how many lines it holds is `rows` on the control.
+                    If a taller body field is ever wanted, it belongs HERE, not
+                    in a host element selector.
+
      Declared, not fought for: this stays at the block's existing specificity and
      uses no `!important`. A component that is only aligned while the host
      cooperates is broken. */
@@ -949,6 +987,15 @@
   font-size: 13px;
   font-family: inherit;
   min-width: 0;
+}
+/* The block above is `.w6w-datavar-row input` at (0,1,1), which TIES with a host
+   `input[type="text"] { margin-top: 4px }` and loses on source order — so the
+   margin has to be re-declared at a specificity that wins, rather than added to
+   that block where it would have no effect. `.w6w-field` is always an ancestor
+   here (`VarsField` renders one), giving (0,2,1). */
+.w6w-field .w6w-datavar-row input,
+.w6w-field .w6w-datavar-row select {
+  margin: 0;
 }
 .w6w-datavar-row input:focus,
 .w6w-datavar-row select:focus {
