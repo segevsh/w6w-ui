@@ -66,6 +66,7 @@ import {
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { type StepTest, WorkflowProjectProvider, useW6wApi } from "./provider.tsx";
+import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 
 /**
@@ -134,10 +135,22 @@ function applyConnect(
 
 /**
  * The workflow state a given step can reference: the outputs of every step that
- * runs before it (its graph ancestors) plus whether a trigger precedes it. A
- * trigger ancestor becomes `hasTrigger` (referenced as `trigger.event`), not a
- * `steps.<id>.output` source. With no specific step (shouldn't happen for a
- * field edit) every node is offered.
+ * runs before it (its graph ancestors) plus whether a trigger precedes it.
+ *
+ * A trigger ancestor is **both**. It is pushed into `steps` like any other
+ * ancestor — `core/rfcs/node-types.md` ("Triggers as nodes"): *"Executing a
+ * trigger node yields the run's start payload … which downstream nodes read as
+ * `steps.<triggerId>.output`"* — **and** it sets `hasTrigger`, which offers the
+ * separate `trigger.event` root. The two are different values, not two spellings
+ * of one: `trigger.event` is the dispatcher-delivered event payload (seeded from
+ * `seed.event`), while a manual trigger's filled fields land under
+ * `steps.<id>.output`. Offering only the former is why a trigger's declared
+ * fields were unreachable from the picker.
+ *
+ * A step that declares output fields (a trigger's `with.fields`) carries them as
+ * `outputs`, so a consumer can offer `steps.<id>.output.<key>` per field.
+ *
+ * With no specific step (shouldn't happen for a field edit) every node is offered.
  */
 function upstreamStateSources(
   editingId: string | null,
@@ -172,10 +185,22 @@ function upstreamStateSources(
     if (!ancestors.has(n.id)) continue;
     const step = n.data.step;
     if (internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger") {
+      // `trigger.event` stays on offer — but the trigger is ALSO a `steps.<id>`
+      // source (see the RFC quote above), so it falls through to the push.
       hasTrigger = true;
-      continue;
     }
-    steps.push({ id: step.id, label: step.id });
+    // Declared output fields, via the shared trigger-field projection — the one
+    // parser, which already skips a blank/missing `key`.
+    const declared = fieldsToParams(asFieldDefs(step.with?.fields));
+    const source: ExpressionStepSource = { id: step.id, label: step.id };
+    // OMITTED (not `[]`) when nothing is declared, so a consumer can tell
+    // "nothing declared" from "declared none". Keys are verbatim: each becomes
+    // `steps.<id>.output.<key>`, and only that form resolves at run time.
+    steps.push(
+      declared.length > 0
+        ? { ...source, outputs: declared.map((p) => ({ key: p.key, label: p.label })) }
+        : source,
+    );
   }
   return { steps, hasTrigger };
 }
