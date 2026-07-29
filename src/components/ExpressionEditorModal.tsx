@@ -2,7 +2,13 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import type { ExpressionOptions } from "./ExpressionOptions.tsx";
 import { Modal } from "./Modal.tsx";
-import { insertNodeAtCaret, makeChip, paintParts, readParts } from "./expression-dom.ts";
+import {
+  ensureFillerBreak,
+  insertNodeAtCaret,
+  makeChip,
+  paintParts,
+  readParts,
+} from "./expression-dom.ts";
 import { partsToValue, serializeTemplate, valueToParts } from "./expression-template.ts";
 
 /**
@@ -19,6 +25,13 @@ import { partsToValue, serializeTemplate, valueToParts } from "./expression-temp
 export interface ExpressionEditorModalProps {
   value: ExprValue | string | SecretValue | undefined;
   masked?: boolean;
+  /**
+   * The field being edited holds multi-line text (a `text`-typed param, or one
+   * flagged `config.multiline`). Enter then inserts a literal `"\n"` at the
+   * caret instead of being swallowed, and `aria-multiline` follows. Omitted ⇒
+   * single-line, as every existing consumer expects.
+   */
+  multiline?: boolean;
   options: ExpressionOptions;
   /** Field name shown in the modal title. */
   fieldLabel?: string;
@@ -29,6 +42,7 @@ export interface ExpressionEditorModalProps {
 export function ExpressionEditorModal({
   value,
   masked,
+  multiline,
   options,
   fieldLabel,
   onSave,
@@ -258,6 +272,7 @@ export function ExpressionEditorModal({
               suppressContentEditableWarning
               role="textbox"
               tabIndex={0}
+              aria-multiline={multiline ? "true" : "false"}
               aria-label="Expression"
               data-placeholder="Type text and insert {x} variables, 🔒 secrets, or ▸ step outputs…"
               spellCheck={false}
@@ -270,7 +285,22 @@ export function ExpressionEditorModal({
                 sync();
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") e.preventDefault();
+                if (e.key !== "Enter") return;
+                // ALWAYS suppressed — with or without Shift, multiline or not.
+                // The browser's own line break (a wrapper <div>, or a <br>) is
+                // markup we neither paint nor want to depend on.
+                e.preventDefault();
+                if (!multiline) return;
+                const el = editorRef.current;
+                if (!el) return;
+                // Our own literal "\n" text node, via the same caret helper the
+                // source picker inserts chips with. `.w6w-exprmodal-chips` is
+                // `pre-wrap`, so it renders as a break. The filler keeps a break
+                // at the very END visible (and is skipped by `readParts`, so it
+                // never reaches the value).
+                insertNodeAtCaret(el, el.ownerDocument.createTextNode("\n"));
+                ensureFillerBreak(el);
+                sync();
               }}
             />
           </div>

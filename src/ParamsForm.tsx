@@ -430,6 +430,10 @@ function FxField({
   // is unchanged. A value that arrives after mount (a saved test seeded into a
   // field that mounted empty) is picked up on the next render, no effect needed.
   const fx = isExprValue(value);
+  // Multi-line text fields keep their newlines in expression mode too: Enter
+  // inserts a literal "\n" instead of being swallowed. Same predicate the
+  // textarea branch above renders on, so the two can never disagree.
+  const multiline = param.type === "text" || !!param.config?.multiline;
   const [modalOpen, setModalOpen] = useState(false);
   // Picker data (vars/secrets/steps/…) — sourced exactly the way ExpressionInput
   // sources it, from the nearest ExpressionOptionsProvider.
@@ -454,6 +458,7 @@ function FxField({
           // second one would put two ƒx side by side — the bug the intake filed.
           <ExpressionInput
             value={value as ExprValue | string | undefined}
+            multiline={multiline}
             readOnly={readOnly}
             aria-label={label}
             onChange={(next) => onChange(param.key, next)}
@@ -481,6 +486,7 @@ function FxField({
         // is re-implemented here: this supplies the value and consumes `onSave`.
         <ExpressionEditorModal
           value={value as ExprValue | string | undefined}
+          multiline={multiline}
           options={exprOptions}
           fieldLabel={label}
           onSave={(next) => onChange(param.key, next)}

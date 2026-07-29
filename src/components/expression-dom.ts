@@ -55,7 +55,25 @@ export function makeChip(doc: Document, part: ExprPart): HTMLElement {
   return span;
 }
 
-/** Reconstruct parts from an editor's DOM (the source of truth while editing). */
+/**
+ * Elements `contentEditable` builds one-per-line. A block child means "the
+ * content before me ended a line", so it contributes an implicit newline.
+ */
+const BLOCK_TAGS = new Set(["div", "p"]);
+
+/**
+ * Reconstruct parts from an editor's DOM (the source of truth while editing).
+ *
+ * The walk is **recursive**: a native Enter wraps the caret's line in a `<div>`
+ * (or drops a `<br>`), and anything nested inside it — chips included — must
+ * survive. Reading `textContent` at that point would flatten a chip to its
+ * label and silently destroy the reference it carries, so every unrecognised
+ * element is descended into instead. `<br>` and block children map to a literal
+ * `"\n"`; `pushText` coalesces those into the surrounding text part.
+ *
+ * One `<br>` is deliberately NOT a newline: a FILLER one, closing its block —
+ * see `walk` and {@link ensureFillerBreak}.
+ */
 export function readParts(root: HTMLElement): ExprPart[] {
   const parts: ExprPart[] = [];
   const pushText = (t: string) => {
@@ -64,17 +82,22 @@ export function readParts(root: HTMLElement): ExprPart[] {
     if (last && last.kind === "text") last.value = (last.value ?? "") + t;
     else parts.push({ kind: "text", value: t });
   };
-  for (const node of root.childNodes) {
+
+  /** `lastInBlock`: this node is the final child of the root, a `div` or a `p`. */
+  const walk = (node: Node, lastInBlock: boolean) => {
     if (node.nodeType === Node.TEXT_NODE) {
       pushText(node.textContent ?? "");
-      continue;
+      return;
     }
-    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
+
     const kind = el.getAttribute("data-kind");
     if (kind === "var" || kind === "secret") {
       parts.push({ kind, ref: el.getAttribute("data-ref") ?? "" });
-    } else if (kind === "expr") {
+      return;
+    }
+    if (kind === "expr") {
       const raw = el.getAttribute("data-expr") ?? "";
       let expr: unknown = raw;
       try {
@@ -83,11 +106,104 @@ export function readParts(root: HTMLElement): ExprPart[] {
         expr = raw;
       }
       parts.push({ kind: "expr", expr });
-    } else {
-      pushText(el.textContent ?? "");
+      return;
     }
-  }
+
+    // Browsers report `BR` / `DIV` uppercase for HTML documents.
+    const tag = (el.tagName ?? "").toLowerCase();
+    if (tag === "br") {
+      // A <br> CLOSING its block is a FILLER, not a line the author made: it
+      // exists so an otherwise-empty last line has a box for the caret to land
+      // in. Three things produce one, all measured in Chromium
+      // (`artifacts/T3.1.2-browser-check.sh`):
+      //   1. {@link ensureFillerBreak}, after we insert our own "\n";
+      //   2. a PASTED blank line — `<div><br></div>`, where the block already
+      //      carries the break and the <br> only fills it. Counting both
+      //      inflates one blank line into two;
+      //   3. the browser itself, after a `contentEditable="false"` chip.
+      // A <br> the author really made has content (or another line) after it
+      // inside its block, so it is never the block's last child.
+      if (!lastInBlock) pushText("\n");
+      return;
+    }
+    // A *leading* block is the first line, not a break after something.
+    const isBlock = BLOCK_TAGS.has(tag);
+    if (isBlock && parts.length > 0) pushText("\n");
+    walkChildren(el, isBlock);
+  };
+
+  const walkChildren = (parent: Node, isBlockParent: boolean) => {
+    const children = Array.from(parent.childNodes);
+    children.forEach((child, i) => walk(child, isBlockParent && i === children.length - 1));
+  };
+
+  walkChildren(root, true);
   return parts;
+}
+
+/**
+ * Is this the filler `<br>` closing a block — the caret's landing pad, never
+ * part of the value? Callers only ever ask it about a block's LAST child, which
+ * is what makes "a `<br>` here" and "a filler" the same question (`readParts`
+ * skips exactly this node).
+ *
+ * The test is deliberately narrower than "is an element": a block ending in a
+ * CHIP is also ending in an element, and a chip is `contentEditable="false"`, so
+ * it gives the caret nowhere to land and still needs a filler after it.
+ */
+const isFillerBreak = (node: Node | null): boolean =>
+  !!node && ((node as HTMLElement).tagName ?? "").toLowerCase() === "br";
+
+/**
+ * Append the filler `<br>` that lets a `"\n"` ENDING this block render.
+ *
+ * Idempotent — a block already closed by a `<br>` is left alone. That guard is
+ * load-bearing, not tidiness: a second filler would no longer be the block's
+ * last child, so `readParts` would read it as a real newline and the value would
+ * grow a blank line per keystroke-that-triggers-a-fill.
+ */
+function fillBlock(block: HTMLElement): void {
+  if (isFillerBreak(block.lastChild)) return;
+  block.appendChild(block.ownerDocument.createElement("br"));
+}
+
+/**
+ * The block the caret currently sits in, within `editor` — the editor itself
+ * when the caret is at its top level, or is not inside it at all.
+ *
+ * The filler has to go in the SAME block as the newline it exists to render.
+ * After a paste, the caret's line is an inner `<div>` (`one<div>three</div>`),
+ * so filling the root instead would leave the `"\n"` trailing inside the div
+ * with nothing to render it — the very failure the filler exists to prevent.
+ */
+function caretBlock(editor: HTMLElement): HTMLElement {
+  const sel = editor.ownerDocument.getSelection();
+  const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+  if (!range || !editor.contains(range.endContainer)) return editor;
+  let node: Node | null = range.endContainer;
+  while (node && node !== editor) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      if (BLOCK_TAGS.has((el.tagName ?? "").toLowerCase())) return el;
+    }
+    node = node.parentNode;
+  }
+  return editor;
+}
+
+/**
+ * Give a line break at the very END of the caret's line somewhere to render.
+ *
+ * A `"\n"` that is the last thing in a `white-space: pre-wrap` block paints
+ * nothing, and the caret cannot land past it — the author presses Enter, sees no
+ * break, and their next keystroke lands on the *previous* line (observed in
+ * Chromium; see `artifacts/T3.1.2-browser-check.sh`). Browsers solve this for
+ * their own line breaks with a FILLER `<br>` as the block's last child, so ours
+ * uses the same device. `readParts` skips exactly that node — the two are one
+ * fact, kept in one file.
+ */
+export function ensureFillerBreak(editor: HTMLElement): void {
+  fillBlock(caretBlock(editor));
 }
 
 /** Paint an editor's DOM from parts (text nodes + chips). */
@@ -101,8 +217,25 @@ export function paintParts(el: HTMLElement, parts: ExprPart[]): void {
       el.appendChild(makeChip(doc, p));
     }
   }
+  // A painted value ENDING in a newline needs the filler just as much as a
+  // freshly typed one does — this is the same block, rebuilt from parts. Without
+  // it the break survives the round trip in the VALUE but not on SCREEN, and the
+  // author's next keystroke lands before it: "a\n" + typing "b" saved "ab\n".
+  const last = parts[parts.length - 1];
+  if (last?.kind === "text" && last.value?.endsWith("\n")) fillBlock(el);
 }
 
+/**
+ * Put the caret at the end of the editor.
+ *
+ * Deliberately NOT special-cased for a trailing filler `<br>`: a caret placed
+ * past the filler is a position Chromium normalises straight back into the
+ * content, so the next character still lands before the filler. That was
+ * measured, not assumed — a version of this function that skipped the filler
+ * explicitly could not be distinguished from this one by any probe in
+ * `T3.1.2-browser-check.sh`, including §K, which exists to try. What DOES have
+ * to respect the filler is the node insertion itself (see `insertNodeAtCaret`).
+ */
 export function placeCaretAtEnd(el: HTMLElement): void {
   const sel = el.ownerDocument.getSelection();
   if (!sel) return;
@@ -127,7 +260,13 @@ export function insertNodeAtCaret(editor: HTMLElement, node: Node): void {
     sel?.removeAllRanges();
     sel?.addRange(after);
   } else {
-    editor.appendChild(node);
+    // No caret in the editor (e.g. a source clicked in the modal's left pane
+    // before the editor was ever focused). Insert at the end of the CONTENT —
+    // which is before a trailing filler, not after it: appending past the filler
+    // would stop it being the block's last child and `readParts` would then read
+    // it as a real newline ("a\n" + a chip saved "a\n\n{{ … }}").
+    if (isFillerBreak(editor.lastChild)) editor.insertBefore(node, editor.lastChild);
+    else editor.appendChild(node);
     placeCaretAtEnd(editor);
   }
   editor.focus();
