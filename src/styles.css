@@ -1603,6 +1603,34 @@ dialog.w6w-modal p {
   min-height: 0;
 }
 
+/* React Flow chrome, driven from the app's own tokens.
+
+   React Flow themes every surface through a three-link chain,
+   `var(--xy-X-props, var(--xy-X, var(--xy-X-default)))`. The library defines
+   only the `-default` link (light/dark, its own palette); the MIDDLE name is
+   never declared by the library and exists purely as a host hook. Setting those
+   middle names here re-points the zoom/fit control stack at `--w6w-*`, so it
+   matches whatever surface the host theme actually uses — and any ControlButton
+   added to that stack later inherits it with no styling of its own.
+
+   Custom properties, deliberately, rather than a `.react-flow__controls-button`
+   override: `@xyflow/react/dist/style.css` is imported as a side effect from
+   WorkflowFlowEditor.tsx, so it rides in the LAZY chunk and is injected *after*
+   this stylesheet. A bare class override (0,1,0) would tie with the library's
+   own rule and lose on source order. Custom properties inherit and are
+   order-independent, and scoping them on `.w6w-flow` keeps them off the rest of
+   the page.
+
+   Pairs with `colorMode={…}` on <ReactFlow>, which fixes the `-default` link for
+   the chrome this block doesn't name (minimap mask, handles, background dots). */
+.w6w-flow {
+  --xy-controls-button-background-color: var(--w6w-panel);
+  --xy-controls-button-background-color-hover: var(--w6w-panel-2);
+  --xy-controls-button-color: var(--w6w-text);
+  --xy-controls-button-color-hover: var(--w6w-accent);
+  --xy-controls-button-border-color: var(--w6w-border);
+}
+
 /* Workflow edges: highlight the selected/focused edge in the accent colour and
    thicken it, so it's obvious which one Backspace/Delete will remove. The wide,
    invisible interaction path keeps the click target generous. */

@@ -72,6 +72,7 @@ import {
   WorkflowProjectProvider,
   useW6wApi,
 } from "./provider.tsx";
+import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 
@@ -369,6 +370,12 @@ function Inner({
     position: { x: number; y: number };
   } | null>(null);
   const { screenToFlowPosition } = useReactFlow();
+  // React Flow's `colorMode` defaults to "light", so without this its chrome
+  // (controls, minimap mask, handles, edge strokes, background dots) stays in the
+  // light palette on a dark canvas. Read the mode from the house hook — the same
+  // `data-theme` signal `styles.css` and AppIcon/CodeEditor/JsonEditor already
+  // follow — rather than adding a prop the host would have to keep in sync.
+  const colorMode = useEffectiveTheme();
 
   // If the caller swaps in a different workflow, reset local graph state.
   useEffect(() => {
@@ -870,6 +877,7 @@ function Inner({
                 // Backspace/Delete so it can't silently remove a node — e.g. while a
                 // modal is open or the user is editing a field.
                 deleteKeyCode={null}
+                colorMode={colorMode}
                 proOptions={{ hideAttribution: true }}
               >
                 <Background gap={16} />
