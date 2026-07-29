@@ -66,6 +66,7 @@ import {
 } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
 import { type StepTest, WorkflowProjectProvider, useW6wApi } from "./provider.tsx";
+import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 
 /**
@@ -134,10 +135,36 @@ function applyConnect(
 
 /**
  * The workflow state a given step can reference: the outputs of every step that
- * runs before it (its graph ancestors) plus whether a trigger precedes it. A
- * trigger ancestor becomes `hasTrigger` (referenced as `trigger.event`), not a
- * `steps.<id>.output` source. With no specific step (shouldn't happen for a
- * field edit) every node is offered.
+ * runs before it (its graph ancestors) plus whether a trigger precedes it.
+ *
+ * A trigger ancestor is **both**. It is pushed into `steps` like any other
+ * ancestor — `core/rfcs/node-types.md` ("Triggers as nodes"): *"Executing a
+ * trigger node yields the run's start payload … which downstream nodes read as
+ * `steps.<triggerId>.output`"* — **and** it sets `hasTrigger`, which offers the
+ * separate `trigger.event` root. The two are different values, not two spellings
+ * of one: `trigger.event` is the dispatcher-delivered event payload (seeded from
+ * `seed.event`), while a manual trigger's filled fields land under
+ * `steps.<id>.output`. Offering only the former is why a trigger's declared
+ * fields were unreachable from the picker.
+ *
+ * A **trigger** that declares output fields (`with.fields`) carries them as
+ * `outputs`, so a consumer can offer `steps.<id>.output.<key>` per field. Only a
+ * trigger: `fields` is an ordinary param name, and on any other node it holds
+ * that action's INPUT — an `@w6w/http:request` with `with.fields = [{key:"x"}]`
+ * would otherwise be advertised as declaring an output `x` it never produces.
+ * The trigger's `fields` is the one case where the param IS the output contract
+ * (`core/rfcs/node-types.md:194-196`; `trigger.md:119` covers only what drives
+ * editor autocomplete).
+ *
+ * ⚠️ EDITOR-SIDE ONLY. Do not read this as "those fields resolve at run time".
+ * They resolve on the **Test** path (`server/packages/api/workflows.ts:322-325`
+ * seeds `params.input = startState` for internal/trigger nodes) and are **empty
+ * in a full run**: `POST /workflows/:id/run` accepts only `{variables, trigger}`
+ * and nothing seeds the entry node's `input`, so `internal-nodes.ts`'s
+ * `TRIGGER_APP` returns `params.input ?? {}` → `{}`. Tracked in
+ * `.ai/projects/backlog/26-07-29-01-trigger-run-payload.md`.
+ *
+ * With no specific step (shouldn't happen for a field edit) every node is offered.
  */
 function upstreamStateSources(
   editingId: string | null,
@@ -171,11 +198,26 @@ function upstreamStateSources(
   for (const n of nodes) {
     if (!ancestors.has(n.id)) continue;
     const step = n.data.step;
-    if (internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger") {
+    const isTrigger = internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger";
+    if (isTrigger) {
+      // `trigger.event` stays on offer — but the trigger is ALSO a `steps.<id>`
+      // source (see the RFC quote above), so it falls through to the push.
       hasTrigger = true;
-      continue;
     }
-    steps.push({ id: step.id, label: step.id });
+    // Declared output fields, via the shared trigger-field projection — the one
+    // parser, which already skips a blank/missing `key`. TRIGGER-ONLY: on any
+    // other node `with.fields` is that action's INPUT, and projecting it would
+    // fabricate declared outputs the step never produces (see the docstring).
+    const declared = isTrigger ? fieldsToParams(asFieldDefs(step.with?.fields)) : [];
+    const source: ExpressionStepSource = { id: step.id, label: step.id };
+    // OMITTED (not `[]`) when nothing is declared, so a consumer can tell
+    // "nothing declared" from "declared none". Keys are verbatim: each becomes
+    // `steps.<id>.output.<key>`, and only that form resolves at run time.
+    steps.push(
+      declared.length > 0
+        ? { ...source, outputs: declared.map((p) => ({ key: p.key, label: p.label })) }
+        : source,
+    );
   }
   return { steps, hasTrigger };
 }

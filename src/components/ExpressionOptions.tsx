@@ -20,6 +20,22 @@ export interface ExpressionStepSource {
   id: string;
   /** Human label (defaults to the id). */
   label?: string;
+  /**
+   * The step's **declared** output field keys, when it declares any (today: a
+   * trigger's configured `fields`). Each entry feeds exactly one ref —
+   * `steps.<id>.output.<key>` — which is the canonical form the engine resolves
+   * (`RunScope.steps`; `core/rfcs/workflow.md` §"Expressions", `core/rfcs/node-types.md`
+   * "Executing a trigger node yields the run's start payload … which downstream
+   * nodes read as `steps.<triggerId>.output`").
+   *
+   * `key` is carried **verbatim**: a display-shortened key would build a ref
+   * that renders fine in the editor and evaluates to empty at run time, with no
+   * error. `label` is for display only and must never be substituted into a ref.
+   *
+   * **Omitted** (not `[]`) when the step declares no outputs, so a consumer can
+   * tell "nothing declared" from "declared none" without a special case.
+   */
+  outputs?: { key: string; label?: string }[];
 }
 
 /** Known variable/secret names offered in an ExpressionInput's insert menu. */

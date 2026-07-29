@@ -1,13 +1,15 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import type { ExpressionOptions } from "./ExpressionOptions.tsx";
 import { Modal } from "./Modal.tsx";
 import {
   ensureFillerBreak,
   insertNodeAtCaret,
+  isRefSafeKey,
   makeChip,
   paintParts,
   readParts,
+  varLabel,
 } from "./expression-dom.ts";
 import { partsToValue, serializeTemplate, valueToParts } from "./expression-template.ts";
 
@@ -244,14 +246,44 @@ export function ExpressionEditorModal({
                   "w6w-expr-chip-var",
                   "⚡",
                 )}
-              {steps.map((st) =>
-                source(
-                  st.label ?? st.id,
-                  { kind: "var", ref: `steps.${st.id}.output` },
-                  "w6w-expr-chip-var",
-                  "▸",
-                ),
-              )}
+              {steps.map((st) => {
+                // Only keys that can become a ref the ENGINE resolves are
+                // offered. The guard lives here, at the one place a ref is
+                // built, so it holds for any host that supplies `steps` —
+                // not only for the flow editor's own projection.
+                const fields = (st.outputs ?? []).filter((o) => isRefSafeKey(o.key));
+                return (
+                  <Fragment key={st.id}>
+                    {/* The whole output — still a real, useful ref on its own,
+                        and the author's route to a key the guard dropped. */}
+                    {source(
+                      st.label ?? st.id,
+                      { kind: "var", ref: `steps.${st.id}.output` },
+                      "w6w-expr-chip-var",
+                      "▸",
+                    )}
+                    {/* …and one source per DECLARED output field, nested under
+                        it. Each SAVES the canonical `steps.<id>.output.<key>`
+                        (the only form the engine resolves) and SHOWS
+                        `varLabel(ref)`, i.e. the short `<id>.<key>`. The key
+                        goes into the ref VERBATIM — `o.label` is display data
+                        and must never be substituted into a ref. */}
+                    {fields.length > 0 && (
+                      <div className="w6w-exprmodal-subsources">
+                        {fields.map((o) => {
+                          const ref = `steps.${st.id}.output.${o.key}`;
+                          return source(
+                            varLabel(ref),
+                            { kind: "var", ref },
+                            "w6w-expr-chip-var",
+                            "·",
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
             </div>
           )}
         </aside>
