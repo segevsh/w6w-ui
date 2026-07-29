@@ -127,15 +127,21 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
     invokeAction: (appId, actionKey, params, opts = {}) =>
       req<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>(
         `/apps/${encodeURIComponent(appId)}/actions/${encodeURIComponent(actionKey)}/invoke`,
-        // `project` scopes document-expression resolution to the workflow's
-        // selected project (undefined keys are dropped by JSON.stringify, so an
-        // absent project preserves the server's default-project behavior).
+        // This body is built KEY BY KEY, not by spreading `opts` — so every new
+        // option has to be named here or it is silently dropped before the wire
+        // (the caller compiles, the UI looks right, the field never leaves the
+        // page). `project` scopes document-expression resolution to the
+        // workflow's selected project; `state` is the start state upstream step
+        // outputs are seeded from, so `{{ steps.<id>.output.<f> }}` resolves.
+        // Undefined keys are dropped by JSON.stringify, so an absent project or
+        // state leaves the request byte-identical to one that never had them.
         {
           method: "POST",
           body: JSON.stringify({
             params,
             connectionId: opts.connectionId,
             project: opts.project,
+            state: opts.state,
           }),
         },
       ),
