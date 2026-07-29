@@ -344,32 +344,46 @@
   flex-direction: column;
   gap: 6px;
 }
-/* Inline expression field: the editable surface + a ƒx button that opens the
-   full expression editor modal. */
+/* Inline expression field: ONE input-like box holding the editable surface plus
+   a ƒx button that reads as a trailing decoration INSIDE it — the same idiom as
+   `.w6w-multiselect` above and `.w6w-expr-sealed` below. The box lives here so
+   the standalone uses still render as a field (the `secret` param path and the
+   public ExpressionInput export). When this rides inside a `.w6w-fx-wrap`, that
+   wrapper is the box and this is flattened — see `.w6w-fx-wrap` below. */
 .w6w-expr-field {
   display: flex;
-  align-items: stretch;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-height: 38px;
+}
+.w6w-expr-field:focus-within {
+  border-color: var(--w6w-accent);
 }
 .w6w-expr-field .w6w-expr-editor {
   flex: 1;
   min-width: 0;
 }
+/* The ƒx rides inside the box, so it draws no chrome of its own — only its
+   colour states remain. */
+.w6w-expr-field .w6w-expr-edit {
+  border: none;
+  background: transparent;
+}
 .w6w-expr-edit {
   flex-shrink: 0;
-  align-self: stretch;
-  border: 1px solid var(--w6w-border);
-  border-radius: 8px;
-  background: var(--w6w-panel-2);
   color: var(--w6w-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
-  padding: 0 10px;
+  line-height: 1;
+  padding: 4px 6px;
   cursor: pointer;
 }
 .w6w-expr-edit:hover {
   color: var(--w6w-accent);
-  border-color: var(--w6w-accent);
 }
 /* Sealed at-rest secret (masked chip + Replace). */
 .w6w-expr-sealed {
@@ -525,50 +539,98 @@
   align-items: center;
   gap: 8px;
 }
-/* fx toggle — an end-of-input decoration (beside the field) that swaps the plain
-   widget for the segmented ExpressionInput. Lives next to the value instead of up
-   in the label row, so the field and its affordance read as one unit. */
+/* fx toggle — an end decoration INSIDE the field, not a button beside it. The
+   WRAPPER owns the input chrome (background/border/radius/min-height and the
+   focus ring) and every widget it holds is flattened below, so the value and its
+   ƒx affordance read as ONE box. Mirrors `.w6w-multiselect` above. */
 .w6w-fx-wrap {
   display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-height: 38px;
+}
+/* A textarea is taller than the ƒx, so there the decoration rides at the top. */
+.w6w-fx-wrap:has(> textarea) {
   align-items: flex-start;
-  gap: 6px;
+}
+/* Focus reads on the box now that the inner widget has no border of its own. */
+.w6w-fx-wrap:focus-within {
+  border-color: var(--w6w-accent);
 }
 .w6w-fx-wrap > input,
 .w6w-fx-wrap > select,
 .w6w-fx-wrap > textarea,
+.w6w-fx-wrap > .w6w-multiselect,
 .w6w-fx-wrap > .w6w-expr {
   flex: 1 1 auto;
   min-width: 0;
 }
+/* The widget inside the wrapper carries NO chrome of its own. COMPOUND
+   selectors, because the global `.w6w-field input|select|textarea` rule is
+   (0,2,1) and a bare `.w6w-fx-wrap > input` at (0,1,1) would lose to it — the
+   same trap documented on `.w6w-multiselect-add` above. `.w6w-datavar-row
+   input|select` is the second rule to beat, for the `bare` vars-row cell. */
+.w6w-field .w6w-fx-wrap input[type="text"],
+.w6w-field .w6w-fx-wrap input[type="password"],
+.w6w-field .w6w-fx-wrap input[type="number"],
+.w6w-field .w6w-fx-wrap select,
+.w6w-field .w6w-fx-wrap textarea,
+.w6w-datavar-row .w6w-fx-wrap input,
+.w6w-datavar-row .w6w-fx-wrap select,
+.w6w-fx-wrap input[type="text"],
+.w6w-fx-wrap input[type="password"],
+.w6w-fx-wrap input[type="number"],
+.w6w-fx-wrap select,
+.w6w-fx-wrap textarea {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 4px 2px;
+  outline: none;
+}
+/* …and the two widgets that own an input-like box themselves are flattened too,
+   so the wrapper never draws a box around a box. */
+.w6w-fx-wrap .w6w-expr-field,
+.w6w-fx-wrap .w6w-multiselect {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  min-height: 0;
+}
 /* A boolean field's checkbox rides bare inside the fx-wrap (label sits above via
-   FxField). Keep it natural-width and vertically centered against the ƒx button. */
+   FxField). Keep it natural-width and vertically centered against the ƒx — the
+   min-height is the wrapper's 38px less its 4px padding and 1px borders. */
 .w6w-fx-wrap > .w6w-bool-field {
   display: inline-flex;
   align-items: center;
-  min-height: 38px;
+  min-height: 28px;
+}
+/* The ƒx itself is a decoration inside the wrapper's box: no chrome, colour only. */
+.w6w-fx-wrap .w6w-expr-fx {
+  border: none;
+  background: transparent;
 }
 .w6w-expr-fx {
   flex-shrink: 0;
-  min-height: 38px;
-  border: 1px solid var(--w6w-border);
-  border-radius: 8px;
-  background: var(--w6w-panel-2);
   color: var(--w6w-muted);
   font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding: 0 10px;
+  line-height: 1;
+  padding: 4px 6px;
   cursor: pointer;
 }
 .w6w-expr-fx:hover {
   color: var(--w6w-text);
-  border-color: var(--w6w-accent);
 }
 .w6w-expr-fx.is-active {
   color: var(--w6w-accent);
-  border-color: var(--w6w-accent);
 }
-/* The inline editor surface (one continuous field) + the raw {{ }} input. */
-.w6w-expr-editor,
+/* The raw {{ }} input stands alone, so it keeps an input box of its own. */
 .w6w-expr-raw {
   width: 100%;
   background: var(--w6w-panel-2);
@@ -577,23 +639,27 @@
   padding: 8px 10px;
   min-height: 38px;
   color: var(--w6w-text);
-  font-size: 14px;
-  font-family: inherit;
-  line-height: 1.7;
-}
-.w6w-expr-raw {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
+  line-height: 1.7;
 }
-.w6w-expr-editor {
-  outline: none;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.w6w-expr-editor:focus,
 .w6w-expr-raw:focus {
   outline: none;
   border-color: var(--w6w-accent);
+}
+/* The inline editor surface (one continuous field) sits INSIDE
+   `.w6w-expr-field`'s box, so it draws no chrome — the border, the background
+   and the focus ring all belong to that box. */
+.w6w-expr-editor {
+  width: 100%;
+  padding: 2px 0;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.7;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .w6w-expr-editor.is-readonly,
 .w6w-expr-input.is-readonly {

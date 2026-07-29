@@ -459,6 +459,12 @@ function FxField({
   // The ƒx toggle rides at the end of the input (an in-field decoration) rather
   // than up in the label row — so the affordance sits next to the value it
   // governs. It still swaps the plain widget for ExpressionInput.
+  //
+  // `.w6w-fx-wrap` IS the field's box: it owns the border/background/radius and
+  // the `:focus-within` ring, and the widget it holds is flattened by compound
+  // selectors in styles.css — so widget + ƒx read as one box, not as a button
+  // beside a field. A widget that owns a box itself (`.w6w-multiselect`, the
+  // `.w6w-expr-field` inside ExpressionInput) is flattened there too.
   const body = (
     <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
       {fx ? (
