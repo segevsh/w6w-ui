@@ -113,6 +113,84 @@ test("<br> inside a nested block still breaks the line", () => {
   assert.deepEqual(parts, [{ kind: "text", value: "a\nb\nc" }]);
 });
 
+// --- Chromium's FILLER <br> (found in the T3.1.1 browser check, fixed in T3.1.2
+// once Enter became reachable). When a line ENDS with a contentEditable="false"
+// chip, Chromium appends a <br> as the block's last child so the caret has
+// somewhere to land. It is not a break the author made, and reading it as one
+// grows the value by a blank line on every read → repaint cycle.
+
+test("a filler <br> closing the ROOT after a chip is not a newline", () => {
+  const parts = read([text("a"), varChip("vars.x"), el("br", {}, [])]);
+  assert.deepEqual(parts, [
+    { kind: "text", value: "a" },
+    { kind: "var", ref: "vars.x" },
+  ]);
+});
+
+test("a filler <br> closing a line <div> after a chip is not a newline", () => {
+  // Exactly the markup browser-check D observed: `…<div><span chip/><br></div>`.
+  const parts = read([
+    text("a"),
+    el("div", {}, [text("mid"), el("br", {}, [])]),
+    el("div", {}, [secretChip("API_KEY"), el("br", {}, [])]),
+  ]);
+  assert.deepEqual(parts, [
+    { kind: "text", value: "a\nmid\n" },
+    { kind: "secret", ref: "API_KEY" },
+  ]);
+});
+
+test("only the LAST <br> of a block is dropped — the ones before it still break", () => {
+  // shift+Enter at the end of a line: Chromium writes `a<br><br>`, where only
+  // the second is the filler. The line the author made must survive.
+  const parts = read([text("a"), el("br", {}, []), el("br", {}, [])]);
+  assert.deepEqual(parts, [{ kind: "text", value: "a\n" }]);
+});
+
+test("a <br> ending an INLINE element still breaks the line", () => {
+  // The skip is scoped to BLOCK parents (root/div/p) — a trailing <br> inside a
+  // <span> is not a caret filler, so T3.1.1's "a <br> contributes \n" holds.
+  const parts = read([text("a"), el("span", {}, [el("br", {}, [])]), text("b")]);
+  assert.deepEqual(parts, [{ kind: "text", value: "a\nb" }]);
+});
+
+test("a PASTED blank line is one break, not two", () => {
+  // `<div><br></div>` is how every editor writes an empty line: the <br> is the
+  // filler that gives the empty block a line box, and the block already carries
+  // the break. Counting both inflates the value by a blank line per paste.
+  const parts = read([
+    text("one"),
+    el("div", {}, [el("br", {}, [])]),
+    el("div", {}, [text("three")]),
+  ]);
+  assert.deepEqual(parts, [{ kind: "text", value: "one\n\nthree" }]);
+});
+
+// --- Three cases that pin acceptance criteria the T3.1.1 suite stated but did
+// not discriminate (mutants `divonly`, `guardlast`, `nonelem` survived it).
+
+test("a <p> block breaks the line too, not just <div>", () => {
+  // The only earlier <p> case nested it where `parts.length === 0`, so dropping
+  // "p" from BLOCK_TAGS changed nothing observable.
+  assert.deepEqual(read([text("a"), el("p", {}, [text("b")])]), [{ kind: "text", value: "a\nb" }]);
+});
+
+test("a block that follows a CHIP still contributes its newline", () => {
+  // `parts.length > 0` must mean "anything at all was emitted" — narrowing it to
+  // "a text part was emitted" would silently eat the break after a chip.
+  assert.deepEqual(read([varChip("vars.x"), el("div", {}, [text("b")])]), [
+    { kind: "var", ref: "vars.x" },
+    { kind: "text", value: "\nb" },
+  ]);
+});
+
+test("a comment node is skipped, not read and not thrown on", () => {
+  // A real comment node has no `getAttribute`, so dropping the ELEMENT_NODE
+  // guard throws on it rather than merely mis-reading it.
+  const comment: StubNode = { nodeType: 8, textContent: "note", childNodes: [] };
+  assert.deepEqual(read([text("a"), comment, text("b")]), [{ kind: "text", value: "ab" }]);
+});
+
 test("tag matching is case-insensitive in both directions", () => {
   // `el` reports UPPERCASE like an HTML document; XML/XHTML reports lowercase.
   const lower = (tagName: string, children: StubNode[]): StubNode => ({
