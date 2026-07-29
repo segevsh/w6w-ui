@@ -29,6 +29,27 @@ export function edgeLane(e: Edge): "success" | "error" {
 }
 
 /**
+ * The id of the edge in `survivors` that `id` would duplicate, or `null` when it is
+ * free — **the one id-uniqueness test in this module**, shared by the creation path
+ * ({@link planConnect}) and the re-lane path ({@link planRelane}).
+ *
+ * Both paths must answer the same question because `flowEdgeId` is not injective
+ * over free-text step ids: a step literally named `b:error` makes `a → b` in the
+ * error lane and `a → "b:error"` in the success lane mint ONE id. React Flow's store
+ * is id-keyed, so a duplicate id is not an error — it is one of the two wires
+ * silently vanishing from the canvas, which reads as the editor losing the author's
+ * work. Two independent copies of this test is how one order (mark, then draw) got
+ * through while the other (draw, then mark) was refused.
+ *
+ * Always called with the edges that **survive** eviction, never the whole set: a
+ * collider the same call evicts is not a collision (see `flow-connect.test.ts`
+ * case 11).
+ */
+function collidingEdgeId(survivors: Edge[], id: string): string | null {
+  return survivors.find((e) => e.id === id)?.id ?? null;
+}
+
+/**
  * The hard rules for an edge `source → target` — the ones no amount of
  * replacement can satisfy: a real, *distinct* pair (no self-loops), no duplicate
  * edge, the target accepts an entry port (blocks connecting *into* a trigger,
@@ -42,6 +63,14 @@ export function edgeLane(e: Edge): "success" | "error" {
  * between the same two steps (D-T1-8 widened the engine's `skippedEdges` key so
  * they cannot collide), but v1 declines to author that pair because there are no
  * id'd source handles to pick the lane from (D-T1-7).
+ *
+ * A colliding minted **id** is deliberately NOT rejected here, even though
+ * {@link applyConnect} refuses it: this predicate is the live `isValidConnection`,
+ * and a `false` here means React Flow never fires `onConnect`, so the editor never
+ * gets to *say why*. That refusal is invisible (and, worse, lands in
+ * `onConnectEnd`'s "dropped on empty canvas" branch, which opens the step builder).
+ * Letting the drop through and refusing in `applyConnect` is what lets the reason
+ * paint — see {@link connectConflict}.
  */
 export function canConnect(
   source: string | null | undefined,
@@ -61,32 +90,20 @@ export function canConnect(
 }
 
 /**
- * Build the next edge set for a new `source → target` connection, **replacing**
- * whatever already occupied the source's exit or the target's entry so
- * single-slot ports stay at exactly one connection. Drops the oldest conflicting
- * edge(s) to make room, then appends the new one. Returns `null` when the
- * connection is disallowed by {@link canConnect}.
- *
- * The source's exit capacity is **per lane** (T3.2.2): success edges compete only
- * with success edges, error edges only with error edges. So an ordinary `out: 1`
- * step keeps the deliberate "a second drag re-points the wire" UX *within* a lane,
- * while additionally being able to hold one error edge — which is what makes a
- * `send → (error) → fallback` shape authorable at all. No `ports.out` bump is
- * needed, so every persisted definition and palette entry stays valid.
- *
- * The target's entry capacity stays **lane-blind**, and that asymmetry is the
- * point: a converging tail step receiving one success and one error edge is
- * governed by `ports.in` alone. Partitioning the target rule by lane too — the
- * plausible "symmetry" cleanup — would let a `ports.in: 1` node silently accept
- * two inbound edges.
+ * The plan for a new `source → target` connection: the resulting edge set, plus the
+ * id of an existing edge the minted id would **collide** with (`null` when it is
+ * safe). The creation-path twin of {@link planRelane}, deliberately the same shape —
+ * both public entry points read off this one plan, so the eviction arithmetic and
+ * the id-uniqueness test are computed once, in the right order (the collision is
+ * tested against the edges that SURVIVE eviction).
  */
-export function applyConnect(
+function planConnect(
   source: string | null | undefined,
   target: string | null | undefined,
   nodes: StepNode[],
   edges: Edge[],
-  when: "success" | "error" = "success",
-): Edge[] | null {
+  when: "success" | "error",
+): { next: Edge[]; conflict: string | null } | null {
   if (!canConnect(source, target, nodes, edges) || !source || !target) return null;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
@@ -115,7 +132,74 @@ export function applyConnect(
   // (it would see `undefined` otherwise). "success" is emitted as ABSENT on the
   // way out. The id comes from `flowEdgeId`, so an error edge is qualified and
   // cannot collide with its success sibling.
-  return addEdge({ source, target, id: flowEdgeId(source, target, when), data: { when } }, next);
+  const id = flowEdgeId(source, target, when);
+  return {
+    next: addEdge({ source, target, id, data: { when } }, next),
+    conflict: collidingEdgeId(next, id),
+  };
+}
+
+/**
+ * Build the next edge set for a new `source → target` connection, **replacing**
+ * whatever already occupied the source's exit or the target's entry so
+ * single-slot ports stay at exactly one connection. Drops the oldest conflicting
+ * edge(s) to make room, then appends the new one. Returns `null` when the
+ * connection is disallowed by {@link canConnect} — **or when the minted id would
+ * duplicate a surviving edge's id**, the same refusal {@link setEdgeWhen} performs
+ * through the same {@link collidingEdgeId} test.
+ *
+ * That last one closes the reverse order of the `:error` collision: marking `a → b`
+ * as the error lane is refused when `a → "b:error"` already exists, but *first*
+ * marking `a → b` Error and *then* drawing `a → "b:error"` used to be allowed and
+ * minted a duplicate id — React Flow's id-keyed store then held one wire for two
+ * edges (measured `storeSize 1 / 2`). Refusing here is narrow on purpose; rejecting
+ * the step id itself is the durable fix and would also have to reject ids inside
+ * workflows that already exist (FOLLOWUPS.md). The caller must surface the refusal —
+ * see {@link connectConflict}.
+ *
+ * The source's exit capacity is **per lane** (T3.2.2): success edges compete only
+ * with success edges, error edges only with error edges. So an ordinary `out: 1`
+ * step keeps the deliberate "a second drag re-points the wire" UX *within* a lane,
+ * while additionally being able to hold one error edge — which is what makes a
+ * `send → (error) → fallback` shape authorable at all. No `ports.out` bump is
+ * needed, so every persisted definition and palette entry stays valid.
+ *
+ * The target's entry capacity stays **lane-blind**, and that asymmetry is the
+ * point: a converging tail step receiving one success and one error edge is
+ * governed by `ports.in` alone. Partitioning the target rule by lane too — the
+ * plausible "symmetry" cleanup — would let a `ports.in: 1` node silently accept
+ * two inbound edges.
+ */
+export function applyConnect(
+  source: string | null | undefined,
+  target: string | null | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+  when: "success" | "error" = "success",
+): Edge[] | null {
+  const plan = planConnect(source, target, nodes, edges, when);
+  if (!plan || plan.conflict) return null;
+  return plan.next;
+}
+
+/**
+ * The id of the existing edge that drawing `source → target` would collide with, or
+ * `null` when the connection is safe (or refused for an ordinary reason — a
+ * duplicate pair, a self-loop, a portless step — which the drag already showed the
+ * user by marking the drop invalid). The creation-path twin of
+ * {@link edgeWhenConflict}, and the same channel: it lets the caller *name* the
+ * offending edge in an inline refusal instead of losing a wire silently. The editor
+ * selects that edge and renders the message in the edge-lane panel (never a browser
+ * dialog; see `.ai/conventions.md`).
+ */
+export function connectConflict(
+  source: string | null | undefined,
+  target: string | null | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+  when: "success" | "error" = "success",
+): string | null {
+  return planConnect(source, target, nodes, edges, when)?.conflict ?? null;
 }
 
 /**
@@ -135,8 +219,16 @@ function planRelane(
   when: "success" | "error",
   nodes: StepNode[],
 ): { next: Edge[]; conflict: string | null } | null {
-  const me = edges.find((e) => e.id === edgeId);
-  if (!me) return null;
+  // EXACTLY ONE edge must own `edgeId`. None ⇒ nothing to re-lane. Two or more ⇒ the
+  // edge set is already corrupt (a step id containing `->` mints a duplicate id —
+  // FOLLOWUPS.md), and both the lookup here and the replacement below match BY ID,
+  // so proceeding would rewrite EVERY match: the second edge's endpoints silently
+  // overwritten with the first's and then persisted through the host's onChange.
+  // Refuse instead — `null` is the refusal channel, and the caller already has a
+  // generic message for "this edge can't be switched right now".
+  const matches = edges.filter((e) => e.id === edgeId);
+  if (matches.length !== 1) return null;
+  const me = matches[0];
   const srcStep = nodes.find((n) => n.id === me.source)?.data.step;
   if (!srcStep) return null;
   const out = nodePortsForStep(srcStep).out;
@@ -151,6 +243,13 @@ function planRelane(
   // two success edges out of one step is over the editor's capacity but perfectly
   // valid, and clicking the already-active "Success" would then silently delete
   // the other wire. (Observed in the browser probe before this guard existed.)
+  //
+  // `e.source === me.source` is a CORRECTNESS barrier, not a filter for tidiness:
+  // capacity belongs to one step's exit port, so without it the census counts other
+  // steps' edges and the eviction deletes one of them — with `[a→b error, x→y
+  // success]`, re-laning `x→y` would return `['x->y:error']` alone, an unrelated
+  // step's wire gone. Pinned by `flow-connect.test.ts` ("the lane census is
+  // per-SOURCE").
   const others = edges.filter((e) => e.id !== edgeId);
   const sameLane =
     edgeLane(me) === when
@@ -172,8 +271,13 @@ function planRelane(
     className: visuals.className,
     label: visuals.label,
   };
-  const conflict = others.find((e) => !dropped.has(e.id) && e.id === relaned.id)?.id ?? null;
+  // The same id-uniqueness test the creation path runs, against the survivors only.
+  const conflict = collidingEdgeId(
+    others.filter((e) => !dropped.has(e.id)),
+    relaned.id,
+  );
   return {
+    // `edgeId` is single-owner (guarded above), so this replaces exactly one edge.
     next: edges.filter((e) => !dropped.has(e.id)).map((e) => (e.id === edgeId ? relaned : e)),
     conflict,
   };
@@ -195,6 +299,11 @@ function planRelane(
  * {@link edgeWhenConflict}); rejecting the step id itself is the durable fix and
  * is deliberately NOT done here, because it would also have to reject ids inside
  * workflows that already exist (FOLLOWUPS.md).
+ *
+ * It is refused for one more reason: an `edgeId` owned by more than one edge. That
+ * edge set is already corrupt, and re-laning by id would rewrite **every** match,
+ * overwriting the other edge's endpoints (`edgeWhenConflict` returns `null` there —
+ * there is no *other* edge to name, so the caller's generic refusal applies).
  */
 export function setEdgeWhen(
   edges: Edge[],

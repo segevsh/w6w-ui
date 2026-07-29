@@ -58,6 +58,7 @@ import { Modal } from "./components/Modal.tsx";
 import {
   applyConnect,
   canConnect,
+  connectConflict,
   edgeLane,
   edgeWhenConflict,
   renameStepInEdges,
@@ -111,6 +112,21 @@ const LANE_HINT =
   "Which outcome of the source step this edge carries. A new edge is always drawn on Success, " +
   "so to end up with two outgoing wires: draw the fallback edge first, mark it Error, " +
   "then draw the success edge. An error edge overrides the step’s “On error” policy.";
+
+/**
+ * The one wording for a refused edge id, shared by both routes into the collision —
+ * drawing a wire whose minted id is taken, and re-laning one onto a taken id. `lead`
+ * names what was refused; everything after it is identical because the cause is
+ * identical (`flowEdgeId` qualifies the error lane with `:error`, so a step id
+ * ending in `:error` makes two different edges mint one id, and React Flow's
+ * id-keyed store keeps one wire for the two — silent work loss). Rendered inline
+ * with `role="alert"`, never in a browser dialog (`.ai/conventions.md`).
+ */
+function idClashMessage(lead: string, id: string): string {
+  // One long template on purpose: `lint/style/useTemplate` forbids concatenating a
+  // template with a literal, and the formatter does not break string contents.
+  return `${lead}: the id “${id}” is already taken by another edge, because a step id ending in “:error” collides with the error-lane marker. Rename that step, then try again.`;
+}
 
 /**
  * The workflow state a given step can reference: the outputs of every step that
@@ -366,7 +382,31 @@ function Inner({
       if (readOnly) return;
       // applyConnect replaces a full single-slot port rather than ignoring the drop.
       const next = applyConnect(params.source, params.target, nodes, edges);
-      if (!next) return;
+      if (!next) {
+        // FAIL LOUDLY when the refusal is one the drag could not have shown. Every
+        // ordinary rule already ran in `isValidConnection` (React Flow marks the
+        // drop invalid and never fires this handler), so the only refusal that
+        // reaches here is a duplicate minted id — and that one is *invisible*:
+        // React Flow's id-keyed store would have held ONE wire for two edges, which
+        // reads as the editor losing the author's work.
+        //
+        // No new channel: `connectConflict` names the edge already holding the id,
+        // and the refusal renders in the edge-lane panel's `role="alert"` slot. The
+        // clashing edge is SELECTED — in React Flow's own store, not just our mirror
+        // state, so `onSelectionChange` (re-invoked on any re-render) confirms it
+        // instead of wiping it before paint — which both reveals that panel and
+        // highlights the wire the author has to rename.
+        const conflict = connectConflict(params.source, params.target, nodes, edges);
+        if (!conflict) return;
+        setEdges(edges.map((e) => ({ ...e, selected: e.id === conflict })));
+        setSelectedEdgeId(conflict);
+        setLaneError({
+          edgeId: conflict,
+          message: idClashMessage("Can’t draw that edge", conflict),
+        });
+        return;
+      }
+      setLaneError(null);
       setEdges(next);
       emitChange(nodes, next);
     },
@@ -458,7 +498,7 @@ function Inner({
         setLaneError({
           edgeId: selectedEdgeId,
           message: conflict
-            ? `Can’t switch this edge: the id “${conflict}” is already taken by another edge, because a step id ending in “:error” collides with the error-lane marker. Rename that step, then try again.`
+            ? idClashMessage("Can’t switch this edge", conflict)
             : "This edge can’t be switched right now.",
         });
         return;

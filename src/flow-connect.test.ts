@@ -13,12 +13,13 @@ import type { Edge } from "@xyflow/react";
 import {
   applyConnect,
   canConnect,
+  connectConflict,
   edgeLane,
   edgeWhenConflict,
   setEdgeWhen,
 } from "./flow-connect.ts";
 import type { NodePorts } from "./flow-types.ts";
-import type { StepNode } from "./flow-utils.ts";
+import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
 /** A canvas node for step `id`, optionally with persisted per-step ports. */
 function node(id: string, ports?: NodePorts): StepNode {
@@ -228,4 +229,82 @@ test("a step id ending ':error' is REFUSED, not silently collapsed to one edge",
   const relaned = setEdgeWhen(pair, "a->b:error", "success", ABCD);
   assert.ok(relaned, "the same-target pair must still be re-lanable");
   assert.deepEqual(pairs(relaned), ["a->b:success"]);
+});
+
+// ── T3.2.4. The same collision arriving from the CREATION side, in the order the
+// re-lane guard above cannot see: mark `a → b` Error first (allowed — nothing
+// collides yet), THEN draw `a → "b:error"`. Both mint `a->b:error`, and before this
+// node `canConnect` said yes and `applyConnect` handed React Flow two edges with one
+// id, of which the store keeps ONE (measured `storeSize 1 / 2`). Two independent
+// copies of the uniqueness rule is exactly why one order was guarded and the other
+// was not, so both paths now run the SAME test on the edges that survive eviction.
+
+test("drawing an edge whose minted id is TAKEN is refused, not silently collapsed", () => {
+  const nodes = [node("a"), node("b"), node("b:error")];
+  // Step 1: marking `a → b` as the error lane is allowed — there is no collider yet.
+  const relaned = setEdgeWhen([rf("a", "b", "success")], "a->b", "error", nodes);
+  assert.ok(relaned, "marking the only edge as the error lane is safe");
+  assert.deepEqual(
+    relaned.map((e) => e.id),
+    ["a->b:error"],
+  );
+  // Step 2: the wire the author now drags. Its minted id IS that edge's id.
+  assert.equal(
+    flowEdgeId("a", "b:error"),
+    relaned[0].id,
+    "the trap: two different edges, one React Flow id",
+  );
+  // `canConnect` stays TRUE on purpose — it is the live `isValidConnection`, and a
+  // false there means React Flow never fires `onConnect`, so the editor never gets
+  // to say why (the drop would silently land in the "dropped on empty canvas"
+  // branch). The refusal belongs to `applyConnect`, where it can be explained.
+  assert.equal(canConnect("a", "b:error", nodes, relaned), true);
+  assert.equal(applyConnect("a", "b:error", nodes, relaned), null);
+  // ...and it is NAMED, so the panel can point at the edge holding the id.
+  assert.equal(connectConflict("a", "b:error", nodes, relaned), "a->b:error");
+  // Refused means nothing was lost or overwritten: one edge in, one edge still out.
+  assert.deepEqual(pairs(relaned), ["a->b:error"]);
+  // The error lane of the same pair is a distinct id, so it is NOT refused blindly.
+  assert.ok(applyConnect("a", "b:error", nodes, relaned, "error"), "a distinct id is fine");
+  assert.equal(connectConflict("a", "b:error", nodes, relaned, "error"), null);
+});
+
+test("the lane census is per-SOURCE — re-laning x→y leaves another step's wire alone", () => {
+  const nodes = [node("a"), node("b"), node("x"), node("y")];
+  const next = setEdgeWhen(
+    [rf("a", "b", "error"), rf("x", "y", "success")],
+    "x->y",
+    "error",
+    nodes,
+  );
+  assert.ok(next, "the re-lane must be allowed");
+  // Exit capacity belongs to ONE step's port. Drop `e.source === me.source` from the
+  // census and `a → b` counts as competing for `x`'s error slot, so it is evicted:
+  // the set becomes ["x->y:error"] alone and an unrelated step's wire is gone with
+  // no error at all — the same silent wire loss, one step removed.
+  assert.deepEqual(pairs(next), ["a->b:error", "x->y:error"]);
+  const untouched = next.find((e) => e.source === "a");
+  assert.equal(untouched?.id, "a->b:error");
+  assert.equal(untouched?.target, "b");
+});
+
+test("a DUPLICATE edge id is refused rather than rewriting both matching edges", () => {
+  // `flowEdgeId` is not injective over step ids containing `->` either: `a → "b->c"`
+  // and `"a->b" → c` both mint `a->b->c`. The lookup and the replacement both match
+  // BY ID, so one click used to rewrite EVERY match — the second edge's endpoints
+  // overwritten with the first's and then persisted through the host's onChange.
+  const nodes = [node("a"), node("b->c"), node("a->b"), node("c")];
+  const dup = [rf("a", "b->c", "success"), rf("a->b", "c", "success")];
+  assert.equal(dup[0].id, dup[1].id, "the corrupt precondition: two edges, one id");
+  assert.equal(setEdgeWhen(dup, "a->b->c", "error", nodes), null);
+  // There is no *other* edge to name here, so the caller's generic refusal applies.
+  assert.equal(edgeWhenConflict(dup, "a->b->c", "error", nodes), null);
+  assert.deepEqual(
+    dup.map((e) => [e.source, e.target, edgeLane(e)]),
+    [
+      ["a", "b->c", "success"],
+      ["a->b", "c", "success"],
+    ],
+    "neither edge's endpoints or lane were touched",
+  );
 });
