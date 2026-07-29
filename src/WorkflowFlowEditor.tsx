@@ -572,6 +572,16 @@ function Inner({
   // post without one — so a canvas run was logged but never written back onto
   // the fixture. Best-effort throughout: a persist failure is logged and never
   // surfaces as a failed run.
+  //
+  // The two calls fail INDEPENDENTLY, and deliberately so: remembering the
+  // values and recording that the run happened are different obligations, and
+  // only the first can fail on its own (`POST …/tests` 404s on an unknown
+  // workflow, `POST …/test-runs` does not). Folding both into one `try` would
+  // make a fixture-save failure swallow the run's `step_test_runs` row *and* the
+  // `run_log` ledger row the server writes per POST — i.e. silently lose run
+  // history over a persistence hiccup. So a failed save degrades to
+  // `stepTestId: null`: a run recorded with no fixture attached, which is
+  // exactly what the route already accepts (step-test-runs.ts).
   const persistStepRun = useCallback(
     (
       stepId: string,
@@ -579,12 +589,12 @@ function Inner({
       outcome: { status: string; output?: unknown; error?: unknown },
     ) => {
       void (async () => {
-        const saved = await api.saveStepTest(value.id, stepId, {
-          input: fixture.input,
-          with: fixture.with,
+        const saved = await api.saveStepTest(value.id, stepId, fixture).catch((err) => {
+          console.error("step run fixture save failed", err);
+          return null;
         });
         await api.recordStepTestRun(value.id, stepId, {
-          stepTestId: saved.id,
+          stepTestId: saved?.id ?? null,
           status: outcome.status,
           input: fixture.input,
           output: outcome.output,
