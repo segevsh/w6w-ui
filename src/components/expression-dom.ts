@@ -142,20 +142,28 @@ export function readParts(root: HTMLElement): ExprPart[] {
 }
 
 /**
+ * Is this the filler `<br>` closing a block — the caret's landing pad, never
+ * part of the value? Callers only ever ask it about a block's LAST child, which
+ * is what makes "a `<br>` here" and "a filler" the same question (`readParts`
+ * skips exactly this node).
+ *
+ * The test is deliberately narrower than "is an element": a block ending in a
+ * CHIP is also ending in an element, and a chip is `contentEditable="false"`, so
+ * it gives the caret nowhere to land and still needs a filler after it.
+ */
+const isFillerBreak = (node: Node | null): boolean =>
+  !!node && ((node as HTMLElement).tagName ?? "").toLowerCase() === "br";
+
+/**
  * Append the filler `<br>` that lets a `"\n"` ENDING this block render.
  *
  * Idempotent — a block already closed by a `<br>` is left alone. That guard is
  * load-bearing, not tidiness: a second filler would no longer be the block's
  * last child, so `readParts` would read it as a real newline and the value would
  * grow a blank line per keystroke-that-triggers-a-fill.
- *
- * The `tagName` test is deliberately narrower than "is an element": a block
- * ending in a CHIP (also an element) still needs a filler, because a chip is
- * `contentEditable="false"` and gives the caret nowhere to land either.
  */
 function fillBlock(block: HTMLElement): void {
-  const last = block.lastChild as HTMLElement | null;
-  if (last && (last.tagName ?? "").toLowerCase() === "br") return;
+  if (isFillerBreak(block.lastChild)) return;
   block.appendChild(block.ownerDocument.createElement("br"));
 }
 
@@ -227,9 +235,8 @@ export function placeCaretAtEnd(el: HTMLElement): void {
   const sel = el.ownerDocument.getSelection();
   if (!sel) return;
   const range = el.ownerDocument.createRange();
-  const last = el.lastChild as HTMLElement | null;
-  if (last && (last.tagName ?? "").toLowerCase() === "br") {
-    range.setStartBefore(last);
+  if (isFillerBreak(el.lastChild)) {
+    range.setStartBefore(el.lastChild as Node);
     range.collapse(true);
   } else {
     range.selectNodeContents(el);
@@ -253,7 +260,13 @@ export function insertNodeAtCaret(editor: HTMLElement, node: Node): void {
     sel?.removeAllRanges();
     sel?.addRange(after);
   } else {
-    editor.appendChild(node);
+    // No caret in the editor (e.g. a source clicked in the modal's left pane
+    // before the editor was ever focused). Insert at the end of the CONTENT —
+    // which is before a trailing filler, not after it: appending past the filler
+    // would stop it being the block's last child and `readParts` would then read
+    // it as a real newline ("a\n" + a chip saved "a\n\n{{ … }}").
+    if (isFillerBreak(editor.lastChild)) editor.insertBefore(node, editor.lastChild);
+    else editor.appendChild(node);
     placeCaretAtEnd(editor);
   }
   editor.focus();
