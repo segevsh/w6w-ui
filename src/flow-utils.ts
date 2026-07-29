@@ -15,6 +15,26 @@ export interface StepNodeData extends Record<string, unknown> {
 
 export type StepNode = Node<StepNodeData>;
 
+/**
+ * The React Flow id for the edge `from → to` in a given lane — **the one place**
+ * the id convention lives.
+ *
+ * A success edge keeps the historic unqualified `from->to` spelling (so no
+ * persisted definition changes id when it is reloaded); an error edge is
+ * **qualified** with `:error`, because the model permits a success edge AND an
+ * error edge between the same pair (core `rfcs/workflow.md` · `Edge.when`
+ * amendment; D-T1-8) and two edges sharing one id would be collapsed by React
+ * Flow's id-keyed store — silently losing a lane.
+ *
+ * Every site that mints or rewrites an edge id calls this: {@link workflowToFlow},
+ * `applyConnect` (edge creation) and `renameStepInEdges` (the step-rename
+ * rewrite) in `flow-connect.ts`. A second hand-rolled copy of the template is
+ * exactly how the rename path came to drop the qualifier.
+ */
+export function flowEdgeId(from: string, to: string, when?: FlowEdge["when"]): string {
+  return when === "error" ? `${from}->${to}:error` : `${from}->${to}`;
+}
+
 /** Nice constants — tunable but stable defaults so layouts don't jitter. */
 const COLUMN_WIDTH = 240;
 const ROW_HEIGHT = 100;
@@ -80,7 +100,7 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
     const when = e.when ?? "success";
     if (when !== "error") {
       return {
-        id: `${e.from}->${e.to}`,
+        id: flowEdgeId(e.from, e.to, when),
         source: e.from,
         target: e.to,
         animated: false,
@@ -90,9 +110,10 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
     // The model permits a success edge AND an error edge between the same pair,
     // so an error edge's id is qualified — two edges sharing one id would be
     // collapsed by React Flow's store and one lane would be silently lost. A
-    // success edge's id is left exactly as before.
+    // success edge's id is left exactly as before. The qualifier itself comes
+    // from {@link flowEdgeId}, which every other id site also calls.
     return {
-      id: `${e.from}->${e.to}:error`,
+      id: flowEdgeId(e.from, e.to, when),
       source: e.from,
       target: e.to,
       animated: false,

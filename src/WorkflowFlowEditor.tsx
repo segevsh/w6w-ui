@@ -10,7 +10,9 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
-  addEdge,
+  // Type-only now: `addEdge` itself is called inside `flow-connect.ts`; this file
+  // only borrows its parameter type for the `onConnect` handler.
+  type addEdge,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -51,6 +53,9 @@ import {
 } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+// The connection rules live in a JSX-free `.ts` module so `node --test` can run
+// them (see `flow-connect.ts`). This file is their only production caller.
+import { applyConnect, canConnect, renameStepInEdges } from "./flow-connect.ts";
 import {
   type FlowStep,
   type FlowWorkflow,
@@ -84,73 +89,6 @@ import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./ty
  */
 function isTriggerApp(app: string): boolean {
   return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
-}
-
-/**
- * The hard rules for an edge `source → target` — the ones no amount of
- * replacement can satisfy: a real, *distinct* pair (no self-loops), no duplicate
- * edge, the target accepts an entry port (blocks connecting *into* a trigger,
- * which declares `in: 0`), and the source has an exit port. Port **capacity** is
- * deliberately NOT checked here: a full single-slot port is freed by replacement
- * (see `applyConnect`), so dragging a new wire from an already-connected node
- * re-points it rather than being rejected. Used as the live `isValidConnection`.
- */
-function canConnect(
-  source: string | null | undefined,
-  target: string | null | undefined,
-  nodes: StepNode[],
-  edges: Edge[],
-): boolean {
-  if (!source || !target || source === target) return false;
-  if (edges.some((e) => e.source === source && e.target === target)) return false;
-  const srcStep = nodes.find((n) => n.id === source)?.data.step;
-  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
-  if (!srcStep || !tgtStep) return false;
-  // Per-step ports (T2.3.1): a persisted `ports.in > 1` lets multiple edges land.
-  const srcPorts = nodePortsForStep(srcStep);
-  const tgtPorts = nodePortsForStep(tgtStep);
-  return srcPorts.out >= 1 && tgtPorts.in >= 1;
-}
-
-/**
- * Build the next edge set for a new `source → target` connection, **replacing**
- * whatever already occupied the source's exit or the target's entry so
- * single-slot ports stay at exactly one connection. Drops the oldest conflicting
- * edge(s) to make room, then appends the new one. Returns `null` when the
- * connection is disallowed by {@link canConnect}.
- */
-function applyConnect(
-  source: string | null | undefined,
-  target: string | null | undefined,
-  nodes: StepNode[],
-  edges: Edge[],
-): Edge[] | null {
-  if (!canConnect(source, target, nodes, edges) || !source || !target) return null;
-  const srcStep = nodes.find((n) => n.id === source)?.data.step;
-  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
-  if (!srcStep || !tgtStep) return null;
-  // Per-step ports (T2.3.1): capacity honors a persisted `ports.in`/`ports.out`,
-  // so a fan-in node with `ports.in > 1` keeps prior edges instead of dropping them.
-  const srcPorts = nodePortsForStep(srcStep);
-  const tgtPorts = nodePortsForStep(tgtStep);
-  let next = edges;
-  // Free the source's exit port: drop the oldest same-source edges so adding one
-  // more stays within out-capacity (for the current 1-out model, replaces it).
-  const fromSrc = next.filter((e) => e.source === source);
-  if (fromSrc.length >= srcPorts.out) {
-    const drop = new Set(fromSrc.slice(0, fromSrc.length - srcPorts.out + 1).map((e) => e.id));
-    next = next.filter((e) => !drop.has(e.id));
-  }
-  // Free the target's entry port likewise.
-  const toTgt = next.filter((e) => e.target === target);
-  if (toTgt.length >= tgtPorts.in) {
-    const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
-    next = next.filter((e) => !drop.has(e.id));
-  }
-  // Stamp the lane at creation: a freshly drawn wire is a success edge, and
-  // flowToWorkflow reads `data.when` back off the edge (it would see
-  // `undefined` otherwise). "success" is emitted as ABSENT on the way out.
-  return addEdge({ source, target, id: `${source}->${target}`, data: { when: "success" } }, next);
 }
 
 /**
@@ -562,11 +500,13 @@ function Inner({
           : n,
       );
       if (idChanged) {
-        const nextEdges = edges.map((e) => {
-          const source = e.source === prevId ? next.id : e.source;
-          const target = e.target === prevId ? next.id : e.target;
-          return { ...e, source, target, id: `${source}->${target}` };
-        });
+        // Re-point the endpoints AND re-mint each id in the edge's own lane. This
+        // used to rebuild every id unqualified, dropping an error edge's `:error`
+        // suffix so a same-target success+error pair collapsed into one edge in
+        // React Flow's id-keyed store. The lane-aware rewrite lives in
+        // `flow-connect.ts` and mints ids through the one shared `flowEdgeId`
+        // helper — never a second copy of the template.
+        const nextEdges = renameStepInEdges(edges, prevId, next.id);
         setNodes(nextNodes);
         setEdges(nextEdges);
         if (selectedId === prevId) setSelectedId(next.id);

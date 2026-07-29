@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge } from "@xyflow/react";
+import { renameStepInEdges } from "./flow-connect.ts";
 import type { FlowWorkflow } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 
@@ -75,4 +76,68 @@ test("round-trip — flowToWorkflow(workflowToFlow(wf)) reproduces the authored 
   };
   const { nodes, edges } = workflowToFlow(wf);
   assert.deepEqual(flowToWorkflow(wf, nodes, edges).edges, wf.edges);
+});
+
+// ── The same-target pair (D-T1-8): one success edge AND one error edge between
+// the SAME two steps. The model permits it, so an error edge's React Flow id is
+// qualified with `:error`. Until per-lane exit capacity (T3.2.2) the pair was
+// unauthorable, which is why the qualifier had no regression coverage — dropping
+// it left this suite fully green. These three cases pin it.
+
+/** `a → b` twice: once as success, once as the error lane. */
+const SAME_TARGET_PAIR: FlowWorkflow = {
+  ...WF,
+  edges: [
+    { from: "a", to: "b" },
+    { from: "a", to: "b", when: "error" },
+  ],
+};
+
+test("same-target pair — the success and error edges get DISTINCT React Flow ids", () => {
+  const { edges } = workflowToFlow(SAME_TARGET_PAIR);
+  assert.deepEqual(
+    edges.map((e) => e.id),
+    ["a->b", "a->b:error"],
+  );
+});
+
+test("same-target pair — survives an id-keyed Map (React Flow's store) with 2 entries", () => {
+  // This is the assertion that actually models the loss: React Flow keys its
+  // edge store by id, so two edges sharing one id collapse to one and a whole
+  // lane disappears from the canvas without any error.
+  const { edges } = workflowToFlow(SAME_TARGET_PAIR);
+  const store = new Map(edges.map((e) => [e.id, e]));
+  assert.equal(store.size, 2);
+  assert.equal(store.get("a->b")?.data?.when, "success");
+  assert.equal(store.get("a->b:error")?.data?.when, "error");
+});
+
+test("same-target pair — round-trips deep-equal with the error edge FIRST as well as second", () => {
+  for (const order of [
+    SAME_TARGET_PAIR.edges ?? [],
+    [...(SAME_TARGET_PAIR.edges ?? [])].reverse(),
+  ]) {
+    const wf: FlowWorkflow = { ...WF, edges: order };
+    const { nodes, edges } = workflowToFlow(wf);
+    assert.equal(new Map(edges.map((e) => [e.id, e])).size, 2, "both lanes must reach the canvas");
+    assert.deepEqual(flowToWorkflow(wf, nodes, edges).edges, order);
+  }
+});
+
+test("renaming a step keeps the lane qualifier — a same-target pair stays TWO edges", () => {
+  // `updateStep`'s id rewrite (via renameStepInEdges) used to rebuild every id
+  // as `${source}->${target}`, dropping `:error` — so renaming `a` collapsed the
+  // pair into one edge. Both id sites now mint through the shared `flowEdgeId`.
+  const { edges } = workflowToFlow(SAME_TARGET_PAIR);
+  const renamed = renameStepInEdges(edges, "a", "sendgrid");
+  assert.deepEqual(
+    renamed.map((e) => e.id),
+    ["sendgrid->b", "sendgrid->b:error"],
+  );
+  assert.equal(new Map(renamed.map((e) => [e.id, e])).size, 2);
+  // The endpoints and the lanes both moved across intact.
+  assert.deepEqual(
+    renamed.map((e) => `${e.source}->${e.target}:${e.data?.when}`),
+    ["sendgrid->b:success", "sendgrid->b:error"],
+  );
 });
