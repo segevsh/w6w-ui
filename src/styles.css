@@ -602,16 +602,34 @@
   padding: 0;
   min-height: 0;
 }
-/* A boolean field's checkbox rides bare inside the fx-wrap (label sits above via
-   FxField). Keep it natural-width and vertically centered against the ƒx — the
-   min-height is the wrapper's 38px less its 4px padding and 1px borders. */
-.w6w-fx-wrap > .w6w-bool-field {
-  display: inline-flex;
+/* The OTHER wrapper FxField can render (`variant="inline"`). A control that does
+   not FILL a text-field box — today only a `boolean`'s ~13px checkbox — opts out
+   of the box at the component seam and lands here instead, so `.w6w-fx-wrap`'s
+   chrome above is never applied and nothing has to be clawed back with a more
+   specific selector. Layout is the review's sketch: <checkbox> <ƒx> <label>,
+   one row, no border/background/padding/min-height of its own. */
+.w6w-fx-inline {
+  display: flex;
   align-items: center;
-  min-height: 28px;
+  gap: 8px;
 }
-/* The ƒx itself is a decoration inside the wrapper's box: no chrome, colour only. */
-.w6w-fx-wrap .w6w-expr-fx {
+.w6w-fx-inline > input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+/* The label reads as the control's own text, next to it (mirrors
+   `.w6w-array-check` above, the existing inline-checkbox idiom). */
+.w6w-fx-inline-label {
+  color: var(--w6w-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+/* The ƒx itself is a decoration inside whichever wrapper holds it: no chrome,
+   colour only. This is where the UA button border/background is removed (the
+   `.w6w-expr-fx` block below declares neither), so the inline wrapper has to be
+   listed here too or its ƒx comes back as a grey rounded button. */
+.w6w-fx-wrap .w6w-expr-fx,
+.w6w-fx-inline .w6w-expr-fx {
   border: none;
   background: transparent;
 }
