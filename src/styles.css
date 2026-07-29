@@ -618,8 +618,19 @@
   margin: 0;
 }
 /* The label reads as the control's own text, next to it (mirrors
-   `.w6w-array-check` above, the existing inline-checkbox idiom). */
+   `.w6w-array-check` above, the existing inline-checkbox idiom).
+   `margin: 0` is LOAD-BEARING, not tidiness: a host page may carry an unscoped
+   top-level `label { … margin-bottom: 10px }` (studio's own sheet does, at
+   `studio/src/styles.css:499`), and since it is layered AFTER this file any
+   property this block leaves undeclared is the host's. A bottom margin inside an
+   `align-items: center` row lifts the text off the row's centre line — measured
+   5px above the checkbox and the ƒx before this declaration existed. Every other
+   element of the row is defended the same way: the checkbox's `margin: 0` above
+   out-specifies a host `input[type="checkbox"] { margin-right: … }` (0,2,1 vs
+   0,1,1), and the ƒx's chrome is pinned by `.w6w-fx-inline .w6w-expr-fx` below.
+   A component that only lines up when the host sheet cooperates is broken. */
 .w6w-fx-inline-label {
+  margin: 0;
   color: var(--w6w-text);
   font-size: 13px;
   cursor: pointer;
