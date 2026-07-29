@@ -14,7 +14,7 @@
  * from `index.ts` / `flow.ts`.
  */
 import { type Edge, addEdge } from "@xyflow/react";
-import { nodePortsForStep } from "./flow-types.ts";
+import { edgeVisuals, nodePortsForStep } from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
 /**
@@ -116,6 +116,110 @@ export function applyConnect(
   // way out. The id comes from `flowEdgeId`, so an error edge is qualified and
   // cannot collide with its success sibling.
   return addEdge({ source, target, id: flowEdgeId(source, target, when), data: { when } }, next);
+}
+
+/**
+ * The plan for re-laning one edge: the resulting edge set, plus the id of an
+ * existing edge it would **collide** with (`null` when it is safe).
+ *
+ * Both public entry points below read off this, so the eviction arithmetic and the
+ * collision test are computed once, in the right order — the collision is checked
+ * against the edges that SURVIVE eviction. Checking it against all edges instead
+ * would refuse a legitimate switch: re-laning the error half of a same-target
+ * pair back to success mints the success sibling's id, but that sibling is
+ * evicted by the very same call (see `flow-connect.test.ts` case 11).
+ */
+function planRelane(
+  edges: Edge[],
+  edgeId: string,
+  when: "success" | "error",
+  nodes: StepNode[],
+): { next: Edge[]; conflict: string | null } | null {
+  const me = edges.find((e) => e.id === edgeId);
+  if (!me) return null;
+  const srcStep = nodes.find((n) => n.id === me.source)?.data.step;
+  if (!srcStep) return null;
+  const out = nodePortsForStep(srcStep).out;
+  // Free the DESTINATION lane at the source, by exactly the rule `applyConnect`
+  // applies on creation: drop the oldest same-source edges *of that lane* so this
+  // one fits within out-capacity. `me` is excluded — it is the edge moving in, so
+  // the others must leave room for one more. The other lane is untouched.
+  //
+  // ...but ONLY when the edge is actually MOVING. An edge already in `when`
+  // occupies that lane already, so there is nothing to free, and counting its
+  // siblings as competitors makes a no-op destructive: a definition loaded with
+  // two success edges out of one step is over the editor's capacity but perfectly
+  // valid, and clicking the already-active "Success" would then silently delete
+  // the other wire. (Observed in the browser probe before this guard existed.)
+  const others = edges.filter((e) => e.id !== edgeId);
+  const sameLane =
+    edgeLane(me) === when
+      ? []
+      : others.filter((e) => e.source === me.source && edgeLane(e) === when);
+  const dropped = new Set<string>(
+    sameLane.length >= out ? sameLane.slice(0, sameLane.length - out + 1).map((e) => e.id) : [],
+  );
+  // The lane rides on `data.when`, the visuals come from the shared
+  // `edgeVisuals`, and the id is re-minted because it ENCODES the lane
+  // (`flowEdgeId`). `className`/`label` are assigned rather than spread: for
+  // "success" `edgeVisuals` returns `{}`, and spreading that would leave a stale
+  // error class on an edge being moved back to the success lane.
+  const visuals = edgeVisuals(when);
+  const relaned: Edge = {
+    ...me,
+    id: flowEdgeId(me.source, me.target, when),
+    data: { ...me.data, when },
+    className: visuals.className,
+    label: visuals.label,
+  };
+  const conflict = others.find((e) => !dropped.has(e.id) && e.id === relaned.id)?.id ?? null;
+  return {
+    next: edges.filter((e) => !dropped.has(e.id)).map((e) => (e.id === edgeId ? relaned : e)),
+    conflict,
+  };
+}
+
+/**
+ * Re-lane one edge. Updates its `data.when`, its visuals and its id, and frees
+ * the destination lane by dropping the oldest other same-source edge in that lane
+ * when it is over capacity — the same rule `applyConnect` applies on creation.
+ *
+ * Returns a **new** array and mutates nothing (React Flow's state handle compares
+ * by identity), or **`null` when the switch must be refused** — the `applyConnect`
+ * idiom. It is refused when the re-minted id would duplicate a surviving edge's
+ * id, which happens for a step id ending in `:error`: `flowEdgeId` qualifies the
+ * error lane with that same suffix, so `a → b` in the error lane and `a → "b:error"`
+ * in the success lane mint one id, and React Flow's id-keyed store would collapse
+ * them — one wire silently vanishing from the canvas, which reads as the editor
+ * losing the author's work. The caller must surface the refusal (see
+ * {@link edgeWhenConflict}); rejecting the step id itself is the durable fix and
+ * is deliberately NOT done here, because it would also have to reject ids inside
+ * workflows that already exist (FOLLOWUPS.md).
+ */
+export function setEdgeWhen(
+  edges: Edge[],
+  edgeId: string,
+  when: "success" | "error",
+  nodes: StepNode[],
+): Edge[] | null {
+  const plan = planRelane(edges, edgeId, when, nodes);
+  if (!plan || plan.conflict) return null;
+  return plan.next;
+}
+
+/**
+ * The id of the existing edge that {@link setEdgeWhen} would collide with, or
+ * `null` when the switch is safe. Lets the caller *name* the offending edge in an
+ * inline refusal instead of failing silently — the editor renders it in the
+ * edge-lane panel (never a browser dialog; see `.ai/conventions.md`).
+ */
+export function edgeWhenConflict(
+  edges: Edge[],
+  edgeId: string,
+  when: "success" | "error",
+  nodes: StepNode[],
+): string | null {
+  return planRelane(edges, edgeId, when, nodes)?.conflict ?? null;
 }
 
 /**

@@ -10,7 +10,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge } from "@xyflow/react";
-import { applyConnect, canConnect, edgeLane } from "./flow-connect.ts";
+import {
+  applyConnect,
+  canConnect,
+  edgeLane,
+  edgeWhenConflict,
+  setEdgeWhen,
+} from "./flow-connect.ts";
 import type { NodePorts } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
 
@@ -105,6 +111,121 @@ test("canConnect is unchanged — a duplicate pair and a self-loop are still rej
   // ...and the check is lane-blind, so the error drag onto the same pair is
   // refused as well — `applyConnect` returns null rather than an edge set.
   assert.equal(applyConnect("a", "b", ABCD, [rf("a", "b", "success")], "error"), null);
+  // BOTH DIRECTIONS. Making the duplicate check lane-aware left this suite fully
+  // green while admitting a SUCCESS `a→b` on top of an existing ERROR `a→b` —
+  // exactly the pair D-T1-8 permits in the model and v1 declines to author. This
+  // node is the first that lets a user create an error edge, so the direction
+  // that used to be unreachable is now the one that matters.
+  assert.equal(canConnect("a", "b", ABCD, [rf("a", "b", "error")]), false);
   assert.equal(canConnect("a", "a", ABCD, []), false);
   assert.equal(canConnect("a", "b", ABCD, []), true);
+});
+
+// ── setEdgeWhen: re-laning an EXISTING edge from the edge-level control. The
+// trap: it is not a one-line `data.when` write. The destination lane has the same
+// per-lane exit capacity `applyConnect` honours, the visuals must be re-stamped
+// from the shared `edgeVisuals` (a stale error class is the visible symptom), the
+// id encodes the lane and must be re-minted, and the result must be a NEW array
+// or React Flow's identity-compared state handle will not re-render.
+
+test("setEdgeWhen marks a success edge as 'error' — visuals follow, the sibling survives", () => {
+  // Two success edges out of `a`: a loaded definition can carry that (capacity is
+  // an editor rule, not a model rule), and it is what makes "the other one
+  // survives" assertable.
+  const next = setEdgeWhen(
+    [rf("a", "b", "success"), rf("a", "c", "success")],
+    "a->b",
+    "error",
+    ABCD,
+  );
+  assert.ok(next, "the re-lane must be allowed");
+  assert.deepEqual(pairs(next), ["a->b:error", "a->c:success"]);
+  const me = next.find((e) => e.target === "b");
+  assert.equal(me?.data?.when, "error");
+  assert.match(String(me?.className ?? ""), /w6w-edge-error/);
+  assert.ok(me?.label, "an error edge is labelled on the canvas");
+  // The id encodes the lane, so it is re-minted through `flowEdgeId`.
+  assert.equal(me?.id, "a->b:error");
+
+  // ...and choosing the lane the edge is ALREADY on must not evict the sibling
+  // either. Without that guard the eviction rule treats the sibling as competing
+  // for the slot this edge already occupies, so clicking the already-active
+  // "Success" silently DELETES a wire — observed in the browser probe.
+  const same = setEdgeWhen(
+    [rf("a", "b", "success"), rf("a", "c", "success")],
+    "a->b",
+    "success",
+    ABCD,
+  );
+  assert.ok(same, "a same-lane call is allowed");
+  assert.deepEqual(pairs(same), ["a->b:success", "a->c:success"]);
+});
+
+test("setEdgeWhen into a FULL lane evicts — [a→b error, a→c success], a→c to error", () => {
+  const next = setEdgeWhen([rf("a", "b", "error"), rf("a", "c", "success")], "a->c", "error", ABCD);
+  assert.ok(next, "the re-lane must be allowed");
+  assert.deepEqual(pairs(next), ["a->c:error"]);
+  assert.equal(next.filter((e) => e.source === "a" && edgeLane(e) === "error").length, 1);
+  assert.equal(
+    next.some((e) => e.target === "b"),
+    false,
+    "the previous error edge was evicted",
+  );
+});
+
+test("setEdgeWhen back to 'success' clears the visuals AND evicts the success incumbent", () => {
+  const next = setEdgeWhen(
+    [rf("a", "b", "success"), rf("a", "c", "error")],
+    "a->c:error",
+    "success",
+    ABCD,
+  );
+  assert.ok(next, "the re-lane must be allowed");
+  assert.deepEqual(pairs(next), ["a->c:success"]);
+  const me = next[0];
+  assert.equal(me.id, "a->c");
+  assert.equal(me.data?.when, "success");
+  // A spread of `edgeVisuals("success")` (an empty object) would leave both of
+  // these in place — the edge would still be painted and labelled as the error lane.
+  assert.doesNotMatch(String(me.className ?? ""), /w6w-edge-error/);
+  assert.equal(me.label, undefined);
+});
+
+test("setEdgeWhen does not mutate its input — neither the array nor the edge objects", () => {
+  const edges = [rf("a", "b", "success"), rf("a", "c", "success")];
+  const before = structuredClone(edges);
+  const next = setEdgeWhen(edges, "a->b", "error", ABCD);
+  assert.ok(next, "the re-lane must be allowed");
+  assert.notEqual(next, edges, "a new array — React Flow compares by identity");
+  assert.deepEqual(edges, before, "the input array and its edge objects are untouched");
+});
+
+// ── ADDENDUM A2. `flowEdgeId` qualifies the error lane with `:error`, so it is
+// not injective over free-text step ids: a step literally named `b:error` lets
+// `a → b` (error) and `a → "b:error"` (success) mint ONE id, and React Flow's
+// id-keyed store collapses them — a wire vanishing with no error at all, which
+// reads as the editor losing the author's work. Reproduced by the T3.2.2
+// evaluator on `ca8353f` as `storeSize 1 / 2`; unreachable until THIS node made
+// the error lane authorable. Refusing loudly is the guard; validating step ids is
+// the durable fix and is deliberately out of scope (it would also reject ids in
+// workflows that already exist — FOLLOWUPS.md).
+
+test("a step id ending ':error' is REFUSED, not silently collapsed to one edge", () => {
+  const nodes = [node("a"), node("b"), node("b:error")];
+  const edges = [rf("a", "b:error", "success"), rf("a", "b", "success")];
+  assert.equal(edges[0].id, "a->b:error", "the collider: a plain edge to a step named b:error");
+  // Named, so the panel can say WHICH edge is in the way.
+  assert.equal(edgeWhenConflict(edges, "a->b", "error", nodes), "a->b:error");
+  assert.equal(setEdgeWhen(edges, "a->b", "error", nodes), null);
+  // Refused means nothing was lost: the caller still holds two distinct edges.
+  assert.equal(new Map(edges.map((e) => [e.id, e])).size, 2);
+
+  // ...and the guard is EVICTION-AWARE, not merely paranoid: the error half of a
+  // same-target pair re-lanes to success fine, because minting `a->b` is safe
+  // once the success incumbent it would clash with is evicted by the same call.
+  const pair = [rf("a", "b", "success"), rf("a", "b", "error")];
+  assert.equal(edgeWhenConflict(pair, "a->b:error", "success", ABCD), null);
+  const relaned = setEdgeWhen(pair, "a->b:error", "success", ABCD);
+  assert.ok(relaned, "the same-target pair must still be re-lanable");
+  assert.deepEqual(pairs(relaned), ["a->b:success"]);
 });

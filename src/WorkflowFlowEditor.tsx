@@ -55,7 +55,14 @@ import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
-import { applyConnect, canConnect, renameStepInEdges } from "./flow-connect.ts";
+import {
+  applyConnect,
+  canConnect,
+  edgeLane,
+  edgeWhenConflict,
+  renameStepInEdges,
+  setEdgeWhen,
+} from "./flow-connect.ts";
 import {
   type FlowStep,
   type FlowWorkflow,
@@ -90,6 +97,20 @@ import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./ty
 function isTriggerApp(app: string): boolean {
   return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
 }
+
+/**
+ * The authoring recipe for the second outgoing wire, shown on the lane control.
+ *
+ * Every new edge is created in the SUCCESS lane (`applyConnect`'s default), and
+ * each lane holds one edge out of an `out: 1` step — so drawing the success edge
+ * first and then dragging a second one just re-points the first (the deliberate
+ * single-slot UX). Marking the first wire as the error lane frees the success
+ * lane, which is why the order matters.
+ */
+const LANE_HINT =
+  "Which outcome of the source step this edge carries. A new edge is always drawn on Success, " +
+  "so to end up with two outgoing wires: draw the fallback edge first, mark it Error, " +
+  "then draw the success edge. An error edge overrides the step’s “On error” policy.";
 
 /**
  * The workflow state a given step can reference: the outputs of every step that
@@ -403,6 +424,56 @@ function Inner({
       emitChange(nextNodes, nextEdges);
     },
     [nodes, edges, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
+  );
+
+  // ── The edge-level lane control (`Run on: Success / Error`) ─────────────────
+  // Reuses the selection state that already exists; nothing new is tracked but the
+  // refusal message, which renders INLINE in the panel. Never a browser dialog —
+  // same rule as the delete confirm above (.ai/conventions.md · No browser dialogs).
+  // Scoped to the edge it is about, NOT cleared from `onSelectionChange`: React
+  // Flow re-invokes that callback after any re-render (it is an inline lambda, so
+  // it re-subscribes), which clears the message before it is ever painted — a
+  // refusal that renders for zero frames is the same as failing silently.
+  const [laneError, setLaneError] = useState<{ edgeId: string; message: string } | null>(null);
+  const selectedEdge = useMemo(
+    () => edges.find((e) => e.id === selectedEdgeId) ?? null,
+    [edges, selectedEdgeId],
+  );
+
+  const setEdgeLane = useCallback(
+    (when: "success" | "error") => {
+      if (readOnly || !selectedEdgeId) return;
+      const me = edges.find((e) => e.id === selectedEdgeId);
+      if (!me) return;
+      // Choosing the lane it is already on is a no-op — don't emit a change (which
+      // would mark the host's workflow dirty for nothing). `setEdgeWhen` is
+      // separately safe for this, so neither layer relies on the other.
+      if (edgeLane(me) === when) return;
+      const conflict = edgeWhenConflict(edges, selectedEdgeId, when, nodes);
+      const next = conflict ? null : setEdgeWhen(edges, selectedEdgeId, when, nodes);
+      if (!next) {
+        // FAIL LOUDLY. The alternative is minting a duplicate edge id, which React
+        // Flow's id-keyed store silently collapses — one wire disappearing from the
+        // canvas with no error, indistinguishable from the editor losing the work.
+        setLaneError({
+          edgeId: selectedEdgeId,
+          message: conflict
+            ? `Can’t switch this edge: the id “${conflict}” is already taken by another edge, because a step id ending in “:error” collides with the error-lane marker. Rename that step, then try again.`
+            : "This edge can’t be switched right now.",
+        });
+        return;
+      }
+      setLaneError(null);
+      setEdges(next);
+      // The id encodes the lane, so re-laning re-mints it — move the selection (and
+      // therefore this panel) onto the same wire under its new id.
+      const relaned = next.find(
+        (e) => e.source === me.source && e.target === me.target && edgeLane(e) === when,
+      );
+      setSelectedEdgeId(relaned?.id ?? null);
+      emitChange(nodes, next);
+    },
+    [edges, nodes, setEdges, emitChange, readOnly, selectedEdgeId],
   );
 
   const deleteEdge = useCallback(
@@ -809,6 +880,7 @@ function Inner({
                 onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
                   setSelectedId(sel[0]?.id ?? null);
                   setSelectedEdgeId(edgeSel[0]?.id ?? null);
+                  // Deliberately NOT clearing `laneError` here — see its declaration.
                 }}
                 nodeTypes={nodeTypes}
                 nodesDraggable={!readOnly}
@@ -831,6 +903,38 @@ function Inner({
                     <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
                       + Step
                     </button>
+                  </Panel>
+                )}
+                {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
+                    `Edge.when`). Revealed only when exactly ONE edge is selected —
+                    `selectedEdgeId` is already `edgeSel[0]`, so selecting a node or
+                    nothing hides it. top-left is `+ Step`, Controls are bottom-left,
+                    the MiniMap bottom-right. No id'd source handles (D-T1-7): the lane
+                    is chosen here, not by which handle the wire was dragged from. */}
+                {!readOnly && selectedEdge && (
+                  <Panel position="top-right">
+                    <div className="w6w-edge-lane">
+                      <span className="w6w-muted w6w-small">Run on</span>
+                      {(["success", "error"] as const).map((lane) => (
+                        <button
+                          key={lane}
+                          type="button"
+                          className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                            edgeLane(selectedEdge) === lane ? " active" : ""
+                          }`}
+                          aria-pressed={edgeLane(selectedEdge) === lane}
+                          title={LANE_HINT}
+                          onClick={() => setEdgeLane(lane)}
+                        >
+                          {lane === "success" ? "Success" : "Error"}
+                        </button>
+                      ))}
+                      {laneError?.edgeId === selectedEdge.id && (
+                        <span className="w6w-edge-lane-err w6w-small" role="alert">
+                          {laneError.message}
+                        </span>
+                      )}
+                    </div>
                   </Panel>
                 )}
               </ReactFlow>

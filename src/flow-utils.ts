@@ -5,7 +5,13 @@
  * so the same workflow always opens with the same layout.
  */
 import type { Edge, Node } from "@xyflow/react";
-import { type FlowEdge, type FlowStep, type FlowWorkflow, isInternalApp } from "./flow-types.ts";
+import {
+  type FlowEdge,
+  type FlowStep,
+  type FlowWorkflow,
+  edgeVisuals,
+  isInternalApp,
+} from "./flow-types.ts";
 
 export interface StepNodeData extends Record<string, unknown> {
   step: FlowStep;
@@ -94,32 +100,23 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
   const flowEdges: Edge[] = edges.map((e) => {
     // Omitted ⇒ "success" (core rfcs/workflow.md · Edge.when amendment). The
     // lane rides on `data` so flowToWorkflow can read it straight back off the
-    // React Flow edge; the className + label are how an error edge is told
-    // apart on the canvas (styles.css `.w6w-edge-error`) — no custom edge
-    // component is involved.
+    // React Flow edge; the className + label that tell an error edge apart on
+    // the canvas come from {@link edgeVisuals} — the single source of truth,
+    // shared with `setEdgeWhen`, which re-lanes an edge live. Inlining them here
+    // is how the loaded look and the just-marked look drift apart.
+    //
+    // The id is qualified per lane, because the model permits a success edge AND
+    // an error edge between the same pair: two edges sharing one id would be
+    // collapsed by React Flow's id-keyed store and one lane silently lost. The
+    // qualifier comes from {@link flowEdgeId}, which every other id site calls.
     const when = e.when ?? "success";
-    if (when !== "error") {
-      return {
-        id: flowEdgeId(e.from, e.to, when),
-        source: e.from,
-        target: e.to,
-        animated: false,
-        data: { when },
-      };
-    }
-    // The model permits a success edge AND an error edge between the same pair,
-    // so an error edge's id is qualified — two edges sharing one id would be
-    // collapsed by React Flow's store and one lane would be silently lost. A
-    // success edge's id is left exactly as before. The qualifier itself comes
-    // from {@link flowEdgeId}, which every other id site also calls.
     return {
       id: flowEdgeId(e.from, e.to, when),
       source: e.from,
       target: e.to,
       animated: false,
       data: { when },
-      className: "w6w-edge-error",
-      label: "on error",
+      ...edgeVisuals(when),
     };
   });
 

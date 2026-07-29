@@ -101,6 +101,18 @@ export function NodeConfigForm({
           <option value="continue">Continue</option>
           <option value="continue-record">Continue &amp; record error in end state</option>
         </select>
+        {/* This select reads as if it had total authority over failure, and since
+            an error edge became authorable it no longer does: per D-T1-3 an
+            outgoing error edge OVERRIDES this policy. The honest fix is a static
+            hint — this form receives only `{ retry, onError, notes }` and has no
+            view of the graph, so it cannot know whether the step has such an
+            edge, and giving it one just to find out is out of scope. */}
+        <span className="w6w-muted w6w-small">
+          If this step has an outgoing <strong>error</strong> edge on the canvas, that edge decides
+          what happens when the step fails and this policy is not consulted. To author one: select
+          the edge and set <em>Run on: Error</em> — draw the fallback edge first, then the success
+          edge.
+        </span>
       </label>
 
       {/* Notes */}

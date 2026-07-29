@@ -55,6 +55,30 @@ export interface FlowEdge {
   when?: "success" | "error";
 }
 
+/**
+ * The React Flow presentation for an edge lane — **the one place** the error
+ * look is spelled out.
+ *
+ * Two callers need it and they run at different times: `workflowToFlow` stamps a
+ * *stored* edge on load, and `setEdgeWhen` (`flow-connect.ts`) stamps an edge the
+ * author re-lanes **live**, before any save. Spelled out twice, the two drift and
+ * a freshly marked error edge stops looking like a reloaded one. The className is
+ * what `styles.css`'s `.w6w-edge-error` block paints from `--w6w-danger`; no
+ * custom edge component is involved (D-T1-7).
+ *
+ * A `"success"`/absent lane returns an **empty object** — not `{ className: "" }` —
+ * so a success edge carries neither key and a definition round-trips unchanged.
+ * That makes it a trap for a *re-laning* caller: spreading `{}` over an edge that
+ * already carries the error class leaves the class in place, so `setEdgeWhen`
+ * assigns both keys explicitly rather than spreading.
+ */
+export function edgeVisuals(when: "success" | "error" | undefined): {
+  className?: string;
+  label?: string;
+} {
+  return when === "error" ? { className: "w6w-edge-error", label: "on error" } : {};
+}
+
 export interface FlowWorkflow {
   manifestVersion: string;
   id: string;
