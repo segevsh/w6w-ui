@@ -591,6 +591,28 @@
   border-radius: 0;
   padding: 4px 2px;
   outline: none;
+  /* `margin` and `min-height` are LOAD-BEARING here, for the same reason
+     `.w6w-fx-inline-label`'s `margin: 0` is (see below): a host page layers its
+     own unscoped `input[type="text"], textarea { … }` rule AFTER this file
+     (studio's does, at `studio/src/styles.css:513-533` and `:788`), so every
+     property this block leaves undeclared is the host's — including inside a box
+     this library draws. Both were measured leaking, in [ui+studio], before these
+     two declarations existed:
+       margin     — a host `margin-top: 4px` in an `align-items: center` row
+                    drops the control 2px below the ƒx it shares the row with
+                    (string, number and the bare vars cell; select/multiselect
+                    were unaffected only because the host rule does not list
+                    them). Rendered: control cy 67 vs ƒx cy 65.
+       min-height — a host `textarea { min-height: 80px }` sized the INSIDE of
+                    this box, making the one multi-line field 80px/94px against
+                    the 62px/72px the same markup renders elsewhere, and pushing
+                    the ƒx 4px off the control's first line. The box is the
+                    library's to size; `rows` is the control's.
+     Declared, not fought for: this stays at the block's existing specificity and
+     uses no `!important`. A component that is only aligned while the host
+     cooperates is broken. */
+  margin: 0;
+  min-height: 0;
 }
 /* …and the two widgets that own an input-like box themselves are flattened too,
    so the wrapper never draws a box around a box. */
