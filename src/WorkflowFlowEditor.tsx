@@ -42,6 +42,7 @@ import {
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
+import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import {
   type ExpressionOptions,
   ExpressionOptionsProvider,
@@ -291,6 +292,8 @@ function Inner({
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editView, setEditView] = useState<EditView>("props");
+  // The step id awaiting delete confirmation — one pending slot driving one modal.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -360,10 +363,22 @@ function Inner({
     [readOnly, screenToFlowPosition, nodes],
   );
 
+  // Deleting a step is confirmed by an in-app modal, never a blocking browser
+  // dialog: `deleteStep` is also reached from the canvas keydown handler
+  // below, so the confirmation has to be state + a sibling modal.
+  // `deleteStep` only *requests* the delete; `performDeleteStep` does it, and
+  // is invoked solely from the ConfirmModal's onConfirm.
   const deleteStep = useCallback(
     (id: string) => {
       if (readOnly) return;
-      if (!window.confirm(`Delete step "${id}"?`)) return;
+      setPendingDelete(id);
+    },
+    [readOnly],
+  );
+
+  const performDeleteStep = useCallback(
+    (id: string) => {
+      if (readOnly) return;
       const nextNodes = nodes.filter((n) => n.id !== id);
       const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
       setNodes(nextNodes);
@@ -729,6 +744,22 @@ function Inner({
                     </button>
                   </div>
                 </Modal>
+              )}
+
+              {/* Sibling of the run-result modal, never nested inside another
+                  modal's body — ui's Modal is a native <dialog>, so nesting
+                  works mechanically and just looks wrong. */}
+              {pendingDelete !== null && (
+                <ConfirmModal
+                  title="Delete step"
+                  message={`Delete step "${pendingDelete}"? Its connections are removed too.`}
+                  confirmLabel="Delete"
+                  onConfirm={() => {
+                    performDeleteStep(pendingDelete);
+                    setPendingDelete(null);
+                  }}
+                  onClose={() => setPendingDelete(null)}
+                />
               )}
             </div>
           </ExpressionOptionsProvider>

@@ -871,6 +871,12 @@
   border-color: var(--w6w-accent);
   background: var(--w6w-panel-2);
 }
+/* Destructive confirm button (ConfirmModal's default). Styled from the same
+   --w6w-danger token the error notices and health pills already use. */
+.w6w-btn-danger {
+  background: var(--w6w-danger);
+  color: white;
+}
 
 /* List row — a clean, reusable list item (leading icon · title/subtitle · trailing).
    Mirrors the ghost saved-test button rows it replaces. */

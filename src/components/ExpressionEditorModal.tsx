@@ -161,7 +161,7 @@ export function ExpressionEditorModal({
           <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="w6w-btn w6w-btn-primary" onClick={save}>
+          <button type="button" className="w6w-btn" onClick={save}>
             Save
           </button>
         </div>
