@@ -19,7 +19,7 @@ import {
   isControlApp,
   isInternalApp,
 } from "./flow-types.ts";
-import { useW6wApi, useWorkflowProject } from "./provider.tsx";
+import { type StepStartState, useW6wApi, useWorkflowProject } from "./provider.tsx";
 import type {
   ActionDef,
   ActionParam,
@@ -98,62 +98,78 @@ function Glyph({ children }: { children: ReactNode }) {
   );
 }
 
+/** The glyph + accessible label each view is drawn with. */
+const CONFIG_VIEW_GLYPHS: Record<ConfigView, { label: string; glyph: ReactNode }> = {
+  props: {
+    label: "Form",
+    glyph: (
+      <>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <line x1="7" y1="8" x2="17" y2="8" />
+        <line x1="7" y1="12" x2="17" y2="12" />
+        <line x1="7" y1="16" x2="13" y2="16" />
+      </>
+    ),
+  },
+  code: {
+    label: "JSON",
+    glyph: (
+      <>
+        <polyline points="16 18 22 12 16 6" />
+        <polyline points="8 6 2 12 8 18" />
+      </>
+    ),
+  },
+  config: {
+    label: "Node settings",
+    glyph: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </>
+    ),
+  },
+};
+
+/** Every view, in the order the editor's tabs bar has always shown them. */
+const ALL_CONFIG_VIEWS: ConfigView[] = ["props", "code", "config"];
+
 /**
  * The props / code / config view toggle, right-aligned in the tabs bar. Disabled
  * off the Configure tab (the three views all represent the action's config).
+ *
+ * `views` narrows it to a subset, in the order given — a fields ⇄ raw-JSON
+ * property form (see `PropertyEntryForm`) passes `["props", "code"]`. There is
+ * deliberately no second toggle component: one glyph set, one styling, one
+ * pressed-state behaviour, however many views a host offers.
  */
 export function ConfigViewToggle({
   view,
   onChange,
   disabled,
+  views = ALL_CONFIG_VIEWS,
 }: {
   view: ConfigView;
   onChange: (v: ConfigView) => void;
   disabled?: boolean;
+  /** Which views to offer, in order. Defaults to all three. */
+  views?: ConfigView[];
 }) {
-  const btn = (v: ConfigView, label: string, glyph: ReactNode) => (
+  const btn = (v: ConfigView) => (
     <button
+      key={v}
       type="button"
-      title={label}
-      aria-label={label}
+      title={CONFIG_VIEW_GLYPHS[v].label}
+      aria-label={CONFIG_VIEW_GLYPHS[v].label}
       aria-pressed={view === v}
       disabled={disabled}
       className={`w6w-icon-btn${view === v && !disabled ? " active" : ""}`}
       onClick={() => onChange(v)}
     >
-      <Glyph>{glyph}</Glyph>
+      <Glyph>{CONFIG_VIEW_GLYPHS[v].glyph}</Glyph>
     </button>
   );
-  return (
-    <div className="w6w-view-toggle">
-      {btn(
-        "props",
-        "Form",
-        <>
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <line x1="7" y1="8" x2="17" y2="8" />
-          <line x1="7" y1="12" x2="17" y2="12" />
-          <line x1="7" y1="16" x2="13" y2="16" />
-        </>,
-      )}
-      {btn(
-        "code",
-        "JSON",
-        <>
-          <polyline points="16 18 22 12 16 6" />
-          <polyline points="8 6 2 12 8 18" />
-        </>,
-      )}
-      {btn(
-        "config",
-        "Node settings",
-        <>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </>,
-      )}
-    </div>
-  );
+  return <div className="w6w-view-toggle">{views.map(btn)}</div>;
 }
 
 /**
@@ -635,6 +651,14 @@ export const StepTestRun = forwardRef<
     canRun: boolean;
     hideRunButton?: boolean;
     persist?: StepTestPersist;
+    /**
+     * The run's start state — what the upstream steps last produced — so a
+     * `values` entry written as `{{ steps.<id>.output.<field> }}` resolves
+     * server-side instead of coming back empty. The host builds it (the editor
+     * seeds it from the upstream fixtures); absent in the add-step builder,
+     * where the step has no graph ancestors yet.
+     */
+    state?: StepStartState;
     /** Notified when the run starts/finishes so a host button can reflect it. */
     onBusyChange?: (busy: boolean) => void;
     /**
@@ -644,7 +668,18 @@ export const StepTestRun = forwardRef<
     onResult?: (passed: boolean) => void;
   }
 >(function StepTestRun(
-  { app, action, connectionId, values, canRun, hideRunButton, persist, onBusyChange, onResult },
+  {
+    app,
+    action,
+    connectionId,
+    values,
+    canRun,
+    hideRunButton,
+    persist,
+    state: startState,
+    onBusyChange,
+    onResult,
+  },
   ref,
 ) {
   const api = useW6wApi();
@@ -662,6 +697,9 @@ export const StepTestRun = forwardRef<
       const result = await api.invokeAction(app, action, values, {
         ...(connectionId ? { connectionId } : {}),
         project,
+        // Omitted when the host has no upstream state to offer, so the request
+        // is unchanged for every caller that never had one.
+        ...(startState ? { state: startState } : {}),
       });
       outcome = {
         status: "done",

@@ -1,8 +1,16 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import type { ExpressionOptions } from "./ExpressionOptions.tsx";
 import { Modal } from "./Modal.tsx";
-import { insertNodeAtCaret, makeChip, paintParts, readParts } from "./expression-dom.ts";
+import {
+  ensureFillerBreak,
+  insertNodeAtCaret,
+  isRefSafeKey,
+  makeChip,
+  paintParts,
+  readParts,
+  varLabel,
+} from "./expression-dom.ts";
 import { partsToValue, serializeTemplate, valueToParts } from "./expression-template.ts";
 
 /**
@@ -19,6 +27,13 @@ import { partsToValue, serializeTemplate, valueToParts } from "./expression-temp
 export interface ExpressionEditorModalProps {
   value: ExprValue | string | SecretValue | undefined;
   masked?: boolean;
+  /**
+   * The field being edited holds multi-line text (a `text`-typed param, or one
+   * flagged `config.multiline`). Enter then inserts a literal `"\n"` at the
+   * caret instead of being swallowed, and `aria-multiline` follows. Omitted ⇒
+   * single-line, as every existing consumer expects.
+   */
+  multiline?: boolean;
   options: ExpressionOptions;
   /** Field name shown in the modal title. */
   fieldLabel?: string;
@@ -29,6 +44,7 @@ export interface ExpressionEditorModalProps {
 export function ExpressionEditorModal({
   value,
   masked,
+  multiline,
   options,
   fieldLabel,
   onSave,
@@ -158,10 +174,28 @@ export function ExpressionEditorModal({
       size="full"
       headerRight={
         <div className="w6w-exprmodal-actions">
+          {/* Take the field back OUT of expression mode. It saves the `{{ }}`
+              TEXT form, so the content survives exactly as the old expr→text
+              toggle made it — a lone text part collapses to a plain string in
+              `partsToValue`, so the field renders its plain widget again.
+              Hidden when `masked`: a sealed secret has no text form. */}
+          {!masked && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost"
+              title="Close the expression and keep the text as a literal value"
+              onClick={() => {
+                onSave(serializeTemplate(parts));
+                onClose();
+              }}
+            >
+              Use a plain value
+            </button>
+          )}
           <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="w6w-btn w6w-btn-primary" onClick={save}>
+          <button type="button" className="w6w-btn" onClick={save}>
             Save
           </button>
         </div>
@@ -212,14 +246,44 @@ export function ExpressionEditorModal({
                   "w6w-expr-chip-var",
                   "⚡",
                 )}
-              {steps.map((st) =>
-                source(
-                  st.label ?? st.id,
-                  { kind: "var", ref: `steps.${st.id}.output` },
-                  "w6w-expr-chip-var",
-                  "▸",
-                ),
-              )}
+              {steps.map((st) => {
+                // Only keys that can become a ref the ENGINE resolves are
+                // offered. The guard lives here, at the one place a ref is
+                // built, so it holds for any host that supplies `steps` —
+                // not only for the flow editor's own projection.
+                const fields = (st.outputs ?? []).filter((o) => isRefSafeKey(o.key));
+                return (
+                  <Fragment key={st.id}>
+                    {/* The whole output — still a real, useful ref on its own,
+                        and the author's route to a key the guard dropped. */}
+                    {source(
+                      st.label ?? st.id,
+                      { kind: "var", ref: `steps.${st.id}.output` },
+                      "w6w-expr-chip-var",
+                      "▸",
+                    )}
+                    {/* …and one source per DECLARED output field, nested under
+                        it. Each SAVES the canonical `steps.<id>.output.<key>`
+                        (the only form the engine resolves) and SHOWS
+                        `varLabel(ref)`, i.e. the short `<id>.<key>`. The key
+                        goes into the ref VERBATIM — `o.label` is display data
+                        and must never be substituted into a ref. */}
+                    {fields.length > 0 && (
+                      <div className="w6w-exprmodal-subsources">
+                        {fields.map((o) => {
+                          const ref = `steps.${st.id}.output.${o.key}`;
+                          return source(
+                            varLabel(ref),
+                            { kind: "var", ref },
+                            "w6w-expr-chip-var",
+                            "·",
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
             </div>
           )}
         </aside>
@@ -240,6 +304,7 @@ export function ExpressionEditorModal({
               suppressContentEditableWarning
               role="textbox"
               tabIndex={0}
+              aria-multiline={multiline ? "true" : "false"}
               aria-label="Expression"
               data-placeholder="Type text and insert {x} variables, 🔒 secrets, or ▸ step outputs…"
               spellCheck={false}
@@ -252,7 +317,22 @@ export function ExpressionEditorModal({
                 sync();
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") e.preventDefault();
+                if (e.key !== "Enter") return;
+                // ALWAYS suppressed — with or without Shift, multiline or not.
+                // The browser's own line break (a wrapper <div>, or a <br>) is
+                // markup we neither paint nor want to depend on.
+                e.preventDefault();
+                if (!multiline) return;
+                const el = editorRef.current;
+                if (!el) return;
+                // Our own literal "\n" text node, via the same caret helper the
+                // source picker inserts chips with. `.w6w-exprmodal-chips` is
+                // `pre-wrap`, so it renders as a break. The filler keeps a break
+                // at the very END visible (and is skipped by `readParts`, so it
+                // never reaches the value).
+                insertNodeAtCaret(el, el.ownerDocument.createTextNode("\n"));
+                ensureFillerBreak(el);
+                sync();
               }}
             />
           </div>

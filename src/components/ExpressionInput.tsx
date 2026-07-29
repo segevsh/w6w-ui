@@ -2,7 +2,13 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { ExprValue, SecretValue } from "../types.ts";
 import { ExpressionEditorModal } from "./ExpressionEditorModal.tsx";
 import { useExpressionOptions } from "./ExpressionOptions.tsx";
-import { paintParts, placeCaretAtEnd, readParts } from "./expression-dom.ts";
+import {
+  ensureFillerBreak,
+  insertNodeAtCaret,
+  paintParts,
+  placeCaretAtEnd,
+  readParts,
+} from "./expression-dom.ts";
 import { partsToValue, valueToParts } from "./expression-template.ts";
 
 /**
@@ -23,6 +29,14 @@ export interface ExpressionInputProps {
   placeholder?: string;
   /** Mask typed text as dots + seal on blur (used for secret-typed params). */
   masked?: boolean;
+  /**
+   * The underlying param holds multi-line text (a `text`-typed param, or one
+   * flagged `config.multiline` — the same fields that render a `textarea`).
+   * Enter then inserts a literal `"\n"` at the caret instead of being swallowed,
+   * and `aria-multiline` follows. Omitted ⇒ single-line, as every existing
+   * consumer expects.
+   */
+  multiline?: boolean;
   readOnly?: boolean;
   /** Picker data; falls back to the nearest `ExpressionOptionsProvider`. */
   options?: { vars?: string[]; secrets?: string[] };
@@ -34,6 +48,7 @@ export function ExpressionInput({
   onChange,
   placeholder,
   masked,
+  multiline,
   readOnly,
   options,
   "aria-label": ariaLabel,
@@ -156,7 +171,7 @@ export function ExpressionInput({
           suppressContentEditableWarning
           role="textbox"
           tabIndex={readOnly ? -1 : 0}
-          aria-multiline="false"
+          aria-multiline={multiline ? "true" : "false"}
           aria-label={ariaLabel}
           data-placeholder={placeholder ?? ""}
           spellCheck={false}
@@ -169,7 +184,22 @@ export function ExpressionInput({
             syncFromDom();
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") e.preventDefault(); // single-line value field
+            if (e.key !== "Enter") return;
+            // ALWAYS suppressed — with or without Shift, multiline or not. Left
+            // to itself the browser wraps the caret's line in a <div> (or drops
+            // a <br>), which is markup we neither paint nor want to depend on.
+            e.preventDefault();
+            if (!multiline) return; // single-line value field
+            const el = editorRef.current;
+            if (!el) return;
+            // The break is OUR literal "\n" text node, inserted with the same
+            // caret helper the chip picker uses. `.w6w-expr-editor` is
+            // `pre-wrap`, so it renders as a break; `readParts` reads it back
+            // verbatim. The filler keeps a break at the very END visible (and is
+            // skipped by `readParts`, so it never reaches the value).
+            insertNodeAtCaret(el, el.ownerDocument.createTextNode("\n"));
+            ensureFillerBreak(el);
+            syncFromDom();
           }}
         />
         {!readOnly && (
@@ -189,6 +219,7 @@ export function ExpressionInput({
         <ExpressionEditorModal
           value={partsToValue(parts)}
           masked={masked}
+          multiline={multiline}
           options={resolved}
           fieldLabel={ariaLabel}
           onSave={adopt}
