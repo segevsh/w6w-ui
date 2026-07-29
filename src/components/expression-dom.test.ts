@@ -6,7 +6,7 @@
 // browser global it touches is `Node`, shimmed below.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ensureFillerBreak, paintParts, readParts } from "./expression-dom.ts";
+import { ensureFillerBreak, insertNodeAtCaret, paintParts, readParts } from "./expression-dom.ts";
 
 (globalThis as unknown as { Node: unknown }).Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 };
 
@@ -53,16 +53,22 @@ const root = (children: StubNode[]) => children as unknown as HTMLElement["child
 
 /**
  * A minimal editing HOST for the DOM-*writing* helpers (`ensureFillerBreak`,
- * `paintParts`), which need more than the read-only stubs above: `lastChild`,
- * `appendChild`, a settable `textContent`, and
- * `ownerDocument.{createElement,createTextNode,getSelection}`.
+ * `paintParts`, `insertNodeAtCaret`), which need more than the read-only stubs
+ * above: `lastChild`, `appendChild`, `insertBefore`, `focus`, a settable
+ * `textContent`, and `ownerDocument.{createElement,createTextNode,getSelection}`.
  *
  * No caret is installed, so `getSelection()` returns null and the caret's block
- * resolves to the host itself — which is exactly the shape the paint path and a
- * top-level Enter have. Targeting an INNER block needs a real Selection, so that
- * half is covered in the browser instead (`T3.1.2-browser-check.sh` §J).
+ * resolves to the host itself — which is exactly the shape the paint path, a
+ * top-level Enter, and `insertNodeAtCaret`'s NO-CARET fallback have (the
+ * left-pane click that inserts a chip into an editor never focused). Targeting
+ * an INNER block needs a real Selection, so that half is covered in the browser
+ * instead (`T3.1.2-browser-check.sh` §J).
+ *
+ * `attrs` is what the host ADVERTISES about itself — `aria-multiline` in
+ * particular, which is how a single-line editing host tells the paint path it
+ * has no second line to render into.
  */
-function host(children: StubNode[] = []) {
+function host(children: StubNode[] = [], attrs: Record<string, string> = {}) {
   const doc = {
     createElement: (tagName: string) => el(tagName, {}, []),
     createTextNode: (value: string) => text(value),
@@ -73,10 +79,17 @@ function host(children: StubNode[] = []) {
     tagName: "DIV",
     childNodes: children,
     ownerDocument: doc,
-    getAttribute: () => null,
+    getAttribute: (name: string) => attrs[name] ?? null,
     contains: () => false,
+    focus() {},
     appendChild(n: StubNode) {
       children.push(n);
+      return n;
+    },
+    insertBefore(n: StubNode, ref: StubNode | null) {
+      const i = ref ? children.indexOf(ref) : -1;
+      if (i < 0) children.push(n);
+      else children.splice(i, 0, n);
       return n;
     },
     get lastChild() {
@@ -295,4 +308,74 @@ test("paintParts adds NO filler when the value does not end in a newline", () =>
   assert.equal(h.childNodes.length, 1);
   assert.equal(tagOf(h.childNodes[0]), null); // a text node, not a <br>
   assert.deepEqual(readParts(h), [{ kind: "text", value: "ab" }]);
+});
+
+// --- T3.1.3: three gaps the T3.1.2 evaluation proved the suite above cannot
+// see. Each case below is written against the mutant that escaped it, and each
+// mutant was watched going red on this file before the case was kept.
+
+test("paintParts adds NO filler for an INTERIOR newline — the test ENDS, not CONTAINS", () => {
+  // R2-3. The case above uses "ab", which contains no newline at all, so it
+  // cannot tell `endsWith("\n")` from `includes("\n")` — the evaluator ran that
+  // mutant green through 20 unit cases and 44 browser assertions. What escapes
+  // is a phantom blank line at the END of every reopened multi-line value: the
+  // filler is still the block's last child, so the VALUE stays right and only
+  // the rendering grows. This fixture is the discriminating one: a newline that
+  // is present but not last.
+  const h = host();
+  paintParts(h, [{ kind: "text", value: "a\nb" }]);
+  assert.equal(h.childNodes.length, 1);
+  assert.equal(tagOf(h.childNodes[0]), null);
+  assert.deepEqual(readParts(h), [{ kind: "text", value: "a\nb" }]);
+});
+
+test("paintParts adds NO filler in a SINGLE-LINE host, however the value ends", () => {
+  // R2-2, the live defect. A `string` param's field advertises
+  // `aria-multiline="false"` and swallows Enter — but a PASTE can still leave
+  // its value ending in "\n", and the filler then gives that unreachable break
+  // a second line box: the field renders at two lines' height (52px vs 28px,
+  // measured in Chromium — `T3.1.3-browser-check.sh` §R).
+  const h = host([], { "aria-multiline": "false" });
+  paintParts(h, [{ kind: "text", value: "x\n" }]);
+  assert.equal(h.childNodes.length, 1);
+  assert.equal(tagOf(h.childNodes[0]), null);
+  // …and the value is untouched either way — this is a PAINT decision only.
+  assert.deepEqual(readParts(h), [{ kind: "text", value: "x\n" }]);
+});
+
+test("paintParts still fills an explicitly MULTILINE host", () => {
+  // The other side of the same predicate: `aria-multiline="true"` must keep the
+  // filler. Without this, "never fill" passes the case above.
+  const h = host([], { "aria-multiline": "true" });
+  paintParts(h, [{ kind: "text", value: "x\n" }]);
+  assert.equal(h.childNodes.length, 2);
+  assert.equal(tagOf(h.childNodes[1]), "BR");
+  assert.deepEqual(readParts(h), [{ kind: "text", value: "x\n" }]);
+});
+
+test("insertNodeAtCaret with NO caret appends AFTER the existing content", () => {
+  // R2-4, the highest-value gap: the no-caret fallback's guard is
+  // `isFillerBreak(lastChild)` — a <br>, specifically. Relaxed to "is any
+  // element" (`nodeType === 1`) it survived 20 unit cases and 44 browser
+  // assertions, and it escapes into VALUE CORRUPTION: a chip-terminated value
+  // takes the next chip in FRONT of the one already there. So the assertion is
+  // on ORDER, not on the count — two chips are present under the mutant too.
+  const h = host([varChip("vars.b")]);
+  insertNodeAtCaret(h, varChip("vars.a") as unknown as Node);
+  assert.deepEqual(readParts(h), [
+    { kind: "var", ref: "vars.b" },
+    { kind: "var", ref: "vars.a" }, // the one just inserted is LAST
+  ]);
+});
+
+test("insertNodeAtCaret with NO caret inserts BEFORE a trailing filler <br>", () => {
+  // The direction T3.1.2 did pin, in the browser only (§K1/K2). Appending past
+  // the filler stops it being the block's last child, so `readParts` reads it as
+  // a real newline: "a\n" + a chip would save "a\n\n{{ vars.a }}".
+  const h = host([text("a\n"), el("br", {}, [])]);
+  insertNodeAtCaret(h, varChip("vars.a") as unknown as Node);
+  assert.deepEqual(readParts(h), [
+    { kind: "text", value: "a\n" },
+    { kind: "var", ref: "vars.a" },
+  ]);
 });

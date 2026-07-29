@@ -179,6 +179,12 @@ function fillBlock(block: HTMLElement): void {
 function caretBlock(editor: HTMLElement): HTMLElement {
   const sel = editor.ownerDocument.getSelection();
   const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+  // `editor.contains(...)`: a selection somewhere ELSE in the document must not
+  // make us walk up into a foreign `div`/`p` and append a filler there. Nothing
+  // reaches it today — `ensureFillerBreak`'s only callers are the two keydown
+  // handlers, where the caret is inside the editor by construction — so no probe
+  // can distinguish it from its absence (T3.1.2 eval, R2-5). It is kept because
+  // the barrier is the CALL SITES, and the first non-keydown caller arms it.
   if (!range || !editor.contains(range.endContainer)) return editor;
   let node: Node | null = range.endContainer;
   while (node && node !== editor) {
@@ -206,6 +212,22 @@ export function ensureFillerBreak(editor: HTMLElement): void {
   fillBlock(caretBlock(editor));
 }
 
+/**
+ * Does this editing host render more than one line?
+ *
+ * Read from the host's OWN `aria-multiline`, which both editors set from the
+ * same `multiline` prop that decides whether Enter inserts anything
+ * (`ExpressionInput.tsx`, `ExpressionEditorModal.tsx`) — so the attribute is not
+ * a proxy for the flag, it *is* the flag, already on the node this file is
+ * handed. Threading a second copy of it down as an argument would make the two
+ * editors' call sites the only source of truth and leave the DOM free to
+ * disagree with it.
+ *
+ * Absent ⇒ multiline: a host that never declared itself single-line keeps the
+ * pre-existing behaviour, and the two real editors always declare.
+ */
+const isMultilineHost = (el: HTMLElement): boolean => el.getAttribute("aria-multiline") !== "false";
+
 /** Paint an editor's DOM from parts (text nodes + chips). */
 export function paintParts(el: HTMLElement, parts: ExprPart[]): void {
   const doc = el.ownerDocument;
@@ -221,8 +243,15 @@ export function paintParts(el: HTMLElement, parts: ExprPart[]): void {
   // freshly typed one does — this is the same block, rebuilt from parts. Without
   // it the break survives the round trip in the VALUE but not on SCREEN, and the
   // author's next keystroke lands before it: "a\n" + typing "b" saved "ab\n".
+  //
+  // …but only where a break can be rendered at all. A SINGLE-LINE field can
+  // still hold a value ending in "\n" (paste it in — neither editor has an
+  // `onPaste` handler), and there the filler gives it a second line box: the
+  // field silently doubles in height for a break the author can never reach,
+  // since Enter is swallowed on that path. The value is identical either way —
+  // `readParts` skips the filler — so this is purely about what is painted.
   const last = parts[parts.length - 1];
-  if (last?.kind === "text" && last.value?.endsWith("\n")) fillBlock(el);
+  if (last?.kind === "text" && last.value?.endsWith("\n") && isMultilineHost(el)) fillBlock(el);
 }
 
 /**
