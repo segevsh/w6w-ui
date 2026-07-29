@@ -459,6 +459,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A step's per-field sources, nested under its whole-output source, so three
+   upstream steps x four fields reads as a tree rather than a flat wall. */
+.w6w-exprmodal-subsources {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: 9px;
+  padding-left: 8px;
+  border-left: 1px solid var(--w6w-border);
+}
 .w6w-exprmodal-main {
   min-width: 0;
   min-height: 0;

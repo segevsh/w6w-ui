@@ -147,8 +147,14 @@ function applyConnect(
  * `steps.<id>.output`. Offering only the former is why a trigger's declared
  * fields were unreachable from the picker.
  *
- * A step that declares output fields (a trigger's `with.fields`) carries them as
- * `outputs`, so a consumer can offer `steps.<id>.output.<key>` per field.
+ * A **trigger** that declares output fields (`with.fields`) carries them as
+ * `outputs`, so a consumer can offer `steps.<id>.output.<key>` per field. Only a
+ * trigger: `fields` is an ordinary param name, and on any other node it holds
+ * that action's INPUT — an `@w6w/http:request` with `with.fields = [{key:"x"}]`
+ * would otherwise be advertised as declaring an output `x` it never produces.
+ * The trigger's `fields` is the one case where the param IS the output contract
+ * (`core/rfcs/trigger.md`: a manual trigger's declared fields become the run's
+ * start payload).
  *
  * With no specific step (shouldn't happen for a field edit) every node is offered.
  */
@@ -184,14 +190,17 @@ function upstreamStateSources(
   for (const n of nodes) {
     if (!ancestors.has(n.id)) continue;
     const step = n.data.step;
-    if (internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger") {
+    const isTrigger = internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger";
+    if (isTrigger) {
       // `trigger.event` stays on offer — but the trigger is ALSO a `steps.<id>`
       // source (see the RFC quote above), so it falls through to the push.
       hasTrigger = true;
     }
     // Declared output fields, via the shared trigger-field projection — the one
-    // parser, which already skips a blank/missing `key`.
-    const declared = fieldsToParams(asFieldDefs(step.with?.fields));
+    // parser, which already skips a blank/missing `key`. TRIGGER-ONLY: on any
+    // other node `with.fields` is that action's INPUT, and projecting it would
+    // fabricate declared outputs the step never produces (see the docstring).
+    const declared = isTrigger ? fieldsToParams(asFieldDefs(step.with?.fields)) : [];
     const source: ExpressionStepSource = { id: step.id, label: step.id };
     // OMITTED (not `[]`) when nothing is declared, so a consumer can tell
     // "nothing declared" from "declared none". Keys are verbatim: each becomes
