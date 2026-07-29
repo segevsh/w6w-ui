@@ -698,12 +698,81 @@ function Inner({
 
   // The workflow state in scope for the step being edited: its upstream steps'
   // outputs (`steps.<id>.output`) and, if a trigger precedes it, `trigger.event`.
-  // Merged with the host-supplied vars/secrets/sealSecret so the expression
+  const upstreamState = useMemo(
+    () => upstreamStateSources(editingId, nodes, edges),
+    [editingId, nodes, edges],
+  );
+  // A stable identity for *which* steps are upstream. The memo above rebuilds on
+  // every node drag and every field edit; this string changes only when the SET
+  // does, so the fetch below doesn't re-run on each keystroke.
+  const upstreamIdsKey = JSON.stringify(upstreamState.steps.map((s) => s.id));
+
+  // Design-time sample values for the expression editor's Result pane: what each
+  // upstream step's LAST TEST RUN actually captured, flattened onto the very refs
+  // the picker inserts (`steps.<id>.output` and `steps.<id>.output.<field>`). Read
+  // from the saved fixtures (`StepTest.lastRunOutput`), so it survives a reload.
+  //
+  // ⚠️ EDITOR-SIDE ONLY, like `upstreamStateSources` above: this is a PREVIEW of
+  // values a past test produced. It is not what a full run resolves — nothing here
+  // is sent to the engine.
+  const [stepSampleValues, setStepSampleValues] = useState<Record<string, unknown>>({});
+  useEffect(() => {
+    const ids = JSON.parse(upstreamIdsKey) as string[];
+    if (!editingId || ids.length === 0) {
+      setStepSampleValues({});
+      return;
+    }
+    let canceled = false;
+    // Best-effort, per step: a failed or empty list contributes no entry and never
+    // breaks the picker — the same shape as the step editor's seed effect.
+    Promise.all(
+      ids.map(async (id) => {
+        try {
+          const tests = await api.listStepTests(value.id, id);
+          // `listStepTests` is oldest-first, so the LAST entry is the most recent
+          // fixture — the "latest" convention this file already uses twice.
+          const latest = tests.length ? tests[tests.length - 1] : null;
+          return latest ? { id, output: latest.lastRunOutput } : null;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((res) => {
+      if (canceled) return;
+      const next: Record<string, unknown> = {};
+      for (const r of res) {
+        if (!r || r.output === undefined || r.output === null) continue;
+        // The whole output is a ref on its own…
+        next[`steps.${r.id}.output`] = r.output;
+        // …and so is each own key of a plain object. Values pass through
+        // unstringified — the modal's `effectiveSamples` stringifies non-strings.
+        if (typeof r.output === "object" && !Array.isArray(r.output)) {
+          for (const [k, v] of Object.entries(r.output as Record<string, unknown>)) {
+            next[`steps.${r.id}.output.${k}`] = v;
+          }
+        }
+      }
+      setStepSampleValues(next);
+    });
+    return () => {
+      canceled = true;
+    };
+  }, [api, value.id, editingId, upstreamIdsKey]);
+
+  // …merged with the host-supplied vars/secrets/sealSecret so the expression
   // editor's left panel shows every source at once.
-  const mergedExprOptions = useMemo<ExpressionOptions>(() => {
-    const { steps, hasTrigger } = upstreamStateSources(editingId, nodes, edges);
-    return { ...(exprOptions ?? {}), steps, hasTrigger };
-  }, [exprOptions, editingId, nodes, edges]);
+  const mergedExprOptions = useMemo<ExpressionOptions>(
+    () => ({
+      ...(exprOptions ?? {}),
+      steps: upstreamState.steps,
+      hasTrigger: upstreamState.hasTrigger,
+      // EXTEND, never replace: the host seeds `vars.*`/`documents.*` here (studio's
+      // WorkflowsPage) and those must survive. Step refs use a disjoint `steps.*`
+      // prefix, so spreading both is complete and collision-free.
+      sampleValues: { ...(exprOptions?.sampleValues ?? {}), ...stepSampleValues },
+    }),
+    [exprOptions, upstreamState, stepSampleValues],
+  );
 
   return (
     <StepControlsCtx.Provider value={controls}>
@@ -1396,13 +1465,10 @@ function StepEditModal({
   // Gather each graph ancestor's latest saved step-test so the incoming-state pane
   // can offer it as a seed. Driven by `upstreamSteps` (from `upstreamStateSources`),
   // not a re-walked graph. `listStepTests` returns oldest-first, so the last entry
-  // is the most recent fixture.
-  //
-  // TODO(BLK-2): the step_tests store persists a fixture's captured incoming state
-  // (`input`) + params (`with`) and the last run's status/error — but NOT the run's
-  // output. So a seed uses the ancestor's captured `input` as its upstream-state
-  // snapshot (falling back forward-compatibly to `lastRunOutput` if the store ever
-  // exposes it). See BLK-2.
+  // is the most recent fixture. The store persists the last run's captured
+  // OUTPUT too (`step_tests.last_run_output`), so a seed prefers that and falls
+  // back to the fixture's captured incoming state only when the fixture has
+  // never produced one.
   useEffect(() => {
     if (!testable || isTrigger || upstreamSteps.length === 0) {
       setSeedSources([]);
@@ -1430,10 +1496,11 @@ function StepEditModal({
     };
   }, [api, workflowId, upstreamSteps, testable, isTrigger]);
 
-  // Seed the incoming-state editor from an ancestor's saved test. Uses its recorded
-  // output when the store exposes one; otherwise the captured incoming state (see BLK-2).
+  // Seed the incoming-state editor from an ancestor's saved test. Uses the output
+  // its last run captured; only a fixture that never ran falls back to the
+  // captured incoming state.
   const seedFromAncestor = useCallback((test: StepTest) => {
-    const output = (test as { lastRunOutput?: unknown }).lastRunOutput ?? test.input;
+    const output = test.lastRunOutput ?? test.input;
     setTestState(JSON.stringify(output ?? {}, null, 2));
   }, []);
 

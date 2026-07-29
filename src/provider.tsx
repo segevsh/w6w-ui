@@ -52,6 +52,8 @@ export interface StepTest {
   lastRunStatus?: string | null;
   /** The most recent run's error payload, or null when it succeeded/never ran. */
   lastRunError?: unknown;
+  /** The most recent run's captured output, or null. */
+  lastRunOutput?: unknown;
 }
 
 /**
