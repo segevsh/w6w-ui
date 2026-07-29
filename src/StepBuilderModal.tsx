@@ -19,7 +19,7 @@ import {
   isControlApp,
   isInternalApp,
 } from "./flow-types.ts";
-import { useW6wApi, useWorkflowProject } from "./provider.tsx";
+import { type StepStartState, useW6wApi, useWorkflowProject } from "./provider.tsx";
 import type {
   ActionDef,
   ActionParam,
@@ -651,6 +651,14 @@ export const StepTestRun = forwardRef<
     canRun: boolean;
     hideRunButton?: boolean;
     persist?: StepTestPersist;
+    /**
+     * The run's start state — what the upstream steps last produced — so a
+     * `values` entry written as `{{ steps.<id>.output.<field> }}` resolves
+     * server-side instead of coming back empty. The host builds it (the editor
+     * seeds it from the upstream fixtures); absent in the add-step builder,
+     * where the step has no graph ancestors yet.
+     */
+    state?: StepStartState;
     /** Notified when the run starts/finishes so a host button can reflect it. */
     onBusyChange?: (busy: boolean) => void;
     /**
@@ -660,7 +668,18 @@ export const StepTestRun = forwardRef<
     onResult?: (passed: boolean) => void;
   }
 >(function StepTestRun(
-  { app, action, connectionId, values, canRun, hideRunButton, persist, onBusyChange, onResult },
+  {
+    app,
+    action,
+    connectionId,
+    values,
+    canRun,
+    hideRunButton,
+    persist,
+    state: startState,
+    onBusyChange,
+    onResult,
+  },
   ref,
 ) {
   const api = useW6wApi();
@@ -678,6 +697,9 @@ export const StepTestRun = forwardRef<
       const result = await api.invokeAction(app, action, values, {
         ...(connectionId ? { connectionId } : {}),
         project,
+        // Omitted when the host has no upstream state to offer, so the request
+        // is unchanged for every caller that never had one.
+        ...(startState ? { state: startState } : {}),
       });
       outcome = {
         status: "done",

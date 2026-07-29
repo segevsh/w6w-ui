@@ -57,6 +57,29 @@ export interface StepTest {
 }
 
 /**
+ * The **start state** a single-step invoke may carry — the RFC's third
+ * `executeNode(workflow, nodeId, startState)` argument
+ * (`core/rfcs/node-types.md`), sent as the invoke body's `state` field.
+ *
+ * Structurally the server's `StartStateInput`
+ * (`server/packages/api/ambient-scope.ts`): `steps` seeds `steps.<id>.output`
+ * and `trigger.event` seeds `trigger.event`, so a `with` block written as
+ * `{{ steps.<id>.output.<field> }}` resolves instead of concatenating as `""`.
+ * Anything else in it is ignored server-side — `vars`, `documents` and
+ * `secrets` are host-owned and loaded from the caller's authenticated scope, so
+ * a start state can only echo back data the caller already had.
+ *
+ * ⚠️ It is honoured by the **single-step** invoke route only. A full run
+ * (`POST /workflows/:id/run`) builds its own scope and takes nothing from here.
+ */
+export interface StepStartState {
+  /** Outputs of steps that already ran, keyed by step id → `steps.<id>.output`. */
+  steps?: Record<string, { output?: unknown }>;
+  /** Trigger context; only `event` is honoured → `trigger.event`. */
+  trigger?: { event?: unknown };
+}
+
+/**
  * The surface every w6w-io component may call. Grows as we add components;
  * new members are added at the end so consumer implementations only need to
  * grow when they want to use the new component.
@@ -103,7 +126,10 @@ export interface W6wApi {
    * Invoke a single action — used to test-run one step from the visual editor.
    * Pass `connectionId` to run with a stored connection's credential. Pass
    * `project` to resolve document expressions against the workflow's selected
-   * project (omitted → the scope's default/starter project).
+   * project (omitted → the scope's default/starter project). Pass `state` — the
+   * {@link StepStartState} — so `{{ steps.<id>.output.<field> }}` in the params
+   * resolves against what those upstream steps last produced; omitted, every
+   * such reference resolves to the empty string.
    *
    * `apiCalls` carries the outbound HTTP calls the action made (redacted); a
    * failed invoke rejects with an `ApiError` whose `body` holds the same field.
@@ -112,7 +138,7 @@ export interface W6wApi {
     appId: string,
     actionKey: string,
     params: Record<string, unknown>,
-    opts?: { connectionId?: string; project?: string },
+    opts?: { connectionId?: string; project?: string; state?: StepStartState },
   ): Promise<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>;
 
   /** List the saved action-test inputs stored against a connection. */
