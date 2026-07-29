@@ -226,22 +226,22 @@ export function paintParts(el: HTMLElement, parts: ExprPart[]): void {
 }
 
 /**
- * Put the caret at the end of the CONTENT — which is before a trailing filler
- * `<br>`, never after it. After it is a position that looks identical on screen
- * but sits outside the block's last child, so the next character typed would
- * push the filler off the end and turn it into a real newline.
+ * Put the caret at the end of the editor.
+ *
+ * Deliberately NOT special-cased for a trailing filler `<br>`: a caret placed
+ * past the filler is a position Chromium normalises straight back into the
+ * content, so the next character still lands before the filler. That was
+ * measured, not assumed — a version of this function that skipped the filler
+ * explicitly could not be distinguished from this one by any probe in
+ * `T3.1.2-browser-check.sh`, including §K, which exists to try. What DOES have
+ * to respect the filler is the node insertion itself (see `insertNodeAtCaret`).
  */
 export function placeCaretAtEnd(el: HTMLElement): void {
   const sel = el.ownerDocument.getSelection();
   if (!sel) return;
   const range = el.ownerDocument.createRange();
-  if (isFillerBreak(el.lastChild)) {
-    range.setStartBefore(el.lastChild as Node);
-    range.collapse(true);
-  } else {
-    range.selectNodeContents(el);
-    range.collapse(false);
-  }
+  range.selectNodeContents(el);
+  range.collapse(false);
   sel.removeAllRanges();
   sel.addRange(range);
 }
