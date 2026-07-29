@@ -1,20 +1,11 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
+import { ExpressionEditorModal } from "./components/ExpressionEditorModal.tsx";
 import { ExpressionInput } from "./components/ExpressionInput.tsx";
+import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Modal } from "./components/Modal.tsx";
-import {
-  parseTemplate,
-  partsToValue,
-  serializeTemplate,
-} from "./components/expression-template.ts";
-import {
-  type ActionParam,
-  type ExprValue,
-  type SecretValue,
-  isExprValue,
-  isSecretValue,
-} from "./types.ts";
+import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
@@ -394,17 +385,20 @@ function ParamField({
 
 /**
  * Wraps a general scalar field (text/number `input`, `textarea`, or an
- * `options` dropdown) with an `fx` affordance: a small toggle beside the label
- * swaps the plain widget for the segmented {@link ExpressionInput} (unmasked —
- * these are not secrets), so an author can bind the field to a variable/expression
- * instead of a literal. Mirrors the `secret`-param path, which already renders
- * ExpressionInput.
+ * `options` dropdown) with an `fx` affordance: a small ƒx at the end of the
+ * field opens the {@link ExpressionEditorModal}, so an author can bind the field
+ * to a variable/expression instead of a literal. Mirrors the `secret`-param
+ * path, which already renders {@link ExpressionInput}.
  *
- * The plain widget is the DEFAULT: the field only enters expression mode when the
- * author engages `fx` (or when the stored value is already an `ExprValue`), so a
- * number/select round-trips as its original scalar unless opted in (gap #6). The
- * engine's `resolveWith` accepts an `ExprValue` or a literal for any `with` value,
- * so a stored expression round-trips without an engine change.
+ * The plain widget is the DEFAULT: a number/select round-trips as its original
+ * scalar until the author actually SAVES an expression from the modal (gap #6).
+ * The engine's `resolveWith` accepts an `ExprValue` or a literal for any `with`
+ * value, so a stored expression round-trips without an engine change.
+ *
+ * ONE ƒx, ONE click. Plain mode renders the plain widget plus the single ƒx
+ * button below, which opens the modal WITHOUT writing to the form. Expression
+ * mode renders `ExpressionInput`, whose own ƒx reopens the same modal — so the
+ * field never shows two ƒx controls at once.
  */
 function FxField({
   param,
@@ -427,38 +421,24 @@ function FxField({
   bare?: boolean;
   children: ReactNode;
 }) {
-  // Seed from the stored value so a persisted expression reopens in fx mode.
-  const [fx, setFx] = useState(() => isExprValue(value));
+  // Expression mode is DERIVED from the stored value — never a local flag.
+  // Nothing turns a local boolean back off now that the value-mutating toggle is
+  // gone, so it would drift: the field would read as an expression while holding
+  // a plain string (or the reverse). Deriving makes control and value unable to
+  // disagree BY CONSTRUCTION, and Cancel-leaves-the-field-plain falls out for
+  // free — the modal's `onClose` writes nothing, so `value`, and therefore `fx`,
+  // is unchanged. A value that arrives after mount (a saved test seeded into a
+  // field that mounted empty) is picked up on the next render, no effect needed.
+  const fx = isExprValue(value);
+  const [modalOpen, setModalOpen] = useState(false);
+  // Picker data (vars/secrets/steps/…) — sourced exactly the way ExpressionInput
+  // sources it, from the nearest ExpressionOptionsProvider.
+  const exprOptions = useExpressionOptions();
 
-  // Re-derive fx-mode when the *current* value is an expression — even when that
-  // value arrives AFTER mount (a saved test seeded into a field that mounted
-  // empty). Without this the field renders the raw `{"type":"expr",…}` object as
-  // text instead of the ƒx chip. The toggle still owns turning fx back off; we
-  // only force it ON for an expression value.
-  useEffect(() => {
-    if (isExprValue(value)) setFx(true);
-  }, [value]);
-
-  const toggle = () => {
-    if (fx) {
-      // expr → text: serialize the expression back to literal `{{ … }}` text so
-      // the content survives the switch. A sealed `SecretValue` has NO text form
-      // (never produced by serializeTemplate) — block the toggle and keep the
-      // chip so the secret reference isn't lost.
-      if (isSecretValue(value)) return;
-      if (isExprValue(value)) onChange(param.key, serializeTemplate(value.parts));
-    } else if (typeof value === "string" && value !== "") {
-      // text → expr: parse the current string through the template grammar so a
-      // `{{ … }}` literal renders as chips; a plain string stays a plain string
-      // (partsToValue collapses a lone text part). Never clears the content.
-      onChange(param.key, partsToValue(parseTemplate(value)));
-    }
-    setFx(!fx);
-  };
-
-  // The ƒx toggle rides at the end of the input (an in-field decoration) rather
-  // than up in the label row — so the affordance sits next to the value it
-  // governs. It still swaps the plain widget for ExpressionInput.
+  // The ƒx rides at the end of the input (an in-field decoration) rather than up
+  // in the label row — so the affordance sits next to the value it governs. It
+  // OPENS THE MODAL and writes nothing; the value only changes if the author
+  // saves from there.
   //
   // `.w6w-fx-wrap` IS the field's box: it owns the border/background/radius and
   // the `:focus-within` ring, and the widget it holds is flattened by compound
@@ -466,30 +446,48 @@ function FxField({
   // beside a field. A widget that owns a box itself (`.w6w-multiselect`, the
   // `.w6w-expr-field` inside ExpressionInput) is flattened there too.
   const body = (
-    <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
-      {fx ? (
-        <ExpressionInput
+    <>
+      <div className={`w6w-fx-wrap${fx ? " is-fx" : ""}`}>
+        {fx ? (
+          // Expression mode: ExpressionInput already carries the ONE ƒx here
+          // (its own edit button), which reopens this same modal. Rendering a
+          // second one would put two ƒx side by side — the bug the intake filed.
+          <ExpressionInput
+            value={value as ExprValue | string | undefined}
+            readOnly={readOnly}
+            aria-label={label}
+            onChange={(next) => onChange(param.key, next)}
+          />
+        ) : (
+          <>
+            {children}
+            {!readOnly && (
+              <button
+                type="button"
+                className="w6w-expr-fx"
+                title="Use an expression"
+                aria-label={`Use an expression for ${label}`}
+                onClick={() => setModalOpen(true)}
+              >
+                ƒx
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      {modalOpen && (
+        // The modal owns the whole round trip — it seeds itself from `value` and
+        // commits through the shared template helpers in its own save. Nothing
+        // is re-implemented here: this supplies the value and consumes `onSave`.
+        <ExpressionEditorModal
           value={value as ExprValue | string | undefined}
-          readOnly={readOnly}
-          aria-label={label}
-          onChange={(next) => onChange(param.key, next)}
+          options={exprOptions}
+          fieldLabel={label}
+          onSave={(next) => onChange(param.key, next)}
+          onClose={() => setModalOpen(false)}
         />
-      ) : (
-        children
       )}
-      {!readOnly && (
-        <button
-          type="button"
-          className={`w6w-expr-fx${fx ? " is-active" : ""}`}
-          title={fx ? "Use a plain value" : "Use an expression"}
-          aria-label={fx ? `Use a plain value for ${label}` : `Use an expression for ${label}`}
-          aria-pressed={fx}
-          onClick={toggle}
-        >
-          ƒx
-        </button>
-      )}
-    </div>
+    </>
   );
 
   // Bare: just the toggle + widget, no label/hint chrome (the host cell owns them).

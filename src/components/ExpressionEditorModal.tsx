@@ -158,6 +158,24 @@ export function ExpressionEditorModal({
       size="full"
       headerRight={
         <div className="w6w-exprmodal-actions">
+          {/* Take the field back OUT of expression mode. It saves the `{{ }}`
+              TEXT form, so the content survives exactly as the old expr→text
+              toggle made it — a lone text part collapses to a plain string in
+              `partsToValue`, so the field renders its plain widget again.
+              Hidden when `masked`: a sealed secret has no text form. */}
+          {!masked && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost"
+              title="Close the expression and keep the text as a literal value"
+              onClick={() => {
+                onSave(serializeTemplate(parts));
+                onClose();
+              }}
+            >
+              Use a plain value
+            </button>
+          )}
           <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
             Cancel
           </button>
