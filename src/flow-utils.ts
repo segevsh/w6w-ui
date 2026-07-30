@@ -66,13 +66,25 @@ const MARGIN_Y = 40;
  * for two reasons: it keeps one traversal and one notion of "the graph" instead
  * of two that can drift, and the bound is provably exact rather than heuristic —
  * by the Bellman-Ford argument, after `k` full passes every step whose longest
- * path from a source is `k` edges long already holds its final layer, and in a
- * DAG that path is at most `steps.length - 1` edges. So a DAG reaches its
- * fixpoint within `steps.length` passes and the extra pass here only ever
+ * path from a source is `k` edges long already holds its final layer, and an
+ * acyclic graph's longest path visits each step at most once. So a DAG reaches
+ * its fixpoint within `steps.length` passes and the extra pass here only ever
  * observes `changed === false`. **Acyclic output is therefore byte-identical to
  * the unbounded version** — the bound is not a heuristic cut-off, and
  * `artifacts/T3.3.1-computelayers-equivalence.sh` proves it against the previous
  * commit's blob over 200+ fixtures.
+ *
+ * ⚠️ What is **not** guaranteed is that a layer stays ≤ `steps.length - 1` (an
+ * earlier revision of this comment claimed it, and used the claim to call the
+ * clamp below a provable no-op on any DAG — that was **false**). `layer.get(pred)
+ * ?? 0` treats an edge whose `from` is **not a declared step** as a phantom
+ * predecessor sitting at layer 0, so such an edge contributes a real `+1`:
+ * `steps: [a, b]` with `edges: [ghost→a, a→b]` puts `b` in column **2** while
+ * `lastColumn` is 1. That graph is still fine — it converges, so `changed` is
+ * `false` and the clamp never runs; the extra column simply renders (pinned by
+ * `flow-utils.test.ts` · "an edge from an UNDECLARED step adds a column"). The
+ * honest invariant is the narrower one: **the clamp runs only when the pass bound
+ * is exhausted with the layout still moving, which requires a cycle.**
  *
  * Exceeding the bound *is* the cycle signal (`changed` is still true). The
  * layout then stays **usable** rather than throwing or refusing: the runaway
@@ -80,7 +92,8 @@ const MARGIN_Y = 40;
  * in one column (distinct rows — `workflowToFlow` counts rows per column) and
  * the author can see the loop they drew and delete an edge. Refusing to lay out
  * a cyclic graph would trade a hang for a workflow nobody can open to fix. The
- * clamp cannot fire on a DAG, whose layers never exceed `steps.length - 1`.
+ * clamp cannot fire on a DAG, because a DAG converges before the bound is spent —
+ * **not** because its layers are bounded by `steps.length - 1`; see the ⚠️ above.
  */
 function computeLayers(steps: FlowStep[], edges: FlowEdge[]): Map<string, number> {
   const layer = new Map<string, number>();
@@ -280,6 +293,78 @@ export function flowToWorkflow(
   });
 
   return { ...original, steps: nextSteps, edges: nextEdges };
+}
+
+/** The workflow's stored camera, as `settings.viewport` declares it. */
+type StoredViewport = NonNullable<NonNullable<FlowWorkflow["settings"]>["viewport"]>;
+
+/**
+ * The workflow's **stored** camera position, when it has a usable one — the
+ * viewport counterpart to {@link storedPosition}, and the single definition of
+ * "a viewport this editor will act on". Both the restore-on-open read and
+ * {@link withViewport}'s no-op comparison go through it, so they cannot disagree
+ * about what counts as stored.
+ *
+ * All three components are checked with `Number.isFinite` for the same reason
+ * `storedPosition` checks two: `settings.viewport` arrives from a persisted JSON
+ * document that an author can hand-edit (studio's `</>` raw-JSON modal), and a
+ * `null`, a string or a half-written `{ x, y }` would otherwise be handed to
+ * React Flow's `defaultViewport` as the initial transform — a `NaN` there blanks
+ * the canvas, with no way back except editing the JSON again. Unusable ⇒
+ * `undefined`, i.e. "no stored viewport", which falls back to `fitView`.
+ *
+ * A **fresh object** is returned, never the one hanging off `settings`: React
+ * Flow owns the viewport it is given.
+ */
+export function storedViewport(wf: FlowWorkflow): StoredViewport | undefined {
+  const v = wf.settings?.viewport;
+  if (!v || !Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.zoom)) {
+    return undefined;
+  }
+  return { x: v.x, y: v.y, zoom: v.zoom };
+}
+
+/**
+ * Record the author's viewport on the workflow (core `rfcs/workflow.md` ·
+ * authoring-presentation amendment). Pure, so the two decisions that matter —
+ * rounding and no-op detection — are unit-testable without mounting React Flow.
+ *
+ * Returns `wf` **UNCHANGED (the same reference)** when:
+ *  - `settings.savePosition` is `false` — read as `!== false`, never `?? false`
+ *    and never `=== true`: **omitted ⇒ ON**, same as `flowToWorkflow`;
+ *  - the rounded viewport already equals the stored one;
+ *  - the incoming viewport is not finite (nothing usable to store).
+ *
+ * The same-reference return **is** the coalescing guard: the caller emits only
+ * when the reference changes, so a pan that lands back where it started emits
+ * nothing at all. That matters because the host's auto-save is a trailing
+ * debounce over emitted changes — every emission is a candidate network write.
+ *
+ * Rounding is pinned for that same reason (and mirrors `flowToWorkflow`'s
+ * coordinate rounding): `x`/`y` to integers, `zoom` to **3 decimal places**.
+ * A trackpad reports the zoom as a long float, so without it two visually
+ * identical viewports serialize differently and every idle gesture looks like a
+ * change to a payload-comparing auto-save.
+ *
+ * `settings` is spread, not replaced, so `autoSave` / `savePosition` survive a
+ * viewport write — the mirror image of `writeSetting` (studio) deleting a key at
+ * its default without disturbing `viewport`.
+ */
+export function withViewport(wf: FlowWorkflow, vp: StoredViewport): FlowWorkflow {
+  // `!== false`, never `?? false` and never `=== true`: omitted ⇒ ON.
+  const savePosition = wf.settings?.savePosition !== false;
+  if (!savePosition) return wf;
+  if (!Number.isFinite(vp.x) || !Number.isFinite(vp.y) || !Number.isFinite(vp.zoom)) return wf;
+  const next: StoredViewport = {
+    x: Math.round(vp.x),
+    y: Math.round(vp.y),
+    zoom: Math.round(vp.zoom * 1000) / 1000,
+  };
+  const current = storedViewport(wf);
+  if (current && current.x === next.x && current.y === next.y && current.zoom === next.zoom) {
+    return wf;
+  }
+  return { ...wf, settings: { ...wf.settings, viewport: next } };
 }
 
 /** When no edges are declared, treat steps as a linear chain in declared order. */

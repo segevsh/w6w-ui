@@ -78,7 +78,14 @@ import {
   isInternalApp,
   nodePortsForStep,
 } from "./flow-types.ts";
-import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
+import {
+  type StepNode,
+  flowToWorkflow,
+  storedViewport,
+  suggestStepId,
+  withViewport,
+  workflowToFlow,
+} from "./flow-utils.ts";
 import {
   type StepStartState,
   type StepTest,
@@ -331,6 +338,19 @@ function Inner({
   // handles so React Flow's own state stays authoritative during interaction.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-derive layout only on workflow identity change
   const initial = useMemo(() => workflowToFlow(value), [value.id]);
+  // The camera to open at, read at mount for the same reason `initial` is: React
+  // Flow consumes `defaultViewport` in a mount-only effect (ZoomPane's `XYPanZoom`
+  // init), so a fresh object per render would be inert but misleading — and this
+  // is what makes a save round-trip not yank the view back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read at mount only, like `initial`
+  const savedViewport = useMemo(() => storedViewport(value), [value.id]);
+  // Gates BOTH position writers below (the drag and the pan/zoom). ⚠️ Omitted ⇒
+  // **true** (core rfcs/workflow.md · authoring-presentation amendment), so it is
+  // read as `!== false` — never `?? false` and never `=== true`. Derived from
+  // `value`, deliberately NOT a prop: the flag is a field of the workflow the
+  // editor already receives, and a prop would be a second source of truth that
+  // can disagree with the persisted document.
+  const savePosition = value.settings?.savePosition !== false;
   const [nodes, setNodes, onNodesChange] = useNodesState<StepNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -917,6 +937,56 @@ function Inner({
                 onConnect={onConnect}
                 onConnectEnd={onConnectEnd}
                 isValidConnection={isValidConnection}
+                // A finished drag is what makes a new coordinate stick: until this
+                // existed, dragging went only through `onNodesChange` and never
+                // marked the workflow changed, so the position was lost on reload.
+                // `flowToWorkflow` (inside `emitChange`) does the conversion and the
+                // rounding — nothing is converted here.
+                //
+                // Drag STOP, never `onNodeDrag`: the per-frame variant fires on every
+                // animation frame of the gesture, and the host's auto-save is a
+                // trailing debounce over emitted changes, so a per-frame emit is a
+                // write storm by construction.
+                //
+                // No `readOnly` term is needed: `nodesDraggable={!readOnly}` below
+                // means React Flow never starts the drag, so this cannot fire at all
+                // in a read-only editor. Measured, not assumed — the probe's readOnly
+                // fixture asserts the node does not move (F4-V1).
+                onNodeDragStop={() => {
+                  if (!savePosition) return;
+                  emitChange(nodes, edges);
+                }}
+                onMoveEnd={(event, viewport) => {
+                  // FIRST statement, and load-bearing. React Flow passes
+                  // `event === null` when the move was NOT user-initiated
+                  // (@xyflow/react 12.11.1, `types/component-props.d.ts` on
+                  // `onMoveEnd`: "If the movement is not user-initiated, the event
+                  // parameter will be `null`."). The `fitView` on open is exactly
+                  // such a move — without this guard every open would emit a change,
+                  // and with the host's auto-save every page load would be a write.
+                  if (!event) return;
+                  // `readOnly` is checked here and NOT delegated, because — unlike a
+                  // drag — panning and zooming stay enabled in a read-only editor (see
+                  // the prop's docstring), so this handler really does fire and a
+                  // viewer must not write to what they are only looking at.
+                  if (readOnly) return;
+                  // `savePosition` is deliberately NOT re-checked here: `withViewport`
+                  // is the single place that reads the flag for this path and returns
+                  // its argument unchanged when it is off, so a duplicate term would be
+                  // unobservable — measured as a surviving mutant (T3.3.2-mutants.sh
+                  // C5) and removed rather than shipped as an unpinnable branch.
+                  //
+                  // Emit ONLY when `withViewport` hands back a different reference:
+                  // it returns `value`'s base unchanged when the rounded viewport
+                  // already equals the stored one, so a pan that lands back where it
+                  // started emits nothing. Rate is bounded by the gesture, not the
+                  // frame — `onMoveEnd` is d3-zoom's terminal event, and
+                  // `@xyflow/system` additionally coalesces scroll-driven pans behind
+                  // a 150ms trailing timer of its own (no timer belongs here).
+                  const base = flowToWorkflow(value, nodes, edges);
+                  const next = withViewport(base, viewport);
+                  if (next !== base) onChange(next);
+                }}
                 onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
                   setSelectedId(sel[0]?.id ?? null);
                   setSelectedEdgeId(edgeSel[0]?.id ?? null);
@@ -926,7 +996,14 @@ function Inner({
                 nodesDraggable={!readOnly}
                 nodesConnectable={!readOnly}
                 elementsSelectable
-                fitView
+                // Reopen at the camera the author left, when the workflow stores one;
+                // otherwise fit the graph exactly as before. The two props are spread
+                // in so only ONE of them is ever passed: they are mutually exclusive
+                // by the library's own rule — "If a default viewport is provided but
+                // `fitView` is enabled, the default viewport will be ignored"
+                // (`types/component-props.d.ts` on `defaultViewport`) — and a stray
+                // `fitView` would silently discard the restored view.
+                {...(savedViewport ? { defaultViewport: savedViewport } : { fitView: true })}
                 // Deletion is owned solely by the guarded onKeyDown handler above
                 // (canvas-only, with a confirm). Disable React Flow's built-in
                 // Backspace/Delete so it can't silently remove a node — e.g. while a

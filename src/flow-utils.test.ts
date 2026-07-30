@@ -14,6 +14,11 @@ import type { Edge } from "@xyflow/react";
 import { renameStepInEdges } from "./flow-connect.ts";
 import type { FlowWorkflow } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
+// A second statement from the same module rather than widening the line above:
+// T3.3.2's contract (ADDENDUM Z) gates this file on **zero deleted lines**, because
+// a stale absolute test count is satisfiable by deleting cases — and a rewritten
+// import line reads as a deletion to that gate.
+import { storedViewport, withViewport } from "./flow-utils.ts";
 
 /** Three steps, so an edge can be authored between any pair. */
 const WF: FlowWorkflow = {
@@ -237,6 +242,100 @@ test("flowToWorkflow — savePosition:false writes NO position and ERASES none",
   assert.deepEqual(next.steps, wf.steps);
 });
 
+// ── The four position invariants T3.3.1's evaluation found UNPINNED, and which
+// this node (the writer that makes stored coordinates actually exist) turns from
+// theoretical into live. Each one below dies to a single-rule mutant — see
+// artifacts/T3.3.2-mutants.sh U7..U10.
+
+/** A same-column fan-out: `b` and `c` are BOTH in column 1, on different rows. */
+const FANOUT: FlowWorkflow = {
+  ...WF,
+  edges: [
+    { from: "a", to: "b" },
+    { from: "a", to: "c" },
+  ],
+};
+
+test("workflowToFlow — a POSITIONED sibling still consumes its row slot", () => {
+  // The row counter advances for EVERY step, not only unpositioned ones. Case 11
+  // ("a stored position wins") cannot see this, because there the two steps sit in
+  // different columns — the escape needs two siblings in the SAME column.
+  //
+  // The user-visible bug if the counter skipped positioned steps: `c` would slide
+  // up into `b`'s vacated row, so dragging `b` (the only positioned step) would
+  // silently MOVE `c` — an edit to one node relocating another.
+  const { nodes } = workflowToFlow({
+    ...FANOUT,
+    steps: [WF.steps[0], { ...WF.steps[1], position: { x: 900, y: 900 } }, WF.steps[2]],
+  });
+  assert.deepEqual(
+    nodes.map((n) => n.position),
+    [
+      { x: 40, y: 40 },
+      { x: 900, y: 900 },
+      { x: 280, y: 140 },
+    ],
+  );
+  // ...and `c` lands on that SAME slot when nothing is positioned at all: the
+  // computed coordinate is a function of the graph, never of which neighbour
+  // happens to carry a coordinate. (This pair is the discriminator — a mutant that
+  // skips positioned steps moves only the first `c`, to y=40.)
+  assert.deepEqual(workflowToFlow(FANOUT).nodes[2].position, { x: 280, y: 140 });
+});
+
+test("workflowToFlow — a GARBAGE stored position falls back to the computed slot", () => {
+  // `position` arrives from a hand-editable JSON document, so a half-written or
+  // wrongly-typed value must not reach React Flow: a NaN coordinate puts the node
+  // at an unreachable point on the canvas with no way back but editing the JSON.
+  for (const bad of [
+    { x: Number.NaN, y: 5 },
+    { x: 5, y: Number.NaN },
+    { x: "10" as unknown as number, y: 10 },
+    { x: 10 } as unknown as { x: number; y: number },
+    null as unknown as { x: number; y: number },
+  ]) {
+    const { nodes } = workflowToFlow({
+      ...CHAIN,
+      steps: [{ ...CHAIN.steps[0], position: bad }, CHAIN.steps[1]],
+    });
+    assert.deepEqual(nodes[0].position, { x: 40, y: 40 }, `bad position leaked: ${String(bad)}`);
+  }
+});
+
+test("flowToWorkflow — a non-finite node coordinate is NEVER written to the document", () => {
+  // The worse half of the same guard: this one corrupts PERSISTED data. A step whose
+  // node carries a NaN must be emitted untouched — not stamped with `{x: null}` by
+  // the JSON round-trip that follows.
+  const wf: FlowWorkflow = {
+    ...WF,
+    steps: [{ ...WF.steps[0], position: { x: 11, y: 22 } }, WF.steps[1], WF.steps[2]],
+  };
+  const nodes = nodesOf(wf).map((n) => ({ ...n, position: { x: Number.NaN, y: 5 } }));
+  const next = flowToWorkflow(wf, nodes, []);
+  assert.deepEqual(next.steps, wf.steps);
+  // Belt and braces on what the host would actually persist.
+  assert.doesNotMatch(JSON.stringify(next.steps), /null/);
+});
+
+test("workflowToFlow — node.position is a FRESH object a drag cannot write back through", () => {
+  // React Flow OWNS `node.position` and mutates it IN PLACE while a drag is in
+  // flight — which is exactly what `onNodeDragStop` then reads. If the node aliased
+  // the step's stored object, the drag would edit the definition behind the
+  // conversion's back, and `flowToWorkflow`'s savePosition:false arm ("write none,
+  // erase none") could not hold. Aliasing was harmless until this node shipped a
+  // writer; it is load-bearing now.
+  const stored = { x: 123, y: 456 };
+  const wf: FlowWorkflow = { ...CHAIN, steps: [{ ...CHAIN.steps[0], position: stored }] };
+  const { nodes } = workflowToFlow(wf);
+  assert.notStrictEqual(nodes[0].position, stored, "the node aliased the step's own object");
+  nodes[0].position.x = 999; // ← what a drag does
+  assert.deepEqual(stored, { x: 123, y: 456 }, "a drag reached back into the definition");
+  const next = flowToWorkflow(wf, nodes, []);
+  assert.deepEqual(next.steps[0].position, { x: 999, y: 456 });
+  assert.notStrictEqual(next.steps[0].position, nodes[0].position, "emitted an aliased coordinate");
+  assert.notStrictEqual(next.steps[0].position, stored);
+});
+
 // ── ADDENDUM A: `computeLayers` must TERMINATE on a cyclic graph ─────────────
 //
 // The layering iterated `while (changed)` to a fixpoint on the stated assumption
@@ -304,4 +403,120 @@ test("a cyclic graph still lays out USABLY — on canvas, no two steps on one po
       "two steps landed on the same point",
     );
   }
+});
+
+test("an edge from an UNDECLARED step adds a column and still converges", () => {
+  // The counterexample to "a DAG's layers never exceed steps.length - 1" (the claim
+  // the source comment used to make, corrected at this commit): `layer.get(pred) ?? 0`
+  // gives an undeclared `from` a phantom layer 0, so it contributes +1 to the chain
+  // it feeds. Two steps ⇒ lastColumn 1, yet `b` legitimately lands in column 2.
+  //
+  // The CODE is right: this converges (`changed === false` before the bound runs
+  // out), so the cycle clamp never fires and the extra column is simply rendered.
+  // Only the comment was wrong — and a future reader "restoring" the invariant by
+  // clamping every DAG to steps.length - 1 would break this graph.
+  const { nodes } = workflowToFlow({
+    ...CHAIN,
+    edges: [
+      { from: "ghost", to: "a" },
+      { from: "a", to: "b" },
+    ],
+  });
+  assert.deepEqual(
+    nodes.map((n) => [n.id, n.position]),
+    [
+      ["a", { x: 280, y: 40 }],
+      ["b", { x: 520, y: 40 }],
+    ],
+  );
+});
+
+// ── `settings.viewport` — the pure viewport writer (T3.3.2) ──────────────────
+//
+// `withViewport` is where the pan/zoom writer's two interesting decisions live,
+// and both exist to protect the host's auto-save (a trailing debounce that dedupes
+// on the SERIALIZED payload) from a write storm:
+//   · rounding — a trackpad reports a long float, so two visually identical
+//     viewports would serialize differently on every idle gesture;
+//   · the SAME-REFERENCE return — the component emits only when the reference
+//     changes, so a pan that lands back where it started emits nothing.
+// The identity assertions below are therefore `strictEqual`, never `deepEqual`: a
+// no-op write returns an object that IS deep-equal to the input — only the
+// reference distinguishes "emit" from "don't", so deep equality cannot see the
+// short-circuit disappear.
+
+test("withViewport — rounds x/y to integers and zoom to 3 decimal places", () => {
+  const next = withViewport(WF, { x: 12.7, y: -3.2, zoom: 1.23456 });
+  assert.deepEqual(next.settings?.viewport, { x: 13, y: -3, zoom: 1.235 });
+  const vp = next.settings?.viewport;
+  assert.ok(Number.isInteger(vp?.x), `x not an integer: ${vp?.x}`);
+  assert.ok(Number.isInteger(vp?.y), `y not an integer: ${vp?.y}`);
+});
+
+test("withViewport — SAME REFERENCE when settings.savePosition is false", () => {
+  // Omitted ⇒ ON, so only an explicit `false` may suppress the write. Identity,
+  // not deep equality: the caller's "emit or not" decision reads the reference.
+  const wf: FlowWorkflow = { ...WF, settings: { savePosition: false } };
+  assert.strictEqual(withViewport(wf, { x: 12.7, y: -3.2, zoom: 1.23456 }), wf);
+  // …and the omitted flag really is ON — the same input DOES write here.
+  assert.notStrictEqual(withViewport(WF, { x: 12.7, y: -3.2, zoom: 1.23456 }), WF);
+});
+
+test("withViewport — SAME REFERENCE when the rounded viewport equals the stored one", () => {
+  // The fed value is not equal to the stored one, but ROUNDS to it: this is the
+  // idle-jitter case that would otherwise emit a change (and a network write)
+  // every time the author's hand brushed the trackpad.
+  const wf: FlowWorkflow = { ...WF, settings: { viewport: { x: 13, y: -3, zoom: 1.235 } } };
+  assert.strictEqual(withViewport(wf, { x: 12.7, y: -3.2, zoom: 1.23456 }), wf);
+  // A genuinely different viewport is still written.
+  assert.notStrictEqual(withViewport(wf, { x: 14, y: -3, zoom: 1.235 }), wf);
+});
+
+test("withViewport — writes ONLY settings.viewport: siblings and the graph are untouched", () => {
+  // `settings` is spread, not replaced. The mirror image of studio's `writeSetting`
+  // deleting a defaulted key without disturbing `viewport`: a viewport write must
+  // not be collateral damage for `autoSave` / `savePosition` either.
+  const wf: FlowWorkflow = {
+    ...WF,
+    steps: [{ ...WF.steps[0], position: { x: 11, y: 22 } }, WF.steps[1], WF.steps[2]],
+    settings: { autoSave: false, savePosition: true },
+  };
+  const next = withViewport(wf, { x: 5, y: 6, zoom: 2 });
+  assert.deepEqual(next.settings, {
+    autoSave: false,
+    savePosition: true,
+    viewport: { x: 5, y: 6, zoom: 2 },
+  });
+  assert.strictEqual(next.steps, wf.steps, "steps must be carried across untouched");
+  assert.strictEqual(next.edges, wf.edges, "edges must be carried across untouched");
+  // With no `settings` at all, exactly one key is invented.
+  assert.deepEqual(withViewport(WF, { x: 5, y: 6, zoom: 2 }).settings, {
+    viewport: { x: 5, y: 6, zoom: 2 },
+  });
+});
+
+test("a non-finite viewport is neither stored nor restored", () => {
+  // `settings.viewport` is hand-editable (studio's `</>` raw-JSON modal), and it is
+  // handed straight to React Flow's `defaultViewport` as the initial transform — a
+  // NaN there blanks the canvas with no way back but editing the JSON again. So
+  // both directions check all three components, exactly as `storedPosition` checks
+  // its two.
+  for (const bad of [
+    { x: Number.NaN, y: 0, zoom: 1 },
+    { x: 0, y: Number.NaN, zoom: 1 },
+    { x: 0, y: 0, zoom: Number.NaN },
+    { x: 0, y: 0, zoom: null as unknown as number },
+  ]) {
+    assert.strictEqual(withViewport(WF, bad), WF, `stored a bad viewport: ${JSON.stringify(bad)}`);
+    assert.equal(
+      storedViewport({ ...WF, settings: { viewport: bad } }),
+      undefined,
+      `restored a bad viewport: ${JSON.stringify(bad)}`,
+    );
+  }
+  // A usable one comes back as a FRESH object (React Flow owns what it is given).
+  const wf: FlowWorkflow = { ...WF, settings: { viewport: { x: 1, y: 2, zoom: 0.5 } } };
+  assert.deepEqual(storedViewport(wf), { x: 1, y: 2, zoom: 0.5 });
+  assert.notStrictEqual(storedViewport(wf), wf.settings?.viewport);
+  assert.equal(storedViewport(WF), undefined, "no settings ⇒ no stored viewport");
 });
