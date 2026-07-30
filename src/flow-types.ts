@@ -31,6 +31,26 @@ export interface FlowStep {
   onError?: "fail" | "continue" | "continue-record";
   /** Free-form author notes for this step. Not executed. */
   notes?: string;
+  /**
+   * Authoring-time canvas coordinate for this step, in this editor's own
+   * coordinate space (core `rfcs/workflow.md` · "Amendment — 2026-07-29:
+   * authoring presentation (`Step.position`, `Workflow.settings`)" — the spec
+   * pins no unit, origin or grid). Declarative only: the engine ignores it
+   * exactly as it ignores `notes`.
+   *
+   * **Omitted ⇒ the editor computes a layout** from the graph alone, exactly as
+   * before this field existed, so it is additive and backward-compatible.
+   * Partial coverage is valid: `workflowToFlow` places the steps that declare a
+   * `position` and computes a slot for the rest.
+   *
+   * Rename-safe by construction — the coordinate travels *with* the step, so
+   * there is no workflow-level `id → {x,y}` map to fix up on rename (D-I0-2).
+   *
+   * Mirrors `Step.position` in `@w6w/workflow-types` by hand — see the header
+   * note: these types are deliberately a structural subset with no compiler
+   * tie, so the spelling here must stay identical to the engine's.
+   */
+  position?: { x: number; y: number };
 }
 
 export interface FlowEdge {
@@ -88,6 +108,57 @@ export interface FlowWorkflow {
   variables?: Array<{ key: string; type?: string; required?: boolean; default?: unknown }>;
   steps: FlowStep[];
   edges?: FlowEdge[];
+  /**
+   * Authoring-time presentation and preferences for this workflow (core
+   * `rfcs/workflow.md` · "Amendment — 2026-07-29: authoring presentation
+   * (`Step.position`, `Workflow.settings`)"). Declarative only — the engine
+   * ignores it, exactly like `FlowStep.notes` and `FlowStep.position`.
+   * `viewport` sits *inside* `settings` deliberately, so exactly one new
+   * top-level key enters the portable workflow document. `settings` is itself
+   * optional; when the object is absent every member below still takes its own
+   * default.
+   *
+   * ⚠️ **`autoSave` and `savePosition` default to `true` when omitted.** That is
+   * *deliberately unlike* the `ports`/`onError` rule ("omitted reproduces the
+   * status quo") — here it does not. Read them as `?? true` / `!== false`, never
+   * `?? false` and never `=== true`. The consequence, stated plainly: **a
+   * workflow that has never been saved by the new editor starts persisting step
+   * coordinates the first time it is saved.** That is intended (the product
+   * requires both features on by default); only an explicit `false` turns one
+   * off.
+   *
+   * HITL-6 asked whether a workflow's arrangement and its auto-save preference
+   * belong to *the workflow* or to *the person looking at it*; the amendment
+   * takes the **workflow** answer, so everyone who opens a workflow sees the
+   * same arrangement. HITL-6 is still open — a viewer-owned answer would move
+   * these fields out of the document and re-contract this shape.
+   *
+   * Mirrors `Workflow.settings` in `@w6w/workflow-types` by hand (structural
+   * subset, no compiler tie — the spelling must stay identical).
+   */
+  settings?: {
+    /**
+     * Whether an authoring tool persists edits without an explicit save action.
+     * Omitted ⇒ **true** — auto-save is ON. Not read by this module; the editor
+     * and its host own it (T3.3.2 / T4.1.x).
+     */
+    autoSave?: boolean;
+    /**
+     * Whether an authoring tool persists step coordinates (`FlowStep.position`)
+     * and `settings.viewport` when it saves. Omitted ⇒ **true** — positions ARE
+     * persisted. When explicitly `false`, `flowToWorkflow` writes no `position`;
+     * any value already stored is **left as it is, never erased**.
+     */
+    savePosition?: boolean;
+    /**
+     * The camera position the author last left the canvas at, so reopening the
+     * workflow restores the view. **No default** — a workflow with no `viewport`
+     * opens at whatever view the editor computes, exactly as today. Written by
+     * the component (T3.3.2), not by `flowToWorkflow`, whose signature cannot
+     * see a viewport.
+     */
+    viewport?: { x: number; y: number; zoom: number };
+  };
 }
 
 import type { ActionParam } from "./types.ts";

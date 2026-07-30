@@ -47,7 +47,41 @@ const ROW_HEIGHT = 100;
 const MARGIN_X = 40;
 const MARGIN_Y = 40;
 
-/** Layer index per step id under a topological layout of the DAG. */
+/**
+ * Layer index per step id under a topological layout of the graph: a step sits
+ * one column right of its furthest-right predecessor (longest-path layering,
+ * computed by relaxation).
+ *
+ * ## Termination — this loop used to hang the tab
+ *
+ * The relaxation is **bounded to `steps.length + 1` passes**. The unbounded
+ * `while (changed)` it replaces assumed a DAG ("for a DAG this converges") and
+ * never exited on a cycle: with `a → b → a` the `<` test stays satisfiable
+ * forever and the layers climb without bound. The engine rejects cycles at plan
+ * time, but **this editor lets you draw one**, and `workflowToFlow` calls this
+ * on open — so a cyclic workflow froze the tab on load, and would have frozen it
+ * mid-edit once an auto-layout button called the same code from a click.
+ *
+ * A **pass bound** was chosen over a separate cycle detector (a DFS colouring)
+ * for two reasons: it keeps one traversal and one notion of "the graph" instead
+ * of two that can drift, and the bound is provably exact rather than heuristic —
+ * by the Bellman-Ford argument, after `k` full passes every step whose longest
+ * path from a source is `k` edges long already holds its final layer, and in a
+ * DAG that path is at most `steps.length - 1` edges. So a DAG reaches its
+ * fixpoint within `steps.length` passes and the extra pass here only ever
+ * observes `changed === false`. **Acyclic output is therefore byte-identical to
+ * the unbounded version** — the bound is not a heuristic cut-off, and
+ * `artifacts/T3.3.1-computelayers-equivalence.sh` proves it against the previous
+ * commit's blob over 200+ fixtures.
+ *
+ * Exceeding the bound *is* the cycle signal (`changed` is still true). The
+ * layout then stays **usable** rather than throwing or refusing: the runaway
+ * values are clamped to the last real column, so the steps on the cycle stack up
+ * in one column (distinct rows — `workflowToFlow` counts rows per column) and
+ * the author can see the loop they drew and delete an edge. Refusing to lay out
+ * a cyclic graph would trade a hang for a workflow nobody can open to fix. The
+ * clamp cannot fire on a DAG, whose layers never exceed `steps.length - 1`.
+ */
 function computeLayers(steps: FlowStep[], edges: FlowEdge[]): Map<string, number> {
   const layer = new Map<string, number>();
   const incoming = new Map<string, string[]>();
@@ -58,9 +92,13 @@ function computeLayers(steps: FlowStep[], edges: FlowEdge[]): Map<string, number
   for (const e of edges) {
     incoming.get(e.to)?.push(e.from);
   }
-  // Iterate to fixpoint. For a DAG this converges in O(V+E) passes.
+  // Iterate to fixpoint. For a DAG this converges in O(V+E) passes — and the
+  // pass bound is what makes that assumption safe instead of load-bearing.
+  const maxPasses = steps.length + 1;
+  let passes = 0;
   let changed = true;
-  while (changed) {
+  while (changed && passes < maxPasses) {
+    passes++;
     changed = false;
     for (const s of steps) {
       const preds = incoming.get(s.id) ?? [];
@@ -72,10 +110,51 @@ function computeLayers(steps: FlowStep[], edges: FlowEdge[]): Map<string, number
       }
     }
   }
+  if (changed) {
+    // The bound ran out with the layout still moving ⇒ there is a cycle. Pull
+    // the runaway columns back to the last real one so the graph still renders.
+    const lastColumn = Math.max(0, steps.length - 1);
+    for (const [id, col] of layer) {
+      if (col > lastColumn) layer.set(id, lastColumn);
+    }
+  }
   return layer;
 }
 
-/** Turn a Workflow into (nodes, edges) with an auto-layout when no positions are known. */
+/**
+ * A step's **stored** canvas coordinate, when it has a usable one.
+ *
+ * `position` arrives from a persisted JSON document (core `rfcs/workflow.md` ·
+ * authoring-presentation amendment, mirrored on {@link FlowStep}), so both axes
+ * are checked with `Number.isFinite`: a `null`, a string, a `NaN` from a
+ * `JSON.parse`d `null`, or a half-written `{ x }` falls back to the computed slot
+ * rather than putting the node at an unreachable coordinate.
+ *
+ * A **fresh object** is returned, never the one hanging off the step: React Flow
+ * owns `node.position` while a drag is in flight, and the same step object is
+ * also handed to the node's `data.step`.
+ */
+function storedPosition(step: FlowStep): { x: number; y: number } | undefined {
+  const p = step.position;
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined;
+  return { x: p.x, y: p.y };
+}
+
+/**
+ * Turn a Workflow into (nodes, edges) with an auto-layout when no positions are
+ * known.
+ *
+ * A step's **stored `position` wins** over the computed slot (the amendment's
+ * "omitted ⇒ the editor computes a layout" arm, and its converse). A partially
+ * positioned graph mixes the two: positioned steps sit where they were left,
+ * unpositioned ones take their computed slot.
+ *
+ * `computeLayers` runs over the **whole** graph either way, and the per-column
+ * row counter advances for every step including positioned ones — so an
+ * unpositioned step's computed coordinate is a pure function of the graph and
+ * does not shift depending on which of its neighbours happen to carry a
+ * coordinate.
+ */
 export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Edge[] } {
   const edges: FlowEdge[] = wf.edges ?? implicitChain(wf.steps);
   const layer = computeLayers(wf.steps, edges);
@@ -89,7 +168,7 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
     return {
       id: step.id,
       type: isInternal ? "control" : "step",
-      position: {
+      position: storedPosition(step) ?? {
         x: MARGIN_X + col * COLUMN_WIDTH,
         y: MARGIN_Y + row * ROW_HEIGHT,
       },
@@ -123,12 +202,52 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
   return { nodes, edges: flowEdges };
 }
 
-/** Reverse direction: pull the graph state back into a Workflow shape for onChange. */
+/**
+ * Reverse direction: pull the graph state back into a Workflow shape for
+ * onChange.
+ *
+ * Each emitted step carries the **current canvas coordinate** of its node, unless
+ * `original.settings.savePosition` is explicitly `false`. The flag is read off
+ * the workflow this function already receives — deliberately **not** a new
+ * parameter or an options bag, because both exported conversion functions are
+ * public `@w6w/ui/flow` API for an MIT partner-facing library and a signature
+ * change here would break it for a value the function can already see.
+ *
+ * ⚠️ **`savePosition` defaults to `true`** (core `rfcs/workflow.md` ·
+ * authoring-presentation amendment), so it is read as `!== false`: an absent
+ * `settings` object means positions *are* persisted. The practical consequence is
+ * intended — **a workflow that has never been saved by this editor starts
+ * carrying `position` on every step the first time it is saved.**
+ */
 export function flowToWorkflow(
   original: FlowWorkflow,
   nodes: StepNode[],
   edges: Edge[],
 ): FlowWorkflow {
+  // `!== false`, never `?? false` and never `=== true`: omitted ⇒ ON.
+  const savePosition = original.settings?.savePosition !== false;
+  const nodeById = new Map<string, StepNode>(nodes.map((n) => [n.id, n]));
+
+  /**
+   * Stamp a step with its node's coordinate.
+   *
+   * `Math.round` is required, not cosmetic: React Flow reports fractional
+   * coordinates, and auto-save dedupes by comparing the serialized payload — an
+   * unrounded float would make a no-op render look like a change and produce a
+   * write storm.
+   *
+   * When `savePosition` is `false` the step is returned **untouched**, which is
+   * not the same as clearing it: "not written" is not "erased", so a coordinate a
+   * colleague already stored survives someone else turning their own toggle off
+   * (amendment: "any values already stored are left as they are, not erased").
+   */
+  const withPosition = (step: FlowStep): FlowStep => {
+    if (!savePosition) return step;
+    const p = nodeById.get(step.id)?.position;
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return step;
+    return { ...step, position: { x: Math.round(p.x), y: Math.round(p.y) } };
+  };
+
   // Preserve original step order where possible; append new nodes at the end.
   const stepById = new Map<string, FlowStep>();
   for (const s of original.steps) stepById.set(s.id, s);
@@ -139,14 +258,14 @@ export function flowToWorkflow(
   for (const s of original.steps) {
     const current = stepById.get(s.id);
     if (current && nodes.some((n) => n.id === s.id)) {
-      nextSteps.push(current);
+      nextSteps.push(withPosition(current));
       seen.add(s.id);
     }
   }
   for (const n of nodes) {
     if (seen.has(n.id)) continue;
     const s = stepById.get(n.id);
-    if (s) nextSteps.push(s);
+    if (s) nextSteps.push(withPosition(s));
   }
 
   // Read the lane back off the React Flow edge (put there by workflowToFlow /
