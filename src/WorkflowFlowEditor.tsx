@@ -1,6 +1,10 @@
 import {
   Background,
   type Connection,
+  // Rendered as a `<Controls>` CHILD, which the library appends after its three
+  // built-ins — so the auto-layout button lands in the same stack and inherits
+  // T3.1.1's `--xy-*` → `--w6w-*` bridge with no chrome of its own.
+  ControlButton,
   Controls,
   type Edge,
   MiniMap,
@@ -81,6 +85,8 @@ import {
 import {
   type StepNode,
   flowToWorkflow,
+  idClashMessage,
+  relayoutNodes,
   storedViewport,
   suggestStepId,
   withViewport,
@@ -121,18 +127,43 @@ const LANE_HINT =
   "then draw the success edge. An error edge overrides the step’s “On error” policy.";
 
 /**
- * The one wording for a refused edge id, shared by both routes into the collision —
- * drawing a wire whose minted id is taken, and re-laning one onto a taken id. `lead`
- * names what was refused; everything after it is identical because the cause is
- * identical (`flowEdgeId` qualifies the error lane with `:error`, so a step id
- * ending in `:error` makes two different edges mint one id, and React Flow's
- * id-keyed store keeps one wire for the two — silent work loss). Rendered inline
- * with `role="alert"`, never in a browser dialog (`.ai/conventions.md`).
+ * The step ids the refused edge id is minted from: the endpoints of the edge being
+ * drawn/moved plus those of the edge already holding the id. {@link idClashMessage}
+ * needs them to *determine* the cause instead of asserting one — the wording used to
+ * blame a `:error` step id unconditionally, and a collision from an embedded `->`
+ * therefore told the author to rename a step that did not exist (ADDENDUM Y).
+ *
+ * Both call sites look the sitting edge up by the id `connectConflict` /
+ * `edgeWhenConflict` returned; a corrupt edge set with no such edge simply
+ * contributes nothing, and the message falls back to naming no cause.
  */
-function idClashMessage(lead: string, id: string): string {
-  // One long template on purpose: `lint/style/useTemplate` forbids concatenating a
-  // template with a literal, and the formatter does not break string contents.
-  return `${lead}: the id “${id}” is already taken by another edge, because a step id ending in “:error” collides with the error-lane marker. Rename that step, then try again.`;
+function clashInvolvedIds(
+  edges: Edge[],
+  conflictId: string,
+  source: string | null | undefined,
+  target: string | null | undefined,
+): (string | null | undefined)[] {
+  const sitting = edges.find((e) => e.id === conflictId);
+  return [source, target, sitting?.source, sitting?.target];
+}
+
+/**
+ * The auto-layout glyph — a three-box hierarchy (one parent over two children),
+ * matching the layering the button applies. Module-local inline SVG, 16×16 on a
+ * `0 0 24 24` box, per convention C6 (there is no shared icons module).
+ *
+ * **Filled subpaths with no `fill` attribute**, so it inherits `currentColor` —
+ * which is what makes it themed for free. The library styles a control button's svg
+ * as `svg { width: 100%; max-width: 12px; max-height: 12px; fill: currentColor }`
+ * (`@xyflow/react/dist/style.css`), so a `fill="none" stroke="currentColor"` icon —
+ * the house style for the *node cards* — renders as nothing at all in here.
+ */
+function AutoLayoutIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 3h6v6H9zM11 9h2v2h-2zM4 11h16v2H4zM4 13h2v2H4zM18 13h2v2h-2zM2 15h6v6H2zM16 15h6v6h-6z" />
+    </svg>
+  );
 }
 
 /**
@@ -360,6 +391,9 @@ function Inner({
   const [editView, setEditView] = useState<EditView>("props");
   // The step id awaiting delete confirmation — one pending slot driving one modal.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Whether an auto-layout is awaiting confirmation. Same one-pending-slot shape as
+  // the delete above, for the same reason: it destroys something with no undo.
+  const [pendingRelayout, setPendingRelayout] = useState(false);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -422,7 +456,11 @@ function Inner({
         setSelectedEdgeId(conflict);
         setLaneError({
           edgeId: conflict,
-          message: idClashMessage("Can’t draw that edge", conflict),
+          message: idClashMessage(
+            "Can’t draw that edge",
+            conflict,
+            clashInvolvedIds(edges, conflict, params.source, params.target),
+          ),
         });
         return;
       }
@@ -486,6 +524,46 @@ function Inner({
     [nodes, edges, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
   );
 
+  // ── Auto-layout (the fourth control button) ─────────────────────────────────
+  //
+  // Re-flows the CURRENT canvas — including steps added and wires drawn since the
+  // last save — through `relayoutNodes`, which is the same layering + the same
+  // placement arithmetic `workflowToFlow` runs on first open. Not a second
+  // algorithm: "arrange" disagreeing with "how it opened" is the one thing an
+  // author notices immediately (D-I0-6 also pins that no layout dependency is
+  // added — the layerer already exists).
+  //
+  // `setNodes` then `emitChange` is what makes the result PERSIST: `flowToWorkflow`
+  // stamps each step with its node's rounded coordinate and the host's auto-save
+  // writes it, so a reload reopens on the re-flowed graph.
+  const performRelayout = useCallback(() => {
+    if (readOnly) return;
+    const next = relayoutNodes(nodes, edges);
+    setNodes(next);
+    emitChange(next, edges);
+  }, [nodes, edges, setNodes, emitChange, readOnly]);
+
+  // Does at least one step carry a hand-placed coordinate that a re-flow would
+  // destroy? Read off `value.steps` — the PERSISTED document — because that is
+  // where a deliberate placement lives; a node's canvas position is equally a
+  // computed slot nobody chose. Combined with `savePosition` below, so a workflow
+  // whose positions are not being saved anyway loses nothing and needs no dialog.
+  const hasStoredPositions = useMemo(() => value.steps.some((s) => !!s.position), [value.steps]);
+
+  // Confirm ONLY when the click would actually destroy something. There is no undo
+  // anywhere in studio, so the confirm is the guard — but a graph that has never
+  // been arranged has nothing to lose, and a dialog there would be noise on the
+  // common path. The app's own ConfirmModal, never a browser dialog
+  // (`.ai/conventions.md`): state + a sibling modal, exactly like delete.
+  const requestRelayout = useCallback(() => {
+    if (readOnly) return;
+    if (savePosition && hasStoredPositions) {
+      setPendingRelayout(true);
+      return;
+    }
+    performRelayout();
+  }, [readOnly, savePosition, hasStoredPositions, performRelayout]);
+
   // ── The edge-level lane control (`Run on: Success / Error`) ─────────────────
   // Reuses the selection state that already exists; nothing new is tracked but the
   // refusal message, which renders INLINE in the panel. Never a browser dialog —
@@ -518,7 +596,11 @@ function Inner({
         setLaneError({
           edgeId: selectedEdgeId,
           message: conflict
-            ? idClashMessage("Can’t switch this edge", conflict)
+            ? idClashMessage(
+                "Can’t switch this edge",
+                conflict,
+                clashInvolvedIds(edges, conflict, me.source, me.target),
+              )
             : "This edge can’t be switched right now.",
         });
         return;
@@ -1013,7 +1095,26 @@ function Inner({
                 proOptions={{ hideAttribution: true }}
               >
                 <Background gap={16} />
-                <Controls showInteractive={false} />
+                {/* `showInteractive={false}` still suppresses the lock button; the
+                    child is appended AFTER the three built-ins (zoom in / zoom out /
+                    fit view), so auto-layout reads as the fourth control in the same
+                    stack — "beside the zoom controls", not a floating panel. It
+                    carries NO colour, background or border of its own: the
+                    `--xy-controls-button-*` → `--w6w-*` bridge in `styles.css` sets
+                    inherited custom properties on the `.w6w-flow` wrapper, so any
+                    control button added later is themed for free (measured in both
+                    stylesheet orders — T3.1.1's evaluation built this exact shape). */}
+                <Controls showInteractive={false}>
+                  {!readOnly && (
+                    <ControlButton
+                      onClick={requestRelayout}
+                      title="Auto-layout — re-flow the graph into columns"
+                      aria-label="Auto-layout the graph"
+                    >
+                      <AutoLayoutIcon />
+                    </ControlButton>
+                  )}
+                </Controls>
                 <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
                 {!readOnly && (
                   <Panel position="top-left">
@@ -1164,6 +1265,19 @@ function Inner({
               {/* Sibling of the run-result modal, never nested inside another
                   modal's body — ui's Modal is a native <dialog>, so nesting
                   works mechanically and just looks wrong. */}
+              {pendingRelayout && (
+                <ConfirmModal
+                  title="Auto-layout"
+                  message="Re-flow every step into the computed layout? The positions saved for this workflow are replaced, and there is no undo."
+                  confirmLabel="Re-flow"
+                  onConfirm={() => {
+                    performRelayout();
+                    setPendingRelayout(false);
+                  }}
+                  onClose={() => setPendingRelayout(false)}
+                />
+              )}
+
               {pendingDelete !== null && (
                 <ConfirmModal
                   title="Delete step"

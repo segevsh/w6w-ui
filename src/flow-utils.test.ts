@@ -12,6 +12,9 @@ import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Edge } from "@xyflow/react";
 import { renameStepInEdges } from "./flow-connect.ts";
+// The collision the ADDENDUM Y cases exercise is computed by the REAL rule, not
+// hand-asserted: `connectConflict` is what the editor calls to name the sitting edge.
+import { connectConflict } from "./flow-connect.ts";
 import type { FlowWorkflow } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 // A second statement from the same module rather than widening the line above:
@@ -19,6 +22,9 @@ import { type StepNode, flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 // a stale absolute test count is satisfiable by deleting cases — and a rewritten
 // import line reads as a deletion to that gate.
 import { storedViewport, withViewport } from "./flow-utils.ts";
+// Third statement, same reason as the second: T3.3.3 inherits that zero-deleted-lines
+// gate, so a widened import line above would read as deletions.
+import { idClashMessage, relayoutNodes } from "./flow-utils.ts";
 
 /** Three steps, so an edge can be authored between any pair. */
 const WF: FlowWorkflow = {
@@ -519,4 +525,197 @@ test("a non-finite viewport is neither stored nor restored", () => {
   assert.deepEqual(storedViewport(wf), { x: 1, y: 2, zoom: 0.5 });
   assert.notStrictEqual(storedViewport(wf), wf.settings?.viewport);
   assert.equal(storedViewport(WF), undefined, "no settings ⇒ no stored viewport");
+});
+
+// ── `relayoutNodes` — the auto-layout control's whole implementation (T3.3.3) ──
+//
+// The button re-flows what is CURRENTLY on the canvas, so it takes React Flow's
+// (nodes, edges) rather than a FlowWorkflow. The load-bearing constraint is
+// anti-duplication: it shares `computeLayers` AND the placement arithmetic
+// (`slotPosition`) with `workflowToFlow`, because an "arrange" that disagreed with
+// "how it opened" is the one thing an author would notice immediately. Case 28 is
+// that assertion — a second layering implementation fails it.
+
+test("relayoutNodes — OVERRIDES whatever positions the nodes currently have", () => {
+  // The whole point of the button: a stored coordinate wins on first open, and
+  // loses here. Absolute expected values, so a changed constant is a failure.
+  const { nodes, edges } = workflowToFlow({
+    ...CHAIN,
+    steps: [
+      { ...CHAIN.steps[0], position: { x: -4000, y: 7777 } },
+      { ...CHAIN.steps[1], position: { x: 1, y: 2 } },
+    ],
+  });
+  assert.deepEqual(
+    nodes.map((n) => n.position),
+    [
+      { x: -4000, y: 7777 },
+      { x: 1, y: 2 },
+    ],
+    "precondition: the absurd stored positions reached the canvas",
+  );
+  const out = relayoutNodes(nodes, edges);
+  assert.deepEqual(
+    out.map((n) => [n.id, n.position]),
+    [
+      ["a", { x: 40, y: 40 }],
+      ["b", { x: 280, y: 40 }],
+    ],
+  );
+});
+
+test("relayoutNodes — nothing is lost: same length, same ids, same `data` REFERENCES", () => {
+  // React Flow compares by reference, so the array and every node must be new —
+  // but `data` must be the SAME object, or every card re-derives its metadata (and
+  // `data.step` is what `flowToWorkflow` reads the step back off).
+  const { nodes, edges } = workflowToFlow(FANOUT);
+  const out = relayoutNodes(nodes, edges);
+  assert.equal(out.length, nodes.length);
+  assert.deepEqual(
+    out.map((n) => n.id),
+    nodes.map((n) => n.id),
+  );
+  assert.notStrictEqual(out, nodes, "returned the same array — React Flow won't re-render");
+  for (const [i, n] of out.entries()) {
+    assert.notStrictEqual(n, nodes[i], `node ${n.id} was not a new object`);
+    assert.strictEqual(n.data, nodes[i].data, `node ${n.id} lost its data reference`);
+    assert.equal(n.type, nodes[i].type, `node ${n.id} lost its type`);
+  }
+  // A node with NO outgoing edge (`b`, `c` in the fan-out) is still returned —
+  // and the fan-out's two same-column siblings keep distinct row slots.
+  assert.deepEqual(
+    out.map((n) => n.position),
+    [
+      { x: 40, y: 40 },
+      { x: 280, y: 40 },
+      { x: 280, y: 140 },
+    ],
+  );
+});
+
+test("relayoutNodes — AGREES WITH FIRST OPEN for a workflow with no stored positions", () => {
+  // The anti-duplication assertion. `workflowToFlow` places an unpositioned step at
+  // its computed slot; `relayoutNodes` places EVERY node there. With nothing stored
+  // the two must be indistinguishable — a second copy of the layering or of the
+  // arithmetic drifts here first.
+  for (const wf of [CHAIN, WF, FANOUT, CYCLIC, SELF_LOOP]) {
+    const { nodes, edges } = workflowToFlow(wf);
+    assert.deepEqual(
+      relayoutNodes(nodes, edges).map((n) => n.position),
+      nodes.map((n) => n.position),
+      `auto-layout disagreed with first open for ${wf.id}`,
+    );
+  }
+  // …and a workflow with NO declared edges agrees too: `workflowToFlow` lays the
+  // steps out as an implicit chain, and the flow edges it derived carry that shape
+  // into the re-flow.
+  const implicit: FlowWorkflow = { ...WF, edges: undefined };
+  const { nodes, edges } = workflowToFlow(implicit);
+  assert.deepEqual(
+    relayoutNodes(nodes, edges).map((n) => n.position),
+    [
+      { x: 40, y: 40 },
+      { x: 280, y: 40 },
+      { x: 520, y: 40 },
+    ],
+  );
+});
+
+test("relayoutNodes — a re-flow round-trips into the document as INTEGER positions", () => {
+  // The persistence half of the button: `setNodes(next)` + `emitChange(next, edges)`
+  // means these coordinates go straight into `flowToWorkflow`. Nothing new is needed
+  // for it to persist — this pins that the pairing actually works end to end.
+  const wf: FlowWorkflow = {
+    ...FANOUT,
+    steps: [{ ...WF.steps[0], position: { x: 901, y: 902 } }, WF.steps[1], WF.steps[2]],
+  };
+  const { nodes, edges } = workflowToFlow(wf);
+  const next = flowToWorkflow(wf, relayoutNodes(nodes, edges), edges);
+  assert.deepEqual(
+    next.steps.map((s) => [s.id, s.position]),
+    [
+      ["a", { x: 40, y: 40 }],
+      ["b", { x: 280, y: 40 }],
+      ["c", { x: 280, y: 140 }],
+    ],
+  );
+  // The edges survive the round-trip untouched — a re-flow moves nodes, nothing else.
+  assert.deepEqual(next.edges, FANOUT.edges);
+});
+
+// ── ADDENDUM Y: the refusal must not assert a cause it has not determined ─────
+//
+// `idClashMessage` hard-coded *"because a step id ending in ':error' collides with
+// the error-lane marker. Rename that step"*. The guard has a second, equally real
+// trigger — a step id containing `->`, the separator itself — and on that route the
+// author was told to rename a step that does not exist. It moved into flow-utils.ts
+// (beside `flowEdgeId`, whose non-injectivity IS the clash) so `node --test` can
+// reach it; in the .tsx it was coverable only by inspection.
+
+test("idClashMessage — a collision from an embedded `->` does NOT blame a `:error` id", () => {
+  // The T3.2.4 evaluator's case: steps `a`, `b->c`, `a->b`, `c` with an edge
+  // `a → "b->c"` (minted `a->b->c`). Drawing `"a->b" → c` mints the same string and
+  // is correctly refused — yet NO step id ends in `:error`.
+  const wf: FlowWorkflow = {
+    ...WF,
+    steps: [
+      { id: "a", uses: { app: "@w6w/script", action: "run" } },
+      { id: "b->c", uses: { app: "@w6w/script", action: "run" } },
+      { id: "a->b", uses: { app: "@w6w/script", action: "run" } },
+      { id: "c", uses: { app: "@w6w/script", action: "run" } },
+    ],
+    edges: [{ from: "a", to: "b->c" }],
+  };
+  const { nodes, edges } = workflowToFlow(wf);
+  const conflict = connectConflict("a->b", "c", nodes, edges);
+  assert.equal(conflict, "a->b->c", "precondition: the draw is refused for a taken id");
+  // Built exactly as the editor's `clashInvolvedIds` builds it: the drawn edge's
+  // endpoints plus the sitting edge's.
+  const sitting = edges.find((e) => e.id === conflict);
+  const msg = idClashMessage("Can’t draw that edge", conflict, [
+    "a->b",
+    "c",
+    sitting?.source,
+    sitting?.target,
+  ]);
+  assert.doesNotMatch(msg, /:error/, "blamed the error-lane marker on a `->` collision");
+  assert.doesNotMatch(msg, /ending in/, "asserted the `:error` cause it had not determined");
+  // It still names the taken id AND a step that really is ambiguous, so the advice
+  // is actionable: renaming it re-mints that edge's id.
+  assert.match(msg, /a->b->c/);
+  assert.match(msg, /rename the step “a->b”/);
+  assert.match(msg, /containing “->”/);
+});
+
+test("idClashMessage — the `:error` route still names the error-lane marker", () => {
+  // The cause the old wording asserted unconditionally is still named when it is
+  // the real one: steps `a`, `b`, `b:error` with `a → b` on the error lane already
+  // holding `a->b:error`, then drawing `a → "b:error"` on the success lane.
+  const wf: FlowWorkflow = {
+    ...WF,
+    steps: [
+      { id: "a", uses: { app: "@w6w/script", action: "run" } },
+      { id: "b", uses: { app: "@w6w/script", action: "run" } },
+      { id: "b:error", uses: { app: "@w6w/script", action: "run" } },
+    ],
+    edges: [{ from: "a", to: "b", when: "error" }],
+  };
+  const { nodes, edges } = workflowToFlow(wf);
+  const conflict = connectConflict("a", "b:error", nodes, edges);
+  assert.equal(conflict, "a->b:error", "precondition: the draw is refused for a taken id");
+  const sitting = edges.find((e) => e.id === conflict);
+  const msg = idClashMessage("Can’t draw that edge", conflict, [
+    "a",
+    "b:error",
+    sitting?.source,
+    sitting?.target,
+  ]);
+  assert.match(msg, /ending in “:error”/);
+  assert.match(msg, /rename the step “b:error”/);
+  // No cause at all when nothing involved is ambiguous — the message must never
+  // invent one (that arm is reachable only from an already-corrupt edge set).
+  const generic = idClashMessage("Can’t switch this edge", "x->y", ["x", "y", "x", "y"]);
+  assert.doesNotMatch(generic, /ending in/);
+  assert.doesNotMatch(generic, /containing “->”/);
+  assert.match(generic, /Rename one of the steps it connects/);
 });

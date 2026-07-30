@@ -41,11 +41,82 @@ export function flowEdgeId(from: string, to: string, when?: FlowEdge["when"]): s
   return when === "error" ? `${from}->${to}:error` : `${from}->${to}`;
 }
 
+/**
+ * The one wording for a refused edge id, shared by both routes into the collision —
+ * drawing a wire whose minted id is taken (`applyConnect` / `connectConflict`) and
+ * re-laning one onto a taken id (`setEdgeWhen` / `edgeWhenConflict`). `lead` names
+ * what was refused, `id` is the taken id, and `involved` carries the step ids of the
+ * **two edges that mint it**: the new/moving edge's endpoints and the sitting
+ * edge's. Rendered inline with `role="alert"`, never in a browser dialog
+ * (`.ai/conventions.md`).
+ *
+ * It lives here, beside {@link flowEdgeId}, for two reasons: the clash *is* a
+ * property of that function's non-injectivity over free-text step ids, and this
+ * module is JSX-free so `node --test` can pin the wording (it used to sit in
+ * `WorkflowFlowEditor.tsx`, where the runner cannot reach it — which is how the
+ * wrong advice below shipped uncovered).
+ *
+ * ⚠️ **The cause is DETERMINED, never asserted.** This message used to hard-code
+ * *"because a step id ending in `:error` collides with the error-lane marker.
+ * Rename that step"* — and the guard has a second, equally real trigger: a step id
+ * containing `->`, the separator itself. With steps `a`, `b->c`, `a->b`, `c` and an
+ * edge `a → "b->c"`, drawing `"a->b" → c` is correctly refused (both mint
+ * `a->b->c`) while **no step id ends in `:error`** — so the author was told to
+ * rename a step that does not exist, and given advice that could not resolve their
+ * problem. Inferring the cause from the taken `id` alone does not fix that: an id
+ * ending in `:error` may equally be an error-lane edge whose collision came from an
+ * embedded `->`. So the culprit is looked up among the ids actually involved, and
+ * when none of them is ambiguous the message names **no** cause at all.
+ */
+export function idClashMessage(
+  lead: string,
+  id: string,
+  involved: readonly (string | null | undefined)[],
+): string {
+  // The two spellings `flowEdgeId` is not injective over. At least one of the four
+  // involved ids must carry one of them for two distinct (from, to, lane) triples
+  // to mint a single string — so `undefined` here means the edge set was already
+  // corrupt (a duplicate id), not that the cause is one of these two.
+  const culprit = involved.find(
+    (s): s is string => !!s && (s.endsWith(":error") || s.includes("->")),
+  );
+  // One long template per arm on purpose: `lint/style/useTemplate` forbids
+  // concatenating a template with a literal, and the formatter does not break
+  // string contents.
+  const cause =
+    culprit === undefined
+      ? "Rename one of the steps it connects, then try again."
+      : culprit.endsWith(":error")
+        ? `A step id ending in “:error” collides with the error-lane marker, so two different edges mint one id — rename the step “${culprit}”, then try again.`
+        : `A step id containing “->” collides with the edge-id separator, so two different edges mint one id — rename the step “${culprit}”, then try again.`;
+  return `${lead}: the id “${id}” is already taken by another edge. ${cause}`;
+}
+
 /** Nice constants — tunable but stable defaults so layouts don't jitter. */
 const COLUMN_WIDTH = 240;
 const ROW_HEIGHT = 100;
 const MARGIN_X = 40;
 const MARGIN_Y = 40;
+
+/**
+ * The canvas slot a step in column `col`, row `row` occupies — **the one place**
+ * the placement arithmetic lives, exactly as {@link flowEdgeId} is the one place
+ * the id convention lives.
+ *
+ * Two callers, and the reason they must share this is user-visible: {@link
+ * workflowToFlow} uses the slot as the *fallback* for a step with no stored
+ * `position` (first open), while {@link relayoutNodes} uses it for *every* node
+ * (the auto-layout control). A second copy of the arithmetic would make
+ * "auto-layout" disagree with "first open" — the one difference an author would
+ * notice immediately — so the only thing that differs between the two is whether
+ * a stored coordinate wins, which belongs at the call site.
+ *
+ * A **fresh object** every call: React Flow owns `node.position` and mutates it
+ * in place during a drag (see {@link storedPosition}).
+ */
+function slotPosition(col: number, row: number): { x: number; y: number } {
+  return { x: MARGIN_X + col * COLUMN_WIDTH, y: MARGIN_Y + row * ROW_HEIGHT };
+}
 
 /**
  * Layer index per step id under a topological layout of the graph: a step sits
@@ -181,10 +252,7 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
     return {
       id: step.id,
       type: isInternal ? "control" : "step",
-      position: storedPosition(step) ?? {
-        x: MARGIN_X + col * COLUMN_WIDTH,
-        y: MARGIN_Y + row * ROW_HEIGHT,
-      },
+      position: storedPosition(step) ?? slotPosition(col, row),
       data: { step, isInternal },
     };
   });
@@ -213,6 +281,52 @@ export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Ed
   });
 
   return { nodes, edges: flowEdges };
+}
+
+/**
+ * Re-flow every node with the same deterministic layering the editor uses on
+ * first open — the auto-layout control's whole implementation.
+ *
+ * Takes React Flow's `(nodes, edges)` rather than a `FlowWorkflow` because the
+ * button acts on **what is currently on the canvas**, including steps added and
+ * wires drawn since the last save.
+ *
+ * Same {@link computeLayers} and same {@link slotPosition} as {@link
+ * workflowToFlow}, so a graph with no stored positions lays out byte-identically
+ * either way (pinned by `flow-utils.test.ts` — "auto-layout agrees with first
+ * open"). The **only** difference is that a stored coordinate does not win here:
+ * overriding hand placement is precisely what the author asked for by clicking.
+ * That is also why the caller confirms first — there is no undo in studio.
+ *
+ * Layering is keyed by **`node.id`**, not `node.data.step.id`: React Flow's
+ * `edge.source`/`edge.target` name node ids, so keying by anything else would
+ * silently drop every edge from the layering (a `?? 0` fallback puts the whole
+ * graph in column 0) if the two ever disagreed.
+ *
+ * Returns a **new array of new node objects** — React Flow's state handle
+ * compares by reference, so a mutated-in-place array does not re-render — with
+ * every node's `id`, `type` and `data` carried across untouched (`data` by the
+ * same reference, so no node card re-derives its metadata).
+ */
+export function relayoutNodes(nodes: StepNode[], edges: Edge[]): StepNode[] {
+  // `computeLayers` reads only `.id` off a step; keying on the NODE id keeps it
+  // consistent with the edge endpoints below. The bounded relaxation inside is
+  // what makes this safe to call from a click: before it, a cyclic graph froze
+  // the tab, and this button would have frozen it mid-edit.
+  const steps: FlowStep[] = nodes.map((n) => ({ ...n.data.step, id: n.id }));
+  const layer = computeLayers(
+    steps,
+    edges.map((e) => ({ from: e.source, to: e.target })),
+  );
+  const rowsInLayer = new Map<number, number>();
+  return nodes.map((n) => {
+    const col = layer.get(n.id) ?? 0;
+    const row = rowsInLayer.get(col) ?? 0;
+    // Advance for EVERY node, exactly as `workflowToFlow` does — the row counter
+    // is per column, and skipping any node would collapse two onto one slot.
+    rowsInLayer.set(col, row + 1);
+    return { ...n, position: slotPosition(col, row) };
+  });
 }
 
 /**
