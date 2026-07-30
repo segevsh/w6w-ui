@@ -67,28 +67,68 @@ export function flowEdgeId(from: string, to: string, when?: FlowEdge["when"]): s
  * ending in `:error` may equally be an error-lane edge whose collision came from an
  * embedded `->`. So the culprit is looked up among the ids actually involved, and
  * when none of them is ambiguous the message names **no** cause at all.
+ *
+ * ## Which of the two triggers it is, is decided by the LANE PAIR
+ *
+ * Scanning the involved ids for *either* spelling and taking the first match is
+ * **not** enough — it names a step whose renaming cannot resolve the clash. Steps
+ * `p->q`, `b`, `b:error` with `p->q → b` sitting on the **error** lane and
+ * `p->q → "b:error"` drawn on the **success** lane both mint `p->q->b:error`; the
+ * first-match scan blames `p->q`, which is the **shared source of both edges**, so
+ * renaming it re-mints both and the edge is still refused. The mirror is just as
+ * wrong: two **success**-lane edges over steps `x:error`, `y->z`, `x:error->y`, `z`
+ * collide with no error lane anywhere, yet get blamed on the error-lane marker.
+ *
+ * The lane pair decides it, and decides it exactly:
+ * - **Same lane on both edges** ⇒ `f1->t1` == `f2->t2` (with the same suffix) forces
+ *   the two splits to differ, i.e. an **embedded `->`**; it also forces both
+ *   endpoints to differ (equal sources would force equal targets and vice versa), so
+ *   renaming *any* involved id re-mints exactly one of the two edges.
+ * - **Different lanes** ⇒ `fs->ts` == `fe->te:error`, and since `:error` contains
+ *   neither `-` nor `>` its 6 characters cannot overlap the separator — so **the
+ *   success edge's target** ends in `:error`, and that is the step to rename.
+ *
+ * The lanes are not passed in: they are recovered from `id` itself, which
+ * {@link flowEdgeId} is the only minter of, so an endpoint pair spells `id` on at
+ * most one lane (`f->t` and `f->t:error` are never equal). A pair that spells it on
+ * neither means an already-corrupt edge set — the lane pair then determines nothing
+ * and the message names no cause, exactly as when nothing involved is ambiguous. A
+ * vague-but-true message beats a confident false one.
  */
 export function idClashMessage(
   lead: string,
   id: string,
   involved: readonly (string | null | undefined)[],
 ): string {
-  // The two spellings `flowEdgeId` is not injective over. At least one of the four
-  // involved ids must carry one of them for two distinct (from, to, lane) triples
-  // to mint a single string — so `undefined` here means the edge set was already
-  // corrupt (a duplicate id), not that the cause is one of these two.
-  const culprit = involved.find(
-    (s): s is string => !!s && (s.endsWith(":error") || s.includes("->")),
-  );
+  const laneOf = (from: string | null | undefined, to: string | null | undefined) =>
+    !from || !to
+      ? undefined
+      : flowEdgeId(from, to) === id
+        ? "success"
+        : flowEdgeId(from, to, "error") === id
+          ? "error"
+          : undefined;
+  const drawn = laneOf(involved[0], involved[1]);
+  const sitting = laneOf(involved[2], involved[3]);
+  const sameLane = drawn !== undefined && drawn === sitting;
+  const mixedLane = drawn !== undefined && sitting !== undefined && drawn !== sitting;
+  // On mixed lanes the culprit is the SUCCESS edge's target (`involved` is
+  // `[drawn.source, drawn.target, sitting.source, sitting.target]`).
+  const successTarget = drawn === "success" ? involved[1] : involved[3];
+  const culprit = sameLane
+    ? involved.find((s): s is string => !!s && s.includes("->"))
+    : mixedLane && successTarget?.endsWith(":error")
+      ? successTarget
+      : undefined;
   // One long template per arm on purpose: `lint/style/useTemplate` forbids
   // concatenating a template with a literal, and the formatter does not break
   // string contents.
   const cause =
     culprit === undefined
       ? "Rename one of the steps it connects, then try again."
-      : culprit.endsWith(":error")
-        ? `A step id ending in “:error” collides with the error-lane marker, so two different edges mint one id — rename the step “${culprit}”, then try again.`
-        : `A step id containing “->” collides with the edge-id separator, so two different edges mint one id — rename the step “${culprit}”, then try again.`;
+      : sameLane
+        ? `A step id containing “->” collides with the edge-id separator, so two different edges mint one id — rename the step “${culprit}”, then try again.`
+        : `A step id ending in “:error” collides with the error-lane marker, so two different edges mint one id — rename the step “${culprit}”, then try again.`;
   return `${lead}: the id “${id}” is already taken by another edge. ${cause}`;
 }
 

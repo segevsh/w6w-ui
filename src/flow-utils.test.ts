@@ -15,6 +15,10 @@ import { renameStepInEdges } from "./flow-connect.ts";
 // The collision the ADDENDUM Y cases exercise is computed by the REAL rule, not
 // hand-asserted: `connectConflict` is what the editor calls to name the sitting edge.
 import { connectConflict } from "./flow-connect.ts";
+// A separate statement again (never a widened line above — the zero-deleted-lines
+// gate): T3.3.3 round 2 states its "both edges are on the success lane" precondition
+// from the REAL lane rule rather than by eye.
+import { edgeLane } from "./flow-connect.ts";
 import type { FlowWorkflow } from "./flow-types.ts";
 import { type StepNode, flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 // A second statement from the same module rather than widening the line above:
@@ -754,4 +758,100 @@ test("idClashMessage — the `:error` route still names the error-lane marker", 
   assert.doesNotMatch(generic, /ending in/);
   assert.doesNotMatch(generic, /containing “->”/);
   assert.match(generic, /Rename one of the steps it connects/);
+});
+
+// ── ROUND 2: the cause follows the LANE PAIR, not a first-match scan ──────────
+//
+// The two cases above cover the two routes ADDENDUM Y named; both routes ALSO come
+// out right under a first-match scan over the involved ids, which is why the suite
+// was green on a message that is false on the two routes below. Both are driven
+// through the real `workflowToFlow` + `connectConflict`, exactly as the cases above.
+
+test("idClashMessage — mixed lanes name the success edge's `:error` target, not the shared source", () => {
+  // The evaluator's R9, the worst case: the first-match scan blames `p->q`, which is
+  // the SOURCE OF BOTH EDGES — renaming it re-mints both and the edge is still
+  // refused, so the author is sent to rename the one step that cannot help.
+  const wf: FlowWorkflow = {
+    ...WF,
+    steps: [
+      { id: "p->q", uses: { app: "@w6w/script", action: "run" } },
+      { id: "b", uses: { app: "@w6w/script", action: "run" } },
+      { id: "b:error", uses: { app: "@w6w/script", action: "run" } },
+    ],
+    edges: [{ from: "p->q", to: "b", when: "error" }],
+  };
+  const { nodes, edges } = workflowToFlow(wf);
+  const conflict = connectConflict("p->q", "b:error", nodes, edges);
+  assert.equal(conflict, "p->q->b:error", "precondition: the draw is refused for a taken id");
+  const sitting = edges.find((e) => e.id === conflict);
+  const msg = idClashMessage("Can’t draw that edge", conflict, [
+    "p->q",
+    "b:error",
+    sitting?.source,
+    sitting?.target,
+  ]);
+  assert.match(msg, /rename the step “b:error”/);
+  assert.match(msg, /ending in “:error”/);
+  assert.doesNotMatch(
+    msg,
+    /“p->q”/,
+    "blamed the source shared by BOTH edges — renaming it cannot help",
+  );
+  // The advice is the one that works, by the real rule: renaming `b:error` frees the
+  // id, renaming the shared source `p->q` does not.
+  const renamed = workflowToFlow({
+    ...wf,
+    steps: wf.steps.map((s) => (s.id === "b:error" ? { ...s, id: "berr" } : s)),
+  });
+  assert.equal(connectConflict("p->q", "berr", renamed.nodes, renamed.edges), null);
+  const sourceRenamed = workflowToFlow({
+    ...wf,
+    steps: wf.steps.map((s) => (s.id === "p->q" ? { ...s, id: "w" } : s)),
+    edges: [{ from: "w", to: "b", when: "error" }],
+  });
+  assert.equal(
+    connectConflict("w", "b:error", sourceRenamed.nodes, sourceRenamed.edges),
+    "w->b:error",
+    "renaming the shared source leaves the edge refused — so it must never be the advice",
+  );
+});
+
+test("idClashMessage — the same lane on both edges is never blamed on the error-lane marker", () => {
+  // The evaluator's R7, the mirror: steps `x:error`, `y->z`, `x:error->y`, `z` with
+  // BOTH edges on the success lane. An id ending in `:error` is involved, but no
+  // error lane is — the cause can only be the embedded separator.
+  const wf: FlowWorkflow = {
+    ...WF,
+    steps: [
+      { id: "x:error", uses: { app: "@w6w/script", action: "run" } },
+      { id: "y->z", uses: { app: "@w6w/script", action: "run" } },
+      { id: "x:error->y", uses: { app: "@w6w/script", action: "run" } },
+      { id: "z", uses: { app: "@w6w/script", action: "run" } },
+    ],
+    edges: [{ from: "x:error->y", to: "z" }],
+  };
+  const { nodes, edges } = workflowToFlow(wf);
+  const conflict = connectConflict("x:error", "y->z", nodes, edges);
+  assert.equal(conflict, "x:error->y->z", "precondition: the draw is refused for a taken id");
+  const sitting = edges.find((e) => e.id === conflict);
+  assert.equal(
+    edgeLane(sitting as Edge),
+    "success",
+    "precondition: the sitting edge is success-lane",
+  );
+  const msg = idClashMessage("Can’t draw that edge", conflict, [
+    "x:error",
+    "y->z",
+    sitting?.source,
+    sitting?.target,
+  ]);
+  assert.doesNotMatch(msg, /ending in “:error”/, "blamed the error-lane marker with no error lane");
+  assert.match(msg, /containing “->”/);
+  assert.match(msg, /rename the step “y->z”/);
+  // And that advice resolves it, by the real rule.
+  const renamed = workflowToFlow({
+    ...wf,
+    steps: wf.steps.map((s) => (s.id === "y->z" ? { ...s, id: "yz" } : s)),
+  });
+  assert.equal(connectConflict("x:error", "yz", renamed.nodes, renamed.edges), null);
 });
