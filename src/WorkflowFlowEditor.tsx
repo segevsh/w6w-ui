@@ -1,6 +1,10 @@
 import {
   Background,
   type Connection,
+  // Rendered as a `<Controls>` CHILD, which the library appends after its three
+  // built-ins — so the auto-layout button lands in the same stack and inherits
+  // T3.1.1's `--xy-*` → `--w6w-*` bridge with no chrome of its own.
+  ControlButton,
   Controls,
   type Edge,
   MiniMap,
@@ -10,7 +14,9 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
-  addEdge,
+  // Type-only now: `addEdge` itself is called inside `flow-connect.ts`; this file
+  // only borrows its parameter type for the `onConnect` handler.
+  type addEdge,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -51,6 +57,17 @@ import {
 } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+// The connection rules live in a JSX-free `.ts` module so `node --test` can run
+// them (see `flow-connect.ts`). This file is their only production caller.
+import {
+  applyConnect,
+  canConnect,
+  connectConflict,
+  edgeLane,
+  edgeWhenConflict,
+  renameStepInEdges,
+  setEdgeWhen,
+} from "./flow-connect.ts";
 import {
   type FlowStep,
   type FlowWorkflow,
@@ -65,13 +82,23 @@ import {
   isInternalApp,
   nodePortsForStep,
 } from "./flow-types.ts";
-import { type StepNode, flowToWorkflow, suggestStepId, workflowToFlow } from "./flow-utils.ts";
+import {
+  type StepNode,
+  flowToWorkflow,
+  idClashMessage,
+  relayoutNodes,
+  storedViewport,
+  suggestStepId,
+  withViewport,
+  workflowToFlow,
+} from "./flow-utils.ts";
 import {
   type StepStartState,
   type StepTest,
   WorkflowProjectProvider,
   useW6wApi,
 } from "./provider.tsx";
+import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 
@@ -86,67 +113,57 @@ function isTriggerApp(app: string): boolean {
 }
 
 /**
- * The hard rules for an edge `source → target` — the ones no amount of
- * replacement can satisfy: a real, *distinct* pair (no self-loops), no duplicate
- * edge, the target accepts an entry port (blocks connecting *into* a trigger,
- * which declares `in: 0`), and the source has an exit port. Port **capacity** is
- * deliberately NOT checked here: a full single-slot port is freed by replacement
- * (see `applyConnect`), so dragging a new wire from an already-connected node
- * re-points it rather than being rejected. Used as the live `isValidConnection`.
+ * The authoring recipe for the second outgoing wire, shown on the lane control.
+ *
+ * Every new edge is created in the SUCCESS lane (`applyConnect`'s default), and
+ * each lane holds one edge out of an `out: 1` step — so drawing the success edge
+ * first and then dragging a second one just re-points the first (the deliberate
+ * single-slot UX). Marking the first wire as the error lane frees the success
+ * lane, which is why the order matters.
  */
-function canConnect(
+const LANE_HINT =
+  "Which outcome of the source step this edge carries. A new edge is always drawn on Success, " +
+  "so to end up with two outgoing wires: draw the fallback edge first, mark it Error, " +
+  "then draw the success edge. An error edge overrides the step’s “On error” policy.";
+
+/**
+ * The step ids the refused edge id is minted from: the endpoints of the edge being
+ * drawn/moved plus those of the edge already holding the id. {@link idClashMessage}
+ * needs them to *determine* the cause instead of asserting one — the wording used to
+ * blame a `:error` step id unconditionally, and a collision from an embedded `->`
+ * therefore told the author to rename a step that did not exist (ADDENDUM Y).
+ *
+ * Both call sites look the sitting edge up by the id `connectConflict` /
+ * `edgeWhenConflict` returned; a corrupt edge set with no such edge simply
+ * contributes nothing, and the message falls back to naming no cause.
+ */
+function clashInvolvedIds(
+  edges: Edge[],
+  conflictId: string,
   source: string | null | undefined,
   target: string | null | undefined,
-  nodes: StepNode[],
-  edges: Edge[],
-): boolean {
-  if (!source || !target || source === target) return false;
-  if (edges.some((e) => e.source === source && e.target === target)) return false;
-  const srcStep = nodes.find((n) => n.id === source)?.data.step;
-  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
-  if (!srcStep || !tgtStep) return false;
-  // Per-step ports (T2.3.1): a persisted `ports.in > 1` lets multiple edges land.
-  const srcPorts = nodePortsForStep(srcStep);
-  const tgtPorts = nodePortsForStep(tgtStep);
-  return srcPorts.out >= 1 && tgtPorts.in >= 1;
+): (string | null | undefined)[] {
+  const sitting = edges.find((e) => e.id === conflictId);
+  return [source, target, sitting?.source, sitting?.target];
 }
 
 /**
- * Build the next edge set for a new `source → target` connection, **replacing**
- * whatever already occupied the source's exit or the target's entry so
- * single-slot ports stay at exactly one connection. Drops the oldest conflicting
- * edge(s) to make room, then appends the new one. Returns `null` when the
- * connection is disallowed by {@link canConnect}.
+ * The auto-layout glyph — a three-box hierarchy (one parent over two children),
+ * matching the layering the button applies. Module-local inline SVG, 16×16 on a
+ * `0 0 24 24` box, per convention C6 (there is no shared icons module).
+ *
+ * **Filled subpaths with no `fill` attribute**, so it inherits `currentColor` —
+ * which is what makes it themed for free. The library styles a control button's svg
+ * as `svg { width: 100%; max-width: 12px; max-height: 12px; fill: currentColor }`
+ * (`@xyflow/react/dist/style.css`), so a `fill="none" stroke="currentColor"` icon —
+ * the house style for the *node cards* — renders as nothing at all in here.
  */
-function applyConnect(
-  source: string | null | undefined,
-  target: string | null | undefined,
-  nodes: StepNode[],
-  edges: Edge[],
-): Edge[] | null {
-  if (!canConnect(source, target, nodes, edges) || !source || !target) return null;
-  const srcStep = nodes.find((n) => n.id === source)?.data.step;
-  const tgtStep = nodes.find((n) => n.id === target)?.data.step;
-  if (!srcStep || !tgtStep) return null;
-  // Per-step ports (T2.3.1): capacity honors a persisted `ports.in`/`ports.out`,
-  // so a fan-in node with `ports.in > 1` keeps prior edges instead of dropping them.
-  const srcPorts = nodePortsForStep(srcStep);
-  const tgtPorts = nodePortsForStep(tgtStep);
-  let next = edges;
-  // Free the source's exit port: drop the oldest same-source edges so adding one
-  // more stays within out-capacity (for the current 1-out model, replaces it).
-  const fromSrc = next.filter((e) => e.source === source);
-  if (fromSrc.length >= srcPorts.out) {
-    const drop = new Set(fromSrc.slice(0, fromSrc.length - srcPorts.out + 1).map((e) => e.id));
-    next = next.filter((e) => !drop.has(e.id));
-  }
-  // Free the target's entry port likewise.
-  const toTgt = next.filter((e) => e.target === target);
-  if (toTgt.length >= tgtPorts.in) {
-    const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
-    next = next.filter((e) => !drop.has(e.id));
-  }
-  return addEdge({ source, target, id: `${source}->${target}` }, next);
+function AutoLayoutIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 3h6v6H9zM11 9h2v2h-2zM4 11h16v2H4zM4 13h2v2H4zM18 13h2v2h-2zM2 15h6v6H2zM16 15h6v6h-6z" />
+    </svg>
+  );
 }
 
 /**
@@ -352,6 +369,19 @@ function Inner({
   // handles so React Flow's own state stays authoritative during interaction.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-derive layout only on workflow identity change
   const initial = useMemo(() => workflowToFlow(value), [value.id]);
+  // The camera to open at, read at mount for the same reason `initial` is: React
+  // Flow consumes `defaultViewport` in a mount-only effect (ZoomPane's `XYPanZoom`
+  // init), so a fresh object per render would be inert but misleading — and this
+  // is what makes a save round-trip not yank the view back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read at mount only, like `initial`
+  const savedViewport = useMemo(() => storedViewport(value), [value.id]);
+  // Gates BOTH position writers below (the drag and the pan/zoom). ⚠️ Omitted ⇒
+  // **true** (core rfcs/workflow.md · authoring-presentation amendment), so it is
+  // read as `!== false` — never `?? false` and never `=== true`. Derived from
+  // `value`, deliberately NOT a prop: the flag is a field of the workflow the
+  // editor already receives, and a prop would be a second source of truth that
+  // can disagree with the persisted document.
+  const savePosition = value.settings?.savePosition !== false;
   const [nodes, setNodes, onNodesChange] = useNodesState<StepNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -361,6 +391,9 @@ function Inner({
   const [editView, setEditView] = useState<EditView>("props");
   // The step id awaiting delete confirmation — one pending slot driving one modal.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Whether an auto-layout is awaiting confirmation. Same one-pending-slot shape as
+  // the delete above, for the same reason: it destroys something with no undo.
+  const [pendingRelayout, setPendingRelayout] = useState(false);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -369,6 +402,12 @@ function Inner({
     position: { x: number; y: number };
   } | null>(null);
   const { screenToFlowPosition } = useReactFlow();
+  // React Flow's `colorMode` defaults to "light", so without this its chrome
+  // (controls, minimap mask, handles, edge strokes, background dots) stays in the
+  // light palette on a dark canvas. Read the mode from the house hook — the same
+  // `data-theme` signal `styles.css` and AppIcon/CodeEditor/JsonEditor already
+  // follow — rather than adding a prop the host would have to keep in sync.
+  const colorMode = useEffectiveTheme();
 
   // If the caller swaps in a different workflow, reset local graph state.
   useEffect(() => {
@@ -397,7 +436,35 @@ function Inner({
       if (readOnly) return;
       // applyConnect replaces a full single-slot port rather than ignoring the drop.
       const next = applyConnect(params.source, params.target, nodes, edges);
-      if (!next) return;
+      if (!next) {
+        // FAIL LOUDLY when the refusal is one the drag could not have shown. Every
+        // ordinary rule already ran in `isValidConnection` (React Flow marks the
+        // drop invalid and never fires this handler), so the only refusal that
+        // reaches here is a duplicate minted id — and that one is *invisible*:
+        // React Flow's id-keyed store would have held ONE wire for two edges, which
+        // reads as the editor losing the author's work.
+        //
+        // No new channel: `connectConflict` names the edge already holding the id,
+        // and the refusal renders in the edge-lane panel's `role="alert"` slot. The
+        // clashing edge is SELECTED — in React Flow's own store, not just our mirror
+        // state, so `onSelectionChange` (re-invoked on any re-render) confirms it
+        // instead of wiping it before paint — which both reveals that panel and
+        // highlights the wire the author has to rename.
+        const conflict = connectConflict(params.source, params.target, nodes, edges);
+        if (!conflict) return;
+        setEdges(edges.map((e) => ({ ...e, selected: e.id === conflict })));
+        setSelectedEdgeId(conflict);
+        setLaneError({
+          edgeId: conflict,
+          message: idClashMessage(
+            "Can’t draw that edge",
+            conflict,
+            clashInvolvedIds(edges, conflict, params.source, params.target),
+          ),
+        });
+        return;
+      }
+      setLaneError(null);
       setEdges(next);
       emitChange(nodes, next);
     },
@@ -455,6 +522,100 @@ function Inner({
       emitChange(nextNodes, nextEdges);
     },
     [nodes, edges, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
+  );
+
+  // ── Auto-layout (the fourth control button) ─────────────────────────────────
+  //
+  // Re-flows the CURRENT canvas — including steps added and wires drawn since the
+  // last save — through `relayoutNodes`, which is the same layering + the same
+  // placement arithmetic `workflowToFlow` runs on first open. Not a second
+  // algorithm: "arrange" disagreeing with "how it opened" is the one thing an
+  // author notices immediately (D-I0-6 also pins that no layout dependency is
+  // added — the layerer already exists).
+  //
+  // `setNodes` then `emitChange` is what makes the result PERSIST: `flowToWorkflow`
+  // stamps each step with its node's rounded coordinate and the host's auto-save
+  // writes it, so a reload reopens on the re-flowed graph.
+  const performRelayout = useCallback(() => {
+    if (readOnly) return;
+    const next = relayoutNodes(nodes, edges);
+    setNodes(next);
+    emitChange(next, edges);
+  }, [nodes, edges, setNodes, emitChange, readOnly]);
+
+  // Does at least one step carry a hand-placed coordinate that a re-flow would
+  // destroy? Read off `value.steps` — the PERSISTED document — because that is
+  // where a deliberate placement lives; a node's canvas position is equally a
+  // computed slot nobody chose. Combined with `savePosition` below, so a workflow
+  // whose positions are not being saved anyway loses nothing and needs no dialog.
+  const hasStoredPositions = useMemo(() => value.steps.some((s) => !!s.position), [value.steps]);
+
+  // Confirm ONLY when the click would actually destroy something. There is no undo
+  // anywhere in studio, so the confirm is the guard — but a graph that has never
+  // been arranged has nothing to lose, and a dialog there would be noise on the
+  // common path. The app's own ConfirmModal, never a browser dialog
+  // (`.ai/conventions.md`): state + a sibling modal, exactly like delete.
+  const requestRelayout = useCallback(() => {
+    if (readOnly) return;
+    if (savePosition && hasStoredPositions) {
+      setPendingRelayout(true);
+      return;
+    }
+    performRelayout();
+  }, [readOnly, savePosition, hasStoredPositions, performRelayout]);
+
+  // ── The edge-level lane control (`Run on: Success / Error`) ─────────────────
+  // Reuses the selection state that already exists; nothing new is tracked but the
+  // refusal message, which renders INLINE in the panel. Never a browser dialog —
+  // same rule as the delete confirm above (.ai/conventions.md · No browser dialogs).
+  // Scoped to the edge it is about, NOT cleared from `onSelectionChange`: React
+  // Flow re-invokes that callback after any re-render (it is an inline lambda, so
+  // it re-subscribes), which clears the message before it is ever painted — a
+  // refusal that renders for zero frames is the same as failing silently.
+  const [laneError, setLaneError] = useState<{ edgeId: string; message: string } | null>(null);
+  const selectedEdge = useMemo(
+    () => edges.find((e) => e.id === selectedEdgeId) ?? null,
+    [edges, selectedEdgeId],
+  );
+
+  const setEdgeLane = useCallback(
+    (when: "success" | "error") => {
+      if (readOnly || !selectedEdgeId) return;
+      const me = edges.find((e) => e.id === selectedEdgeId);
+      if (!me) return;
+      // Choosing the lane it is already on is a no-op — don't emit a change (which
+      // would mark the host's workflow dirty for nothing). `setEdgeWhen` is
+      // separately safe for this, so neither layer relies on the other.
+      if (edgeLane(me) === when) return;
+      const conflict = edgeWhenConflict(edges, selectedEdgeId, when, nodes);
+      const next = conflict ? null : setEdgeWhen(edges, selectedEdgeId, when, nodes);
+      if (!next) {
+        // FAIL LOUDLY. The alternative is minting a duplicate edge id, which React
+        // Flow's id-keyed store silently collapses — one wire disappearing from the
+        // canvas with no error, indistinguishable from the editor losing the work.
+        setLaneError({
+          edgeId: selectedEdgeId,
+          message: conflict
+            ? idClashMessage(
+                "Can’t switch this edge",
+                conflict,
+                clashInvolvedIds(edges, conflict, me.source, me.target),
+              )
+            : "This edge can’t be switched right now.",
+        });
+        return;
+      }
+      setLaneError(null);
+      setEdges(next);
+      // The id encodes the lane, so re-laning re-mints it — move the selection (and
+      // therefore this panel) onto the same wire under its new id.
+      const relaned = next.find(
+        (e) => e.source === me.source && e.target === me.target && edgeLane(e) === when,
+      );
+      setSelectedEdgeId(relaned?.id ?? null);
+      emitChange(nodes, next);
+    },
+    [edges, nodes, setEdges, emitChange, readOnly, selectedEdgeId],
   );
 
   const deleteEdge = useCallback(
@@ -552,11 +713,13 @@ function Inner({
           : n,
       );
       if (idChanged) {
-        const nextEdges = edges.map((e) => {
-          const source = e.source === prevId ? next.id : e.source;
-          const target = e.target === prevId ? next.id : e.target;
-          return { ...e, source, target, id: `${source}->${target}` };
-        });
+        // Re-point the endpoints AND re-mint each id in the edge's own lane. This
+        // used to rebuild every id unqualified, dropping an error edge's `:error`
+        // suffix so a same-target success+error pair collapsed into one edge in
+        // React Flow's id-keyed store. The lane-aware rewrite lives in
+        // `flow-connect.ts` and mints ids through the one shared `flowEdgeId`
+        // helper — never a second copy of the template.
+        const nextEdges = renameStepInEdges(edges, prevId, next.id);
         setNodes(nextNodes);
         setEdges(nextEdges);
         if (selectedId === prevId) setSelectedId(next.id);
@@ -856,30 +1019,140 @@ function Inner({
                 onConnect={onConnect}
                 onConnectEnd={onConnectEnd}
                 isValidConnection={isValidConnection}
+                // A finished drag is what makes a new coordinate stick: until this
+                // existed, dragging went only through `onNodesChange` and never
+                // marked the workflow changed, so the position was lost on reload.
+                // `flowToWorkflow` (inside `emitChange`) does the conversion and the
+                // rounding — nothing is converted here.
+                //
+                // Drag STOP, never `onNodeDrag`: the per-frame variant fires on every
+                // animation frame of the gesture, and the host's auto-save is a
+                // trailing debounce over emitted changes, so a per-frame emit is a
+                // write storm by construction.
+                //
+                // No `readOnly` term is needed: `nodesDraggable={!readOnly}` below
+                // means React Flow never starts the drag, so this cannot fire at all
+                // in a read-only editor. Measured, not assumed — the probe's readOnly
+                // fixture asserts the node does not move (F4-V1).
+                onNodeDragStop={() => {
+                  if (!savePosition) return;
+                  emitChange(nodes, edges);
+                }}
+                onMoveEnd={(event, viewport) => {
+                  // FIRST statement, and load-bearing. React Flow passes
+                  // `event === null` when the move was NOT user-initiated
+                  // (@xyflow/react 12.11.1, `types/component-props.d.ts` on
+                  // `onMoveEnd`: "If the movement is not user-initiated, the event
+                  // parameter will be `null`."). The `fitView` on open is exactly
+                  // such a move — without this guard every open would emit a change,
+                  // and with the host's auto-save every page load would be a write.
+                  if (!event) return;
+                  // `readOnly` is checked here and NOT delegated, because — unlike a
+                  // drag — panning and zooming stay enabled in a read-only editor (see
+                  // the prop's docstring), so this handler really does fire and a
+                  // viewer must not write to what they are only looking at.
+                  if (readOnly) return;
+                  // `savePosition` is deliberately NOT re-checked here: `withViewport`
+                  // is the single place that reads the flag for this path and returns
+                  // its argument unchanged when it is off, so a duplicate term would be
+                  // unobservable — measured as a surviving mutant (T3.3.2-mutants.sh
+                  // C5) and removed rather than shipped as an unpinnable branch.
+                  //
+                  // Emit ONLY when `withViewport` hands back a different reference:
+                  // it returns `value`'s base unchanged when the rounded viewport
+                  // already equals the stored one, so a pan that lands back where it
+                  // started emits nothing. Rate is bounded by the gesture, not the
+                  // frame — `onMoveEnd` is d3-zoom's terminal event, and
+                  // `@xyflow/system` additionally coalesces scroll-driven pans behind
+                  // a 150ms trailing timer of its own (no timer belongs here).
+                  const base = flowToWorkflow(value, nodes, edges);
+                  const next = withViewport(base, viewport);
+                  if (next !== base) onChange(next);
+                }}
                 onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
                   setSelectedId(sel[0]?.id ?? null);
                   setSelectedEdgeId(edgeSel[0]?.id ?? null);
+                  // Deliberately NOT clearing `laneError` here — see its declaration.
                 }}
                 nodeTypes={nodeTypes}
                 nodesDraggable={!readOnly}
                 nodesConnectable={!readOnly}
                 elementsSelectable
-                fitView
+                // Reopen at the camera the author left, when the workflow stores one;
+                // otherwise fit the graph exactly as before. The two props are spread
+                // in so only ONE of them is ever passed: they are mutually exclusive
+                // by the library's own rule — "If a default viewport is provided but
+                // `fitView` is enabled, the default viewport will be ignored"
+                // (`types/component-props.d.ts` on `defaultViewport`) — and a stray
+                // `fitView` would silently discard the restored view.
+                {...(savedViewport ? { defaultViewport: savedViewport } : { fitView: true })}
                 // Deletion is owned solely by the guarded onKeyDown handler above
                 // (canvas-only, with a confirm). Disable React Flow's built-in
                 // Backspace/Delete so it can't silently remove a node — e.g. while a
                 // modal is open or the user is editing a field.
                 deleteKeyCode={null}
+                colorMode={colorMode}
                 proOptions={{ hideAttribution: true }}
               >
                 <Background gap={16} />
-                <Controls showInteractive={false} />
+                {/* `showInteractive={false}` still suppresses the lock button; the
+                    child is appended AFTER the three built-ins (zoom in / zoom out /
+                    fit view), so auto-layout reads as the fourth control in the same
+                    stack — "beside the zoom controls", not a floating panel. It
+                    carries NO colour, background or border of its own: the
+                    `--xy-controls-button-*` → `--w6w-*` bridge in `styles.css` sets
+                    inherited custom properties on the `.w6w-flow` wrapper, so any
+                    control button added later is themed for free (measured in both
+                    stylesheet orders — T3.1.1's evaluation built this exact shape). */}
+                <Controls showInteractive={false}>
+                  {!readOnly && (
+                    <ControlButton
+                      onClick={requestRelayout}
+                      title="Auto-layout — re-flow the graph into columns"
+                      aria-label="Auto-layout the graph"
+                    >
+                      <AutoLayoutIcon />
+                    </ControlButton>
+                  )}
+                </Controls>
                 <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
                 {!readOnly && (
                   <Panel position="top-left">
                     <button type="button" className="w6w-btn" onClick={() => setBuilderOpen(true)}>
                       + Step
                     </button>
+                  </Panel>
+                )}
+                {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
+                    `Edge.when`). Revealed only when exactly ONE edge is selected —
+                    `selectedEdgeId` is already `edgeSel[0]`, so selecting a node or
+                    nothing hides it. top-left is `+ Step`, Controls are bottom-left,
+                    the MiniMap bottom-right. No id'd source handles (D-T1-7): the lane
+                    is chosen here, not by which handle the wire was dragged from. */}
+                {!readOnly && selectedEdge && (
+                  <Panel position="top-right">
+                    <div className="w6w-edge-lane">
+                      <span className="w6w-muted w6w-small">Run on</span>
+                      {(["success", "error"] as const).map((lane) => (
+                        <button
+                          key={lane}
+                          type="button"
+                          className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                            edgeLane(selectedEdge) === lane ? " active" : ""
+                          }`}
+                          aria-pressed={edgeLane(selectedEdge) === lane}
+                          title={LANE_HINT}
+                          onClick={() => setEdgeLane(lane)}
+                        >
+                          {lane === "success" ? "Success" : "Error"}
+                        </button>
+                      ))}
+                      {laneError?.edgeId === selectedEdge.id && (
+                        <span className="w6w-edge-lane-err w6w-small" role="alert">
+                          {laneError.message}
+                        </span>
+                      )}
+                    </div>
                   </Panel>
                 )}
               </ReactFlow>
@@ -992,6 +1265,19 @@ function Inner({
               {/* Sibling of the run-result modal, never nested inside another
                   modal's body — ui's Modal is a native <dialog>, so nesting
                   works mechanically and just looks wrong. */}
+              {pendingRelayout && (
+                <ConfirmModal
+                  title="Auto-layout"
+                  message="Re-flow every step into the computed layout? The positions saved for this workflow are replaced, and there is no undo."
+                  confirmLabel="Re-flow"
+                  onConfirm={() => {
+                    performRelayout();
+                    setPendingRelayout(false);
+                  }}
+                  onClose={() => setPendingRelayout(false)}
+                />
+              )}
+
               {pendingDelete !== null && (
                 <ConfirmModal
                   title="Delete step"
