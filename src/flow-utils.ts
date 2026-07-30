@@ -462,7 +462,15 @@ export function storedViewport(wf: FlowWorkflow): StoredViewport | undefined {
  *
  * `settings` is spread, not replaced, so `autoSave` / `savePosition` survive a
  * viewport write — the mirror image of `writeSetting` (studio) deleting a key at
- * its default without disturbing `viewport`.
+ * its default without disturbing `viewport`. That mirror runs to the **guard on
+ * the spread** as well: `settings` is typed as an object here, but it arrives from
+ * a `JSON.parse`d document an author can hand-edit (studio's `</>` raw-JSON
+ * modal), so `"settings": "hello"` would spread into indexed keys —
+ * `{"0":"h","1":"e",…, viewport}` — **on a pan**, and the host's auto-save would
+ * re-persist that on a debounce with nobody clicking anything. Anything that is
+ * not a plain object therefore reads as "no settings", i.e. the write produces a
+ * fresh `{ viewport }`, discarding the unusable value; the predicate is
+ * `writeSetting`'s, character for character, so the two really are one rule.
  */
 export function withViewport(wf: FlowWorkflow, vp: StoredViewport): FlowWorkflow {
   // `!== false`, never `?? false` and never `=== true`: omitted ⇒ ON.
@@ -478,7 +486,13 @@ export function withViewport(wf: FlowWorkflow, vp: StoredViewport): FlowWorkflow
   if (current && current.x === next.x && current.y === next.y && current.zoom === next.zoom) {
     return wf;
   }
-  return { ...wf, settings: { ...wf.settings, viewport: next } };
+  // Studio's `writeSetting` predicate, verbatim — a non-object `settings` must not
+  // spread into indexed keys (see the docstring).
+  const prev =
+    typeof wf.settings === "object" && wf.settings !== null && !Array.isArray(wf.settings)
+      ? wf.settings
+      : undefined;
+  return { ...wf, settings: { ...prev, viewport: next } };
 }
 
 /** When no edges are declared, treat steps as a linear chain in declared order. */

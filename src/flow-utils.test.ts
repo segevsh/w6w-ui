@@ -501,6 +501,42 @@ test("withViewport — writes ONLY settings.viewport: siblings and the graph are
   });
 });
 
+test("withViewport — a hand-edited non-object `settings` is never spread into indexed keys", () => {
+  // `settings` is TYPED as an object, but it comes out of `JSON.parse` and studio's
+  // `</>` raw-JSON modal lets an author write `"settings": "hello"`. Spreading that
+  // yields `{"0":"h","1":"e",…, viewport}` on a PAN, and auto-save (a trailing
+  // debounce) re-persists it without a click. Same guard, same predicate, as
+  // studio's `writeSetting`: an unusable value reads as "no settings", so the write
+  // produces a fresh `{ viewport }` — the viewport is stored, never dropped.
+  for (const bad of ["hello", null, ["h", "i"], 42]) {
+    const wf = { ...WF, settings: bad } as unknown as FlowWorkflow;
+    assert.deepEqual(
+      withViewport(wf, { x: 5, y: 6, zoom: 2 }).settings,
+      { viewport: { x: 5, y: 6, zoom: 2 } },
+      `a non-object settings leaked into the write: ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+test("withViewport — a y-ONLY or zoom-ONLY change is a change, never a no-op", () => {
+  // The no-op comparison must weigh all three terms. Drop the `y` term and a purely
+  // vertical pan looks "unchanged"; drop the `zoom` term and a pinch-zoom does — in
+  // both cases the camera the author left is silently NOT persisted, and the zoom is
+  // what the intake asked for by name ("latest zoom info"). `x` is deliberately held
+  // EQUAL in each case, so only the term under test can carry the assertion.
+  const wf: FlowWorkflow = { ...WF, settings: { viewport: { x: 13, y: -3, zoom: 1.235 } } };
+  assert.deepEqual(
+    withViewport(wf, { x: 13, y: 40, zoom: 1.235 }).settings?.viewport,
+    { x: 13, y: 40, zoom: 1.235 },
+    "a y-ONLY pan was swallowed as a no-op: the `y` term is missing from the comparison",
+  );
+  assert.deepEqual(
+    withViewport(wf, { x: 13, y: -3, zoom: 2.5 }).settings?.viewport,
+    { x: 13, y: -3, zoom: 2.5 },
+    "a zoom-ONLY change was swallowed as a no-op: the `zoom` term is missing",
+  );
+});
+
 test("a non-finite viewport is neither stored nor restored", () => {
   // `settings.viewport` is hand-editable (studio's `</>` raw-JSON modal), and it is
   // handed straight to React Flow's `defaultViewport` as the initial transform — a
