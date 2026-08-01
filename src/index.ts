@@ -26,6 +26,9 @@ export type { DataVar, ParamsFormProps } from "./ParamsForm.tsx";
 export { ActionTestForm } from "./ActionTestForm.tsx";
 export type { ActionTestFormProps } from "./ActionTestForm.tsx";
 
+export { CodeBlock } from "./CodeBlock.tsx";
+export type { CodeBlockProps, CodeLanguage } from "./CodeBlock.tsx";
+
 export { JsonEditor } from "./JsonEditor.tsx";
 export type { JsonEditorProps } from "./JsonEditor.tsx";
 
