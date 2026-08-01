@@ -42,6 +42,13 @@
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
+  --w6w-code-comment: #6b7280;
+  --w6w-code-keyword: #8250df;
+  --w6w-code-string: #0a7b34;
+  --w6w-code-number: #b3541e;
+  --w6w-code-function: #1f6feb;
+  --w6w-code-punctuation: #5f6875;
+  --w6w-code-variable: #953800;
   --w6w-radius: 10px;
 }
 
@@ -63,6 +70,13 @@
     --w6w-health-down: var(--w6w-danger);
     --w6w-health-unknown: #9aa3b2;
     --w6w-icon-swatch: #1f232c;
+  --w6w-code-comment: #7d8797;
+  --w6w-code-keyword: #d2a8ff;
+  --w6w-code-string: #7ee787;
+  --w6w-code-number: #ffab70;
+  --w6w-code-function: #79c0ff;
+  --w6w-code-punctuation: #9aa3b2;
+  --w6w-code-variable: #ffa657;
   }
 }
 
@@ -83,6 +97,13 @@
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
+  --w6w-code-comment: #6b7280;
+  --w6w-code-keyword: #8250df;
+  --w6w-code-string: #0a7b34;
+  --w6w-code-number: #b3541e;
+  --w6w-code-function: #1f6feb;
+  --w6w-code-punctuation: #5f6875;
+  --w6w-code-variable: #953800;
 }
 :where([data-theme="dark"]) {
   --w6w-bg: #0f1115;
@@ -99,6 +120,13 @@
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #9aa3b2;
   --w6w-icon-swatch: #1f232c;
+  --w6w-code-comment: #7d8797;
+  --w6w-code-keyword: #d2a8ff;
+  --w6w-code-string: #7ee787;
+  --w6w-code-number: #ffab70;
+  --w6w-code-function: #79c0ff;
+  --w6w-code-punctuation: #9aa3b2;
+  --w6w-code-variable: #ffa657;
 }
 
 .w6w-muted {
@@ -1902,4 +1930,57 @@ dialog.w6w-modal p {
     transparent 2px 5px
   );
   border: 1px solid color-mix(in srgb, var(--w6w-health-color) 35%, var(--w6w-border));
+}
+
+/* --- CodeBlock ------------------------------------------------------------ */
+/* Read-only syntax-highlighted display (`<CodeBlock>`). The colours come from
+   the `--w6w-code-*` tokens via inline styles Prism sets, so this rule only
+   owns box, rhythm and overflow. */
+.w6w-code-block {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  margin: 0;
+  overflow-x: auto;
+  padding: 12px 14px;
+  tab-size: 2;
+}
+.w6w-code-block code {
+  background: none;
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 0;
+}
+/* Each line is its own row so a line number can sit beside the text rather
+   than inside it — a number inside the flow would be caught by a copy. */
+.w6w-code-line {
+  display: flex;
+  gap: 12px;
+  white-space: pre;
+}
+.w6w-code-line-text {
+  white-space: inherit;
+}
+/* `user-select: none` keeps the gutter out of a mouse selection; `aria-hidden`
+   on the element keeps it out of the accessibility tree. Both are needed —
+   neither one alone stops a copy from picking up the digits. */
+.w6w-code-line-no {
+  color: var(--w6w-muted);
+  flex: 0 0 auto;
+  min-width: 2ch;
+  opacity: 0.65;
+  text-align: right;
+  user-select: none;
+}
+/* Wrapped mode indents continuation rows to the text column so a wrapped line
+   still reads as one line. */
+.w6w-code-block--wrap .w6w-code-line,
+.w6w-code-block--wrap .w6w-code-line-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-code-block--wrap {
+  overflow-x: hidden;
 }
