@@ -573,8 +573,8 @@ function Inner({
   );
 
   const addBuiltStep = useCallback(
-    (built: BuiltStep) => {
-      if (readOnly) return;
+    (built: BuiltStep): string | undefined => {
+      if (readOnly) return undefined;
       const isInternal = isInternalApp(built.uses.app);
       const id = suggestStepId(
         nodes.map((n) => n.id),
@@ -609,9 +609,11 @@ function Inner({
       setNodes(nextNodes);
       if (nextEdges !== edges) setEdges(nextEdges);
       setSelectedId(id);
-      setBuilderOpen(false);
-      setPendingConnect(null);
+      // Progressive commit (T4.1.1): the builder stays open past this first
+      // commit to keep taking edits via `onDraftChange`, so closing is
+      // exclusively `onClose`'s job now (wired at the render site below).
       emitChange(nextNodes, nextEdges);
+      return id;
     },
     [nodes, edges, setNodes, setEdges, emitChange, readOnly, pendingConnect],
   );
@@ -1082,6 +1084,10 @@ function Inner({
                     setPendingConnect(null);
                   }}
                   onAdd={addBuiltStep}
+                  // Progressive commit (T4.1.1): once `addBuiltStep` has minted
+                  // the step's id, every subsequent field change updates that
+                  // same node instead of waiting for a final "Add step" click.
+                  onDraftChange={(id, next) => updateStep(id, { id, ...next })}
                   workflowId={value.id}
                   // The new step's known upstream ancestors, from the handle a
                   // connection drag was released from (T1.1.1) — so the builder's
