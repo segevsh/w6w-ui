@@ -74,7 +74,6 @@ import {
   SCHEDULER_APP,
   TRIGGER_APP,
   WEBHOOK_APP,
-  internalNodeDef,
   internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
@@ -98,9 +97,20 @@ import {
   WorkflowProjectProvider,
   useW6wApi,
 } from "./provider.tsx";
+// One implementation of the incoming-state pipeline, shared by every surface
+// that offers upstream seed chips (this file's step editor + ▶ Run collect
+// form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
+// header comment for why this lives outside WorkflowFlowEditor.tsx.
+import {
+  type SeedSource,
+  startStateFromSeeds,
+  stepBuilderUpstreamSteps,
+  upstreamStateSources,
+} from "./step-preview-state.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
+import { useSeedSources } from "./use-seed-sources.ts";
 
 /**
  * Whether a step is an entry/trigger node — the one predicate, shared by the
@@ -164,98 +174,6 @@ function AutoLayoutIcon() {
       <path d="M9 3h6v6H9zM11 9h2v2h-2zM4 11h16v2H4zM4 13h2v2H4zM18 13h2v2h-2zM2 15h6v6H2zM16 15h6v6h-6z" />
     </svg>
   );
-}
-
-/**
- * The workflow state a given step can reference: the outputs of every step that
- * runs before it (its graph ancestors) plus whether a trigger precedes it.
- *
- * A trigger ancestor is **both**. It is pushed into `steps` like any other
- * ancestor — `core/rfcs/node-types.md` ("Triggers as nodes"): *"Executing a
- * trigger node yields the run's start payload … which downstream nodes read as
- * `steps.<triggerId>.output`"* — **and** it sets `hasTrigger`, which offers the
- * separate `trigger.event` root. The two are different values, not two spellings
- * of one: `trigger.event` is the dispatcher-delivered event payload (seeded from
- * `seed.event`), while a manual trigger's filled fields land under
- * `steps.<id>.output`. Offering only the former is why a trigger's declared
- * fields were unreachable from the picker.
- *
- * A **trigger** that declares output fields (`with.fields`) carries them as
- * `outputs`, so a consumer can offer `steps.<id>.output.<key>` per field. Only a
- * trigger: `fields` is an ordinary param name, and on any other node it holds
- * that action's INPUT — an `@w6w/http:request` with `with.fields = [{key:"x"}]`
- * would otherwise be advertised as declaring an output `x` it never produces.
- * The trigger's `fields` is the one case where the param IS the output contract
- * (`core/rfcs/node-types.md:194-196`; `trigger.md:119` covers only what drives
- * editor autocomplete).
- *
- * ⚠️ EDITOR-SIDE ONLY. Do not read this as "those fields resolve at run time".
- * They resolve on the **single-step Test / ▶ Run** path only, and only because
- * this editor sends a start state seeded from the upstream saved fixtures
- * (see {@link startStateFromSeeds}) which `POST /apps/:id/actions/:key/invoke`
- * projects onto `steps.<id>.output`. They are **empty in a full run**:
- * `POST /workflows/:id/run` accepts only `{variables, trigger}` and nothing
- * seeds the entry node's `input`, so `internal-nodes.ts`'s `TRIGGER_APP`
- * returns `params.input ?? {}` → `{}`. Tracked in
- * `.ai/projects/backlog/26-07-29-01-trigger-run-payload.md`; nothing in this
- * file changes it.
- *
- * With no specific step (shouldn't happen for a field edit) every node is offered.
- */
-function upstreamStateSources(
-  editingId: string | null,
-  nodes: StepNode[],
-  edges: Edge[],
-): { steps: ExpressionStepSource[]; hasTrigger: boolean } {
-  const parents = new Map<string, string[]>();
-  for (const e of edges) {
-    const arr = parents.get(e.target) ?? [];
-    arr.push(e.source);
-    parents.set(e.target, arr);
-  }
-  const ancestors = new Set<string>();
-  if (editingId) {
-    const stack = [editingId];
-    while (stack.length) {
-      const id = stack.pop() as string;
-      for (const p of parents.get(id) ?? []) {
-        if (!ancestors.has(p)) {
-          ancestors.add(p);
-          stack.push(p);
-        }
-      }
-    }
-  } else {
-    for (const n of nodes) ancestors.add(n.id);
-  }
-
-  const steps: ExpressionStepSource[] = [];
-  let hasTrigger = false;
-  for (const n of nodes) {
-    if (!ancestors.has(n.id)) continue;
-    const step = n.data.step;
-    const isTrigger = internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger";
-    if (isTrigger) {
-      // `trigger.event` stays on offer — but the trigger is ALSO a `steps.<id>`
-      // source (see the RFC quote above), so it falls through to the push.
-      hasTrigger = true;
-    }
-    // Declared output fields, via the shared trigger-field projection — the one
-    // parser, which already skips a blank/missing `key`. TRIGGER-ONLY: on any
-    // other node `with.fields` is that action's INPUT, and projecting it would
-    // fabricate declared outputs the step never produces (see the docstring).
-    const declared = isTrigger ? fieldsToParams(asFieldDefs(step.with?.fields)) : [];
-    const source: ExpressionStepSource = { id: step.id, label: step.id };
-    // OMITTED (not `[]`) when nothing is declared, so a consumer can tell
-    // "nothing declared" from "declared none". Keys are verbatim: each becomes
-    // `steps.<id>.output.<key>`, and only that form resolves at run time.
-    steps.push(
-      declared.length > 0
-        ? { ...source, outputs: declared.map((p) => ({ key: p.key, label: p.label })) }
-        : source,
-    );
-  }
-  return { steps, hasTrigger };
 }
 
 export interface WorkflowFlowEditorProps {
@@ -1164,6 +1082,12 @@ function Inner({
                     setPendingConnect(null);
                   }}
                   onAdd={addBuiltStep}
+                  workflowId={value.id}
+                  // The new step's known upstream ancestors, from the handle a
+                  // connection drag was released from (T1.1.1) — so the builder's
+                  // own Test tab can seed `{{ steps.<id>.output.<field> }}` the
+                  // same way the step editor's Test tab already does.
+                  upstreamSteps={stepBuilderUpstreamSteps(pendingConnect, nodes, edges)}
                 />
               )}
 
@@ -1296,95 +1220,6 @@ function Inner({
       </AppsCtx.Provider>
     </StepControlsCtx.Provider>
   );
-}
-
-// ── The incoming state: one control, both surfaces ────────────────────────
-
-/** A graph ancestor carrying a saved step-test, offered as a one-click seed. */
-interface SeedSource {
-  stepId: string;
-  label: string;
-  test: StepTest;
-}
-
-/**
- * Gather each graph ancestor's latest saved step-test so the incoming-state
- * control can offer it as a seed. **One implementation**, mounted by both
- * surfaces — the step editor's Test tab and the canvas ▶ Run collect form — so
- * the `gate_1 · succeeded` chip behaves identically on each.
- *
- * Driven by `upstreamSteps` (from `upstreamStateSources`), not a re-walked
- * graph. `listStepTests` returns oldest-first, so the last entry is the most
- * recent fixture. Keyed on the *set* of upstream ids rather than the array's
- * identity: that array is rebuilt on every node drag and every field edit, so
- * keying on it would refetch on each keystroke.
- */
-function useSeedSources(
-  workflowId: string,
-  upstreamSteps: ExpressionStepSource[],
-  enabled: boolean,
-): SeedSource[] {
-  const api = useW6wApi();
-  const [seedSources, setSeedSources] = useState<SeedSource[]>([]);
-  const idsKey = JSON.stringify(upstreamSteps.map((s) => [s.id, s.label]));
-  useEffect(() => {
-    const ids = JSON.parse(idsKey) as [string, string][];
-    if (!enabled || ids.length === 0) {
-      setSeedSources([]);
-      return;
-    }
-    let canceled = false;
-    Promise.all(
-      ids.map(async ([stepId, label]) => {
-        try {
-          const tests = await api.listStepTests(workflowId, stepId);
-          const latest = tests.length ? tests[tests.length - 1] : null;
-          return latest ? { stepId, label, test: latest } : null;
-        } catch {
-          return null;
-        }
-      }),
-    ).then((res) => {
-      if (canceled) return;
-      setSeedSources(res.filter((r): r is SeedSource => r !== null));
-    });
-    return () => {
-      canceled = true;
-    };
-  }, [api, workflowId, idsKey, enabled]);
-  return seedSources;
-}
-
-/**
- * The start state a single-step Test / ▶ Run is sent with: **the last-known
- * saved output of each upstream step**, keyed by step id, in the shape the
- * invoke route accepts (`{ steps: { <id>: { output } } }` — the server's
- * `StartStateInput`, `packages/api/ambient-scope.ts`). It is what makes a
- * `with` block written as `{{ steps.<id>.output.<field> }}` resolve to the
- * value that step last produced instead of concatenating as `""`.
- *
- * Read from the same `step_tests` fixtures the seed chips offer — no upstream
- * step is re-run to produce it, and nothing here is computed live.
- *
- * A step whose fixture never captured an output contributes **no entry** rather
- * than an empty one, and a set with no outputs at all returns `undefined` so
- * the invoke body carries no `state` key at all (byte-identical to a request
- * from before this existed). Each id gets its OWN `{ output }` object: sharing
- * one would make every reference resolve the last step's data.
- *
- * ⚠️ Single-step scope only. A full run (`POST /workflows/:id/run`) builds its
- * own scope and is not affected by this — see the module docstring above.
- */
-function startStateFromSeeds(seeds: SeedSource[]): StepStartState | undefined {
-  const steps: Record<string, { output: unknown }> = {};
-  for (const s of seeds) {
-    const output = s.test.lastRunOutput;
-    // `undefined` = never captured, `null` = the row's empty marker
-    // (`repos/step-tests.ts` stores both as NULL). Neither is a value to seed.
-    if (output === undefined || output === null) continue;
-    steps[s.stepId] = { output };
-  }
-  return Object.keys(steps).length > 0 ? { steps } : undefined;
 }
 
 /**
