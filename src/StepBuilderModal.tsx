@@ -3,7 +3,7 @@ import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
-import { ParamsForm } from "./ParamsForm.tsx";
+import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
@@ -656,24 +656,41 @@ export function ControlStepConfig({
  * Whether every required param has a usable value — gates the inline "Test run".
  * A required array (e.g. a `vars` table) may be empty (see the Data node); other
  * required fields must be non-empty.
+ *
+ * A param hidden by its own `showIf` is skipped, matching `ParamsForm`'s render
+ * visibility — this is what lets `required` and `showIf` combine at all (e.g.
+ * SendGrid's `contentValue`, required only when NOT using a dynamic template):
+ * without it, a conditionally-required field would either block the gate in the
+ * branch where it's moot, or (if left non-required to dodge that) never be
+ * caught here and only surface as a raw runtime error from the app's own
+ * `execute()` — the app was previously written the second way for exactly this
+ * reason; that workaround was fixed alongside this once the gate learned `showIf`.
  */
 export function requiredParamsFilled(
   params: ActionParam[],
   values: Record<string, unknown>,
 ): boolean {
-  return params.every((p) => {
-    // A `section` is a layout-only container whose children write flat at this
-    // level — recurse so a required child (e.g. a grouped Sender Email) still
-    // gates. The section param itself carries no value.
-    if (p.type === "section") {
-      return requiredParamsFilled(p.children ?? [], values);
-    }
-    if (!p.required) return true;
-    const v = values[p.key] ?? p.default;
-    if (v === undefined || v === null) return false;
-    if (typeof v === "string") return v.trim() !== "";
-    return true;
-  });
+  // Built once from the FULL top-level tree (not per-section) so a section
+  // child's `showIf` can reference a sibling outside its own section — same
+  // reasoning as `ParamsForm`'s `effective`.
+  const flat = flattenParams(params);
+  const effective = (key: string) =>
+    values[key] !== undefined ? values[key] : flat.find((p) => p.key === key)?.default;
+
+  const check = (list: ActionParam[]): boolean =>
+    list.every((p) => {
+      // A `section` is a layout-only container whose children write flat at this
+      // level — recurse so a required child (e.g. a grouped Sender Email) still
+      // gates. The section param itself carries no value.
+      if (p.type === "section") return check(p.children ?? []);
+      if (!p.required) return true;
+      if (!isParamVisible(p, effective)) return true;
+      const v = values[p.key] ?? p.default;
+      if (v === undefined || v === null) return false;
+      if (typeof v === "string") return v.trim() !== "";
+      return true;
+    });
+  return check(params);
 }
 
 /**

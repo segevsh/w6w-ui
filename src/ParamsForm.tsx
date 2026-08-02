@@ -10,8 +10,14 @@ import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
  * current value (falling back to its default). Params with no `showIf` always show.
+ *
+ * Exported so callers outside this form (e.g. `requiredParamsFilled`'s Test-gate)
+ * can skip a `required` field that's currently hidden — otherwise `required` and
+ * `showIf` can't safely combine: a field required only in one branch (e.g.
+ * SendGrid's `contentValue`, moot once a dynamic template supplies the body)
+ * would block the gate even while hidden.
  */
-function isParamVisible(param: ActionParam, getValue: (key: string) => unknown): boolean {
+export function isParamVisible(param: ActionParam, getValue: (key: string) => unknown): boolean {
   const c = param.showIf;
   if (!c) return true;
   const v = getValue(c.field);
@@ -32,7 +38,7 @@ function isParamVisible(param: ActionParam, getValue: (key: string) => unknown):
  * for `showIf` across sections. Non-section `children` (e.g. a nested `group`
  * object) are left alone — those values live nested under the parent key.
  */
-function flattenParams(list: ActionParam[]): ActionParam[] {
+export function flattenParams(list: ActionParam[]): ActionParam[] {
   const out: ActionParam[] = [];
   for (const p of list) {
     out.push(p);
