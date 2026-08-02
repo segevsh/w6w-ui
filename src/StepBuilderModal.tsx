@@ -6,6 +6,7 @@ import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
+import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
@@ -20,6 +21,7 @@ import {
   isInternalApp,
 } from "./flow-types.ts";
 import { type StepStartState, useW6wApi, useWorkflowProject } from "./provider.tsx";
+import { startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -28,6 +30,7 @@ import type {
   ConnectionSummary,
   ThemeMode,
 } from "./types.ts";
+import { useSeedSources } from "./use-seed-sources.ts";
 
 /** The step the builder emits — the editor assigns the final `id`. `NodeConfig`
  * carries the base settings (retry / onError / notes) set on the Config view. */
@@ -59,6 +62,16 @@ export interface StepBuilderModalProps {
   workflowId?: string;
   /** Step id paired with {@link StepBuilderModalProps.workflowId}. */
   stepId?: string;
+  /**
+   * The new step's known graph ancestors, when the builder is opened from the
+   * workflow canvas (`stepBuilderUpstreamSteps`, derived from the connection
+   * drag that opened it). Threaded into the Test tab's `<StepTestRun>` the same
+   * way `StepEditModal` seeds an existing step's Test tab, so a `with` block
+   * written as `{{ steps.<id>.output.<field> }}` resolves instead of coming
+   * back empty. Absent (defaults to `[]`) for the Functions/Endpoints pickers,
+   * which have no graph to draw ancestors from.
+   */
+  upstreamSteps?: ExpressionStepSource[];
 }
 
 type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
@@ -188,6 +201,7 @@ export function StepBuilderModal({
   title,
   workflowId,
   stepId,
+  upstreamSteps = [],
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
@@ -222,7 +236,13 @@ export function StepBuilderModal({
         }
       >
         <div className="w6w-stepbuilder-config">
-          <ControlStepConfig node={selectedNode} onAdd={onAdd} onClose={onClose} />
+          <ControlStepConfig
+            node={selectedNode}
+            onAdd={onAdd}
+            onClose={onClose}
+            workflowId={workflowId}
+            upstreamSteps={upstreamSteps}
+          />
         </div>
       </Modal>
     );
@@ -263,6 +283,7 @@ export function StepBuilderModal({
             theme={theme}
             workflowId={workflowId}
             stepId={stepId}
+            upstreamSteps={upstreamSteps}
           />
         </div>
       </Modal>
@@ -456,10 +477,15 @@ function ControlStepConfig({
   node,
   onAdd,
   onClose,
+  workflowId,
+  upstreamSteps,
 }: {
   node: InternalNodeDef;
   onAdd: (s: BuiltStep) => void;
   onClose: () => void;
+  workflowId?: string;
+  /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
+  upstreamSteps: ExpressionStepSource[];
 }) {
   const [withValues, setWithValues] = useState<Record<string, unknown>>(() =>
     internalNodeDefaults(node.app, node.action),
@@ -467,6 +493,14 @@ function ControlStepConfig({
   // Internal nodes have no connection/action to pick, so there's no Setup tab —
   // just Configure + Test (flow-control nodes aren't testable standalone).
   const testable = !isControlApp(node.app);
+  // The step-being-added's graph ancestors that carry a saved step-test, offered
+  // as one-click seeds for the incoming state — the SAME pipeline `StepEditModal`
+  // uses, so the Test tab here resolves `{{ steps.<id>.output.<field> }}` the
+  // same way an existing step's Test tab does (T1.1.1). Only meaningful when the
+  // builder was opened from a workflow canvas (`workflowId` present); the
+  // Functions/Endpoints pickers pass no `workflowId` and no `upstreamSteps`.
+  const seedSources = useSeedSources(workflowId ?? "", upstreamSteps, testable && !!workflowId);
+  const testStartState = startStateFromSeeds(seedSources);
   const [tab, setTab] = useState<"configure" | "test">("configure");
   const [configView, setConfigView] = useState<ConfigView>("props");
   const [codeText, setCodeText] = useState("{}");
@@ -541,6 +575,7 @@ function ControlStepConfig({
               action={node.action}
               values={withValues}
               canRun={configComplete}
+              state={testStartState}
             />
           ))}
       </div>
@@ -654,9 +689,11 @@ export const StepTestRun = forwardRef<
     /**
      * The run's start state — what the upstream steps last produced — so a
      * `values` entry written as `{{ steps.<id>.output.<field> }}` resolves
-     * server-side instead of coming back empty. The host builds it (the editor
-     * seeds it from the upstream fixtures); absent in the add-step builder,
-     * where the step has no graph ancestors yet.
+     * server-side instead of coming back empty. The host builds it (both the
+     * node editor's Test tab and, since T1.1.1, the add-step builder's Test
+     * tab seed it from the upstream fixtures, via `useSeedSources` +
+     * `startStateFromSeeds`); absent only when the host itself has no upstream
+     * steps to offer — the Functions/Endpoints pickers, which have no graph.
      */
     state?: StepStartState;
     /** Notified when the run starts/finishes so a host button can reflect it. */
@@ -888,6 +925,7 @@ function AppStepConfig({
   theme,
   workflowId,
   stepId,
+  upstreamSteps,
 }: {
   appId: string;
   app?: AppSummary;
@@ -897,6 +935,8 @@ function AppStepConfig({
   theme?: ThemeMode;
   workflowId?: string;
   stepId?: string;
+  /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
+  upstreamSteps: ExpressionStepSource[];
 }) {
   const api = useW6wApi();
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
@@ -974,6 +1014,16 @@ function AppStepConfig({
       canceled = true;
     };
   }, [api, testRequired, workflowId, stepId]);
+
+  // The step-being-added's graph ancestors that carry a saved step-test,
+  // offered as one-click seeds for the incoming state — the SAME pipeline
+  // `StepEditModal` uses, so the Test tab here resolves
+  // `{{ steps.<id>.output.<field> }}` the same way an existing step's Test
+  // tab does (T1.1.1). Only meaningful when the builder was opened from a
+  // workflow canvas (`workflowId` present); the Functions/Endpoints pickers
+  // pass no `workflowId` and no `upstreamSteps`.
+  const seedSources = useSeedSources(workflowId ?? "", upstreamSteps, !!workflowId);
+  const testStartState = startStateFromSeeds(seedSources);
 
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
   // Setup is done when an action is picked and its connection (if any) is set;
@@ -1219,6 +1269,7 @@ function AppStepConfig({
               canRun={
                 setupComplete && requiredParamsFilled(selectedAction.params ?? [], withValues)
               }
+              state={testStartState}
               onResult={setTestPassed}
             />
           ) : (
