@@ -6,6 +6,7 @@ import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
+import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
@@ -20,6 +21,7 @@ import {
   isInternalApp,
 } from "./flow-types.ts";
 import { type StepStartState, useW6wApi, useWorkflowProject } from "./provider.tsx";
+import { startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -28,6 +30,7 @@ import type {
   ConnectionSummary,
   ThemeMode,
 } from "./types.ts";
+import { useSeedSources } from "./use-seed-sources.ts";
 
 /** The step the builder emits — the editor assigns the final `id`. `NodeConfig`
  * carries the base settings (retry / onError / notes) set on the Config view. */
@@ -38,8 +41,22 @@ export interface BuiltStep extends NodeConfig {
 
 export interface StepBuilderModalProps {
   onClose: () => void;
-  /** Fired when the user confirms a step to add. */
-  onAdd: (step: BuiltStep) => void;
+  /**
+   * Fired once per session, the moment the step first has identity — for an
+   * app step, when Setup completes (action + connection, if needed); for a
+   * control node, on mount. Returns the minted step id so subsequent edits can
+   * target it via {@link StepBuilderModalProps.onDraftChange}.
+   */
+  // biome-ignore lint/suspicious/noConfusingVoidType: widened so studio's void-returning callers stay assignable.
+  onAdd: (step: BuiltStep) => string | undefined | void;
+  /**
+   * Fired for every field change **after** the step has been committed via
+   * `onAdd` — keeps the already-added node current without minting a second
+   * one. `id` is the id `onAdd` returned. Progressive commit (mint-then-update)
+   * only engages when this is supplied; omitted callers (the Functions/
+   * Endpoints pickers) keep the original one-shot "Add step" behavior.
+   */
+  onDraftChange?: (id: string, step: BuiltStep) => void;
   theme?: ThemeMode;
   /**
    * Restrict the picker to real app actions — hides the Triggers / Controls /
@@ -59,6 +76,16 @@ export interface StepBuilderModalProps {
   workflowId?: string;
   /** Step id paired with {@link StepBuilderModalProps.workflowId}. */
   stepId?: string;
+  /**
+   * The new step's known graph ancestors, when the builder is opened from the
+   * workflow canvas (`stepBuilderUpstreamSteps`, derived from the connection
+   * drag that opened it). Threaded into the Test tab's `<StepTestRun>` the same
+   * way `StepEditModal` seeds an existing step's Test tab, so a `with` block
+   * written as `{{ steps.<id>.output.<field> }}` resolves instead of coming
+   * back empty. Absent (defaults to `[]`) for the Functions/Endpoints pickers,
+   * which have no graph to draw ancestors from.
+   */
+  upstreamSteps?: ExpressionStepSource[];
 }
 
 type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
@@ -183,11 +210,13 @@ export function ConfigViewToggle({
 export function StepBuilderModal({
   onClose,
   onAdd,
+  onDraftChange,
   theme,
   appsOnly,
   title,
   workflowId,
   stepId,
+  upstreamSteps = [],
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
@@ -222,7 +251,14 @@ export function StepBuilderModal({
         }
       >
         <div className="w6w-stepbuilder-config">
-          <ControlStepConfig node={selectedNode} onAdd={onAdd} onClose={onClose} />
+          <ControlStepConfig
+            node={selectedNode}
+            onAdd={onAdd}
+            onClose={onClose}
+            onDraftChange={onDraftChange}
+            workflowId={workflowId}
+            upstreamSteps={upstreamSteps}
+          />
         </div>
       </Modal>
     );
@@ -259,10 +295,12 @@ export function StepBuilderModal({
             app={selectedApp}
             onAdd={onAdd}
             onClose={onClose}
+            onDraftChange={onDraftChange}
             onChangeApp={() => setSelectedApp(null)}
             theme={theme}
             workflowId={workflowId}
             stepId={stepId}
+            upstreamSteps={upstreamSteps}
           />
         </div>
       </Modal>
@@ -452,14 +490,23 @@ function DataFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
  * `ParamsForm` as app actions, seeded with the node's defaults. Emits the built
  * step on Add.
  */
-function ControlStepConfig({
+export function ControlStepConfig({
   node,
   onAdd,
   onClose,
+  onDraftChange,
+  workflowId,
+  upstreamSteps = [],
 }: {
   node: InternalNodeDef;
-  onAdd: (s: BuiltStep) => void;
+  // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
+  onAdd: (s: BuiltStep) => string | undefined | void;
   onClose: () => void;
+  /** See {@link StepBuilderModalProps.onDraftChange}. */
+  onDraftChange?: (id: string, step: BuiltStep) => void;
+  workflowId?: string;
+  /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
+  upstreamSteps?: ExpressionStepSource[];
 }) {
   const [withValues, setWithValues] = useState<Record<string, unknown>>(() =>
     internalNodeDefaults(node.app, node.action),
@@ -467,18 +514,53 @@ function ControlStepConfig({
   // Internal nodes have no connection/action to pick, so there's no Setup tab —
   // just Configure + Test (flow-control nodes aren't testable standalone).
   const testable = !isControlApp(node.app);
+  // The step-being-added's graph ancestors that carry a saved step-test, offered
+  // as one-click seeds for the incoming state — the SAME pipeline `StepEditModal`
+  // uses, so the Test tab here resolves `{{ steps.<id>.output.<field> }}` the
+  // same way an existing step's Test tab does (T1.1.1). Only meaningful when the
+  // builder was opened from a workflow canvas (`workflowId` present); the
+  // Functions/Endpoints pickers pass no `workflowId` and no `upstreamSteps`.
+  const seedSources = useSeedSources(workflowId ?? "", upstreamSteps, testable && !!workflowId);
+  const testStartState = startStateFromSeeds(seedSources);
   const [tab, setTab] = useState<"configure" | "test">("configure");
   const [configView, setConfigView] = useState<ConfigView>("props");
   const [codeText, setCodeText] = useState("{}");
   const [draftConfig, setDraftConfig] = useState<NodeConfig>({});
   const configComplete = requiredParamsFilled(node.params, withValues);
 
+  // The id `onAdd` minted at commit time, once a control node's identity has
+  // been committed to the graph this session. `null` until then (and forever,
+  // for a caller that doesn't supply `onDraftChange` — the original one-shot
+  // "Add step" behavior).
+  const [committedId, setCommittedId] = useState<string | null>(null);
+  const buildStep = (): BuiltStep => ({
+    uses: { app: node.app, action: node.action },
+    with: withValues,
+    ...draftConfig,
+  });
+
+  // Mint — a control node has identity the instant it's picked (no Setup tab),
+  // so commit it to the graph on mount, exactly once.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mint fires once on mount only; buildStep/onAdd intentionally read fresh closure state without retriggering this effect.
+  useEffect(() => {
+    if (!onDraftChange) return;
+    const id = onAdd(buildStep());
+    if (id) setCommittedId(id);
+  }, []);
+
+  // Update — keep the already-committed node current on every subsequent field
+  // change, instead of minting a duplicate via a second `onAdd` call.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: buildStep reads fresh closure state; only these fields should retrigger the update.
+  useEffect(() => {
+    if (!onDraftChange || committedId === null) return;
+    onDraftChange(committedId, buildStep());
+  }, [committedId, withValues, draftConfig]);
+
   const changeConfigView = (v: ConfigView) => {
     if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
     setConfigView(v);
   };
-  const add = () =>
-    onAdd({ uses: { app: node.app, action: node.action }, with: withValues, ...draftConfig });
+  const add = () => onAdd(buildStep());
 
   return (
     <div className="w6w-stepconfig">
@@ -541,6 +623,7 @@ function ControlStepConfig({
               action={node.action}
               values={withValues}
               canRun={configComplete}
+              state={testStartState}
             />
           ))}
       </div>
@@ -560,8 +643,8 @@ function ControlStepConfig({
             Next →
           </button>
         ) : (
-          <button type="button" className="w6w-btn" onClick={add}>
-            Add step
+          <button type="button" className="w6w-btn" onClick={committedId !== null ? onClose : add}>
+            {committedId !== null ? "Done" : "Add step"}
           </button>
         )}
       </div>
@@ -654,9 +737,11 @@ export const StepTestRun = forwardRef<
     /**
      * The run's start state — what the upstream steps last produced — so a
      * `values` entry written as `{{ steps.<id>.output.<field> }}` resolves
-     * server-side instead of coming back empty. The host builds it (the editor
-     * seeds it from the upstream fixtures); absent in the add-step builder,
-     * where the step has no graph ancestors yet.
+     * server-side instead of coming back empty. The host builds it (both the
+     * node editor's Test tab and, since T1.1.1, the add-step builder's Test
+     * tab seed it from the upstream fixtures, via `useSeedSources` +
+     * `startStateFromSeeds`); absent only when the host itself has no upstream
+     * steps to offer — the Functions/Endpoints pickers, which have no graph.
      */
     state?: StepStartState;
     /** Notified when the run starts/finishes so a host button can reflect it. */
@@ -879,24 +964,31 @@ function ConnectedAppsFlow({
   );
 }
 
-function AppStepConfig({
+export function AppStepConfig({
   appId,
   app,
   onAdd,
   onClose,
+  onDraftChange,
   onChangeApp,
   theme,
   workflowId,
   stepId,
+  upstreamSteps = [],
 }: {
   appId: string;
   app?: AppSummary;
-  onAdd: (s: BuiltStep) => void;
+  // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
+  onAdd: (s: BuiltStep) => string | undefined | void;
   onClose: () => void;
+  /** See {@link StepBuilderModalProps.onDraftChange}. */
+  onDraftChange?: (id: string, step: BuiltStep) => void;
   onChangeApp?: () => void;
   theme?: ThemeMode;
   workflowId?: string;
   stepId?: string;
+  /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
+  upstreamSteps?: ExpressionStepSource[];
 }) {
   const api = useW6wApi();
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
@@ -975,6 +1067,16 @@ function AppStepConfig({
     };
   }, [api, testRequired, workflowId, stepId]);
 
+  // The step-being-added's graph ancestors that carry a saved step-test,
+  // offered as one-click seeds for the incoming state — the SAME pipeline
+  // `StepEditModal` uses, so the Test tab here resolves
+  // `{{ steps.<id>.output.<field> }}` the same way an existing step's Test
+  // tab does (T1.1.1). Only meaningful when the builder was opened from a
+  // workflow canvas (`workflowId` present); the Functions/Endpoints pickers
+  // pass no `workflowId` and no `upstreamSteps`.
+  const seedSources = useSeedSources(workflowId ?? "", upstreamSteps, !!workflowId);
+  const testStartState = startStateFromSeeds(seedSources);
+
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
   // Setup is done when an action is picked and its connection (if any) is set;
   // Configure is done when the action's required params are filled.
@@ -983,27 +1085,53 @@ function AppStepConfig({
     setupComplete &&
     !!selectedAction &&
     requiredParamsFilled(selectedAction.params ?? [], withValues);
-  // Adding the step needs Setup done and — when `testRequired` — a passing test.
-  const testGateOk = !testRequired || testPassed;
-  const canAdd = setupComplete && testGateOk;
+  // HITL-1 amendment: a passing test is required to *publish* (T4.2.1), not to
+  // add the step to the graph — `testRequired`/`testPassed` still drive the
+  // Test tab's own "test passed" messaging below.
+  const canAdd = setupComplete;
 
   const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
   // Show the dropdown only before a connection is picked or while changing it;
   // otherwise the selected connection reads as a compact label.
   const showConnPicker = changingConn || !connectionId;
 
-  function add() {
-    if (!selectedAction) return;
-    onAdd({
+  function buildStep(): BuiltStep {
+    return {
       uses: {
         app: appId,
-        action: selectedAction.key,
+        action: selectedAction?.key ?? actionKey,
         ...(needsConnection && connectionId ? { connection: connectionId } : {}),
       },
       with: withValues,
       ...draftConfig,
-    });
+    };
   }
+  function add() {
+    if (!selectedAction) return;
+    onAdd(buildStep());
+  }
+
+  // The id `onAdd` minted at commit time, once Setup has completed this
+  // session. `null` until then (and forever, for a caller that doesn't supply
+  // `onDraftChange` — the original one-shot "Add step" behavior).
+  const [committedId, setCommittedId] = useState<string | null>(null);
+
+  // Mint — the moment Setup first completes (action + connection, if needed),
+  // commit the WIP step to the graph, exactly once.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: buildStep/onAdd intentionally read fresh closure state; only the mint gate should retrigger this effect.
+  useEffect(() => {
+    if (!onDraftChange || committedId !== null || !setupComplete) return;
+    const id = onAdd(buildStep());
+    if (id) setCommittedId(id);
+  }, [onDraftChange, committedId, setupComplete]);
+
+  // Update — keep the already-committed node current on every subsequent field
+  // change, instead of minting a duplicate via a second `onAdd` call.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: buildStep reads fresh closure state; only these fields should retrigger the update.
+  useEffect(() => {
+    if (!onDraftChange || committedId === null) return;
+    onDraftChange(committedId, buildStep());
+  }, [committedId, withValues, draftConfig, connectionId]);
 
   const changeConfigView = (v: ConfigView) => {
     if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
@@ -1219,6 +1347,7 @@ function AppStepConfig({
               canRun={
                 setupComplete && requiredParamsFilled(selectedAction.params ?? [], withValues)
               }
+              state={testStartState}
               onResult={setTestPassed}
             />
           ) : (
@@ -1235,18 +1364,17 @@ function AppStepConfig({
         {tab === "test" ? (
           <>
             {testRequired && !testPassed && (
-              <span className="w6w-muted w6w-small">Run a passing test to add this step.</span>
+              <span className="w6w-muted w6w-small">
+                Not yet tested — a passing test is required before this step can be published.
+              </span>
             )}
             <button
               type="button"
               className="w6w-btn"
-              disabled={!canAdd}
-              title={
-                testRequired && !testPassed ? "Run a passing test to add this step" : undefined
-              }
-              onClick={add}
+              disabled={committedId === null && !canAdd}
+              onClick={committedId !== null ? onClose : add}
             >
-              Add step
+              {committedId !== null ? "Done" : "Add step"}
             </button>
           </>
         ) : (

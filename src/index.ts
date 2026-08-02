@@ -17,7 +17,7 @@ export type { AddConnectionModalProps } from "./AddConnectionModal.tsx";
 export { AppPicker } from "./AppPicker.tsx";
 export type { AppPickerProps } from "./AppPicker.tsx";
 
-export { StepBuilderModal } from "./StepBuilderModal.tsx";
+export { StepBuilderModal, requiredParamsFilled, isTestRequired } from "./StepBuilderModal.tsx";
 export type { BuiltStep, StepBuilderModalProps } from "./StepBuilderModal.tsx";
 
 export { ParamsForm } from "./ParamsForm.tsx";

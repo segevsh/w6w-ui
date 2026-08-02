@@ -11,7 +11,12 @@ import {
   readParts,
   varLabel,
 } from "./expression-dom.ts";
-import { partsToValue, serializeTemplate, valueToParts } from "./expression-template.ts";
+import {
+  partsToValue,
+  renderResult,
+  serializeTemplate,
+  valueToParts,
+} from "./expression-template.ts";
 
 /**
  * A near-full-screen editor for an expression value. Left: the data sources in
@@ -126,27 +131,7 @@ export function ExpressionEditorModal({
   // throws on an un-evaluable expression.
   const result = useMemo(() => {
     try {
-      let out = "";
-      for (const p of parts) {
-        switch (p.kind) {
-          case "text":
-            out += p.value ?? "";
-            break;
-          case "var": {
-            const ref = p.ref ?? "";
-            out += ref in effectiveSamples ? effectiveSamples[ref] : `{{ ${ref} }}`;
-            break;
-          }
-          case "secret":
-            out += "•••";
-            break;
-          case "expr":
-            // No client-side evaluator (see TODO above) — show the template form.
-            out += serializeTemplate([p]);
-            break;
-        }
-      }
-      return out;
+      return renderResult(parts, effectiveSamples);
     } catch {
       // Last-resort fallback — the pane must never throw.
       return template;
