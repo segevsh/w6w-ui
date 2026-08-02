@@ -115,6 +115,40 @@ export function valueToParts(value: ExprValue | string | SecretValue | undefined
   return { parts: s ? [{ kind: "text", value: s }] : [], sealed: null };
 }
 
+/**
+ * Render parts to their preview text for the expression editor's Result pane:
+ * `text` parts concatenate literally, a `var` part resolves against `samples`
+ * (keyed by full ref) or renders `""` when unresolved — never the raw
+ * `{{ ref }}` template token — and a `secret` part always masks as `•••`.
+ *
+ * No client-side evaluator for `expr` parts (see the TODO in
+ * `ExpressionEditorModal.tsx`) — those fall back to their `{{ }}` template
+ * form.
+ */
+export function renderResult(parts: ExprPart[], samples: Record<string, string>): string {
+  let out = "";
+  for (const p of parts) {
+    switch (p.kind) {
+      case "text":
+        out += p.value ?? "";
+        break;
+      case "var": {
+        const ref = p.ref ?? "";
+        out += ref in samples ? samples[ref] : "";
+        break;
+      }
+      case "secret":
+        out += "•••";
+        break;
+      case "expr":
+        // No client-side evaluator (see TODO above) — show the template form.
+        out += serializeTemplate([p]);
+        break;
+    }
+  }
+  return out;
+}
+
 /** Serialize parts back to a `{{ }}` template string (inverse of {@link parseTemplate}). */
 export function serializeTemplate(parts: ExprPart[]): string {
   let out = "";
