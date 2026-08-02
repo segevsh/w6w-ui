@@ -1,7 +1,7 @@
 // Run: node --test src/components/expression-template.test.ts  (Node 24, type-stripped)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseTemplate, serializeTemplate } from "./expression-template.ts";
+import { parseTemplate, renderResult, serializeTemplate } from "./expression-template.ts";
 
 test("plain text → single text part", () => {
   assert.deepEqual(parseTemplate("hello world"), [{ kind: "text", value: "hello world" }]);
@@ -70,5 +70,52 @@ test("serialize prunes nothing and masks nothing structurally", () => {
       { kind: "var", ref: "vars.y" },
     ]),
     "x={{ vars.y }}",
+  );
+});
+
+test("renderResult: var ref present in samples renders the value", () => {
+  assert.equal(renderResult([{ kind: "var", ref: "vars.env" }], { "vars.env": "prod" }), "prod");
+});
+
+test("renderResult: var ref absent from samples renders empty string, not the {{ }} placeholder", () => {
+  assert.equal(renderResult([{ kind: "var", ref: "steps.gate_1.output.first_name" }], {}), "");
+});
+
+test("renderResult: mixed text + present var + absent var", () => {
+  assert.equal(
+    renderResult(
+      [
+        { kind: "text", value: "Hi " },
+        { kind: "var", ref: "vars.name" },
+        { kind: "text", value: ", id " },
+        { kind: "var", ref: "vars.missing" },
+      ],
+      { "vars.name": "Alex" },
+    ),
+    "Hi Alex, id ",
+  );
+});
+
+test("renderResult: text parts concatenate literally", () => {
+  assert.equal(
+    renderResult(
+      [
+        { kind: "text", value: "Hello, " },
+        { kind: "text", value: "world!" },
+      ],
+      {},
+    ),
+    "Hello, world!",
+  );
+});
+
+test("renderResult: secret parts render masked, regardless of samples", () => {
+  assert.equal(renderResult([{ kind: "secret", ref: "jwt_key" }], {}), "•••");
+});
+
+test("renderResult: expr parts fall back to their {{ }} template form", () => {
+  assert.equal(
+    renderResult([{ kind: "expr", expr: { var: "vars.n" } }], {}),
+    '{{ ={"var":"vars.n"} }}',
   );
 });
