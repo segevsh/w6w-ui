@@ -47,7 +47,8 @@ export interface StepBuilderModalProps {
    * control node, on mount. Returns the minted step id so subsequent edits can
    * target it via {@link StepBuilderModalProps.onDraftChange}.
    */
-  onAdd: (step: BuiltStep) => string | undefined;
+  // biome-ignore lint/suspicious/noConfusingVoidType: widened so studio's void-returning callers stay assignable.
+  onAdd: (step: BuiltStep) => string | undefined | void;
   /**
    * Fired for every field change **after** the step has been committed via
    * `onAdd` — keeps the already-added node current without minting a second
@@ -498,7 +499,8 @@ export function ControlStepConfig({
   upstreamSteps = [],
 }: {
   node: InternalNodeDef;
-  onAdd: (s: BuiltStep) => string | undefined;
+  // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
+  onAdd: (s: BuiltStep) => string | undefined | void;
   onClose: () => void;
   /** See {@link StepBuilderModalProps.onDraftChange}. */
   onDraftChange?: (id: string, step: BuiltStep) => void;
@@ -976,7 +978,8 @@ export function AppStepConfig({
 }: {
   appId: string;
   app?: AppSummary;
-  onAdd: (s: BuiltStep) => string | undefined;
+  // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
+  onAdd: (s: BuiltStep) => string | undefined | void;
   onClose: () => void;
   /** See {@link StepBuilderModalProps.onDraftChange}. */
   onDraftChange?: (id: string, step: BuiltStep) => void;
