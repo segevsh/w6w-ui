@@ -309,9 +309,11 @@ function Inner({
   const [editView, setEditView] = useState<EditView>("props");
   // The step id awaiting delete confirmation — one pending slot driving one modal.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  // Whether an auto-layout is awaiting confirmation. Same one-pending-slot shape as
-  // the delete above, for the same reason: it destroys something with no undo.
-  const [pendingRelayout, setPendingRelayout] = useState(false);
+  // Set right after `setNodes(next)` in `performRelayout`, cleared by the
+  // `[nodes, fitView]` effect below, which then calls `fitView()`. A ref (not
+  // state) because it drives no render of its own — it only needs to survive
+  // from the relayout click to the next commit of `nodes`.
+  const relayoutPendingFitRef = useRef(false);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -319,7 +321,7 @@ function Inner({
     handleType: "source" | "target";
     position: { x: number; y: number };
   } | null>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   // React Flow's `colorMode` defaults to "light", so without this its chrome
   // (controls, minimap mask, handles, edge strokes, background dots) stays in the
   // light palette on a dark canvas. Read the mode from the house hook — the same
@@ -458,29 +460,32 @@ function Inner({
     if (readOnly) return;
     const next = relayoutNodes(nodes, edges);
     setNodes(next);
+    relayoutPendingFitRef.current = true;
     emitChange(next, edges);
   }, [nodes, edges, setNodes, emitChange, readOnly]);
 
-  // Does at least one step carry a hand-placed coordinate that a re-flow would
-  // destroy? Read off `value.steps` — the PERSISTED document — because that is
-  // where a deliberate placement lives; a node's canvas position is equally a
-  // computed slot nobody chose. Combined with `savePosition` below, so a workflow
-  // whose positions are not being saved anyway loses nothing and needs no dialog.
-  const hasStoredPositions = useMemo(() => value.steps.some((s) => !!s.position), [value.steps]);
-
-  // Confirm ONLY when the click would actually destroy something. There is no undo
-  // anywhere in studio, so the confirm is the guard — but a graph that has never
-  // been arranged has nothing to lose, and a dialog there would be noise on the
-  // common path. The app's own ConfirmModal, never a browser dialog
-  // (`.ai/conventions.md`): state + a sibling modal, exactly like delete.
+  // No confirmation (D-T2b): re-flowing is instant, deliberately with no
+  // replacement gate — the intake is explicit this click should never warn. See
+  // `.ai/conventions.md`'s "No browser dialogs" for the house pattern this is a
+  // recorded exception to, not an oversight.
   const requestRelayout = useCallback(() => {
     if (readOnly) return;
-    if (savePosition && hasStoredPositions) {
-      setPendingRelayout(true);
-      return;
-    }
     performRelayout();
-  }, [readOnly, savePosition, hasStoredPositions, performRelayout]);
+  }, [readOnly, performRelayout]);
+
+  // Frame the re-flowed graph once React Flow's own node-sync effect (a child of
+  // this component) has committed the new positions — that child-before-parent
+  // effect ordering is what makes `fitView()` here read POST-relayout bounds
+  // instead of the stale pre-relayout ones. Keyed on `[nodes, fitView]` so it
+  // re-checks the ref on every nodes commit, not just relayout's — `nodes`
+  // itself is unread in the body, only its commit timing matters, so the
+  // exhaustive-deps rule can't see why it's there.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `nodes` drives ordering, not the body
+  useEffect(() => {
+    if (!relayoutPendingFitRef.current) return;
+    relayoutPendingFitRef.current = false;
+    void fitView({ duration: 300 });
+  }, [nodes, fitView]);
 
   // ── The edge-level lane control (`Run on: Success / Error`) ─────────────────
   // Reuses the selection state that already exists; nothing new is tracked but the
@@ -1190,22 +1195,6 @@ function Inner({
                     </div>
                   )}
                 </Modal>
-              )}
-
-              {/* Sibling of the run-result modal, never nested inside another
-                  modal's body — ui's Modal is a native <dialog>, so nesting
-                  works mechanically and just looks wrong. */}
-              {pendingRelayout && (
-                <ConfirmModal
-                  title="Auto-layout"
-                  message="Re-flow every step into the computed layout? The positions saved for this workflow are replaced, and there is no undo."
-                  confirmLabel="Re-flow"
-                  onConfirm={() => {
-                    performRelayout();
-                    setPendingRelayout(false);
-                  }}
-                  onClose={() => setPendingRelayout(false)}
-                />
               )}
 
               {pendingDelete !== null && (
