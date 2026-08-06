@@ -999,6 +999,18 @@ function Inner({
                   setSelectedEdgeId(edgeSel[0]?.id ?? null);
                   // Deliberately NOT clearing `laneError` here — see its declaration.
                 }}
+                onNodeDoubleClick={(event, node) => {
+                  // FIRST statement, and load-bearing. React Flow's own node wrapper
+                  // attaches this as a plain native `onDoubleClick` with no
+                  // stopPropagation of its own, and the pane's default dblclick-to-
+                  // zoom behaviour (never disabled here) binds `dblclick.zoom` on a
+                  // DOM ancestor of every node card. Without this, double-clicking a
+                  // node would open the editor AND zoom the canvas in on that spot.
+                  event.stopPropagation();
+                  // Same transition the node toolbar's pencil button performs — no
+                  // new plumbing, `controls` already carries `onEdit`.
+                  controls.onEdit(node.id);
+                }}
                 nodeTypes={nodeTypes}
                 nodesDraggable={!readOnly}
                 nodesConnectable={!readOnly}
