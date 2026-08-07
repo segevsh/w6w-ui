@@ -1312,14 +1312,8 @@ function IncomingStateField({
   return (
     <div className="w6w-field w6w-incoming-state">
       <span>Incoming state</span>
-      <span className="w6w-hint">
-        {seeds.length > 0
-          ? "The data arriving from the steps before this one."
-          : "The data arriving from the steps before this one. Nothing upstream has a saved test yet — override it below to supply one."}
-      </span>
       {seeds.length > 0 && (
         <div className="w6w-seed-picker">
-          <span className="w6w-hint">Seed from an upstream step's saved test:</span>
           <div className="w6w-seed-chips">
             {seeds.map((s) => (
               <button
@@ -1836,6 +1830,11 @@ export function StepEditModal({
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
   );
+  // The Test tab's own props/JSON toggle state (A4/D-7) — deliberately NOT
+  // `configView`, which ranges over `"params-code"`/`"config"` too, neither of
+  // which is in the Test tab's narrowed `["props","code"]` set. Always starts
+  // on the row list.
+  const [testView, setTestView] = useState<"props" | "code">("props");
   // Draft text backing the "code" (full-step, read-only) view.
   const [codeText, setCodeText] = useState(() => stepToJson(initialStep));
   // Draft text backing the "params-code" (params-only, writable) view.
@@ -1915,6 +1914,12 @@ export function StepEditModal({
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
   const isTrigger = isTriggerApp(step.uses.app);
+  // A4/D-7: the tabs-bar toggle is enabled and narrowed to props/code ONLY on
+  // this arm — the non-trigger, testable Test tab, the one that mounts
+  // `<ResolvedParams>`. The trigger arm keeps the dim four (`PropertyEntryForm`
+  // renders its own toggle inside `TriggerFillForm`'s body); Setup/Configure
+  // are unchanged.
+  const isTestPropsCode = tab === "test" && testable && !isTrigger;
 
   // The editing step's graph ancestors that carry a saved step-test, offered as
   // one-click seeds for the incoming state. The SAME hook the canvas ▶ Run
@@ -2038,11 +2043,19 @@ export function StepEditModal({
               </button>
             ))}
           </div>
-          <ConfigViewToggle
-            view={configView}
-            onChange={changeConfigView}
-            disabled={tab !== "configure"}
-          />
+          {isTestPropsCode ? (
+            <ConfigViewToggle
+              view={testView}
+              views={["props", "code"]}
+              onChange={(v) => setTestView(v as "props" | "code")}
+            />
+          ) : (
+            <ConfigViewToggle
+              view={configView}
+              onChange={changeConfigView}
+              disabled={tab !== "configure"}
+            />
+          )}
         </div>
 
         <div className="w6w-stepconfig-body">
@@ -2146,6 +2159,7 @@ export function StepEditModal({
                         params={params}
                         values={testValues}
                         testStartState={testStartState}
+                        view={testView}
                       />
                     )}
                     <StepTestRun
