@@ -18,6 +18,7 @@ import {
   isInternalApp,
   isTriggerApp,
 } from "./flow-types.ts";
+import { paramsToJson, stepToJson } from "./flow-utils.ts";
 import { type StepStartState, useW6wApi, useWorkflowProject } from "./provider.tsx";
 import { startStateFromSeeds } from "./step-preview-state.ts";
 import type {
@@ -91,8 +92,9 @@ type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" |
 /** Config sub-tabs shared by the add-step config and the node editor. */
 type StepConfigTab = "setup" | "configure" | "test";
 
-/** The three representations of the Configure tab: form, raw JSON, node settings. */
-export type ConfigView = "props" | "code" | "config";
+/** The four representations of the Configure tab: form, full-step JSON,
+ * params-only JSON, node settings. */
+export type ConfigView = "props" | "code" | "params-code" | "config";
 
 /** A 15×15 stroked glyph on a 24×24 viewBox (matches the editor's toolbar icons). */
 function Glyph({ children }: { children: ReactNode }) {
@@ -135,6 +137,18 @@ const CONFIG_VIEW_GLYPHS: Record<ConfigView, { label: string; glyph: ReactNode }
       </>
     ),
   },
+  // Hand-drawn — no icon library in `packages/ui`, no new npm dependency. Braces,
+  // not chevrons: `code` reads as "the step, as code"; this reads as "the
+  // params, as a value" — distinct at a glance from the `<>` pair above it.
+  "params-code": {
+    label: "Params JSON",
+    glyph: (
+      <>
+        <polyline points="9 4 7 4 7 10 5 12 7 14 7 20 9 20" />
+        <polyline points="15 4 17 4 17 10 19 12 17 14 17 20 15 20" />
+      </>
+    ),
+  },
   config: {
     label: "Node settings",
     glyph: (
@@ -147,11 +161,12 @@ const CONFIG_VIEW_GLYPHS: Record<ConfigView, { label: string; glyph: ReactNode }
 };
 
 /** Every view, in the order the editor's tabs bar has always shown them. */
-const ALL_CONFIG_VIEWS: ConfigView[] = ["props", "code", "config"];
+const ALL_CONFIG_VIEWS: ConfigView[] = ["props", "code", "params-code", "config"];
 
 /**
- * The props / code / config view toggle, right-aligned in the tabs bar. Disabled
- * off the Configure tab (the three views all represent the action's config).
+ * The props / code / params-code / config view toggle, right-aligned in the
+ * tabs bar. Disabled off the Configure tab (all four views represent the
+ * action's config).
  *
  * `views` narrows it to a subset, in the order given — a fields ⇄ raw-JSON
  * property form (see `PropertyEntryForm`) passes `["props", "code"]`. There is
@@ -167,7 +182,7 @@ export function ConfigViewToggle({
   view: ConfigView;
   onChange: (v: ConfigView) => void;
   disabled?: boolean;
-  /** Which views to offer, in order. Defaults to all three. */
+  /** Which views to offer, in order. Defaults to all four. */
   views?: ConfigView[];
 }) {
   const btn = (v: ConfigView) => (
@@ -512,7 +527,10 @@ export function ControlStepConfig({
   const testStartState = startStateFromSeeds(seedSources);
   const [tab, setTab] = useState<"configure" | "test">("configure");
   const [configView, setConfigView] = useState<ConfigView>("props");
+  // Draft text backing the "code" (full-step, read-only) view.
   const [codeText, setCodeText] = useState("{}");
+  // Draft text backing the "params-code" (params-only, writable) view.
+  const [paramsCodeText, setParamsCodeText] = useState("{}");
   const [draftConfig, setDraftConfig] = useState<NodeConfig>({});
   const configComplete = requiredParamsFilled(node.params, withValues);
 
@@ -545,7 +563,8 @@ export function ControlStepConfig({
   }, [committedId, withValues, draftConfig]);
 
   const changeConfigView = (v: ConfigView) => {
-    if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
+    if (v === "code") setCodeText(stepToJson(buildStep()));
+    else if (v === "params-code") setParamsCodeText(paramsToJson(buildStep()));
     setConfigView(v);
   };
   const add = () => onAdd(buildStep());
@@ -585,9 +604,20 @@ export function ControlStepConfig({
           (configView === "props" ? (
             <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
           ) : configView === "code" ? (
+            // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
+            // shared with the two other code-view hosts.
             <JsonEditor
               value={codeText}
-              onChange={setCodeText}
+              onChange={() => {}}
+              readOnly
+              minHeight="240px"
+              height="100%"
+              aria-label="Step JSON"
+            />
+          ) : configView === "params-code" ? (
+            <JsonEditor
+              value={paramsCodeText}
+              onChange={setParamsCodeText}
               minHeight="240px"
               height="100%"
               aria-label="Parameters JSON"
@@ -1011,10 +1041,13 @@ export function AppStepConfig({
   // Setup (app + connection + action) / Configure (params) / Test — same tabs as
   // the node editor, so add + edit are consistent.
   const [tab, setTab] = useState<StepConfigTab>("setup");
-  // The Configure tab's three representations (form / JSON / node settings).
+  // The Configure tab's four representations (form / full-step JSON /
+  // params-only JSON / node settings).
   const [configView, setConfigView] = useState<ConfigView>("props");
-  // Draft text backing the JSON ("code") view of the params.
+  // Draft text backing the "code" (full-step, read-only) view.
   const [codeText, setCodeText] = useState("{}");
+  // Draft text backing the "params-code" (params-only, writable) view.
+  const [paramsCodeText, setParamsCodeText] = useState("{}");
   // Base node settings (retry / onError / notes) set on the Config view.
   const [draftConfig, setDraftConfig] = useState<NodeConfig>({});
 
@@ -1139,7 +1172,8 @@ export function AppStepConfig({
   }, [committedId, withValues, draftConfig, connectionId]);
 
   const changeConfigView = (v: ConfigView) => {
-    if (v === "code") setCodeText(JSON.stringify(withValues, null, 2));
+    if (v === "code") setCodeText(stepToJson(buildStep()));
+    else if (v === "params-code") setParamsCodeText(paramsToJson(buildStep()));
     setConfigView(v);
   };
 
@@ -1312,8 +1346,9 @@ export function AppStepConfig({
           </div>
         )}
 
-        {/* Configure — the action's config, as a form (props), raw JSON (code),
-            or the base node settings (config). */}
+        {/* Configure — the action's config, as a form (props), the full step
+            (code), the params alone (params-code), or the base node settings
+            (config). */}
         {tab === "configure" &&
           (!selectedAction ? (
             <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
@@ -1324,9 +1359,20 @@ export function AppStepConfig({
               onChange={setWithValues}
             />
           ) : configView === "code" ? (
+            // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
+            // shared with the two other code-view hosts.
             <JsonEditor
               value={codeText}
-              onChange={setCodeText}
+              onChange={() => {}}
+              readOnly
+              minHeight="240px"
+              height="100%"
+              aria-label="Step JSON"
+            />
+          ) : configView === "params-code" ? (
+            <JsonEditor
+              value={paramsCodeText}
+              onChange={setParamsCodeText}
               minHeight="240px"
               height="100%"
               aria-label="Parameters JSON"
