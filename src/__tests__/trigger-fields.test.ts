@@ -1,13 +1,14 @@
-// Run: node --test src/trigger-fields.test.ts  (Node 24, type-stripped)
+// Run: node --test src/__tests__/trigger-fields.test.ts  (Node 24, type-stripped)
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { SCHEDULER_APP, TRIGGER_APP, WEBHOOK_APP, isTriggerApp } from "../flow-types.ts";
 import {
   asFieldDefs,
   coerceDefault,
   fieldWidget,
   fieldsToParams,
   seedValues,
-} from "./trigger-fields.ts";
+} from "../trigger-fields.ts";
 
 /** The intake's own example: a manual trigger with two required string fields. */
 const TWO_FIELDS = [
@@ -102,4 +103,29 @@ test("asFieldDefs — a non-array fields value reads as no fields", () => {
   assert.deepEqual(asFieldDefs(undefined), []);
   assert.deepEqual(asFieldDefs({ key: "email" }), []);
   assert.deepEqual(asFieldDefs(TWO_FIELDS), TWO_FIELDS);
+});
+
+type FlowSeam = {
+  isTriggerApp: typeof import("../flow.ts").isTriggerApp;
+  TRIGGER_APP: typeof import("../flow.ts").TRIGGER_APP;
+  WEBHOOK_APP: typeof import("../flow.ts").WEBHOOK_APP;
+  SCHEDULER_APP: typeof import("../flow.ts").SCHEDULER_APP;
+  asFieldDefs: typeof import("../flow.ts").asFieldDefs;
+  fieldDef: import("../flow.ts").TriggerFieldDef;
+};
+
+test("@w6w/ui/flow exports the trigger seam", () => {
+  const seam: FlowSeam = {
+    isTriggerApp,
+    TRIGGER_APP,
+    WEBHOOK_APP,
+    SCHEDULER_APP,
+    asFieldDefs,
+    fieldDef: { key: "email", type: "string", required: true },
+  };
+  assert.equal(seam.isTriggerApp(seam.TRIGGER_APP), true);
+  assert.equal(seam.isTriggerApp(seam.WEBHOOK_APP), true);
+  assert.equal(seam.isTriggerApp(seam.SCHEDULER_APP), true);
+  assert.equal(seam.isTriggerApp("@w6w/http"), false);
+  assert.deepEqual(seam.asFieldDefs([seam.fieldDef]), [seam.fieldDef]);
 });

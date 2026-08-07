@@ -1,4 +1,4 @@
-// Run: node --test src/flow-utils.test.ts  (Node 24, type-stripped)
+// Run: node --test src/__tests__/flow-utils.test.ts  (Node 24, type-stripped)
 //
 // The `Edge.when` round-trip (core rfcs/workflow.md · "Amendment — 2026-07-29:
 // failure-conditioned edges"). The trap this suite exists to pin:
@@ -11,24 +11,33 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Edge } from "@xyflow/react";
-import { renameStepInEdges } from "./flow-connect.ts";
+import { renameStepInEdges } from "../flow-connect.ts";
 // The collision the ADDENDUM Y cases exercise is computed by the REAL rule, not
 // hand-asserted: `connectConflict` is what the editor calls to name the sitting edge.
-import { connectConflict } from "./flow-connect.ts";
+import { connectConflict } from "../flow-connect.ts";
 // A separate statement again (never a widened line above — the zero-deleted-lines
 // gate): T3.3.3 round 2 states its "both edges are on the success lane" precondition
 // from the REAL lane rule rather than by eye.
-import { edgeLane } from "./flow-connect.ts";
-import type { FlowWorkflow } from "./flow-types.ts";
-import { type StepNode, flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
+import { edgeLane } from "../flow-connect.ts";
+import type { FlowWorkflow } from "../flow-types.ts";
+// Separate statement, same reason as the flow-utils.ts imports below: T2.1.1's
+// cases need FlowStep too, and widening the line above would read as a
+// deletion to a reviewer diffing this file.
+import type { FlowStep } from "../flow-types.ts";
+import { type StepNode, flowToWorkflow, workflowToFlow } from "../flow-utils.ts";
 // A second statement from the same module rather than widening the line above:
 // T3.3.2's contract (ADDENDUM Z) gates this file on **zero deleted lines**, because
 // a stale absolute test count is satisfiable by deleting cases — and a rewritten
 // import line reads as a deletion to that gate.
-import { storedViewport, withViewport } from "./flow-utils.ts";
+import { storedViewport, withViewport } from "../flow-utils.ts";
 // Third statement, same reason as the second: T3.3.3 inherits that zero-deleted-lines
 // gate, so a widened import line above would read as deletions.
-import { idClashMessage, relayoutNodes } from "./flow-utils.ts";
+import { idClashMessage, relayoutNodes } from "../flow-utils.ts";
+// Fourth statement, same reason: T2.1.1 (the code-view serializer pair) is a
+// SEPARATE task from the three above and inherits no zero-deleted-lines gate of
+// its own, but a widened import line still reads as a deletion to a reviewer
+// diffing this file, so it gets its own line.
+import { type StepLike, paramsToJson, stepToJson } from "../flow-utils.ts";
 
 /** Three steps, so an edge can be authored between any pair. */
 const WF: FlowWorkflow = {
@@ -373,7 +382,7 @@ test("workflowToFlow TERMINATES on a cyclic graph (hard timeout, out of process)
   // spinning `while`, so a regression here would hang this suite instead of
   // failing it. The child prints TERMINATED only if workflowToFlow returns.
   const here = dirname(fileURLToPath(import.meta.url));
-  const modUrl = pathToFileURL(join(here, "flow-utils.ts")).href;
+  const modUrl = pathToFileURL(join(here, "..", "flow-utils.ts")).href;
   const probe = [
     `const { workflowToFlow } = await import(${JSON.stringify(modUrl)});`,
     `const { nodes } = workflowToFlow(${JSON.stringify(CYCLIC)});`,
@@ -854,4 +863,80 @@ test("idClashMessage — the same lane on both edges is never blamed on the erro
     steps: wf.steps.map((s) => (s.id === "y->z" ? { ...s, id: "yz" } : s)),
   });
   assert.equal(connectConflict("x:error", "yz", renamed.nodes, renamed.edges), null);
+});
+
+// ── `stepToJson` / `paramsToJson` — the ONE code-view serializer pair (T2.1.1) ──
+//
+// The reported bug: opening a manual trigger's `<>` printed only
+// `{"fields":[…]}` — `with.fields` is that trigger's one declared param, and
+// every host's `<>` button stringified `step.with` directly. `stepToJson` is the
+// full step (core rfcs/workflow.md — "A step **is** an Invocation");
+// `paramsToJson` is the params alone, exactly what `<>` showed before.
+
+/** The reported bug's own step: a manual trigger whose only declared param is
+ * `with.fields`. */
+const TRIGGER_STEP: FlowStep = {
+  id: "trigger_1",
+  uses: { app: "@w6w/trigger", action: "manual" },
+  with: { fields: [{ key: "email", type: "string" }] },
+};
+
+test("stepToJson — the reported bug: a manual trigger's full-step view is NOT just its params", () => {
+  const parsed = JSON.parse(stepToJson(TRIGGER_STEP));
+  assert.deepEqual(Object.keys(parsed).sort(), ["id", "uses", "with"]);
+  assert.deepEqual(parsed.uses, { app: "@w6w/trigger", action: "manual" });
+  assert.deepEqual(parsed.with, { fields: [{ key: "email", type: "string" }] });
+  assert.equal(parsed.id, "trigger_1");
+});
+
+test("stepToJson and paramsToJson differ on the SAME input: uses is in one, not the other", () => {
+  const full = JSON.parse(stepToJson(TRIGGER_STEP));
+  const params = JSON.parse(paramsToJson(TRIGGER_STEP));
+  assert.ok("uses" in full, "the full-step view lost `uses`");
+  assert.ok(!("uses" in params), "the params-only view leaked `uses`");
+  assert.deepEqual(params, { fields: [{ key: "email", type: "string" }] });
+});
+
+test("stepToJson accepts the add-step hosts' id-less BuiltStep shape — no cast, no fabricated id", () => {
+  // Structurally what `StepBuilderModal.tsx`'s `buildStep()` returns before the
+  // step has ever joined the graph: no `id` key at all.
+  const built: StepLike = { uses: { app: "@w6w/script", action: "run" }, with: { code: "1" } };
+  const parsed = JSON.parse(stepToJson(built));
+  assert.ok(!("id" in parsed), "an id was fabricated for a step that has none yet");
+  assert.deepEqual(Object.keys(parsed).sort(), ["uses", "with"]);
+});
+
+test("stepToJson never adds a derived `kind` field, and never special-cases a trigger", () => {
+  for (const step of [
+    TRIGGER_STEP,
+    { id: "s", uses: { app: "@w6w/script", action: "run" }, with: { code: "1" } },
+  ]) {
+    assert.doesNotMatch(stepToJson(step), /"kind"/, `derived kind leaked for ${step.id}`);
+  }
+});
+
+test("stepToJson carries retry/onError/notes/ports/position exactly when set, omitted when not", () => {
+  const bare = JSON.parse(stepToJson(TRIGGER_STEP));
+  for (const k of ["retry", "onError", "notes", "ports", "position"]) {
+    assert.ok(!(k in bare), `${k} was invented on a step that never set it`);
+  }
+  const full: FlowStep = {
+    ...TRIGGER_STEP,
+    retry: { maxAttempts: 3 },
+    onError: "continue",
+    notes: "hand-authored",
+    ports: { in: 1, out: 2 },
+    position: { x: 1, y: 2 },
+  };
+  const parsed = JSON.parse(stepToJson(full));
+  assert.deepEqual(parsed.retry, { maxAttempts: 3 });
+  assert.equal(parsed.onError, "continue");
+  assert.equal(parsed.notes, "hand-authored");
+  assert.deepEqual(parsed.ports, { in: 1, out: 2 });
+  assert.deepEqual(parsed.position, { x: 1, y: 2 });
+});
+
+test("paramsToJson — an absent `with` renders as an empty object, never null or undefined", () => {
+  const noWith: StepLike = { uses: { app: "@w6w/script", action: "run" } };
+  assert.equal(paramsToJson(noWith), "{}");
 });

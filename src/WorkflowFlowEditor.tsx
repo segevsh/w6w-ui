@@ -57,6 +57,7 @@ import {
 } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ResolvedParams } from "./components/ResolvedParams.tsx";
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
 import {
@@ -71,21 +72,21 @@ import {
 import {
   type FlowStep,
   type FlowWorkflow,
-  SCHEDULER_APP,
-  TRIGGER_APP,
-  WEBHOOK_APP,
   internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
   isControlApp,
   isInternalApp,
+  isTriggerApp,
   nodePortsForStep,
 } from "./flow-types.ts";
 import {
   type StepNode,
   flowToWorkflow,
   idClashMessage,
+  paramsToJson,
   relayoutNodes,
+  stepToJson,
   storedViewport,
   suggestStepId,
   withViewport,
@@ -111,16 +112,6 @@ import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
-
-/**
- * Whether a step is an entry/trigger node — the one predicate, shared by the
- * step editor's Test tab and the canvas ▶ collect phase. A trigger's configured
- * `fields` are *definitions*, so both surfaces project them into a fillable form
- * and send the filled values as `{ input }` rather than running the raw config.
- */
-function isTriggerApp(app: string): boolean {
-  return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
-}
 
 /**
  * The authoring recipe for the second outgoing wire, shown on the lane control.
@@ -309,9 +300,15 @@ function Inner({
   const [editView, setEditView] = useState<EditView>("props");
   // The step id awaiting delete confirmation — one pending slot driving one modal.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  // Whether an auto-layout is awaiting confirmation. Same one-pending-slot shape as
-  // the delete above, for the same reason: it destroys something with no undo.
-  const [pendingRelayout, setPendingRelayout] = useState(false);
+  // Set right after `setNodes(next)` in `performRelayout`, cleared by the
+  // `[nodes, fitView]` effect below, which then calls `fitView()`. A ref (not
+  // state) because it drives no render of its own — it only needs to survive
+  // from the relayout click to the next commit of `nodes`.
+  const relayoutPendingFitRef = useRef(false);
+  // Carries the flow container div so the capture-phase dblclick listener below
+  // can be attached/removed on it directly — see that effect for why a native
+  // listener is required instead of React Flow's own node-double-click prop.
+  const flowContainerRef = useRef<HTMLDivElement>(null);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -319,7 +316,7 @@ function Inner({
     handleType: "source" | "target";
     position: { x: number; y: number };
   } | null>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   // React Flow's `colorMode` defaults to "light", so without this its chrome
   // (controls, minimap mask, handles, edge strokes, background dots) stays in the
   // light palette on a dark canvas. Read the mode from the house hook — the same
@@ -458,29 +455,32 @@ function Inner({
     if (readOnly) return;
     const next = relayoutNodes(nodes, edges);
     setNodes(next);
+    relayoutPendingFitRef.current = true;
     emitChange(next, edges);
   }, [nodes, edges, setNodes, emitChange, readOnly]);
 
-  // Does at least one step carry a hand-placed coordinate that a re-flow would
-  // destroy? Read off `value.steps` — the PERSISTED document — because that is
-  // where a deliberate placement lives; a node's canvas position is equally a
-  // computed slot nobody chose. Combined with `savePosition` below, so a workflow
-  // whose positions are not being saved anyway loses nothing and needs no dialog.
-  const hasStoredPositions = useMemo(() => value.steps.some((s) => !!s.position), [value.steps]);
-
-  // Confirm ONLY when the click would actually destroy something. There is no undo
-  // anywhere in studio, so the confirm is the guard — but a graph that has never
-  // been arranged has nothing to lose, and a dialog there would be noise on the
-  // common path. The app's own ConfirmModal, never a browser dialog
-  // (`.ai/conventions.md`): state + a sibling modal, exactly like delete.
+  // No confirmation (D-T2b): re-flowing is instant, deliberately with no
+  // replacement gate — the intake is explicit this click should never warn. See
+  // `.ai/conventions.md`'s "No browser dialogs" for the house pattern this is a
+  // recorded exception to, not an oversight.
   const requestRelayout = useCallback(() => {
     if (readOnly) return;
-    if (savePosition && hasStoredPositions) {
-      setPendingRelayout(true);
-      return;
-    }
     performRelayout();
-  }, [readOnly, savePosition, hasStoredPositions, performRelayout]);
+  }, [readOnly, performRelayout]);
+
+  // Frame the re-flowed graph once React Flow's own node-sync effect (a child of
+  // this component) has committed the new positions — that child-before-parent
+  // effect ordering is what makes `fitView()` here read POST-relayout bounds
+  // instead of the stale pre-relayout ones. Keyed on `[nodes, fitView]` so it
+  // re-checks the ref on every nodes commit, not just relayout's — `nodes`
+  // itself is unread in the body, only its commit timing matters, so the
+  // exhaustive-deps rule can't see why it's there.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `nodes` drives ordering, not the body
+  useEffect(() => {
+    if (!relayoutPendingFitRef.current) return;
+    relayoutPendingFitRef.current = false;
+    void fitView({ duration: 300 });
+  }, [nodes, fitView]);
 
   // ── The edge-level lane control (`Run on: Success / Error`) ─────────────────
   // Reuses the selection state that already exists; nothing new is tracked but the
@@ -793,6 +793,38 @@ function Inner({
     [runStep, duplicateStep, deleteStep, readOnly],
   );
 
+  // Opens the step editor on a canvas node double-click — deliberately NOT
+  // React Flow's own node-double-click prop on `<ReactFlow>` below. That prop
+  // fires from React's root container, an ANCESTOR of `.react-flow__pane` under
+  // React 18's event delegation, so it always loses the race to the pane's own
+  // native `dblclick.zoom` listener and can't stop it. A capture-phase listener
+  // on this container fires first instead.
+  //
+  // The guard matters specifically in `readOnly`: `nodesDraggable={!readOnly}`
+  // below drops `nopan` from the node wrapper's class list for a non-draggable
+  // node, and `@xyflow/system`'s zoom filter only rejects events inside
+  // `.nopan` — so without this listener winning the race, a viewer's
+  // double-click silently zooms the canvas instead of opening the modal.
+  useEffect(() => {
+    const div = flowContainerRef.current;
+    if (!div) return;
+    const handler = (e: MouseEvent) => {
+      const card = (e.target as HTMLElement).closest(".react-flow__node");
+      if (!card) return; // not over a node — let the pane's own dblclick-zoom run
+      const id = card.getAttribute("data-id");
+      if (!id) return;
+      // CAPTURE phase (registered below) is what makes this run before the
+      // pane's bubble-phase `dblclick.zoom` listener; stopping it here is what
+      // actually suppresses the zoom.
+      e.stopPropagation();
+      // Same transition the node toolbar's pencil button performs — no new
+      // plumbing, `controls` already carries `onEdit`.
+      controls.onEdit(id);
+    };
+    div.addEventListener("dblclick", handler, true);
+    return () => div.removeEventListener("dblclick", handler, true);
+  }, [controls]);
+
   const editingStep = nodes.find((n) => n.id === editingId)?.data.step ?? null;
   // The step the run modal is open on, resolved live so the collect phase reads
   // the current `with` (a trigger's declared `fields`) rather than a snapshot.
@@ -906,6 +938,7 @@ function Inner({
         <WorkflowProjectProvider project={project}>
           <ExpressionOptionsProvider value={mergedExprOptions}>
             <div
+              ref={flowContainerRef}
               className="w6w-flow"
               style={{ width: "100%", height, position: "relative" }}
               onKeyDown={(e) => {
@@ -1192,22 +1225,6 @@ function Inner({
                 </Modal>
               )}
 
-              {/* Sibling of the run-result modal, never nested inside another
-                  modal's body — ui's Modal is a native <dialog>, so nesting
-                  works mechanically and just looks wrong. */}
-              {pendingRelayout && (
-                <ConfirmModal
-                  title="Auto-layout"
-                  message="Re-flow every step into the computed layout? The positions saved for this workflow are replaced, and there is no undo."
-                  confirmLabel="Re-flow"
-                  onConfirm={() => {
-                    performRelayout();
-                    setPendingRelayout(false);
-                  }}
-                  onClose={() => setPendingRelayout(false)}
-                />
-              )}
-
               {pendingDelete !== null && (
                 <ConfirmModal
                   title="Delete step"
@@ -1295,14 +1312,8 @@ function IncomingStateField({
   return (
     <div className="w6w-field w6w-incoming-state">
       <span>Incoming state</span>
-      <span className="w6w-hint">
-        {seeds.length > 0
-          ? "The data arriving from the steps before this one."
-          : "The data arriving from the steps before this one. Nothing upstream has a saved test yet — override it below to supply one."}
-      </span>
       {seeds.length > 0 && (
         <div className="w6w-seed-picker">
-          <span className="w6w-hint">Seed from an upstream step's saved test:</span>
           <div className="w6w-seed-chips">
             {seeds.map((s) => (
               <button
@@ -1789,7 +1800,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
-function StepEditModal({
+export function StepEditModal({
   workflowId,
   step: initialStep,
   upstreamSteps,
@@ -1811,14 +1822,23 @@ function StepEditModal({
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
-  // tab showing form (props) / JSON (code) / node settings (config).
+  // tab showing form (props) / full-step JSON (code) / params JSON
+  // (params-code) / node settings (config).
   const [tab, setTab] = useState<"setup" | "configure" | "test">(
     initialView === "json" ? "configure" : initialView === "settings" ? "configure" : "configure",
   );
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
   );
-  const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
+  // The Test tab's own props/JSON toggle state (A4/D-7) — deliberately NOT
+  // `configView`, which ranges over `"params-code"`/`"config"` too, neither of
+  // which is in the Test tab's narrowed `["props","code"]` set. Always starts
+  // on the row list.
+  const [testView, setTestView] = useState<"props" | "code">("props");
+  // Draft text backing the "code" (full-step, read-only) view.
+  const [codeText, setCodeText] = useState(() => stepToJson(initialStep));
+  // Draft text backing the "params-code" (params-only, writable) view.
+  const [paramsCodeText, setParamsCodeText] = useState(() => paramsToJson(initialStep));
   const [testState, setTestState] = useState("{}");
   // Drives the footer "Test" button, which triggers the body's <StepTestRun> so
   // the run + persist logic isn't duplicated across two affordances.
@@ -1880,7 +1900,8 @@ function StepEditModal({
   );
 
   const changeConfigView = (v: ConfigView) => {
-    if (v === "code") setCodeText(JSON.stringify(step.with ?? {}, null, 2));
+    if (v === "code") setCodeText(stepToJson(step));
+    else if (v === "params-code") setParamsCodeText(paramsToJson(step));
     setConfigView(v);
   };
   const commitRename = () => {
@@ -1893,6 +1914,12 @@ function StepEditModal({
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
   const isTrigger = isTriggerApp(step.uses.app);
+  // A4/D-7: the tabs-bar toggle is enabled and narrowed to props/code ONLY on
+  // this arm — the non-trigger, testable Test tab, the one that mounts
+  // `<ResolvedParams>`. The trigger arm keeps the dim four (`PropertyEntryForm`
+  // renders its own toggle inside `TriggerFillForm`'s body); Setup/Configure
+  // are unchanged.
+  const isTestPropsCode = tab === "test" && testable && !isTrigger;
 
   // The editing step's graph ancestors that carry a saved step-test, offered as
   // one-click seeds for the incoming state. The SAME hook the canvas ▶ Run
@@ -2016,11 +2043,19 @@ function StepEditModal({
               </button>
             ))}
           </div>
-          <ConfigViewToggle
-            view={configView}
-            onChange={changeConfigView}
-            disabled={tab !== "configure"}
-          />
+          {isTestPropsCode ? (
+            <ConfigViewToggle
+              view={testView}
+              views={["props", "code"]}
+              onChange={(v) => setTestView(v as "props" | "code")}
+            />
+          ) : (
+            <ConfigViewToggle
+              view={configView}
+              onChange={changeConfigView}
+              disabled={tab !== "configure"}
+            />
+          )}
         </div>
 
         <div className="w6w-stepconfig-body">
@@ -2052,9 +2087,20 @@ function StepEditModal({
                 onChange={(w) => commit({ ...step, with: w })}
               />
             ) : configView === "code" ? (
+              // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
+              // shared with the two other code-view hosts.
               <JsonEditor
                 value={codeText}
-                onChange={setCodeText}
+                onChange={() => {}}
+                readOnly
+                minHeight="260px"
+                height="100%"
+                aria-label={`Step ${step.id} JSON`}
+              />
+            ) : configView === "params-code" ? (
+              <JsonEditor
+                value={paramsCodeText}
+                onChange={setParamsCodeText}
                 readOnly={readOnly}
                 minHeight="260px"
                 height="100%"
@@ -2102,6 +2148,20 @@ function StepEditModal({
                       seeds={seedSources}
                       readOnly={readOnly}
                     />
+                    {/* What will actually be submitted, resolved against the
+                        incoming state above — `testValues` (post-override),
+                        never `step.with` alone, so overriding the incoming
+                        state visibly updates these rows. */}
+                    {params === null ? (
+                      <p className="w6w-muted w6w-small">Loading parameters…</p>
+                    ) : (
+                      <ResolvedParams
+                        params={params}
+                        values={testValues}
+                        testStartState={testStartState}
+                        view={testView}
+                      />
+                    )}
                     <StepTestRun
                       ref={testRunRef}
                       app={step.uses.app}

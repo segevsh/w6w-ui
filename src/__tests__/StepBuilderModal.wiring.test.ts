@@ -1,10 +1,10 @@
-// Run: node --test src/StepBuilderModal.wiring.test.ts  (Node 24, type-stripped)
+// Run: node --test src/__tests__/StepBuilderModal.wiring.test.ts  (Node 24, type-stripped)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import ts from "typescript";
 
-const path = new URL("./StepBuilderModal.tsx", import.meta.url).pathname;
+const path = new URL("../StepBuilderModal.tsx", import.meta.url).pathname;
 const source = readFileSync(path, "utf8");
 const sf = ts.createSourceFile(path, source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
 

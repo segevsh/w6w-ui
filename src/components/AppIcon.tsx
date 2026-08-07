@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useEffectiveTheme } from "../theme.ts";
 import type { ThemeMode } from "../types.ts";
 
@@ -27,14 +28,21 @@ interface Props {
 export function AppIcon({ src, srcDark, brandColor, name, size = 32, theme }: Props) {
   const effective = useEffectiveTheme(theme);
   const displaySrc = effective === "dark" ? (srcDark ?? src) : src;
+  // An icon ref that failed to inline server-side (asset-inliner.ts) can persist
+  // as a raw, unresolvable path string rather than a data: URI — that never
+  // renders, so `<img>` needs an escape hatch to the initials tile too. Stores
+  // the src it failed on (not just a bool) so a later, different src retries
+  // instead of staying stuck on the fallback.
+  const [brokenSrc, setBrokenSrc] = useState<string | undefined>(undefined);
 
-  if (displaySrc) {
+  if (displaySrc && displaySrc !== brokenSrc) {
     return (
       <img
         src={displaySrc}
         width={size}
         height={size}
         alt=""
+        onError={() => setBrokenSrc(displaySrc)}
         style={{
           width: size,
           height: size,

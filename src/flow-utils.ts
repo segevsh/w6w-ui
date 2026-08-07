@@ -551,3 +551,48 @@ export function suggestStepId(existing: string[], prefix = "step"): string {
   }
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 }
+
+// ── Code-view serializers ──────────────────────────────────────────────────
+//
+// The ONE place a step or its params turn into code-view text — three hosts
+// (`StepBuilderModal.tsx`'s `ControlStepConfig`/`AppStepConfig` and
+// `WorkflowFlowEditor.tsx`'s `StepEditModal`) used to call `JSON.stringify`
+// locally, which is how a manual trigger's `<>` came to show only
+// `{"fields":[…]}`: `with.fields` is that trigger's one declared param, and a
+// bare `JSON.stringify(step.with)` never surfaced `uses`/`id` at all.
+
+/**
+ * A step, or the add-step hosts' in-progress `BuiltStep` (`StepBuilderModal.tsx`)
+ * — structurally `FlowStep` minus `id`, which those hosts legitimately have not
+ * minted yet (the editor assigns it once the step first joins the graph). Kept
+ * structural rather than importing `BuiltStep` so this module stays the
+ * dependency-free base every host already imports from, not the other way
+ * round.
+ */
+export type StepLike = Omit<FlowStep, "id"> & { id?: string };
+
+/**
+ * The full-step `<>` view text — every persisted field, `id` included when the
+ * caller has one, no more and no less. Core `rfcs/workflow.md`: "A step **is**
+ * an Invocation", so this is the whole step, not a derived projection — no
+ * `kind` field is added, and nothing here special-cases a trigger's
+ * `with.fields`; it is an ordinary declared param living in the same `with`
+ * slot every step uses.
+ *
+ * **Read-only in v1 (D-3)** — a hand-edited `uses`/`id` has no validation path
+ * today, so callers must not wire a write-back path from this text. Write
+ * access stays on {@link paramsToJson}'s view and the Form view.
+ */
+export function stepToJson(step: StepLike): string {
+  return JSON.stringify(step, null, 2);
+}
+
+/**
+ * The params-only view text — `step.with`, exactly what the `<>` view showed
+ * before this task split "the whole step" out from "just its params". Still
+ * writable: the params-only `JsonEditor`'s `onValidChange` feeds straight back
+ * into `with`/`withValues`, same as it always has.
+ */
+export function paramsToJson(step: Pick<StepLike, "with">): string {
+  return JSON.stringify(step.with ?? {}, null, 2);
+}

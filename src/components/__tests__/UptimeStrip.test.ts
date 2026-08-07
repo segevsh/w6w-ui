@@ -1,4 +1,4 @@
-// Run: node --test src/components/UptimeStrip.test.ts  (Node 24, type-stripped)
+// Run: node --test src/components/__tests__/UptimeStrip.test.ts  (Node 24, type-stripped)
 //
 // Node's type-stripping does NOT transform JSX, so the component is transpiled
 // with the package's own `typescript` and rendered with its own `react-dom` —
@@ -13,18 +13,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
-import type { UptimeDay, UptimeStripProps } from "./UptimeStrip.tsx";
+import type { UptimeDay, UptimeStripProps } from "../UptimeStrip.tsx";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Inside node_modules so the emitted `react/jsx-runtime` import resolves, and so
 // the scratch file is invisible to git / tsc / biome.
-const outDir = join(here, "..", "..", "node_modules", ".w6w-jsx-test");
+const outDir = join(here, "..", "..", "..", "node_modules", ".w6w-jsx-test");
 const outFile = join(outDir, "UptimeStrip.mjs");
 
 mkdirSync(outDir, { recursive: true });
 writeFileSync(
   outFile,
-  ts.transpileModule(readFileSync(join(here, "UptimeStrip.tsx"), "utf8"), {
+  ts.transpileModule(readFileSync(join(here, "..", "UptimeStrip.tsx"), "utf8"), {
     compilerOptions: {
       jsx: ts.JsxEmit.ReactJSX,
       target: ts.ScriptTarget.ES2022,

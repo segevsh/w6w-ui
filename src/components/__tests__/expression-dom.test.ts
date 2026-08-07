@@ -1,4 +1,4 @@
-// Run: node --test src/components/expression-dom.test.ts  (Node 24, type-stripped)
+// Run: node --test src/components/__tests__/expression-dom.test.ts  (Node 24, type-stripped)
 //
 // `readParts` reads only `childNodes`, `nodeType`, `tagName`, `getAttribute`
 // and `textContent`, so plain-object node stubs are enough — `ui` carries no
@@ -13,8 +13,8 @@ import {
   paintParts,
   readParts,
   varLabel,
-} from "./expression-dom.ts";
-import { parseTemplate, serializeTemplate } from "./expression-template.ts";
+} from "../expression-dom.ts";
+import { parseTemplate, serializeTemplate } from "../expression-template.ts";
 
 (globalThis as unknown as { Node: unknown }).Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 };
 

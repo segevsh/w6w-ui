@@ -92,7 +92,22 @@ export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
   }
 
   return {
-    listApps: () => req<{ apps: AppSummary[] }>("/apps").then((r) => r.apps),
+    // A bare GET only returns the server's default page (50) — every consumer
+    // of this client treats the result as the complete catalog, so page
+    // through it here. Capped at 20 pages as a runaway backstop.
+    listApps: async () => {
+      const apps: AppSummary[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const qs = new URLSearchParams({ limit: "200" });
+        if (cursor) qs.set("cursor", cursor);
+        const r = await req<{ apps: AppSummary[]; nextCursor?: string }>(`/apps?${qs}`);
+        apps.push(...r.apps);
+        if (!r.nextCursor) break;
+        cursor = r.nextCursor;
+      }
+      return apps;
+    },
 
     getAppAuth: async (id: string) => {
       const r = await req<{ auths: AuthDef[] }>(`/apps/${encodeURIComponent(id)}/auths`);
