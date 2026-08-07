@@ -83,7 +83,9 @@ import {
   type StepNode,
   flowToWorkflow,
   idClashMessage,
+  paramsToJson,
   relayoutNodes,
+  stepToJson,
   storedViewport,
   suggestStepId,
   withViewport,
@@ -1825,14 +1827,18 @@ function StepEditModal({
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
-  // tab showing form (props) / JSON (code) / node settings (config).
+  // tab showing form (props) / full-step JSON (code) / params JSON
+  // (params-code) / node settings (config).
   const [tab, setTab] = useState<"setup" | "configure" | "test">(
     initialView === "json" ? "configure" : initialView === "settings" ? "configure" : "configure",
   );
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
   );
-  const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
+  // Draft text backing the "code" (full-step, read-only) view.
+  const [codeText, setCodeText] = useState(() => stepToJson(initialStep));
+  // Draft text backing the "params-code" (params-only, writable) view.
+  const [paramsCodeText, setParamsCodeText] = useState(() => paramsToJson(initialStep));
   const [testState, setTestState] = useState("{}");
   // Drives the footer "Test" button, which triggers the body's <StepTestRun> so
   // the run + persist logic isn't duplicated across two affordances.
@@ -1894,7 +1900,8 @@ function StepEditModal({
   );
 
   const changeConfigView = (v: ConfigView) => {
-    if (v === "code") setCodeText(JSON.stringify(step.with ?? {}, null, 2));
+    if (v === "code") setCodeText(stepToJson(step));
+    else if (v === "params-code") setParamsCodeText(paramsToJson(step));
     setConfigView(v);
   };
   const commitRename = () => {
@@ -2066,9 +2073,20 @@ function StepEditModal({
                 onChange={(w) => commit({ ...step, with: w })}
               />
             ) : configView === "code" ? (
+              // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
+              // shared with the two other code-view hosts.
               <JsonEditor
                 value={codeText}
-                onChange={setCodeText}
+                onChange={() => {}}
+                readOnly
+                minHeight="260px"
+                height="100%"
+                aria-label={`Step ${step.id} JSON`}
+              />
+            ) : configView === "params-code" ? (
+              <JsonEditor
+                value={paramsCodeText}
+                onChange={setParamsCodeText}
                 readOnly={readOnly}
                 minHeight="260px"
                 height="100%"

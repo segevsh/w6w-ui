@@ -109,6 +109,13 @@ export function JsonEditor(props: JsonEditorProps) {
         extensions={extensions}
         placeholder={props.placeholder}
         readOnly={props.readOnly}
+        // `readOnly` alone only blocks CodeMirror's own transactions
+        // (`EditorState.readOnly`) — it leaves the content DOM
+        // `contenteditable="true"`, so a screen reader / a11y test still sees
+        // it as an editable field. `editable` is the separate switch that
+        // actually sets `contenteditable` (`EditorView.editable`); tying it to
+        // `readOnly` here makes the prop mean what its name says.
+        editable={!props.readOnly}
         theme={theme}
         height={props.height}
         minHeight={props.minHeight ?? "240px"}
