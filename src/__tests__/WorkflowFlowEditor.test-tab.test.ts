@@ -1,4 +1,4 @@
-// Run: node --import ./src/test-jsx-loader.mjs --test src/WorkflowFlowEditor.test-tab.test.ts  (Node 24)
+// Run: node --import ./src/test-jsx-loader.mjs --test src/__tests__/WorkflowFlowEditor.test-tab.test.ts  (Node 24)
 //
 // Mirrors `StepBuilderModal.commit.test.ts`'s jsdom + react-dom/client + act
 // harness (the one real DOM-interaction rig in this suite) rather than
@@ -75,11 +75,11 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id);
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
-const { StepEditModal } = await import("./WorkflowFlowEditor.tsx");
-const { W6wUIProvider } = await import("./provider.tsx");
-const { ExpressionOptionsProvider } = await import("./components/ExpressionOptions.tsx");
-const { isTriggerApp } = await import("./flow-types.ts");
-type W6wApi = Awaited<ReturnType<typeof import("./provider.tsx").useW6wApi>>;
+const { StepEditModal } = await import("../WorkflowFlowEditor.tsx");
+const { W6wUIProvider } = await import("../provider.tsx");
+const { ExpressionOptionsProvider } = await import("../components/ExpressionOptions.tsx");
+const { isTriggerApp } = await import("../flow-types.ts");
+type W6wApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6wApi>>;
 
 // Re-routed from T1.1.1's eval (harvested there, dropped by a mis-scoped
 // contract): the predicate is pinned against arm REMOVAL but not arm

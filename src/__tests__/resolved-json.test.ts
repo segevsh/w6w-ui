@@ -1,8 +1,8 @@
-// Run: node --import ./src/test-jsx-loader.mjs --test src/resolved-json.test.ts  (Node 24)
+// Run: node --import ./src/test-jsx-loader.mjs --test src/__tests__/resolved-json.test.ts  (Node 24)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ResolveScope } from "./resolve-params.ts";
-import { foldResolvedSegments, resolveParamJson, resolveVarsJson } from "./resolved-json.ts";
+import type { ResolveScope } from "../resolve-params.ts";
+import { foldResolvedSegments, resolveParamJson, resolveVarsJson } from "../resolved-json.ts";
 
 const emptyScope: ResolveScope = { vars: {}, documents: {}, steps: {}, trigger: {} };
 

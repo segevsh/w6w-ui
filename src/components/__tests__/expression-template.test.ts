@@ -1,7 +1,7 @@
-// Run: node --test src/components/expression-template.test.ts  (Node 24, type-stripped)
+// Run: node --test src/components/__tests__/expression-template.test.ts  (Node 24, type-stripped)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseTemplate, renderResult, serializeTemplate } from "./expression-template.ts";
+import { parseTemplate, renderResult, serializeTemplate } from "../expression-template.ts";
 
 test("plain text → single text part", () => {
   assert.deepEqual(parseTemplate("hello world"), [{ kind: "text", value: "hello world" }]);

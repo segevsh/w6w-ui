@@ -1,4 +1,4 @@
-// Run (from packages/ui): node --import ./src/test-jsx-loader.mjs --test src/StepBuilderModal.required-gate.test.ts  (Node 24)
+// Run (from packages/ui): node --import ./src/test-jsx-loader.mjs --test src/__tests__/StepBuilderModal.required-gate.test.ts  (Node 24)
 //
 // `requiredParamsFilled` gates the inline "Test run" button. Before this test,
 // a `required` field hidden by its own `showIf` still blocked the gate — so no
@@ -10,8 +10,8 @@
 // "required" flag in the Configure tab.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { requiredParamsFilled } from "./StepBuilderModal.tsx";
-import type { ActionParam } from "./types.ts";
+import { requiredParamsFilled } from "../StepBuilderModal.tsx";
+import type { ActionParam } from "../types.ts";
 
 // Mirrors packages/apps/apps/sendgrid/actions/mail-send.ts's actual shape.
 const MAIL_SEND_PARAMS: ActionParam[] = [

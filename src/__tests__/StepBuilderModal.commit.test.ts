@@ -1,10 +1,10 @@
-// Run (from packages/ui): node --import ./src/test-jsx-loader.mjs --test src/StepBuilderModal.commit.test.ts  (Node 24)
+// Run (from packages/ui): node --import ./src/test-jsx-loader.mjs --test src/__tests__/StepBuilderModal.commit.test.ts  (Node 24)
 //
 // No DOM/interaction test harness existed anywhere in `ui`/`studio` before this
 // file (confirmed: the only precedent, UptimeStrip.test.ts, is a one-shot
 // `renderToStaticMarkup` snapshot — no hooks, no events). Progressive commit is
 // a stateful, effect-driven, user-interaction behavior, so a real DOM + a real
-// interactive react-dom/client root is the only way to pin it. `./test-jsx-loader.mjs`
+// interactive react-dom/client root is the only way to pin it. `../test-jsx-loader.mjs`
 // (new) supplies the one missing piece Node's own type-stripping can't do —
 // transpiling `.tsx` — everything else is jsdom + react-dom, already-real
 // dependencies of this package (jsdom added as a devDependency by this task).
@@ -50,9 +50,9 @@ g.IS_REACT_ACT_ENVIRONMENT = true;
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
-const { AppStepConfig, ControlStepConfig } = await import("./StepBuilderModal.tsx");
-const { W6wUIProvider } = await import("./provider.tsx");
-type W6wApi = Awaited<ReturnType<typeof import("./provider.tsx").useW6wApi>>;
+const { AppStepConfig, ControlStepConfig } = await import("../StepBuilderModal.tsx");
+const { W6wUIProvider } = await import("../provider.tsx");
+type W6wApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6wApi>>;
 
 function fakeApi(overrides: Record<string, unknown> = {}) {
   return {

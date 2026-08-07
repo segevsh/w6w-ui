@@ -1,4 +1,4 @@
-// Run: node --test src/flow-utils.test.ts  (Node 24, type-stripped)
+// Run: node --test src/__tests__/flow-utils.test.ts  (Node 24, type-stripped)
 //
 // The `Edge.when` round-trip (core rfcs/workflow.md · "Amendment — 2026-07-29:
 // failure-conditioned edges"). The trap this suite exists to pin:
@@ -11,33 +11,33 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Edge } from "@xyflow/react";
-import { renameStepInEdges } from "./flow-connect.ts";
+import { renameStepInEdges } from "../flow-connect.ts";
 // The collision the ADDENDUM Y cases exercise is computed by the REAL rule, not
 // hand-asserted: `connectConflict` is what the editor calls to name the sitting edge.
-import { connectConflict } from "./flow-connect.ts";
+import { connectConflict } from "../flow-connect.ts";
 // A separate statement again (never a widened line above — the zero-deleted-lines
 // gate): T3.3.3 round 2 states its "both edges are on the success lane" precondition
 // from the REAL lane rule rather than by eye.
-import { edgeLane } from "./flow-connect.ts";
-import type { FlowWorkflow } from "./flow-types.ts";
+import { edgeLane } from "../flow-connect.ts";
+import type { FlowWorkflow } from "../flow-types.ts";
 // Separate statement, same reason as the flow-utils.ts imports below: T2.1.1's
 // cases need FlowStep too, and widening the line above would read as a
 // deletion to a reviewer diffing this file.
-import type { FlowStep } from "./flow-types.ts";
-import { type StepNode, flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
+import type { FlowStep } from "../flow-types.ts";
+import { type StepNode, flowToWorkflow, workflowToFlow } from "../flow-utils.ts";
 // A second statement from the same module rather than widening the line above:
 // T3.3.2's contract (ADDENDUM Z) gates this file on **zero deleted lines**, because
 // a stale absolute test count is satisfiable by deleting cases — and a rewritten
 // import line reads as a deletion to that gate.
-import { storedViewport, withViewport } from "./flow-utils.ts";
+import { storedViewport, withViewport } from "../flow-utils.ts";
 // Third statement, same reason as the second: T3.3.3 inherits that zero-deleted-lines
 // gate, so a widened import line above would read as deletions.
-import { idClashMessage, relayoutNodes } from "./flow-utils.ts";
+import { idClashMessage, relayoutNodes } from "../flow-utils.ts";
 // Fourth statement, same reason: T2.1.1 (the code-view serializer pair) is a
 // SEPARATE task from the three above and inherits no zero-deleted-lines gate of
 // its own, but a widened import line still reads as a deletion to a reviewer
 // diffing this file, so it gets its own line.
-import { type StepLike, paramsToJson, stepToJson } from "./flow-utils.ts";
+import { type StepLike, paramsToJson, stepToJson } from "../flow-utils.ts";
 
 /** Three steps, so an edge can be authored between any pair. */
 const WF: FlowWorkflow = {
@@ -382,7 +382,7 @@ test("workflowToFlow TERMINATES on a cyclic graph (hard timeout, out of process)
   // spinning `while`, so a regression here would hang this suite instead of
   // failing it. The child prints TERMINATED only if workflowToFlow returns.
   const here = dirname(fileURLToPath(import.meta.url));
-  const modUrl = pathToFileURL(join(here, "flow-utils.ts")).href;
+  const modUrl = pathToFileURL(join(here, "..", "flow-utils.ts")).href;
   const probe = [
     `const { workflowToFlow } = await import(${JSON.stringify(modUrl)});`,
     `const { nodes } = workflowToFlow(${JSON.stringify(CYCLIC)});`,
