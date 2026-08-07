@@ -314,6 +314,10 @@ function Inner({
   // state) because it drives no render of its own — it only needs to survive
   // from the relayout click to the next commit of `nodes`.
   const relayoutPendingFitRef = useRef(false);
+  // Carries the flow container div so the capture-phase dblclick listener below
+  // can be attached/removed on it directly — see that effect for why a native
+  // listener is required instead of React Flow's own node-double-click prop.
+  const flowContainerRef = useRef<HTMLDivElement>(null);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -798,6 +802,38 @@ function Inner({
     [runStep, duplicateStep, deleteStep, readOnly],
   );
 
+  // Opens the step editor on a canvas node double-click — deliberately NOT
+  // React Flow's own node-double-click prop on `<ReactFlow>` below. That prop
+  // fires from React's root container, an ANCESTOR of `.react-flow__pane` under
+  // React 18's event delegation, so it always loses the race to the pane's own
+  // native `dblclick.zoom` listener and can't stop it. A capture-phase listener
+  // on this container fires first instead.
+  //
+  // The guard matters specifically in `readOnly`: `nodesDraggable={!readOnly}`
+  // below drops `nopan` from the node wrapper's class list for a non-draggable
+  // node, and `@xyflow/system`'s zoom filter only rejects events inside
+  // `.nopan` — so without this listener winning the race, a viewer's
+  // double-click silently zooms the canvas instead of opening the modal.
+  useEffect(() => {
+    const div = flowContainerRef.current;
+    if (!div) return;
+    const handler = (e: MouseEvent) => {
+      const card = (e.target as HTMLElement).closest(".react-flow__node");
+      if (!card) return; // not over a node — let the pane's own dblclick-zoom run
+      const id = card.getAttribute("data-id");
+      if (!id) return;
+      // CAPTURE phase (registered below) is what makes this run before the
+      // pane's bubble-phase `dblclick.zoom` listener; stopping it here is what
+      // actually suppresses the zoom.
+      e.stopPropagation();
+      // Same transition the node toolbar's pencil button performs — no new
+      // plumbing, `controls` already carries `onEdit`.
+      controls.onEdit(id);
+    };
+    div.addEventListener("dblclick", handler, true);
+    return () => div.removeEventListener("dblclick", handler, true);
+  }, [controls]);
+
   const editingStep = nodes.find((n) => n.id === editingId)?.data.step ?? null;
   // The step the run modal is open on, resolved live so the collect phase reads
   // the current `with` (a trigger's declared `fields`) rather than a snapshot.
@@ -911,6 +947,7 @@ function Inner({
         <WorkflowProjectProvider project={project}>
           <ExpressionOptionsProvider value={mergedExprOptions}>
             <div
+              ref={flowContainerRef}
               className="w6w-flow"
               style={{ width: "100%", height, position: "relative" }}
               onKeyDown={(e) => {
@@ -998,18 +1035,6 @@ function Inner({
                   setSelectedId(sel[0]?.id ?? null);
                   setSelectedEdgeId(edgeSel[0]?.id ?? null);
                   // Deliberately NOT clearing `laneError` here — see its declaration.
-                }}
-                onNodeDoubleClick={(event, node) => {
-                  // FIRST statement, and load-bearing. React Flow's own node wrapper
-                  // attaches this as a plain native `onDoubleClick` with no
-                  // stopPropagation of its own, and the pane's default dblclick-to-
-                  // zoom behaviour (never disabled here) binds `dblclick.zoom` on a
-                  // DOM ancestor of every node card. Without this, double-clicking a
-                  // node would open the editor AND zoom the canvas in on that spot.
-                  event.stopPropagation();
-                  // Same transition the node toolbar's pencil button performs — no
-                  // new plumbing, `controls` already carries `onEdit`.
-                  controls.onEdit(node.id);
                 }}
                 nodeTypes={nodeTypes}
                 nodesDraggable={!readOnly}
