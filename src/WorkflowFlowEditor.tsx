@@ -57,6 +57,7 @@ import {
 } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ResolvedParams } from "./components/ResolvedParams.tsx";
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
 import {
@@ -1805,7 +1806,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
-function StepEditModal({
+export function StepEditModal({
   workflowId,
   step: initialStep,
   upstreamSteps,
@@ -2134,6 +2135,19 @@ function StepEditModal({
                       seeds={seedSources}
                       readOnly={readOnly}
                     />
+                    {/* What will actually be submitted, resolved against the
+                        incoming state above — `testValues` (post-override),
+                        never `step.with` alone, so overriding the incoming
+                        state visibly updates these rows. */}
+                    {params === null ? (
+                      <p className="w6w-muted w6w-small">Loading parameters…</p>
+                    ) : (
+                      <ResolvedParams
+                        params={params}
+                        values={testValues}
+                        testStartState={testStartState}
+                      />
+                    )}
                     <StepTestRun
                       ref={testRunRef}
                       app={step.uses.app}
