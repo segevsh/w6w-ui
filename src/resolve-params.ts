@@ -180,3 +180,34 @@ export function resolveParamValue(value: unknown, scope: ResolveScope): Resolved
   if (isDollarExpr(value)) return [{ status: "not-evaluated" }];
   return [{ status: "resolved", value }];
 }
+
+/**
+ * Structural deep-equality over JSON-shaped values (primitives, arrays, plain
+ * objects, recursively) — no new dependency. Used by the Test tab's "unchanged
+ * from default" filter (D-1/A1): equality, not presence, so a value the
+ * hand-editable JSON view baked in explicitly is still recognized as
+ * unchanged when it matches the declared default. `a === b` covers primitives
+ * (including `undefined === undefined`, so a param with neither a value nor a
+ * declared default is "equal" too) and short-circuits identical references
+ * before the recursive object/array walk.
+ */
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null || typeof a !== "object") return false;
+  const aArr = Array.isArray(a);
+  const bArr = Array.isArray(b as object);
+  if (aArr !== bArr) return false;
+  if (aArr) {
+    const arrA = a as unknown[];
+    const arrB = b as unknown[];
+    return arrA.length === arrB.length && arrA.every((v, i) => deepEqual(v, arrB[i]));
+  }
+  const objA = a as Record<string, unknown>;
+  const objB = b as Record<string, unknown>;
+  const keysA = Object.keys(objA);
+  const keysB = Object.keys(objB);
+  return (
+    keysA.length === keysB.length && keysA.every((k) => k in objB && deepEqual(objA[k], objB[k]))
+  );
+}

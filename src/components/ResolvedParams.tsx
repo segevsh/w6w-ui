@@ -1,12 +1,15 @@
 import { useMemo } from "react";
+import { JsonEditor } from "../JsonEditor.tsx";
 import { type DataVar, flattenParams, isParamVisible } from "../ParamsForm.tsx";
 import type { StepStartState } from "../provider.tsx";
 import {
   type ResolveScope,
   type ResolvedSegment,
   buildResolveScope,
+  deepEqual,
   resolveParamValue,
 } from "../resolve-params.ts";
+import { resolveParamJson, resolveVarsJson } from "../resolved-json.ts";
 import type { ActionParam } from "../types.ts";
 import { useExpressionOptions } from "./ExpressionOptions.tsx";
 import { varLabel } from "./expression-dom.ts";
@@ -18,6 +21,14 @@ export interface ResolvedParamsProps {
   values: Record<string, unknown>;
   /** The exact object the test invoke sends as `state` — `steps.*`/`trigger.*` resolve against this. */
   testStartState?: StepStartState;
+  /**
+   * `"props"` (default) renders the filtered row list; `"code"` renders the
+   * COMPLETE resolved-values JSON (A4/A5/D-2) — every visible param, defaults
+   * included. Driven by the host's own toggle state; this component never
+   * mounts a toggle of its own (D-7 — `PropertyEntryForm` already owns one on
+   * the trigger arm, and two side by side is a defect, not a feature).
+   */
+  view?: "props" | "code";
 }
 
 /**
@@ -32,7 +43,12 @@ export interface ResolvedParamsProps {
  * the static chip vocabulary (`varLabel`, `.w6w-expr-chip-*`) rather than
  * `expression-dom.ts`'s DOM-painting, which is for the editable field.
  */
-export function ResolvedParams({ params, values, testStartState }: ResolvedParamsProps) {
+export function ResolvedParams({
+  params,
+  values,
+  testStartState,
+  view = "props",
+}: ResolvedParamsProps) {
   const { sampleValues } = useExpressionOptions();
   const scope = useMemo(
     () => buildResolveScope(sampleValues, testStartState),
@@ -44,12 +60,52 @@ export function ResolvedParams({ params, values, testStartState }: ResolvedParam
   // Sections are layout-only containers with no value of their own (their
   // children, already flattened, carry the values) — skip rendering a row for
   // the section param itself, exactly as `ParamsForm`'s own `renderOne` does.
-  const rows = flat.filter((p) => p.type !== "section" && isParamVisible(p, effective));
+  // This is the "visible" row set D-2's code view is complete OVER — before
+  // A1's unchanged-value filter, so the code view still carries a param the
+  // list hides.
+  const visibleRows = flat.filter((p) => p.type !== "section" && isParamVisible(p, effective));
+
+  if (view === "code") {
+    // Derived fresh on every render from `values` — no draft state — so
+    // editing the incoming-state override above updates this text live,
+    // exactly as it already updates the row list (A5).
+    const json = buildResolvedJson(visibleRows, values, scope);
+    return (
+      <div className="w6w-resolved-params">
+        <JsonEditor
+          value={JSON.stringify(json, null, 2)}
+          onChange={() => {}}
+          readOnly
+          minHeight="260px"
+          height="100%"
+          aria-label="Resolved test values (JSON)"
+        />
+      </div>
+    );
+  }
+
+  // A1/D-1: drop a row whose effective value is deep-equal to its declared
+  // default — noise the human named explicitly (an unset `Sender Name ""`, an
+  // explicitly-false `required` boolean, an empty `{}`/array). Uniform: no
+  // `required` exemption, and a key EXPLICITLY present in `with` that happens
+  // to equal the default is hidden too (equality, not presence — D-1).
+  const rows = visibleRows.filter((p) => !deepEqual(effective(p.key), p.default));
+
+  if (visibleRows.length === 0) {
+    return (
+      <div className="w6w-resolved-params">
+        <p className="w6w-muted w6w-small">This action takes no parameters.</p>
+      </div>
+    );
+  }
 
   if (rows.length === 0) {
     return (
       <div className="w6w-resolved-params">
-        <p className="w6w-muted w6w-small">This action takes no parameters.</p>
+        <p className="w6w-muted w6w-small">
+          Every configured value matches its default — nothing to show here. Switch to JSON to see
+          the full set.
+        </p>
       </div>
     );
   }
@@ -76,6 +132,37 @@ export function ResolvedParams({ params, values, testStartState }: ResolvedParam
       )}
     </div>
   );
+}
+
+/**
+ * D-2: the code view is COMPLETE over `rows` (every visible param — see the
+ * caller — defaults included, the row set BEFORE A1's filter), one key per
+ * `param.key`, each folded through {@link resolveParamJson}/{@link
+ * resolveVarsJson} (never the schema, never raw `step.with`, never the
+ * `{type:"expr",…}` envelope — A6's pinned serialization).
+ */
+function buildResolvedJson(
+  rows: ActionParam[],
+  values: Record<string, unknown>,
+  scope: ResolveScope,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const param of rows) {
+    if (param.type === "vars") {
+      const raw = Array.isArray(values[param.key])
+        ? (values[param.key] as DataVar[])
+        : Array.isArray(param.default)
+          ? (param.default as DataVar[])
+          : [];
+      out[param.key] = resolveVarsJson(raw, scope);
+    } else {
+      out[param.key] = resolveParamJson(
+        values[param.key] !== undefined ? values[param.key] : param.default,
+        scope,
+      );
+    }
+  }
+  return out;
 }
 
 function ResolvedParamRow({ label, segments }: { label: string; segments: ResolvedSegment[] }) {
