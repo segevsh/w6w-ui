@@ -13,12 +13,10 @@ import {
   DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
-  SCHEDULER_APP,
-  TRIGGER_APP,
-  WEBHOOK_APP,
   internalNodeDefaults,
   isControlApp,
   isInternalApp,
+  isTriggerApp,
 } from "./flow-types.ts";
 import { type StepStartState, useW6wApi, useWorkflowProject } from "./provider.tsx";
 import { startStateFromSeeds } from "./step-preview-state.ts";
@@ -89,16 +87,6 @@ export interface StepBuilderModalProps {
 }
 
 type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
-
-/**
- * True for the entry-trigger nodes whose Test tab fills the configured
- * `fields` into `{ input }` (via {@link TriggerFillForm}) instead of running the
- * raw config — a manual (`@w6w/trigger`), webhook (`@w6w/webhook`), or scheduler
- * (`@w6w/scheduler`) trigger.
- */
-function isTriggerNode(app: string): boolean {
-  return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
-}
 
 /** Config sub-tabs shared by the add-step config and the node editor. */
 type StepConfigTab = "setup" | "configure" | "test";
@@ -615,7 +603,7 @@ export function ControlStepConfig({
           ))}
         {tab === "test" &&
           testable &&
-          (isTriggerNode(node.app) ? (
+          (isTriggerApp(node.app) ? (
             <TriggerFillForm app={node.app} action={node.action} fields={withValues.fields} />
           ) : (
             <StepTestRun

@@ -71,14 +71,12 @@ import {
 import {
   type FlowStep,
   type FlowWorkflow,
-  SCHEDULER_APP,
-  TRIGGER_APP,
-  WEBHOOK_APP,
   internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
   isControlApp,
   isInternalApp,
+  isTriggerApp,
   nodePortsForStep,
 } from "./flow-types.ts";
 import {
@@ -111,16 +109,6 @@ import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
-
-/**
- * Whether a step is an entry/trigger node — the one predicate, shared by the
- * step editor's Test tab and the canvas ▶ collect phase. A trigger's configured
- * `fields` are *definitions*, so both surfaces project them into a fillable form
- * and send the filled values as `{ input }` rather than running the raw config.
- */
-function isTriggerApp(app: string): boolean {
-  return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
-}
 
 /**
  * The authoring recipe for the second outgoing wire, shown on the lane control.
