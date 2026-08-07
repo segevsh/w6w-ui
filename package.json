@@ -33,6 +33,7 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
+    "test": "node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts",
     "lint": "biome check .",
     "format": "biome format --write ."
   },

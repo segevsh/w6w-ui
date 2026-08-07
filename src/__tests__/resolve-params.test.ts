@@ -1,4 +1,4 @@
-// Run: node --import ./src/test-jsx-loader.mjs --test src/resolve-params.test.ts  (Node 24)
+// Run: node --import ./src/test-jsx-loader.mjs --test src/__tests__/resolve-params.test.ts  (Node 24)
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -6,7 +6,7 @@ import {
   buildResolveScope,
   deepEqual,
   resolveParamValue,
-} from "./resolve-params.ts";
+} from "../resolve-params.ts";
 
 const emptyScope: ResolveScope = { vars: {}, documents: {}, steps: {}, trigger: {} };
 

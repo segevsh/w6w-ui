@@ -1,4 +1,4 @@
-// Run: node --test src/WorkflowFlowEditor.dblclick-wiring.test.ts  (Node 24, type-stripped)
+// Run: node --test src/__tests__/WorkflowFlowEditor.dblclick-wiring.test.ts  (Node 24, type-stripped)
 //
 // R2: the mechanism moved off React Flow's `onNodeDoubleClick` prop (round 1 —
 // it fires on React's root container, strictly AFTER the pane's own bubble-phase
@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import ts from "typescript";
 
-const path = new URL("./WorkflowFlowEditor.tsx", import.meta.url).pathname;
+const path = new URL("../WorkflowFlowEditor.tsx", import.meta.url).pathname;
 const source = readFileSync(path, "utf8");
 const sf = ts.createSourceFile(path, source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
 

@@ -1,4 +1,4 @@
-// Run: node --test src/flow-connect.test.ts   (Node 24, type-stripped)
+// Run: node --test src/__tests__/flow-connect.test.ts   (Node 24, type-stripped)
 //
 // The exit-port capacity rule. The trap this suite exists to pin: `applyConnect`
 // used to free the source's exit port lane-BLINDLY, so the moment a second wire
@@ -17,9 +17,9 @@ import {
   edgeLane,
   edgeWhenConflict,
   setEdgeWhen,
-} from "./flow-connect.ts";
-import type { NodePorts } from "./flow-types.ts";
-import { type StepNode, flowEdgeId } from "./flow-utils.ts";
+} from "../flow-connect.ts";
+import type { NodePorts } from "../flow-types.ts";
+import { type StepNode, flowEdgeId } from "../flow-utils.ts";
 
 /** A canvas node for step `id`, optionally with persisted per-step ports. */
 function node(id: string, ports?: NodePorts): StepNode {

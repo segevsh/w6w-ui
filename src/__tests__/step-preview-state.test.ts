@@ -1,15 +1,15 @@
-// Run: node --test src/step-preview-state.test.ts  (Node 24, type-stripped)
+// Run: node --test src/__tests__/step-preview-state.test.ts  (Node 24, type-stripped)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TRIGGER_APP } from "./flow-types.ts";
-import type { StepNode } from "./flow-utils.ts";
-import type { StepTest } from "./provider.tsx";
+import { TRIGGER_APP } from "../flow-types.ts";
+import type { StepNode } from "../flow-utils.ts";
+import type { StepTest } from "../provider.tsx";
 import {
   fetchSeedSources,
   startStateFromSeeds,
   stepBuilderUpstreamSteps,
   upstreamStateSources,
-} from "./step-preview-state.ts";
+} from "../step-preview-state.ts";
 
 function node(id: string, app = "@w6w/script", action = "run"): StepNode {
   return {
