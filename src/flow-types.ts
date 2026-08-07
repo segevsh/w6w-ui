@@ -207,6 +207,16 @@ export function isControlApp(app: string): boolean {
   return app === CONTROL_APP;
 }
 
+/**
+ * Whether a step is an entry/trigger node — the one predicate, shared by the
+ * step editor's Test tab and the canvas ▶ collect phase. A trigger's configured
+ * `fields` are *definitions*, so both surfaces project them into a fillable form
+ * and send the filled values as `{ input }` rather than running the raw config.
+ */
+export function isTriggerApp(app: string): boolean {
+  return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
+}
+
 /** A palette entry for an internal node: its id, label, group, and config schema. */
 export interface InternalNodeDef {
   app: string;

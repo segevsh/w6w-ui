@@ -57,6 +57,7 @@ import {
 } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ResolvedParams } from "./components/ResolvedParams.tsx";
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
 import {
@@ -71,21 +72,21 @@ import {
 import {
   type FlowStep,
   type FlowWorkflow,
-  SCHEDULER_APP,
-  TRIGGER_APP,
-  WEBHOOK_APP,
   internalNodeIcon,
   internalNodeLabel,
   internalNodeParams,
   isControlApp,
   isInternalApp,
+  isTriggerApp,
   nodePortsForStep,
 } from "./flow-types.ts";
 import {
   type StepNode,
   flowToWorkflow,
   idClashMessage,
+  paramsToJson,
   relayoutNodes,
+  stepToJson,
   storedViewport,
   suggestStepId,
   withViewport,
@@ -111,16 +112,6 @@ import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type { ActionDef, ActionParam, AppSummary, ConnectionSummary } from "./types.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
-
-/**
- * Whether a step is an entry/trigger node — the one predicate, shared by the
- * step editor's Test tab and the canvas ▶ collect phase. A trigger's configured
- * `fields` are *definitions*, so both surfaces project them into a fillable form
- * and send the filled values as `{ input }` rather than running the raw config.
- */
-function isTriggerApp(app: string): boolean {
-  return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
-}
 
 /**
  * The authoring recipe for the second outgoing wire, shown on the lane control.
@@ -1815,7 +1806,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
-function StepEditModal({
+export function StepEditModal({
   workflowId,
   step: initialStep,
   upstreamSteps,
@@ -1837,14 +1828,18 @@ function StepEditModal({
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
-  // tab showing form (props) / JSON (code) / node settings (config).
+  // tab showing form (props) / full-step JSON (code) / params JSON
+  // (params-code) / node settings (config).
   const [tab, setTab] = useState<"setup" | "configure" | "test">(
     initialView === "json" ? "configure" : initialView === "settings" ? "configure" : "configure",
   );
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
   );
-  const [codeText, setCodeText] = useState(() => JSON.stringify(initialStep.with ?? {}, null, 2));
+  // Draft text backing the "code" (full-step, read-only) view.
+  const [codeText, setCodeText] = useState(() => stepToJson(initialStep));
+  // Draft text backing the "params-code" (params-only, writable) view.
+  const [paramsCodeText, setParamsCodeText] = useState(() => paramsToJson(initialStep));
   const [testState, setTestState] = useState("{}");
   // Drives the footer "Test" button, which triggers the body's <StepTestRun> so
   // the run + persist logic isn't duplicated across two affordances.
@@ -1906,7 +1901,8 @@ function StepEditModal({
   );
 
   const changeConfigView = (v: ConfigView) => {
-    if (v === "code") setCodeText(JSON.stringify(step.with ?? {}, null, 2));
+    if (v === "code") setCodeText(stepToJson(step));
+    else if (v === "params-code") setParamsCodeText(paramsToJson(step));
     setConfigView(v);
   };
   const commitRename = () => {
@@ -2078,9 +2074,20 @@ function StepEditModal({
                 onChange={(w) => commit({ ...step, with: w })}
               />
             ) : configView === "code" ? (
+              // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
+              // shared with the two other code-view hosts.
               <JsonEditor
                 value={codeText}
-                onChange={setCodeText}
+                onChange={() => {}}
+                readOnly
+                minHeight="260px"
+                height="100%"
+                aria-label={`Step ${step.id} JSON`}
+              />
+            ) : configView === "params-code" ? (
+              <JsonEditor
+                value={paramsCodeText}
+                onChange={setParamsCodeText}
                 readOnly={readOnly}
                 minHeight="260px"
                 height="100%"
@@ -2128,6 +2135,19 @@ function StepEditModal({
                       seeds={seedSources}
                       readOnly={readOnly}
                     />
+                    {/* What will actually be submitted, resolved against the
+                        incoming state above — `testValues` (post-override),
+                        never `step.with` alone, so overriding the incoming
+                        state visibly updates these rows. */}
+                    {params === null ? (
+                      <p className="w6w-muted w6w-small">Loading parameters…</p>
+                    ) : (
+                      <ResolvedParams
+                        params={params}
+                        values={testValues}
+                        testStartState={testStartState}
+                      />
+                    )}
                     <StepTestRun
                       ref={testRunRef}
                       app={step.uses.app}

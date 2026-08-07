@@ -27,9 +27,14 @@ export {
   internalNodeParams,
   isControlApp,
   isInternalApp,
+  isTriggerApp,
+  SCHEDULER_APP,
   SCRIPT_APP,
   TRIGGER_APP,
+  WEBHOOK_APP,
 } from "./flow-types.ts";
+export { asFieldDefs } from "./trigger-fields.ts";
+export type { TriggerFieldDef } from "./trigger-fields.ts";
 
 export { flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 export type { StepNode, StepNodeData } from "./flow-utils.ts";
