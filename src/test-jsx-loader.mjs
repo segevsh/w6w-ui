@@ -6,6 +6,13 @@ import ts from "typescript";
 register(import.meta.url, import.meta.url);
 
 export async function load(url, context, nextLoad) {
+  // `@xyflow/react` imports its own `dist/style.css`; Node's ESM loader has no
+  // handler for `.css` and throws `ERR_UNKNOWN_FILE_EXTENSION` under
+  // `node --test`. A stub empty module is enough — the test harness doesn't
+  // render CSS, it only needs the import to resolve.
+  if (url.endsWith(".css")) {
+    return { format: "module", source: "export default {};", shortCircuit: true };
+  }
   if (url.endsWith(".tsx")) {
     const path = fileURLToPath(url);
     const source = readFileSync(path, "utf8");

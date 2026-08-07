@@ -1984,3 +1984,17 @@ dialog.w6w-modal p {
 .w6w-code-block--wrap {
   overflow-x: hidden;
 }
+
+/* Resolved params (Test tab, read-only): inline badge weight — like
+   JsonParamField's "Invalid JSON" hint, not a full `.w6w-result.w6w-error`
+   block per param, since either can appear once per configured param. */
+.w6w-param-unresolved {
+  color: var(--w6w-danger);
+  font-size: 0.85em;
+  font-style: italic;
+}
+.w6w-param-unevaluated {
+  color: var(--w6w-muted);
+  font-size: 0.85em;
+  font-style: italic;
+}
