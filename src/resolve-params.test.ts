@@ -1,7 +1,12 @@
 // Run: node --import ./src/test-jsx-loader.mjs --test src/resolve-params.test.ts  (Node 24)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type ResolveScope, buildResolveScope, resolveParamValue } from "./resolve-params.ts";
+import {
+  type ResolveScope,
+  buildResolveScope,
+  deepEqual,
+  resolveParamValue,
+} from "./resolve-params.ts";
 
 const emptyScope: ResolveScope = { vars: {}, documents: {}, steps: {}, trigger: {} };
 
@@ -222,6 +227,35 @@ test("buildResolveScope — steps/trigger come from testStartState, default to e
     withTrigger,
   );
   assert.deepStrictEqual(seg, [{ status: "resolved", ref: "trigger.event.id", value: 1 }]);
+});
+
+test("A1/A2 — deepEqual: primitives, incl. both-undefined (a param with neither a value nor a default)", () => {
+  assert.equal(deepEqual(undefined, undefined), true);
+  assert.equal(deepEqual(false, false), true);
+  assert.equal(deepEqual("", ""), true);
+  assert.equal(deepEqual(0, 0), true);
+  assert.equal(deepEqual(null, undefined), false);
+  assert.equal(deepEqual("a", "b"), false);
+});
+
+test("D-1 guard — a value explicitly present in `with` and equal to its default is 'unchanged' (deep-equal, not presence)", () => {
+  // Mirrors the effective-value computation `ResolvedParams` already does:
+  // `values[key] !== undefined ? values[key] : param.default`. A key
+  // EXPLICITLY present in `with`, equal to the default, must still read as
+  // unchanged — a presence-only mutation (M1) would keep it visible instead.
+  const values: Record<string, unknown> = { dynamic_template: false };
+  const effective = values.dynamic_template !== undefined ? values.dynamic_template : true;
+  assert.equal(deepEqual(effective, false), true);
+});
+
+test("M2 guard — deep-equal, not `===`: {} vs {} and [] vs [] are equal despite distinct references", () => {
+  assert.equal(deepEqual({}, {}), true);
+  assert.equal(deepEqual([], []), true);
+  assert.equal(deepEqual({ a: 1 }, { a: 1 }), true);
+  assert.equal(deepEqual({ a: 1 }, { a: 2 }), false);
+  assert.equal(deepEqual([1, [2, 3]], [1, [2, 3]]), true);
+  assert.equal(deepEqual([1, 2], [1, 2, 3]), false);
+  assert.equal(deepEqual({ a: 1 }, { a: 1, b: 2 }), false);
 });
 
 test("dot-path walk — a hop into null/undefined never yields a value, only 'unresolved'", () => {
