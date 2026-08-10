@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { isInternalApp } from "./flow-types.ts";
 import { useW6wApi } from "./provider.tsx";
@@ -14,6 +14,10 @@ export interface AppPickerProps {
   searchPlaceholder?: string;
   /** Message shown when the (filtered) app list is empty. */
   emptyMessage?: string;
+  /** Render the search input. Defaults to `true`; the connected-apps list opts out. */
+  search?: boolean;
+  /** Rendered beneath `emptyMessage` in the empty state (e.g. a "Browse all apps" button). */
+  emptyAction?: ReactNode;
 }
 
 /**
@@ -27,6 +31,8 @@ export function AppPicker({
   filter,
   searchPlaceholder,
   emptyMessage,
+  search = true,
+  emptyAction,
 }: AppPickerProps) {
   const api = useW6wApi();
   const [apps, setApps] = useState<AppSummary[] | null>(null);
@@ -44,18 +50,25 @@ export function AppPicker({
     };
   }, [api]);
 
-  if (appsError) return <div className="w6w-result w6w-error">{appsError}</div>;
-  if (apps === null) return <p className="w6w-muted w6w-small">Loading apps…</p>;
+  // Single layout owner for all four exits below, so the panel never resizes
+  // between error/loading/empty and the loaded list — see `.w6w-apppicker-host`.
+  const host = (body: ReactNode) => <div className="w6w-apppicker-host">{body}</div>;
+
+  if (appsError) return host(<div className="w6w-result w6w-error">{appsError}</div>);
+  if (apps === null) return host(<p className="w6w-muted w6w-small">Loading apps…</p>);
 
   // Reserved `@w6w/*` pseudo-apps are added via the builder's "Controls" tab, not
   // as connectable apps — keep them out of this grid even after they register.
   const connectable = apps.filter((a) => !isInternalApp(a.id));
   const base = filter ? connectable.filter(filter) : connectable;
   if (base.length === 0) {
-    return (
-      <p className="w6w-muted w6w-small">
-        {emptyMessage ?? "No apps registered yet. Register one from the Apps page first."}
-      </p>
+    return host(
+      <div className="w6w-stack">
+        <p className="w6w-muted w6w-small">
+          {emptyMessage ?? "No apps registered yet. Register one from the Apps page first."}
+        </p>
+        {emptyAction}
+      </div>,
     );
   }
 
@@ -70,16 +83,18 @@ export function AppPicker({
       )
     : sorted;
 
-  return (
+  return host(
     <div className="w6w-stepbuilder-apps">
-      <input
-        type="text"
-        className="w6w-stepbuilder-search"
-        placeholder={searchPlaceholder ?? "Search apps…"}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        aria-label="Search apps"
-      />
+      {search && (
+        <input
+          type="text"
+          className="w6w-stepbuilder-search"
+          placeholder={searchPlaceholder ?? "Search apps…"}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search apps"
+        />
+      )}
       {visible.length === 0 ? (
         <p className="w6w-muted w6w-small">No apps match “{query}”.</p>
       ) : (
@@ -107,6 +122,6 @@ export function AppPicker({
           ))}
         </div>
       )}
-    </div>
+    </div>,
   );
 }
