@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { isInternalApp } from "./flow-types.ts";
 import { useW6wApi } from "./provider.tsx";
@@ -44,18 +44,22 @@ export function AppPicker({
     };
   }, [api]);
 
-  if (appsError) return <div className="w6w-result w6w-error">{appsError}</div>;
-  if (apps === null) return <p className="w6w-muted w6w-small">Loading apps…</p>;
+  // Single layout owner for all four exits below, so the panel never resizes
+  // between error/loading/empty and the loaded list — see `.w6w-apppicker-host`.
+  const host = (body: ReactNode) => <div className="w6w-apppicker-host">{body}</div>;
+
+  if (appsError) return host(<div className="w6w-result w6w-error">{appsError}</div>);
+  if (apps === null) return host(<p className="w6w-muted w6w-small">Loading apps…</p>);
 
   // Reserved `@w6w/*` pseudo-apps are added via the builder's "Controls" tab, not
   // as connectable apps — keep them out of this grid even after they register.
   const connectable = apps.filter((a) => !isInternalApp(a.id));
   const base = filter ? connectable.filter(filter) : connectable;
   if (base.length === 0) {
-    return (
+    return host(
       <p className="w6w-muted w6w-small">
         {emptyMessage ?? "No apps registered yet. Register one from the Apps page first."}
-      </p>
+      </p>,
     );
   }
 
@@ -70,7 +74,7 @@ export function AppPicker({
       )
     : sorted;
 
-  return (
+  return host(
     <div className="w6w-stepbuilder-apps">
       <input
         type="text"
@@ -107,6 +111,6 @@ export function AppPicker({
           ))}
         </div>
       )}
-    </div>
+    </div>,
   );
 }
