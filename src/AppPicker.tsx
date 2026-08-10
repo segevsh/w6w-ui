@@ -18,12 +18,23 @@ export interface AppPickerProps {
   search?: boolean;
   /** Rendered beneath `emptyMessage` in the empty state (e.g. a "Browse all apps" button). */
   emptyAction?: ReactNode;
+  /**
+   * Supply the catalog instead of letting the picker fetch it. For a caller
+   * that already holds the list — and, more to the point, that decides
+   * membership from fields this package's {@link AppSummary} does not carry
+   * (`supportsOAuth`, `owner`): passing the decided list keeps ONE list and one
+   * loading/error state, where `filter` would mean a second `listApps()` whose
+   * result can disagree with the caller's. `null` is "still loading" and
+   * renders the same placeholder the internal fetch does.
+   */
+  apps?: AppSummary[] | null;
 }
 
 /**
  * Searchable grid of app cards (icon + name + id) — the shared app picker used
  * by both the step builder and the add-connection modal. Fetches the app list
- * from `useW6wApi()`; filters alphabetically by name/id as the user types.
+ * from `useW6wApi()` unless the caller passes `apps`; filters alphabetically by
+ * name/id as the user types.
  */
 export function AppPicker({
   onSelectApp,
@@ -33,22 +44,29 @@ export function AppPicker({
   emptyMessage,
   search = true,
   emptyAction,
+  apps: providedApps,
 }: AppPickerProps) {
   const api = useW6wApi();
-  const [apps, setApps] = useState<AppSummary[] | null>(null);
+  const [fetchedApps, setFetchedApps] = useState<AppSummary[] | null>(null);
   const [appsError, setAppsError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // `undefined` means "not supplied" — a supplied `null` is a caller whose own
+  // fetch has not resolved yet, which must NOT start a second one.
+  const supplied = providedApps !== undefined;
 
   useEffect(() => {
+    if (supplied) return;
     let canceled = false;
     api
       .listApps()
-      .then((r) => !canceled && setApps(r))
+      .then((r) => !canceled && setFetchedApps(r))
       .catch((e) => !canceled && setAppsError((e as Error).message));
     return () => {
       canceled = true;
     };
-  }, [api]);
+  }, [api, supplied]);
+
+  const apps = supplied ? (providedApps ?? null) : fetchedApps;
 
   // Single layout owner for all four exits below, so the panel never resizes
   // between error/loading/empty and the loaded list — see `.w6w-apppicker-host`.
