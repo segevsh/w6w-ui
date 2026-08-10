@@ -1502,6 +1502,28 @@ dialog.w6w-modal p {
   min-width: 0;
 }
 
+/* AppPicker's own layout owner, nested inside `.w6w-stepbuilder-content` (never
+   applied in its place — see the call sites). A flex item's automatic minimum
+   size is its min-content size unless `overflow` is non-`visible` or
+   `min-height:0` is set; `.w6w-stepbuilder-content` has neither, so its
+   min-content (every app row, unclipped) pushes `dialog.w6w-modal` up against
+   `max-height:90vh`. This host's explicit `height` + `overflow:hidden` zeroes
+   that contribution, so the dialog falls back to `.w6w-modal-xl`'s
+   `min-height: min(70vh, 620px)` — the step builder's own height. */
+.w6w-apppicker-host {
+  flex: 0 0 auto;
+  min-width: 0;
+  height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.w6w-apppicker-host > .w6w-stepbuilder-apps {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 /* Step config (app action / control node): a fixed header (connection + action)
    that never scrolls, a scrolling parameters body, and a pinned footer — mirrors
    the fixed-header/scroll-body split used by `.w6w-stepbuilder-apps`. */
