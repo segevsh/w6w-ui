@@ -14,6 +14,10 @@ export interface AppPickerProps {
   searchPlaceholder?: string;
   /** Message shown when the (filtered) app list is empty. */
   emptyMessage?: string;
+  /** Render the search input. Defaults to `true`; the connected-apps list opts out. */
+  search?: boolean;
+  /** Rendered beneath `emptyMessage` in the empty state (e.g. a "Browse all apps" button). */
+  emptyAction?: ReactNode;
 }
 
 /**
@@ -27,6 +31,8 @@ export function AppPicker({
   filter,
   searchPlaceholder,
   emptyMessage,
+  search = true,
+  emptyAction,
 }: AppPickerProps) {
   const api = useW6wApi();
   const [apps, setApps] = useState<AppSummary[] | null>(null);
@@ -57,9 +63,12 @@ export function AppPicker({
   const base = filter ? connectable.filter(filter) : connectable;
   if (base.length === 0) {
     return host(
-      <p className="w6w-muted w6w-small">
-        {emptyMessage ?? "No apps registered yet. Register one from the Apps page first."}
-      </p>,
+      <div className="w6w-stack">
+        <p className="w6w-muted w6w-small">
+          {emptyMessage ?? "No apps registered yet. Register one from the Apps page first."}
+        </p>
+        {emptyAction}
+      </div>,
     );
   }
 
@@ -76,14 +85,16 @@ export function AppPicker({
 
   return host(
     <div className="w6w-stepbuilder-apps">
-      <input
-        type="text"
-        className="w6w-stepbuilder-search"
-        placeholder={searchPlaceholder ?? "Search apps…"}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        aria-label="Search apps"
-      />
+      {search && (
+        <input
+          type="text"
+          className="w6w-stepbuilder-search"
+          placeholder={searchPlaceholder ?? "Search apps…"}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search apps"
+        />
+      )}
       {visible.length === 0 ? (
         <p className="w6w-muted w6w-small">No apps match “{query}”.</p>
       ) : (
