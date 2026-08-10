@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runner for ./picker-layout-guards.test.cjs — the AppPicker / AddConnectionModal /
-# StepBuilderModal layout invariants (I1-I8) that no `node --test src/**/*.test.ts`
+# StepBuilderModal layout invariants (I1-I9) that no `node --test src/**/*.test.ts`
 # can reach: jsdom performs no layout (getBoundingClientRect is all zeros, no
 # flexbox, no min(70vh,520px) resolution), so a jsdom test would pass on a
 # broken tree. This gate mounts the REAL components, compiled from source, in
@@ -41,11 +41,13 @@ SRC="${UI_SRC:-$PKG/src}"
 ENGINE="${ENGINE:-chromium}"
 PW_VERSION="${PW_VERSION:-1.60.0}"
 PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
-# One top-level test() per invariant I1-I8 (I5's body also carries the
-# cross-tab panel-width check folded in per the amendment). The verdict below
-# is REFUSED unless exactly this many ran: a tree that fails to bundle, or a
-# run that dies half-way, reports DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-8}"
+# One top-level test() per invariant I1-I9 (I5's body also carries the
+# cross-tab panel-width check folded in per the amendment, plus the host==
+# content width check added for TA4's H2; I8's body carries TA4's H3/H4
+# additions). The verdict below is REFUSED unless exactly this many ran: a
+# tree that fails to bundle, or a run that dies half-way, reports DID NOT RUN
+# rather than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-9}"
 
 fatal() {
   echo "FATAL: $*"

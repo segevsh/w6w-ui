@@ -1,5 +1,5 @@
 // Browser gate for the AppPicker / AddConnectionModal / StepBuilderModal
-// layout invariants (I1-I8). Mounts the REAL components, bundled from source
+// layout invariants (I1-I9). Mounts the REAL components, bundled from source
 // by ./run.sh, into real Chromium via harness-entry.tsx's plain
 // `<W6wUIProvider api={...}>` stub — no jsdom (it performs no layout: every
 // rect would read zero and this suite would pass on the broken tree), no
@@ -237,6 +237,18 @@ test("I5 — step-builder Apps-tab panel/item width floors, and Apps == Triggers
     `Apps-tab .w6w-stepbuilder-content width ${contentApps.width} < 500 floor`,
   );
   assert.ok(item.width >= 480, `app-row button width ${item.width} < 480 floor`);
+  // The floors above are absolute numbers, so a host forced to some fixed
+  // width that still clears them (e.g. 550px, or 900px — wider than its own
+  // container) survives undetected. Float the panel against its OWN
+  // container instead: the host must fill exactly what the content pane
+  // gives it, not some number picked independently of that container.
+  const hostApps = await rect(page, ".w6w-apppicker-host");
+  assert.ok(hostApps, "Apps-tab .w6w-apppicker-host must exist");
+  assert.equal(
+    hostApps.width,
+    contentApps.width,
+    `Apps-tab .w6w-apppicker-host width (${hostApps.width}) != its own .w6w-stepbuilder-content width (${contentApps.width})`,
+  );
 
   await clickTab(page, "Triggers");
   await page.waitForTimeout(150);
@@ -331,6 +343,21 @@ test("I8 — empty-state escape hatch, AI-tab filter ordering, connected-tab int
       `AI tab query "App 1" -> ${JSON.stringify(aiFiltered)}, expected ["App 12","App 15","App 18"]`,
     );
 
+    // The triple above happens to land in the same order whether or not the
+    // sort ran, so a dropped `localeCompare` survives it. Query "9" against
+    // the same AI subset instead: it matches "App 9" and "App 39", whose
+    // insertion order (9 before 39) DIFFERS from their alphabetical order
+    // ("App 39" sorts before "App 9" — '3' < '9' as characters) — so only a
+    // real sort produces this exact sequence.
+    await page.fill(".w6w-stepbuilder-search", "9");
+    await page.waitForTimeout(150);
+    const aiOrderSensitive = await itemNames(page);
+    assert.deepEqual(
+      aiOrderSensitive,
+      ["App 39", "App 9"],
+      `AI tab query "9" -> ${JSON.stringify(aiOrderSensitive)}, expected ["App 39","App 9"] (order, not just membership — catches a dropped sort)`,
+    );
+
     await clickTab(page, "Apps");
     await page.waitForTimeout(150);
     await page.fill(".w6w-stepbuilder-search", "App 1");
@@ -352,6 +379,75 @@ test("I8 — empty-state escape hatch, AI-tab filter ordering, connected-tab int
     assert.equal(await activeTab(page), "Connected apps");
     const n = (await itemNames(page)).length;
     assert.equal(n, 5, `connected tab rendered ${n} rows, expected 5 (not 6 — @w6w/http must stay excluded)`);
+    await page.close();
+  }
+
+  // (d) row click (E8r): no test anywhere else clicks an app row. Selecting
+  // the first Apps-tab row must actually fire `onSelectApp` and collapse the
+  // step builder into that app's own detail view — a no-op `onClick` renders
+  // identically right up until the click.
+  {
+    const page = await open(browser, { v: "step", q: "n=60&conn=5", vp: VP.wide });
+    await clickTab(page, "Apps");
+    await page.waitForTimeout(150);
+    const names = await itemNames(page);
+    assert.ok(names.length > 0, "Apps tab must render at least one row to click");
+    await page.evaluate(() => {
+      const btn = document.querySelector(".w6w-stepbuilder-item");
+      if (!btn) throw new Error("no .w6w-stepbuilder-item to click");
+      btn.click();
+    });
+    await page.waitForTimeout(150);
+    const titleText = await page.evaluate(
+      () => document.querySelector(".w6w-modal-title")?.textContent ?? null,
+    );
+    assert.ok(
+      titleText && titleText.includes(names[0]),
+      `clicking the first app row (${names[0]}) must select it — modal title reads "${titleText}"`,
+    );
+    const tabsLeft = await page.evaluate(
+      () => document.querySelectorAll(".w6w-stepbuilder-tab").length,
+    );
+    assert.equal(
+      tabsLeft,
+      0,
+      "selecting an app must collapse the step builder — the tab sidebar must be gone",
+    );
+    await page.close();
+  }
+});
+
+// ── I9 — the Connected-apps tab's own error/loading returns (a StepBuilder-
+//    local branch, separate from AppPicker's own error/loading in I4) must
+//    stay wrapped by .w6w-apppicker-host, nested inside .w6w-stepbuilder-content
+//    like every other tab body — never rendered loose. TA2's binding proof:
+//    this path shipped alongside AppPicker's identical wrapping (I4) but
+//    nothing exercised it. ────────────────────────────────────────────────
+test("I9 — Connected-apps tab error/loading paths stay hosted and nested", async () => {
+  for (const [label, q] of [
+    ["error", "n=60&conn=5&cmode=error"],
+    ["loading", "n=60&conn=5&cmode=loading"],
+  ]) {
+    const page = await open(browser, { v: "step", q });
+    assert.equal(
+      await activeTab(page),
+      "Connected apps",
+      `${label}: default landing tab must be Connected apps`,
+    );
+    const hostRect = await rect(page, ".w6w-apppicker-host");
+    assert.ok(
+      hostRect,
+      `Connected-apps tab "${label}" path must render inside .w6w-apppicker-host`,
+    );
+    const nested = await page.evaluate(() => {
+      const host = document.querySelector(".w6w-apppicker-host");
+      const content = document.querySelector(".w6w-stepbuilder-content");
+      return !!(host && content && content !== host && content.contains(host));
+    });
+    assert.ok(
+      nested,
+      `Connected-apps tab "${label}" path: .w6w-apppicker-host must be nested inside .w6w-stepbuilder-content, not replace or escape it`,
+    );
     await page.close();
   }
 });
