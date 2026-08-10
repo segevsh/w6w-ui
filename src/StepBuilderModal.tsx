@@ -15,7 +15,6 @@ import {
   type InternalNodeDef,
   internalNodeDefaults,
   isControlApp,
-  isInternalApp,
   isTriggerApp,
 } from "./flow-types.ts";
 import { paramsToJson, stepToJson } from "./flow-utils.ts";
@@ -928,74 +927,48 @@ function ConnectedAppsFlow({
   theme?: ThemeMode;
 }) {
   const api = useW6wApi();
-  const [apps, setApps] = useState<AppSummary[] | null>(null);
   const [connectedIds, setConnectedIds] = useState<Set<string> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let canceled = false;
-    Promise.all([api.listApps(), api.listConnections()])
-      .then(([allApps, conns]) => {
-        if (canceled) return;
-        setApps(allApps);
-        setConnectedIds(new Set(conns.map((c) => c.appId)));
-      })
+    api
+      .listConnections()
+      .then((conns) => !canceled && setConnectedIds(new Set(conns.map((c) => c.appId))))
       .catch((e) => !canceled && setError((e as Error).message));
     return () => {
       canceled = true;
     };
   }, [api]);
 
-  if (error) return <div className="w6w-result w6w-error">{error}</div>;
-  if (apps === null || connectedIds === null) {
-    return <p className="w6w-muted w6w-small">Loading…</p>;
-  }
-
-  const connected = apps
-    // Reserved `@w6w/*` pseudo-apps have no connections; filter them defensively
-    // so they can never surface here even if one slips into the app list.
-    .filter((a) => connectedIds.has(a.id) && !isInternalApp(a.id))
-    .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }));
-
-  if (connected.length === 0) {
+  if (error) {
     return (
-      <div className="w6w-stack">
-        <p className="w6w-muted w6w-small">
-          No connected apps yet. Browse all apps to add your first connection.
-        </p>
-        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onBrowseAll}>
-          Browse all apps
-        </button>
+      <div className="w6w-apppicker-host">
+        <div className="w6w-result w6w-error">{error}</div>
+      </div>
+    );
+  }
+  if (connectedIds === null) {
+    return (
+      <div className="w6w-apppicker-host">
+        <p className="w6w-muted w6w-small">Loading…</p>
       </div>
     );
   }
 
   return (
-    <div className="w6w-stepbuilder-apps">
-      <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">
-        {connected.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            className="w6w-stepbuilder-item"
-            onClick={() => onSelectApp(a)}
-          >
-            <AppIcon
-              src={a.iconSvg}
-              srcDark={a.iconSvgDark}
-              brandColor={a.brandColor}
-              name={a.displayName}
-              theme={theme}
-              size={24}
-            />
-            <span className="w6w-stepbuilder-item-main">
-              <strong>{a.displayName}</strong>
-              <code className="w6w-muted w6w-small">{a.id}</code>
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
+    <AppPicker
+      onSelectApp={onSelectApp}
+      theme={theme}
+      search={false}
+      filter={(a) => connectedIds.has(a.id)}
+      emptyMessage="No connected apps yet. Browse all apps to add your first connection."
+      emptyAction={
+        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onBrowseAll}>
+          Browse all apps
+        </button>
+      }
+    />
   );
 }
 
