@@ -58,6 +58,7 @@
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "@w6w/expr": "link:../core/packages/expr",
     "jsdom": "^30.0.1",
     "playwright-core": "1.60.0",
     "react": "^18.3.1",
