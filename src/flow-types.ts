@@ -196,6 +196,13 @@ export const RESPOND_APP = "@w6w/respond";
  * the per-node `with.wait` flag. The engine never loads the target.
  */
 export const CALL_APP = "@w6w/call";
+/**
+ * Read a stored JSON document by key (core rfcs/node-types.md · F-3 amendment,
+ * "Reserved internal pseudo-app"). Host node: `runInternalNode` short-circuits
+ * this id before the registry loads a module — the run's own project is bound
+ * host-side, so there is no `project` param (C-6).
+ */
+export const DOCUMENT_APP = "@w6w/document";
 
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
@@ -317,6 +324,9 @@ const ICON_AGGREGATE = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 
 /** External-link box — delegate out to another Workflow / Function. */
 const ICON_CALL =
   '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />';
+/** Dog-eared page with lines — a stored JSON document. */
+const ICON_DOCUMENT =
+  '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />';
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
@@ -817,6 +827,29 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         type: "boolean",
         default: true,
         hint: "On: block until the sub-run finishes and expose its output. Off: return a run handle and continue.",
+      },
+    ],
+  },
+  {
+    app: DOCUMENT_APP,
+    action: "get",
+    label: "Get document",
+    displayName: "Document",
+    group: "compute",
+    icon: ICON_DOCUMENT,
+    // Host node: reads a stored JSON document by key (core rfcs/node-types.md
+    // · F-3 amendment, "Reserved internal pseudo-app"). One inbound, one
+    // outbound — a single read step. No `project` param: the run's own
+    // project is bound host-side (C-6).
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "key",
+        label: "Key",
+        type: "string",
+        required: true,
+        default: "",
+        hint: "Document key to read — may be an expression, e.g. a step output.",
       },
     ],
   },

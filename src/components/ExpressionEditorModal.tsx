@@ -8,10 +8,13 @@ import {
   isRefSafeKey,
   makeChip,
   paintParts,
+  placeCaretAtEnd,
   readParts,
+  templateWarnings,
   varLabel,
 } from "./expression-dom.ts";
 import {
+  parseTemplate,
   partsToValue,
   renderResult,
   serializeTemplate,
@@ -56,18 +59,38 @@ export function ExpressionEditorModal({
   onClose,
 }: ExpressionEditorModalProps) {
   const [parts, setParts] = useState<ExprPart[]>(() => valueToParts(value).parts);
-  // Bumped only for programmatic repaints (mount); typing/insert mutate the DOM
-  // directly and sync out, so the caret is never clobbered.
-  const [paintGen] = useState(0);
+  // Bumped ONLY for programmatic repaints — mount, and committing template
+  // text back into chips. Typing/insert mutate the DOM directly and sync out,
+  // so the caret is never clobbered; NEVER bump this from `onInput`,
+  // `insertPart`, the Enter handler, or a chip flip.
+  const [paintGen, setPaintGen] = useState(0);
   const editorRef = useRef<HTMLDivElement>(null);
+  // Chips ⇄ template mode. Opens in chips (D-1); template is opt-in per edit
+  // and never persisted.
+  const [mode, setMode] = useState<"chips" | "template">("chips");
+  // The template textarea's OWN draft buffer — `template` below is derived
+  // from `parts` and would re-serialize away half-typed input ("{{ vars.") on
+  // every keystroke. Seeded on ENTERING template mode; parsed back to `parts`
+  // only at the commit points (leaving template mode, Save, "Use a plain
+  // value") — never on a keystroke.
+  const [draft, setDraft] = useState("");
+  // Set right before a programmatic paint that should also move focus/caret
+  // into the chips editor (leaving template mode) — never on the mount paint.
+  const focusChipsAfterPaint = useRef(false);
   // User-supplied sample values (keyed by var ref) that the Result pane previews
   // the expression against. Design-time only — never sent to the engine.
   const [samples, setSamples] = useState<Record<string, string>>({});
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: paint once on mount; edits flow through the DOM.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: paint on `paintGen`, not on every `parts` change; edits otherwise flow through the DOM.
   useLayoutEffect(() => {
     const el = editorRef.current;
-    if (el) paintParts(el, parts);
+    if (!el) return;
+    paintParts(el, parts);
+    if (focusChipsAfterPaint.current) {
+      focusChipsAfterPaint.current = false;
+      placeCaretAtEnd(el);
+      el.focus();
+    }
   }, [paintGen]);
 
   const sync = () => {
@@ -82,9 +105,36 @@ export function ExpressionEditorModal({
     setParts(readParts(el));
   };
 
-  const save = () => {
+  // A render part can only ever be authored by flipping an EXISTING var chip
+  // (below) — never inserted directly — so this is derived from `parts` on
+  // every render, not computed once at mount: flipping mid-edit must disable
+  // the two controls below immediately, and flipping back must re-enable them.
+  const hasRenderPart = parts.some((p) => p.kind === "render");
+
+  /** Enter template mode, seeding the draft from the SAME read `save()` performs. */
+  const enterTemplate = () => {
+    if (mode === "template" || hasRenderPart) return;
     const el = editorRef.current;
-    onSave(partsToValue(el ? readParts(el) : parts));
+    setDraft(serializeTemplate(el ? readParts(el) : parts));
+    setMode("template");
+  };
+
+  /** Leave template mode: parse the draft, adopt it, and repaint the chips editor. */
+  const exitTemplate = () => {
+    if (mode === "chips") return;
+    setParts(parseTemplate(draft));
+    focusChipsAfterPaint.current = true;
+    setPaintGen((g) => g + 1);
+    setMode("chips");
+  };
+
+  const save = () => {
+    if (mode === "template") {
+      onSave(partsToValue(parseTemplate(draft)));
+    } else {
+      const el = editorRef.current;
+      onSave(partsToValue(el ? readParts(el) : parts));
+    }
     onClose();
   };
 
@@ -95,6 +145,14 @@ export function ExpressionEditorModal({
   const steps = options.steps ?? [];
   const hasState = steps.length > 0 || !!options.hasTrigger;
   const template = serializeTemplate(parts);
+
+  // Advisory warnings for the DRAFT currently in the textarea — a live parse
+  // used only to compute this list, never fed back into `parts` (the draft is
+  // committed only at `exitTemplate`/`save`/"Use a plain value").
+  const draftWarnings = useMemo(
+    () => (mode === "template" ? templateWarnings(parseTemplate(draft), secrets) : []),
+    [mode, draft, secrets],
+  );
 
   // The sample map the Result pane previews against: host-seeded defaults
   // (real project vars/documents, keyed by full ref) overlaid by anything the
@@ -168,9 +226,18 @@ export function ExpressionEditorModal({
             <button
               type="button"
               className="w6w-btn w6w-btn-ghost"
-              title="Close the expression and keep the text as a literal value"
+              disabled={hasRenderPart}
+              title={
+                hasRenderPart
+                  ? "Unavailable — a render part has no plain-text form. Flip it back to a variable first."
+                  : "Close the expression and keep the text as a literal value"
+              }
               onClick={() => {
-                onSave(serializeTemplate(parts));
+                // In template mode `serializeTemplate(parts)` would read a
+                // STALE copy (the draft, not `parts`, is the edited value) —
+                // and it has no `render` arm, so over a render part it would
+                // silently drop it. Save the draft TEXT directly instead.
+                onSave(mode === "template" ? draft : serializeTemplate(parts));
                 onClose();
               }}
             >
@@ -295,11 +362,30 @@ export function ExpressionEditorModal({
               spellCheck={false}
               onInput={sync}
               onClick={(e) => {
-                const x = (e.target as HTMLElement).closest("[data-x]");
-                if (!x) return;
-                e.preventDefault();
-                x.closest(".w6w-expr-chip")?.remove();
-                sync();
+                const target = e.target as HTMLElement;
+                const x = target.closest("[data-x]");
+                if (x) {
+                  e.preventDefault();
+                  x.closest(".w6w-expr-chip")?.remove();
+                  sync();
+                  return;
+                }
+                // The render affordance: flip a var⇄render chip IN PLACE. The
+                // ref never changes — only `data-kind` (via a rebuilt chip
+                // from the same `data-ref`, `makeChip`'s only construction
+                // path) — and this does NOT bump `paintGen`, exactly like the
+                // remove control above.
+                const toggle = target.closest("[data-render-toggle]");
+                if (toggle) {
+                  e.preventDefault();
+                  const chip = toggle.closest(".w6w-expr-chip") as HTMLElement | null;
+                  if (chip) {
+                    const ref = chip.getAttribute("data-ref") ?? "";
+                    const nextKind = chip.getAttribute("data-kind") === "render" ? "var" : "render";
+                    chip.replaceWith(makeChip(chip.ownerDocument, { kind: nextKind, ref }));
+                  }
+                  sync();
+                }
               }}
               onKeyDown={(e) => {
                 if (e.key !== "Enter") return;
@@ -322,11 +408,70 @@ export function ExpressionEditorModal({
             />
           </div>
           <div className="w6w-exprmodal-preview">
-            <span className="w6w-exprmodal-pane-label">
-              Template
-              <span className="w6w-muted w6w-small"> — the {"{{ }}"} form that gets saved</span>
-            </span>
-            <pre className="w6w-exprmodal-template">{template || " "}</pre>
+            <div className="w6w-exprmodal-pane-header">
+              <span className="w6w-exprmodal-pane-label">
+                Template
+                <span className="w6w-muted w6w-small"> — the {"{{ }}"} form that gets saved</span>
+              </span>
+              {/* Same guard shape as "Use a plain value": hidden when `masked`
+                  (a sealed secret has no text form at all), disabled (not
+                  hidden) when a render part is present — that part has no
+                  `{{ }}` spelling in either parser mode, so template mode
+                  must stay reachable enough to explain why it won't open,
+                  while "Use a plain value" (above) is truly unreachable. */}
+              {!masked && (
+                <div
+                  className="w6w-view-toggle"
+                  title={
+                    hasRenderPart
+                      ? "Template mode is unavailable while a render part is present — flip it back to a variable first."
+                      : undefined
+                  }
+                >
+                  <button
+                    type="button"
+                    aria-pressed={mode === "chips"}
+                    aria-label="Chips view"
+                    disabled={hasRenderPart}
+                    className={`w6w-icon-btn${mode === "chips" ? " active" : ""}`}
+                    onClick={exitTemplate}
+                  >
+                    Chips
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={mode === "template"}
+                    aria-label="Template view"
+                    disabled={hasRenderPart}
+                    className={`w6w-icon-btn${mode === "template" ? " active" : ""}`}
+                    onClick={enterTemplate}
+                  >
+                    Template
+                  </button>
+                </div>
+              )}
+            </div>
+            {mode === "template" ? (
+              <>
+                <textarea
+                  className="w6w-exprmodal-template w6w-exprmodal-template-input"
+                  aria-label="Template"
+                  spellCheck={false}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                />
+                {draftWarnings.length > 0 && (
+                  <ul className="w6w-exprmodal-warnings">
+                    {draftWarnings.map((w, i) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: duplicate warning text is possible (e.g. two unresolvable refs); the list is never reordered.
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <pre className="w6w-exprmodal-template">{template || " "}</pre>
+            )}
           </div>
           {usedRefs.length > 0 && (
             <div className="w6w-exprmodal-preview">

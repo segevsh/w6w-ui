@@ -563,6 +563,14 @@
   font-weight: 600;
   color: var(--w6w-text);
 }
+/* Header row for a pane that also carries a control (e.g. the Template pane's
+   chips/template toggle) — the label stays a plain span everywhere else. */
+.w6w-exprmodal-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 /* The WYSIWYG chip editor: tags flow inline with text (colored + spaced). */
 .w6w-exprmodal-chips {
   flex: 1;
@@ -615,6 +623,28 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* The editable template textarea: same footprint as the read-only `<pre>`
+   above (same class), plus what an editable, resizable field itself needs. */
+textarea.w6w-exprmodal-template-input {
+  color: var(--w6w-text);
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  outline: none;
+}
+textarea.w6w-exprmodal-template-input:focus {
+  border-color: var(--w6w-accent);
+}
+.w6w-exprmodal-warnings {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--w6w-health-degraded);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.w6w-exprmodal-warnings li {
+  margin: 2px 0;
 }
 .w6w-exprmodal-actions {
   display: flex;
@@ -880,6 +910,11 @@
   border-style: dashed;
   background: color-mix(in srgb, var(--w6w-text) 8%, transparent);
 }
+.w6w-expr-chip-render {
+  border-color: var(--w6w-success);
+  color: var(--w6w-success);
+  background: color-mix(in srgb, var(--w6w-success) 14%, transparent);
+}
 .w6w-expr-chip-sigil {
   flex: none;
   font-weight: 600;
@@ -908,6 +943,26 @@
   cursor: pointer;
 }
 .w6w-expr-chip-x:hover {
+  opacity: 1;
+  background: var(--w6w-border);
+}
+/* The render affordance: flips a var/render chip in place (see `makeChip`). */
+.w6w-expr-chip-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.w6w-expr-chip-toggle:hover {
   opacity: 1;
   background: var(--w6w-border);
 }

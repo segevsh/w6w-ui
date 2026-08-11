@@ -35,6 +35,7 @@
     "typecheck": "tsc -b --noEmit",
     "test": "node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts",
     "test:picker-layout": "bash test/picker-layout/run.sh",
+    "test:expr-template": "bash test/expr-template/run.sh",
     "lint": "biome check .",
     "format": "biome format --write ."
   },
