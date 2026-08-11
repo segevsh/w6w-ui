@@ -85,7 +85,9 @@ export function ExpressionEditorModal({
   useLayoutEffect(() => {
     const el = editorRef.current;
     if (!el) return;
-    paintParts(el, parts);
+    // renderToggle: true — the modal is the one surface with a click delegate
+    // for `[data-render-toggle]` (below); `ExpressionInput.tsx` never opts in.
+    paintParts(el, parts, { renderToggle: true });
     if (focusChipsAfterPaint.current) {
       focusChipsAfterPaint.current = false;
       placeCaretAtEnd(el);
@@ -101,7 +103,7 @@ export function ExpressionEditorModal({
   const insertPart = (part: ExprPart) => {
     const el = editorRef.current;
     if (!el) return;
-    insertNodeAtCaret(el, makeChip(el.ownerDocument, part));
+    insertNodeAtCaret(el, makeChip(el.ownerDocument, part, { renderToggle: true }));
     setParts(readParts(el));
   };
 
@@ -196,12 +198,18 @@ export function ExpressionEditorModal({
     }
   }, [parts, effectiveSamples, template]);
 
+  // Round 2 (F-1): disabled/no-op while in template mode — the chips pane is
+  // frozen there (see the `contentEditable` below), so a source click has
+  // nowhere safe to land: `insertPart` mutates the chips DOM directly and
+  // never touches `draft`, which is the value actually in play in template
+  // mode. React drops the click handler entirely on a `disabled` button.
   const source = (label: string, part: ExprPart, cls: string, sigil: string) => (
     <button
       key={`${part.kind}:${part.ref ?? label}`}
       type="button"
       className={`w6w-exprmodal-source ${cls}`}
-      title={`Insert ${label}`}
+      title={mode === "template" ? "Unavailable in template mode" : `Insert ${label}`}
+      disabled={mode === "template"}
       onClick={() => insertPart(part)}
     >
       <span className="w6w-expr-chip-sigil">{sigil}</span>
@@ -352,7 +360,16 @@ export function ExpressionEditorModal({
               className={`w6w-exprmodal-chips${masked ? " is-masked" : ""}${
                 parts.length === 0 ? " is-empty" : ""
               }`}
-              contentEditable
+              // Round 2 (F-1): the chips pane is the source of truth ONLY in
+              // chips mode. In template mode the DRAFT (below) is the value in
+              // play — `save()` reads it, not this DOM — so this pane must be
+              // fully inert: no typing, no chip flip, no chip removal, no
+              // source insert. `contentEditable={false}` alone stops native
+              // typing, but click/keydown handlers below are JS, not DOM
+              // editability, so each one re-checks `mode` itself; a click on a
+              // chip's flip/remove control still reaches this listener
+              // regardless of `contentEditable`.
+              contentEditable={mode === "chips"}
               suppressContentEditableWarning
               role="textbox"
               tabIndex={0}
@@ -360,8 +377,12 @@ export function ExpressionEditorModal({
               aria-label="Expression"
               data-placeholder="Type text and insert {x} variables, 🔒 secrets, or ▸ step outputs…"
               spellCheck={false}
-              onInput={sync}
+              onInput={() => {
+                if (mode !== "chips") return;
+                sync();
+              }}
               onClick={(e) => {
+                if (mode !== "chips") return;
                 const target = e.target as HTMLElement;
                 const x = target.closest("[data-x]");
                 if (x) {
@@ -382,12 +403,15 @@ export function ExpressionEditorModal({
                   if (chip) {
                     const ref = chip.getAttribute("data-ref") ?? "";
                     const nextKind = chip.getAttribute("data-kind") === "render" ? "var" : "render";
-                    chip.replaceWith(makeChip(chip.ownerDocument, { kind: nextKind, ref }));
+                    chip.replaceWith(
+                      makeChip(chip.ownerDocument, { kind: nextKind, ref }, { renderToggle: true }),
+                    );
                   }
                   sync();
                 }
               }}
               onKeyDown={(e) => {
+                if (mode !== "chips") return;
                 if (e.key !== "Enter") return;
                 // ALWAYS suppressed — with or without Shift, multiline or not.
                 // The browser's own line break (a wrapper <div>, or a <br>) is

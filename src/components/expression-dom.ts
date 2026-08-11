@@ -141,8 +141,24 @@ export function templateWarnings(parts: ExprPart[], secrets: string[]): string[]
   return warnings;
 }
 
-/** Build the non-editable inline chip (tag) DOM node for a part. */
-export function makeChip(doc: Document, part: ExprPart): HTMLElement {
+/**
+ * Build the non-editable inline chip (tag) DOM node for a part.
+ *
+ * `renderToggle` is opt-in and defaults OFF: `makeChip` is shared through
+ * {@link paintParts} by every editing surface, including the inline
+ * `ExpressionInput` (`ExpressionInput.tsx`), which has no handler for the
+ * flip control at all. A painter must not decide who gets an affordance —
+ * only `ExpressionEditorModal` (the one surface with a click delegate for
+ * `[data-render-toggle]`) passes `true`. Round 2 fix for F-2: before this,
+ * every `var`/`render` chip everywhere painted the toggle unconditionally,
+ * so it leaked into every inline expression field in studio as a dead,
+ * screen-reader-announced control.
+ */
+export function makeChip(
+  doc: Document,
+  part: ExprPart,
+  { renderToggle }: { renderToggle?: boolean } = {},
+): HTMLElement {
   const span = doc.createElement("span");
   span.contentEditable = "false";
   span.className = `w6w-expr-chip w6w-expr-chip-${part.kind}`;
@@ -184,7 +200,7 @@ export function makeChip(doc: Document, part: ExprPart): HTMLElement {
 
   span.append(sigil, label);
 
-  if (part.kind === "var" || part.kind === "render") {
+  if ((part.kind === "var" || part.kind === "render") && renderToggle) {
     // The render affordance: flip THIS chip between "insert this ref" (var)
     // and "insert this ref, then render its resolved value as a `{{ }}`
     // template" (render) — never a second, free-text ref-construction path.
@@ -385,15 +401,25 @@ export function ensureFillerBreak(editor: HTMLElement): void {
  */
 const isMultilineHost = (el: HTMLElement): boolean => el.getAttribute("aria-multiline") !== "false";
 
-/** Paint an editor's DOM from parts (text nodes + chips). */
-export function paintParts(el: HTMLElement, parts: ExprPart[]): void {
+/**
+ * Paint an editor's DOM from parts (text nodes + chips).
+ *
+ * `opts` passes straight through to {@link makeChip} — `renderToggle`
+ * defaults off, so a caller that never opts in (`ExpressionInput.tsx`) paints
+ * no toggle at all, and only `ExpressionEditorModal` turns it on.
+ */
+export function paintParts(
+  el: HTMLElement,
+  parts: ExprPart[],
+  opts?: { renderToggle?: boolean },
+): void {
   const doc = el.ownerDocument;
   el.textContent = "";
   for (const p of parts) {
     if (p.kind === "text") {
       if (p.value) el.appendChild(doc.createTextNode(p.value));
     } else {
-      el.appendChild(makeChip(doc, p));
+      el.appendChild(makeChip(doc, p, opts));
     }
   }
   // A painted value ENDING in a newline needs the filler just as much as a

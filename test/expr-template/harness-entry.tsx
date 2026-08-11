@@ -8,11 +8,17 @@
 import { createRoot } from "react-dom/client";
 import type { ExprValue } from "./types.ts";
 import { ExpressionEditorModal } from "./components/ExpressionEditorModal.tsx";
+import { ExpressionInput } from "./components/ExpressionInput.tsx";
 
 const params = new URLSearchParams(location.search);
 // `empty` — an empty single-line field, for the typing-order guard (G-typing).
 // `render` — a var chip AND a render chip already present, for the
-// sigil-distinction guard (G-sigil) and the disabled-toggle guard.
+// sigil-distinction guard (G-sigil), the disabled-toggle guard, and (R4) the
+// modal-side `[data-render-toggle]` presence count.
+// `templateVar` — a single legal var chip (no render part), for the round-2
+// chips-pane-freeze guards (P4/P5/Q1 below `templateVar`'s value).
+// `inline` — mounts the REAL inline `ExpressionInput`, not the modal, for
+// (R4)'s absence count: F-2 was the toggle leaking into this exact component.
 const v = params.get("v") || "empty";
 
 const VALUES: Record<string, string | ExprValue> = {
@@ -24,16 +30,38 @@ const VALUES: Record<string, string | ExprValue> = {
       { kind: "render", ref: "vars.b" },
     ],
   },
+  templateVar: {
+    type: "expr",
+    parts: [{ kind: "var", ref: "vars.a" }],
+  },
 };
 
 const mount = document.getElementById("root");
 if (!mount) throw new Error("no #root to mount into");
-createRoot(mount).render(
-  <ExpressionEditorModal
-    value={VALUES[v]}
-    options={{ vars: ["a", "b"], secrets: [] }}
-    onSave={() => {}}
-    onClose={() => {}}
-  />,
-);
+
+// Every value Save/onSave is called with — asserted on directly, rather than
+// re-reading the DOM, since the whole point of P4/Q1 is what gets WRITTEN.
+(window as unknown as { __saves: unknown[] }).__saves = [];
+
+if (v === "inline") {
+  createRoot(mount).render(
+    <ExpressionInput
+      value={{ type: "expr", parts: [{ kind: "var", ref: "vars.a" }] }}
+      options={{ vars: ["a"], secrets: [] }}
+      onChange={() => {}}
+      aria-label="inline expression"
+    />,
+  );
+} else {
+  createRoot(mount).render(
+    <ExpressionEditorModal
+      value={VALUES[v]}
+      options={{ vars: ["a", "b"], secrets: [] }}
+      onSave={(next) => {
+        (window as unknown as { __saves: unknown[] }).__saves.push(next);
+      }}
+      onClose={() => {}}
+    />,
+  );
+}
 (window as unknown as { __mounted: boolean }).__mounted = true;
