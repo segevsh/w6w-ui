@@ -33,7 +33,13 @@ export {
   TRIGGER_APP,
   WEBHOOK_APP,
 } from "./flow-types.ts";
-export { asFieldDefs } from "./trigger-fields.ts";
+export {
+  asFieldDefs,
+  coerceDefault,
+  fieldWidget,
+  fieldsToParams,
+  seedValues,
+} from "./trigger-fields.ts";
 export type { TriggerFieldDef } from "./trigger-fields.ts";
 
 export { flowToWorkflow, workflowToFlow } from "./flow-utils.ts";

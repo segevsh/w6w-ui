@@ -88,6 +88,17 @@ test("A3/M3 guard — a raw `expr` part is 'not-evaluated', a status distinct fr
   assert.deepStrictEqual(seg, [{ status: "not-evaluated" }]);
 });
 
+test("M14 guard — a `render` part is 'not-evaluated', never silently 'resolved' with an undefined value", () => {
+  const seg = resolveParamValue(
+    { type: "expr", parts: [{ kind: "render", ref: "documents.a.body" }] },
+    emptyScope,
+  );
+  // Without `case "render":`, the `default:` arm reports `{status:"resolved",
+  // value: undefined}` — a blank that LOOKS correct in the Test tab. Assert
+  // the exact shape (deepStrictEqual), same as the `expr` guard above it.
+  assert.deepStrictEqual(seg, [{ status: "not-evaluated" }]);
+});
+
 test("M4 guard — the dot-path walk resolves a two-level-deep `steps.<id>.output.<obj>.<key>` ref", () => {
   const scope = buildResolveScope(undefined, {
     steps: { gate_1: { output: { addr: { city: "NYC" } } } },

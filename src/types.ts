@@ -258,7 +258,7 @@ export type ThemeMode = "light" | "dark";
  */
 
 /** The segment kinds an {@link ExprValue} part can take. */
-export type ExprPartKind = "text" | "var" | "secret" | "expr";
+export type ExprPartKind = "text" | "var" | "secret" | "expr" | "render";
 
 /**
  * One segment of an {@link ExprValue}. The populated field depends on `kind`:
