@@ -51,6 +51,11 @@ test("fieldWidget — anything else falls back to string", () => {
   assert.equal(fieldWidget("Number"), "string");
 });
 
+test("fieldWidget — object/array (a WorkflowVariable's type union) widen to the json widget", () => {
+  assert.equal(fieldWidget("object"), "json");
+  assert.equal(fieldWidget("array"), "json");
+});
+
 test("coerceDefault — an empty/absent default yields undefined", () => {
   assert.equal(coerceDefault("string", ""), undefined);
   assert.equal(coerceDefault("string", null), undefined);
@@ -80,6 +85,15 @@ test("coerceDefault — a json default is parsed, an invalid one is dropped", ()
 test("coerceDefault — anything else stringifies", () => {
   assert.equal(coerceDefault("string", "hi"), "hi");
   assert.equal(coerceDefault(undefined, 7), "7");
+});
+
+test("coerceDefault — an already-object/array default (a WorkflowVariable's) is left unchanged", () => {
+  // A trigger field's default is stored as text and needs parsing; a
+  // WorkflowVariable's default is a real JSON value already — String(...)ing
+  // it would flatten it, and today's json branch drops it outright.
+  assert.deepEqual(coerceDefault("json", { a: 1 }), { a: 1 });
+  assert.deepEqual(coerceDefault("object", { a: 1 }), { a: 1 });
+  assert.deepEqual(coerceDefault("array", [1, 2]), [1, 2]);
 });
 
 test("seedValues — omits keys whose coerced default is undefined", () => {
