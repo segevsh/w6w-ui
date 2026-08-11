@@ -23,6 +23,9 @@ export type { BuiltStep, StepBuilderModalProps } from "./StepBuilderModal.tsx";
 export { ParamsForm } from "./ParamsForm.tsx";
 export type { DataVar, ParamsFormProps } from "./ParamsForm.tsx";
 
+export { PropertyEntryForm } from "./PropertyEntryForm.tsx";
+export type { PropertyEntryFormProps } from "./PropertyEntryForm.tsx";
+
 export { ActionTestForm } from "./ActionTestForm.tsx";
 export type { ActionTestFormProps } from "./ActionTestForm.tsx";
 
