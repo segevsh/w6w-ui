@@ -39,4 +39,12 @@ import "@w6w/ui/styles.css";
 
 ## License
 
-MIT
+**FSL-1.1-ALv2** — the [Functional Source License](LICENSE), which converts to Apache 2.0 two years
+after each version is released.
+
+In plain terms: build whatever you like on these components — plugins, apps, integrations, internal
+tools, client work, commercial products. The one carve-out is **Competing Use**: you may not use them
+to offer a product or service that substitutes for w6w or for something we build with them.
+
+`@w6w/expr` and `@w6w/types`, which this package depends on, stay **MIT** — the expression grammar
+and the shared model are deliberately permissive so anything can read and write w6w's formats.

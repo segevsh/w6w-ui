@@ -377,7 +377,7 @@ export function relayoutNodes(nodes: StepNode[], edges: Edge[]): StepNode[] {
  * `original.settings.savePosition` is explicitly `false`. The flag is read off
  * the workflow this function already receives — deliberately **not** a new
  * parameter or an options bag, because both exported conversion functions are
- * public `@w6w/ui/flow` API for an MIT partner-facing library and a signature
+ * public `@w6w/ui/flow` API for a partner-facing library and a signature
  * change here would break it for a value the function can already see.
  *
  * ⚠️ **`savePosition` defaults to `true`** (core `rfcs/workflow.md` ·
