@@ -137,6 +137,13 @@ function resolvePart(part: ExprPart, scope: ResolveScope): ResolvedSegment {
       // (confirmed by the gap analysis). Labeled "not evaluated": a distinct
       // status from "unresolved", never rendered as if it were a value.
       return { status: "not-evaluated" };
+    case "render":
+      // The resolved ref is itself parsed as a `{{ }}` template and rendered
+      // against the run scope — that needs the run's own resolver (T2.1.1),
+      // not this design-time preview. Same honest answer as `expr` above;
+      // without this arm the `default:` below reports a render part as
+      // RESOLVED with `undefined`, i.e. a blank that looks correct.
+      return { status: "not-evaluated" };
     default:
       return { status: "resolved", value: undefined };
   }

@@ -77,8 +77,88 @@ export function isRefSafeKey(key: string): boolean {
   return !UNREACHABLE_KEY_CHARS.test(key);
 }
 
-/** Build the non-editable inline chip (tag) DOM node for a part. */
-export function makeChip(doc: Document, part: ExprPart): HTMLElement {
+/**
+ * The canonical run-scope roots a `var`/`render` ref may start with — the same
+ * list {@link varLabel}'s doc comment states in prose, turned into checkable
+ * data (`core/rfcs/workflow.md` §Expressions).
+ */
+export const REF_ROOTS = [
+  "vars",
+  "steps",
+  "trigger",
+  "secrets",
+  "documents",
+  "inputs",
+  "foreach",
+  "output",
+] as const;
+
+/**
+ * Whether `ref`'s first segment is a {@link REF_ROOTS} root the engine
+ * actually resolves. A `steps.` root additionally requires the
+ * `steps.<id>.output[.…]` SHAPE ({@link STEP_OUTPUT_REF}) — a bare `steps.foo`
+ * (missing `.output`) passes the root check but the engine never resolves it.
+ *
+ * Used for both `var` and `render` parts (the flip affordance authors a
+ * `render` ref from an existing `var` ref verbatim, so the same predicate
+ * must warn on both identically).
+ */
+export function isCanonicalRef(ref: string): boolean {
+  const root = ref.split(".")[0];
+  if (!(REF_ROOTS as readonly string[]).includes(root)) return false;
+  if (root === "steps") return STEP_OUTPUT_REF.test(ref);
+  return true;
+}
+
+/**
+ * Advisory warnings for a template-mode edit — never blocking (Save always
+ * works, per the modal). Three sources:
+ *   1. a `var`/`render` part whose ref is not {@link isCanonicalRef} — it will
+ *      render fine and resolve to empty at run time, silently;
+ *   2. a `secret` part whose name is not in the host-supplied `secrets` list —
+ *      template mode lets an author TYPE a secret name, which the chip picker
+ *      cannot (it only offers names the host passed);
+ *   3. a `text` part containing a literal `"{{"` — the grammar has no escape
+ *      for one, so the NEXT parse silently promotes it to a chip.
+ */
+export function templateWarnings(parts: ExprPart[], secrets: string[]): string[] {
+  const warnings: string[] = [];
+  for (const p of parts) {
+    if (p.kind === "var" || p.kind === "render") {
+      const ref = p.ref ?? "";
+      if (!isCanonicalRef(ref)) {
+        warnings.push(`"${ref}" is not a reference the engine can resolve.`);
+      }
+    } else if (p.kind === "secret") {
+      const name = p.ref ?? "";
+      if (!secrets.includes(name)) {
+        warnings.push(`Secret "${name}" is not one of the secrets offered on the left.`);
+      }
+    } else if (p.kind === "text" && (p.value ?? "").includes("{{")) {
+      warnings.push('This text contains a literal "{{" — it will become a chip on save.');
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Build the non-editable inline chip (tag) DOM node for a part.
+ *
+ * `renderToggle` is opt-in and defaults OFF: `makeChip` is shared through
+ * {@link paintParts} by every editing surface, including the inline
+ * `ExpressionInput` (`ExpressionInput.tsx`), which has no handler for the
+ * flip control at all. A painter must not decide who gets an affordance —
+ * only `ExpressionEditorModal` (the one surface with a click delegate for
+ * `[data-render-toggle]`) passes `true`. Round 2 fix for F-2: before this,
+ * every `var`/`render` chip everywhere painted the toggle unconditionally,
+ * so it leaked into every inline expression field in studio as a dead,
+ * screen-reader-announced control.
+ */
+export function makeChip(
+  doc: Document,
+  part: ExprPart,
+  { renderToggle }: { renderToggle?: boolean } = {},
+): HTMLElement {
   const span = doc.createElement("span");
   span.contentEditable = "false";
   span.className = `w6w-expr-chip w6w-expr-chip-${part.kind}`;
@@ -96,6 +176,15 @@ export function makeChip(doc: Document, part: ExprPart): HTMLElement {
     sigil.textContent = "◆";
     label.textContent = varLabel(part.ref ?? "");
     span.title = `Variable: ${part.ref ?? ""}`;
+  } else if (part.kind === "render") {
+    span.setAttribute("data-ref", part.ref ?? "");
+    // A visually distinct sigil from a plain `var` chip: this ref's RESOLVED
+    // value is itself parsed as a `{{ }}` template and rendered (the amendment
+    // in `core/rfcs/workflow.md`). Same label rule — `varLabel` doesn't
+    // depend on kind.
+    sigil.textContent = "▤";
+    label.textContent = varLabel(part.ref ?? "");
+    span.title = `Render as template: ${part.ref ?? ""}`;
   } else if (part.kind === "secret") {
     span.setAttribute("data-ref", part.ref ?? "");
     sigil.textContent = "🔒";
@@ -110,6 +199,24 @@ export function makeChip(doc: Document, part: ExprPart): HTMLElement {
   }
 
   span.append(sigil, label);
+
+  if ((part.kind === "var" || part.kind === "render") && renderToggle) {
+    // The render affordance: flip THIS chip between "insert this ref" (var)
+    // and "insert this ref, then render its resolved value as a `{{ }}`
+    // template" (render) — never a second, free-text ref-construction path.
+    // The modal's click delegate handles the flip by rebuilding the chip via
+    // `makeChip` from the SAME `data-ref`, never a re-derived string.
+    const toggle = doc.createElement("span");
+    toggle.className = "w6w-expr-chip-toggle";
+    toggle.setAttribute("data-render-toggle", "1");
+    toggle.setAttribute("role", "button");
+    const toggleLabel =
+      part.kind === "render" ? "Stop rendering as a template" : "Render this as a template";
+    toggle.setAttribute("aria-label", toggleLabel);
+    toggle.title = toggleLabel;
+    toggle.textContent = "⇄";
+    span.append(toggle);
+  }
 
   const x = doc.createElement("span");
   x.className = "w6w-expr-chip-x";
@@ -159,7 +266,7 @@ export function readParts(root: HTMLElement): ExprPart[] {
     const el = node as HTMLElement;
 
     const kind = el.getAttribute("data-kind");
-    if (kind === "var" || kind === "secret") {
+    if (kind === "var" || kind === "secret" || kind === "render") {
       parts.push({ kind, ref: el.getAttribute("data-ref") ?? "" });
       return;
     }
@@ -294,15 +401,25 @@ export function ensureFillerBreak(editor: HTMLElement): void {
  */
 const isMultilineHost = (el: HTMLElement): boolean => el.getAttribute("aria-multiline") !== "false";
 
-/** Paint an editor's DOM from parts (text nodes + chips). */
-export function paintParts(el: HTMLElement, parts: ExprPart[]): void {
+/**
+ * Paint an editor's DOM from parts (text nodes + chips).
+ *
+ * `opts` passes straight through to {@link makeChip} — `renderToggle`
+ * defaults off, so a caller that never opts in (`ExpressionInput.tsx`) paints
+ * no toggle at all, and only `ExpressionEditorModal` turns it on.
+ */
+export function paintParts(
+  el: HTMLElement,
+  parts: ExprPart[],
+  opts?: { renderToggle?: boolean },
+): void {
   const doc = el.ownerDocument;
   el.textContent = "";
   for (const p of parts) {
     if (p.kind === "text") {
       if (p.value) el.appendChild(doc.createTextNode(p.value));
     } else {
-      el.appendChild(makeChip(doc, p));
+      el.appendChild(makeChip(doc, p, opts));
     }
   }
   // A painted value ENDING in a newline needs the filler just as much as a
