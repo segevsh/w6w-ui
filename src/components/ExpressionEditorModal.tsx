@@ -10,11 +10,10 @@ import {
   paintParts,
   placeCaretAtEnd,
   readParts,
-  templateWarnings,
   varLabel,
 } from "./expression-dom.ts";
 import {
-  parseTemplate,
+  parseRootAnchoredTemplate,
   partsToValue,
   renderResult,
   serializeTemplate,
@@ -65,21 +64,16 @@ export function ExpressionEditorModal({
   // `insertPart`, the Enter handler, or a chip flip.
   const [paintGen, setPaintGen] = useState(0);
   const editorRef = useRef<HTMLDivElement>(null);
-  // Chips ⇄ template mode. Opens in chips (D-1); template is opt-in per edit
-  // and never persisted.
-  const [mode, setMode] = useState<"chips" | "template">("chips");
-  // The template textarea's OWN draft buffer — `template` below is derived
-  // from `parts` and would re-serialize away half-typed input ("{{ vars.") on
-  // every keystroke. Seeded on ENTERING template mode; parsed back to `parts`
-  // only at the commit points (leaving template mode, Save, "Use a plain
-  // value") — never on a keystroke.
-  const [draft, setDraft] = useState("");
   // Set right before a programmatic paint that should also move focus/caret
-  // into the chips editor (leaving template mode) — never on the mount paint.
+  // into the chips editor — never on the mount paint.
   const focusChipsAfterPaint = useRef(false);
   // User-supplied sample values (keyed by var ref) that the Result pane previews
   // the expression against. Design-time only — never sent to the engine.
   const [samples, setSamples] = useState<Record<string, string>>({});
+  // Which store's "+ Add" nested dialog is open, or none. Gated at render by
+  // whether the host supplied the matching callback (`options.createVar` /
+  // `.createSecret`) — see the rail below.
+  const [adding, setAdding] = useState<"var" | "secret" | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paint on `paintGen`, not on every `parts` change; edits otherwise flow through the DOM.
   useLayoutEffect(() => {
@@ -110,34 +104,40 @@ export function ExpressionEditorModal({
   // A render part can only ever be authored by flipping an EXISTING var chip
   // (below) — never inserted directly — so this is derived from `parts` on
   // every render, not computed once at mount: flipping mid-edit must disable
-  // the two controls below immediately, and flipping back must re-enable them.
+  // the control below immediately, and flipping back must re-enable it.
   const hasRenderPart = parts.some((p) => p.kind === "render");
 
-  /** Enter template mode, seeding the draft from the SAME read `save()` performs. */
-  const enterTemplate = () => {
-    if (mode === "template" || hasRenderPart) return;
-    const el = editorRef.current;
-    setDraft(serializeTemplate(el ? readParts(el) : parts));
-    setMode("template");
-  };
-
-  /** Leave template mode: parse the draft, adopt it, and repaint the chips editor. */
-  const exitTemplate = () => {
-    if (mode === "chips") return;
-    setParts(parseTemplate(draft));
-    focusChipsAfterPaint.current = true;
+  // Adopt a text form as the parts and repaint the chips editor — the
+  // chip-ify commit mechanism: root-anchor-parse `text` (never the naive
+  // `parseTemplate` — a hand-typed vendor placeholder like `{{name}}` must
+  // stay literal, see `expression-template.ts`'s `parseRootAnchoredTemplate`),
+  // set it as the new `parts`, and bump `paintGen` so the `useLayoutEffect`
+  // above repaints. `restoreFocus` is `false` from `onBlur` (the editor has
+  // already lost focus; forcing it back would yank focus out of Save/Cancel —
+  // caret position is moot there) and `true` for a caller that wants the
+  // caret restored into the chips editor after the repaint.
+  const adoptText = (text: string, { restoreFocus }: { restoreFocus: boolean }) => {
+    setParts(parseRootAnchoredTemplate(text));
+    if (restoreFocus) focusChipsAfterPaint.current = true;
     setPaintGen((g) => g + 1);
-    setMode("chips");
   };
 
   const save = () => {
-    if (mode === "template") {
-      onSave(partsToValue(parseTemplate(draft)));
-    } else {
-      const el = editorRef.current;
-      onSave(partsToValue(el ? readParts(el) : parts));
-    }
+    const el = editorRef.current;
+    onSave(partsToValue(el ? readParts(el) : parts));
     onClose();
+  };
+
+  // Close the nested "+ Add" dialog and return focus + caret to the chips
+  // editor. `Modal.tsx` never calls `el.close()` on unmount, so React would
+  // otherwise leave a still-`open` `<dialog>` for the browser to tear down and
+  // restore focus to `<body>` — the author loses their insertion point right
+  // when they come back to insert the value they just created. Reuse the same
+  // programmatic-repaint mechanism `exitTemplate` used for the same problem.
+  const closeAdding = () => {
+    setAdding(null);
+    focusChipsAfterPaint.current = true;
+    setPaintGen((g) => g + 1);
   };
 
   const vars = options.vars ?? [];
@@ -147,14 +147,6 @@ export function ExpressionEditorModal({
   const steps = options.steps ?? [];
   const hasState = steps.length > 0 || !!options.hasTrigger;
   const template = serializeTemplate(parts);
-
-  // Advisory warnings for the DRAFT currently in the textarea — a live parse
-  // used only to compute this list, never fed back into `parts` (the draft is
-  // committed only at `exitTemplate`/`save`/"Use a plain value").
-  const draftWarnings = useMemo(
-    () => (mode === "template" ? templateWarnings(parseTemplate(draft), secrets) : []),
-    [mode, draft, secrets],
-  );
 
   // The sample map the Result pane previews against: host-seeded defaults
   // (real project vars/documents, keyed by full ref) overlaid by anything the
@@ -198,18 +190,12 @@ export function ExpressionEditorModal({
     }
   }, [parts, effectiveSamples, template]);
 
-  // Round 2 (F-1): disabled/no-op while in template mode — the chips pane is
-  // frozen there (see the `contentEditable` below), so a source click has
-  // nowhere safe to land: `insertPart` mutates the chips DOM directly and
-  // never touches `draft`, which is the value actually in play in template
-  // mode. React drops the click handler entirely on a `disabled` button.
   const source = (label: string, part: ExprPart, cls: string, sigil: string) => (
     <button
       key={`${part.kind}:${part.ref ?? label}`}
       type="button"
       className={`w6w-exprmodal-source ${cls}`}
-      title={mode === "template" ? "Unavailable in template mode" : `Insert ${label}`}
-      disabled={mode === "template"}
+      title={`Insert ${label}`}
       onClick={() => insertPart(part)}
     >
       <span className="w6w-expr-chip-sigil">{sigil}</span>
@@ -241,11 +227,7 @@ export function ExpressionEditorModal({
                   : "Close the expression and keep the text as a literal value"
               }
               onClick={() => {
-                // In template mode `serializeTemplate(parts)` would read a
-                // STALE copy (the draft, not `parts`, is the edited value) —
-                // and it has no `render` arm, so over a render part it would
-                // silently drop it. Save the draft TEXT directly instead.
-                onSave(mode === "template" ? draft : serializeTemplate(parts));
+                onSave(serializeTemplate(parts));
                 onClose();
               }}
             >
@@ -265,7 +247,19 @@ export function ExpressionEditorModal({
         {/* Left: the data sources in scope. */}
         <aside className="w6w-exprmodal-sources">
           <div className="w6w-exprmodal-group">
-            <span className="w6w-exprmodal-group-label">Variables</span>
+            <div className="w6w-field-labelrow">
+              <span className="w6w-exprmodal-group-label">Variables</span>
+              {options.createVar && (
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  data-testid="expr-add-var"
+                  onClick={() => setAdding("var")}
+                >
+                  + Add
+                </button>
+              )}
+            </div>
             {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
             {vars.map((v) =>
               source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
@@ -273,7 +267,19 @@ export function ExpressionEditorModal({
           </div>
 
           <div className="w6w-exprmodal-group">
-            <span className="w6w-exprmodal-group-label">Secrets</span>
+            <div className="w6w-field-labelrow">
+              <span className="w6w-exprmodal-group-label">Secrets</span>
+              {options.createSecret && (
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  data-testid="expr-add-secret"
+                  onClick={() => setAdding("secret")}
+                >
+                  + Add
+                </button>
+              )}
+            </div>
             {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
             {secrets.map((s) =>
               source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
@@ -360,16 +366,7 @@ export function ExpressionEditorModal({
               className={`w6w-exprmodal-chips${masked ? " is-masked" : ""}${
                 parts.length === 0 ? " is-empty" : ""
               }`}
-              // Round 2 (F-1): the chips pane is the source of truth ONLY in
-              // chips mode. In template mode the DRAFT (below) is the value in
-              // play — `save()` reads it, not this DOM — so this pane must be
-              // fully inert: no typing, no chip flip, no chip removal, no
-              // source insert. `contentEditable={false}` alone stops native
-              // typing, but click/keydown handlers below are JS, not DOM
-              // editability, so each one re-checks `mode` itself; a click on a
-              // chip's flip/remove control still reaches this listener
-              // regardless of `contentEditable`.
-              contentEditable={mode === "chips"}
+              contentEditable
               suppressContentEditableWarning
               role="textbox"
               tabIndex={0}
@@ -378,11 +375,39 @@ export function ExpressionEditorModal({
               data-placeholder="Type text and insert {x} variables, 🔒 secrets, or ▸ step outputs…"
               spellCheck={false}
               onInput={() => {
-                if (mode !== "chips") return;
+                sync();
+              }}
+              onBlur={() => {
+                // Discrete-event chip-ify commit #1: the editor just lost
+                // focus, so any hand-typed `{{ … }}` left as raw text gets
+                // one chance to become a chip. NEVER do this from `onInput`
+                // above — see the `paintGen` warning at the top of this file
+                // and G-typing in `expr-template-guards.test.cjs`.
+                const el = editorRef.current;
+                if (!el) return;
+                adoptText(serializeTemplate(readParts(el)), { restoreFocus: false });
+              }}
+              onPaste={(e) => {
+                // Discrete-event chip-ify commit #2. `insertNodeAtCaret` is
+                // the SAME mechanism a rail click uses, so the caret is
+                // preserved by construction — no bespoke caret-offset repaint
+                // needed (out of scope by contract). No `setPaintGen`: each
+                // part is inserted directly into the live DOM, exactly like a
+                // rail insertion, so the existing chips are never re-painted.
+                e.preventDefault();
+                const el = editorRef.current;
+                if (!el) return;
+                const text = e.clipboardData?.getData("text/plain") ?? "";
+                for (const part of parseRootAnchoredTemplate(text)) {
+                  if (part.kind === "text") {
+                    insertNodeAtCaret(el, el.ownerDocument.createTextNode(part.value ?? ""));
+                  } else {
+                    insertNodeAtCaret(el, makeChip(el.ownerDocument, part, { renderToggle: true }));
+                  }
+                }
                 sync();
               }}
               onClick={(e) => {
-                if (mode !== "chips") return;
                 const target = e.target as HTMLElement;
                 const x = target.closest("[data-x]");
                 if (x) {
@@ -411,7 +436,6 @@ export function ExpressionEditorModal({
                 }
               }}
               onKeyDown={(e) => {
-                if (mode !== "chips") return;
                 if (e.key !== "Enter") return;
                 // ALWAYS suppressed — with or without Shift, multiline or not.
                 // The browser's own line break (a wrapper <div>, or a <br>) is
@@ -430,72 +454,6 @@ export function ExpressionEditorModal({
                 sync();
               }}
             />
-          </div>
-          <div className="w6w-exprmodal-preview">
-            <div className="w6w-exprmodal-pane-header">
-              <span className="w6w-exprmodal-pane-label">
-                Template
-                <span className="w6w-muted w6w-small"> — the {"{{ }}"} form that gets saved</span>
-              </span>
-              {/* Same guard shape as "Use a plain value": hidden when `masked`
-                  (a sealed secret has no text form at all), disabled (not
-                  hidden) when a render part is present — that part has no
-                  `{{ }}` spelling in either parser mode, so template mode
-                  must stay reachable enough to explain why it won't open,
-                  while "Use a plain value" (above) is truly unreachable. */}
-              {!masked && (
-                <div
-                  className="w6w-view-toggle"
-                  title={
-                    hasRenderPart
-                      ? "Template mode is unavailable while a render part is present — flip it back to a variable first."
-                      : undefined
-                  }
-                >
-                  <button
-                    type="button"
-                    aria-pressed={mode === "chips"}
-                    aria-label="Chips view"
-                    disabled={hasRenderPart}
-                    className={`w6w-icon-btn${mode === "chips" ? " active" : ""}`}
-                    onClick={exitTemplate}
-                  >
-                    Chips
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={mode === "template"}
-                    aria-label="Template view"
-                    disabled={hasRenderPart}
-                    className={`w6w-icon-btn${mode === "template" ? " active" : ""}`}
-                    onClick={enterTemplate}
-                  >
-                    Template
-                  </button>
-                </div>
-              )}
-            </div>
-            {mode === "template" ? (
-              <>
-                <textarea
-                  className="w6w-exprmodal-template w6w-exprmodal-template-input"
-                  aria-label="Template"
-                  spellCheck={false}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                />
-                {draftWarnings.length > 0 && (
-                  <ul className="w6w-exprmodal-warnings">
-                    {draftWarnings.map((w, i) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: duplicate warning text is possible (e.g. two unresolvable refs); the list is never reordered.
-                      <li key={i}>{w}</li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            ) : (
-              <pre className="w6w-exprmodal-template">{template || " "}</pre>
-            )}
           </div>
           {usedRefs.length > 0 && (
             <div className="w6w-exprmodal-preview">
@@ -519,13 +477,136 @@ export function ExpressionEditorModal({
               ))}
             </div>
           )}
-          <div className="w6w-exprmodal-preview">
+          <div className="w6w-exprmodal-preview w6w-exprmodal-result-pane">
             <span className="w6w-exprmodal-pane-label">
               Result
               <span className="w6w-muted w6w-small"> — live preview against the sample values</span>
             </span>
-            <pre className="w6w-exprmodal-template">{result || " "}</pre>
+            <pre className="w6w-exprmodal-result">{result || " "}</pre>
           </div>
+        </div>
+      </div>
+
+      {/* Nested "+ Add" dialog — last child of this Modal, so its own
+          <dialog> stacks over this one in the browser's top layer
+          (structurally identical to StepBuilderModal's AddConnectionModal
+          nesting). Gated the same way the rail button was, so state can
+          never point at a store the host didn't wire a callback for. */}
+      {adding === "var" && options.createVar && (
+        <AddValueModal kind="var" onCreate={options.createVar} onClose={closeAdding} />
+      )}
+      {adding === "secret" && options.createSecret && (
+        <AddValueModal kind="secret" onCreate={options.createSecret} onClose={closeAdding} />
+      )}
+    </Modal>
+  );
+}
+
+interface AddValueModalProps {
+  kind: "var" | "secret";
+  onCreate: (input: { name: string; value: string; description?: string }) => Promise<void>;
+  onClose: () => void;
+}
+
+/**
+ * The nested "+ Add" form. Same shape as `AddConnectionModal`'s
+ * `ConnectionConfig` — `w6w-stack` body, one `w6w-field` label per input, an
+ * inline `w6w-result w6w-error` block, ghost-Cancel + primary footer — but it
+ * never fetches: `onCreate` (the host's `ExpressionOptions.createVar` /
+ * `.createSecret`) is the only IO, so this mounts fine with no
+ * `<W6WUIProvider>` around it (see `ExpressionEditorModal`'s own module
+ * contract). A rejection leaves the dialog open with the message shown, name
+ * hint copy matches studio's Vars/Vault pages.
+ */
+function AddValueModal({ kind, onCreate, onClose }: AddValueModalProps) {
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const noun = kind === "var" ? "variable" : "secret";
+
+  async function submit() {
+    setError(null);
+    setPending(true);
+    try {
+      await onCreate({ name, value, description: description || undefined });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal title={`Add ${noun}`} onClose={onClose}>
+      <div className="w6w-stack">
+        <label className="w6w-field">
+          <span>Name</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={kind === "var" ? "e.g. api_base_url" : "e.g. openai_api_key"}
+            autoComplete="off"
+            data-testid="expr-add-value-name"
+            // biome-ignore lint/a11y/noAutofocus: nested dialog opened on demand — showModal() already moved focus in, this just picks the first field.
+            autoFocus
+          />
+          <span className="w6w-muted w6w-small">
+            Lowercase letters, digits, and underscores. Must start with a letter or underscore.
+          </span>
+        </label>
+
+        <label className="w6w-field">
+          <span>Value</span>
+          <input
+            type={kind === "secret" ? "password" : "text"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoComplete="off"
+            data-testid="expr-add-value-value"
+          />
+          {kind === "secret" && (
+            <span className="w6w-muted w6w-small">
+              Stored encrypted at rest. Once saved, it is not readable through the UI.
+            </span>
+          )}
+        </label>
+
+        <label className="w6w-field">
+          <span>Description</span>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional"
+            autoComplete="off"
+          />
+        </label>
+
+        {error && <div className="w6w-result w6w-error">{error}</div>}
+
+        <div className="w6w-modal-actions">
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            data-testid="expr-add-value-cancel"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="w6w-btn"
+            data-testid="expr-add-value-save"
+            disabled={!name || !value || pending}
+            onClick={submit}
+          >
+            {pending ? "Saving…" : "Save"}
+          </button>
         </div>
       </div>
     </Modal>

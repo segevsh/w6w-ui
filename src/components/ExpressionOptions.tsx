@@ -78,6 +78,19 @@ export interface ExpressionOptions {
    * and the server encrypts it on receive instead.
    */
   sealSecret?: (value: string) => Promise<SecretValue>;
+  /**
+   * Create a new named variable via the host (`POST /vars`-shaped: the host
+   * persists it, `ui` never fetches). Powers the rail's "+ Add" control next
+   * to the Variables group label. Absent ⇒ the control is not rendered.
+   */
+  createVar?: (input: { name: string; value: string; description?: string }) => Promise<void>;
+  /**
+   * Create a new named secret via the host (`POST /vault`-shaped, plaintext
+   * value — the server encrypts it, `ui` never sees a key). Powers the rail's
+   * "+ Add" control next to the Secrets group label. Absent ⇒ the control is
+   * not rendered.
+   */
+  createSecret?: (input: { name: string; value: string; description?: string }) => Promise<void>;
 }
 
 const ExpressionOptionsCtx = createContext<ExpressionOptions>({});

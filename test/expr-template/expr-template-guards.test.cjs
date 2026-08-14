@@ -20,8 +20,18 @@ const HTML = (v) => `<!doctype html><html><head><meta charset="utf-8">
 <script>window.__V__=${JSON.stringify(v)};</script>
 <script src="/bundle.js"></script></body></html>`;
 
-async function open(browser, { v = "empty" } = {}) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+// T1.2.2 §M3 — three viewports, copied from picker-layout-guards.test.cjs's
+// `wide`/`med` plus a `tall` entry: the mutation class is "the Result pane's
+// height is not proportional to the modal", and two viewports can't kill a
+// fixed `height: 300px` (35% at wide, 43% at med, but 26.7% at tall).
+const VP = {
+  wide: { width: 1440, height: 900 },
+  med: { width: 1280, height: 720 },
+  tall: { width: 1440, height: 1200 },
+};
+
+async function open(browser, { v = "empty", vp = VP.wide } = {}) {
+  const page = await browser.newPage({ viewport: vp });
   const errs = [];
   page.on("pageerror", (e) => errs.push(String(e)));
   await page.route("**/*", async (route) => {
@@ -39,6 +49,25 @@ async function open(browser, { v = "empty" } = {}) {
   return page;
 }
 
+// Lifted from picker-layout-guards.test.cjs's `rect()`, with `left` added
+// (needed by a caret/order assertion elsewhere in this project's stream).
+// `document.querySelector(sel)` is why every caller below selects
+// `dialog.w6w-modal` / `.w6w-exprmodal-result` / `.w6w-exprmodal-editor`
+// explicitly, never a bare tag — a second `<dialog>` open elsewhere would
+// otherwise be measured silently.
+const rect = (page, sel) =>
+  page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      top: Math.round(r.top),
+      left: Math.round(r.left),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
+  }, sel);
+
 let browser;
 before(async () => {
   browser = await engine.launch();
@@ -46,19 +75,6 @@ before(async () => {
 after(async () => {
   if (browser) await browser.close();
 });
-
-// Programmatic-dispatch is deliberately avoided for the click below (unlike
-// `clickTab` in test/picker-layout) — a REAL Playwright click routes through
-// the actual event pipeline, and for the flip control that is what a real
-// author does. `.evaluate` is still used to find the button by its exact
-// (unique, plain) textContent, mirroring the existing `byText` idiom in
-// `ExpressionEditorModal.template-mode.test.ts`.
-const clickButtonByText = (page, text) =>
-  page.evaluate((t) => {
-    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === t);
-    if (!b) throw new Error(`no button labelled "${t}"`);
-    b.click();
-  }, text);
 
 // ── G-typing — the highest-value real-browser guard: a `paintGen` bump from
 //    `onInput` repaints the WHOLE contentEditable on every keystroke, which
@@ -129,120 +145,41 @@ test("G-sigil — the render chip's sigil is visually distinct from a var chip's
   await page.close();
 });
 
-// ── Round 2 — F-1: the chips pane must be fully inert in template mode. ────
-// jsdom cannot see any of these (no `contentEditable` model, no real click
-// dispatch through the actual DOM event pipeline), so all three are real
-// Chromium only, per the contract's R1.
+// ── Round 2 — F-2: the render-toggle control is opt-in, off by default. ────
 
-test("P4 — flipping a chip inside the chips pane is blocked in template mode; Save keeps the pre-edit value (no silent render-part loss)", async () => {
-  const page = await open(browser, { v: "templateVar" });
-  await clickButtonByText(page, "Template");
-  await page.waitForTimeout(50);
-
-  // The bypass the evaluator found: click the render-flip control that lives
-  // INSIDE the (now frozen) chips pane, above the template textarea.
-  const flip = page.locator(".w6w-exprmodal-chips [data-render-toggle]");
-  await flip.click();
-  await page.waitForTimeout(50);
-
-  const kindAfter = await page.evaluate(
-    () =>
-      document.querySelector(".w6w-exprmodal-chips .w6w-expr-chip")?.getAttribute("data-kind") ??
-      null,
-  );
-  assert.equal(
-    kindAfter,
-    "var",
-    `the chip must NOT flip to render from inside a frozen chips pane, got data-kind=${kindAfter}`,
-  );
-
-  await clickButtonByText(page, "Save");
-  await page.waitForTimeout(50);
-  const saves = await page.evaluate(() => window.__saves);
-  assert.equal(saves.length, 1, `Save must fire exactly once, got: ${JSON.stringify(saves)}`);
-  assert.deepEqual(
-    saves[0],
-    { type: "expr", parts: [{ kind: "var", ref: "vars.a" }] },
-    `Save must write back the untouched pre-edit value, got: ${JSON.stringify(saves[0])}`,
-  );
-  await page.close();
-});
-
-test("P5 — no dead end: the Chips button never disables while in template mode, and leaving template mode always succeeds", async () => {
-  const page = await open(browser, { v: "templateVar" });
-  await clickButtonByText(page, "Template");
-  await page.waitForTimeout(50);
-
-  // Attempt the same bypass as P4 — even if it somehow flipped a chip, the
-  // Chips button must stay enabled: nothing inside the frozen pane can create
-  // a render part while in template mode (P4 already pins that it doesn't).
-  await page.locator(".w6w-exprmodal-chips [data-render-toggle]").click();
-  await page.waitForTimeout(50);
-
-  const chipsDisabled = await page.evaluate(() => {
-    const b = [...document.querySelectorAll(".w6w-view-toggle button")].find(
-      (x) => x.textContent.trim() === "Chips",
-    );
-    return b ? b.disabled : "MISSING";
+// ── M-full — the -full size modifier actually applies. `dialog.w6w-modal`
+//    (0,1,1) previously out-specified `.w6w-modal-full` (0,1,0), so the
+//    modal's authored `max-width: min(1200px, 96vw)` / `width: 96vw` /
+//    `max-height: 92vh` / `overflow: hidden` never won against the base
+//    rule's 800px/auto. The real ExpressionEditorModal renders `size="full"`
+//    (ExpressionEditorModal.tsx:195), so this mounts it exactly as-is and
+//    measures the live dialog, not a transcribed rect. ─────────────────────
+test("M-full — the -full size modifier actually applies", async () => {
+  const page = await open(browser, { v: "empty" });
+  const info = await page.evaluate(() => {
+    const el = document.querySelector("dialog");
+    const r = el.getBoundingClientRect();
+    return {
+      width: r.width,
+      overflow: getComputedStyle(el).overflow,
+      scrollOverflow: el.scrollHeight - el.clientHeight,
+      docScrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    };
   });
-  assert.equal(chipsDisabled, false, "the Chips button must stay enabled — no dead end");
-
-  await clickButtonByText(page, "Chips");
-  await page.waitForTimeout(50);
-  const stillInTemplateMode = await page.evaluate(
-    () => document.querySelector(".w6w-exprmodal-template-input") !== null,
-  );
+  assert.ok(info.width >= 1150, `-full dialog width ${info.width} < 1150 floor`);
+  assert.equal(info.overflow, "hidden", `-full dialog computed overflow was "${info.overflow}", expected "hidden"`);
   assert.equal(
-    stillInTemplateMode,
-    false,
-    "clicking Chips must actually leave template mode (the textarea is gone)",
-  );
-  const chipsEditable = await page.evaluate(() =>
-    document.querySelector(".w6w-exprmodal-chips")?.getAttribute("contenteditable"),
-  );
-  assert.equal(chipsEditable, "true", "the chips pane must be editable again after returning");
-  await page.close();
-});
-
-test("Q1 — typing into the chips pane while in template mode has no effect; Save never writes an empty string", async () => {
-  const page = await open(browser, { v: "templateVar" });
-  await clickButtonByText(page, "Template");
-  await page.waitForTimeout(50);
-
-  await page.click(".w6w-exprmodal-chips");
-  await page.keyboard.type("TYPED-IN-CHIPS-PANE", { delay: 10 });
-  await page.waitForTimeout(100);
-
-  const chipsText = await page.evaluate(
-    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+    info.scrollOverflow,
+    0,
+    `-full dialog has clipped content: scrollHeight - clientHeight = ${info.scrollOverflow}`,
   );
   assert.ok(
-    !chipsText || !chipsText.includes("TYPED-IN-CHIPS-PANE"),
-    `typing must not land in the frozen chips pane, got: ${JSON.stringify(chipsText)}`,
-  );
-  const draftValue = await page.evaluate(
-    () => document.querySelector(".w6w-exprmodal-template-input")?.value ?? null,
-  );
-  assert.equal(
-    draftValue,
-    "{{ vars.a }}",
-    `the draft textarea must be untouched by chips-pane typing, got: ${JSON.stringify(draftValue)}`,
-  );
-
-  await clickButtonByText(page, "Save");
-  await page.waitForTimeout(50);
-  const saves = await page.evaluate(() => window.__saves);
-  assert.equal(saves.length, 1, `Save must fire exactly once, got: ${JSON.stringify(saves)}`);
-  assert.notEqual(saves[0], "", "Save must not write an empty string");
-  assert.deepEqual(
-    saves[0],
-    { type: "expr", parts: [{ kind: "var", ref: "vars.a" }] },
-    `Save must write the draft's real value, got: ${JSON.stringify(saves[0])}`,
+    info.docScrollWidth <= info.viewportWidth,
+    `-full dialog causes horizontal page scroll: documentElement.scrollWidth ${info.docScrollWidth} > viewport width ${info.viewportWidth}`,
   );
   await page.close();
 });
-
-// ── Round 2 — F-2: the render-toggle control is opt-in, off by default. ────
 
 test("R4 — [data-render-toggle] is present in the modal and ABSENT from the real inline ExpressionInput", async () => {
   const modalPage = await open(browser, { v: "render" });
@@ -262,4 +199,240 @@ test("R4 — [data-render-toggle] is present in the modal and ABSENT from the re
     `expected 0 [data-render-toggle] nodes in the real inline ExpressionInput, got ${inlineCount}`,
   );
   await inlinePage.close();
+});
+
+// ── T1.2.2 — chip-ify hand-typed/pasted/re-opened `{{ … }}`, and the Result
+//    pane's height as a ratio (CONDUCTOR AMENDMENT 2026-08-14, root-anchored
+//    parsing: `{{ vars.a }}` chips, a vendor placeholder like `{{name}}`
+//    never does). ──────────────────────────────────────────────────────────
+
+test("T-typed — a hand-typed {{ vars.a }} becomes a chip on blur, and every typed character landed in order first (no reordering, no onInput commit)", async () => {
+  const page = await open(browser, { v: "empty" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("{{ vars.a }}", { delay: 30 });
+  await page.waitForTimeout(150);
+  // Asserted BEFORE the blur commit — the same G-typing idiom: an over-eager
+  // paintGen bump from onInput would show up here as REORDERED text, not
+  // merely wrong text.
+  const preBlur = await page.evaluate(
+    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+  );
+  assert.equal(
+    preBlur,
+    "{{ vars.a }}",
+    `typed characters must land in order before the blur commit; got: ${JSON.stringify(preBlur)}`,
+  );
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.waitForTimeout(150);
+  const chip = await page.evaluate(
+    () => !!document.querySelector('.w6w-expr-chip[data-ref="vars.a"]'),
+  );
+  assert.ok(chip, "a typed {{ vars.a }}, once blurred, must become a chip");
+  await page.close();
+});
+
+test("T-paste — pasting {{ vars.a }} mid-string produces a chip and preserves the surrounding text order and the caret", async () => {
+  const page = await open(browser, { v: "empty" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("HEADTAIL", { delay: 10 });
+  // Place the caret between "HEAD" and "TAIL" — 4 chars from the end.
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowLeft");
+  await page.evaluate(() => {
+    const el = document.querySelector(".w6w-exprmodal-chips");
+    el.focus();
+    const dt = new DataTransfer();
+    dt.setData("text/plain", "{{ vars.a }}");
+    const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+  });
+  await page.waitForTimeout(150);
+  const order = await page.evaluate(() => {
+    const el = document.querySelector(".w6w-exprmodal-chips");
+    return Array.from(el.childNodes).map((n) => {
+      if (n.nodeType === Node.TEXT_NODE) return { type: "text", value: n.textContent };
+      const ref = n.getAttribute?.("data-ref");
+      if (ref) return { type: "chip", ref };
+      return { type: "other", tag: n.tagName };
+    });
+  });
+  assert.deepEqual(
+    order,
+    [
+      { type: "text", value: "HEAD" },
+      { type: "chip", ref: "vars.a" },
+      { type: "text", value: "TAIL" },
+    ],
+    `pasted chip must land BETWEEN "HEAD" and "TAIL", in order; got: ${JSON.stringify(order)}`,
+  );
+  await page.close();
+});
+
+test("T-inline (acceptance 4, the durable-location proof) — the real inline ExpressionInput, mounted on the plain string \"{{ vars.a }}\" with NO typing and NO blur, renders a chip", async () => {
+  const page = await open(browser, { v: "inlineTyped" });
+  const chip = await page.evaluate(
+    () => !!document.querySelector('.w6w-expr-chip[data-ref="vars.a"]'),
+  );
+  assert.ok(
+    chip,
+    "ExpressionInput mounted on the plain string {{ vars.a }} must chip through valueToParts at mount",
+  );
+  await page.close();
+});
+
+test("T-height — the Result pane is 30-50% of the modal height (a RATIO, never a pixel) at three viewports, with the chips editor not starved", async () => {
+  for (const [name, vp] of Object.entries(VP)) {
+    const page = await open(browser, { v: "empty", vp });
+    const d = await rect(page, "dialog.w6w-modal");
+    const r = await rect(page, ".w6w-exprmodal-result");
+    const e = await rect(page, ".w6w-exprmodal-editor");
+    assert.ok(
+      d && r && e,
+      `[${name}] dialog/.w6w-exprmodal-result/.w6w-exprmodal-editor must all be measurable`,
+    );
+    const resultRatio = r.height / d.height;
+    const editorRatio = e.height / d.height;
+    console.log(
+      `  [T-height ${name} ${vp.width}x${vp.height}] dialog=${d.height}px result=${r.height}px ` +
+        `(${(resultRatio * 100).toFixed(1)}%) editor=${e.height}px (${(editorRatio * 100).toFixed(1)}%)`,
+    );
+    assert.ok(
+      resultRatio >= 0.3 && resultRatio <= 0.5,
+      `[${name} ${vp.width}x${vp.height}] result pane ${(resultRatio * 100).toFixed(1)}% of modal ` +
+        `(dialog=${d.height}px, result=${r.height}px)`,
+    );
+    assert.ok(
+      editorRatio >= 0.25,
+      `[${name} ${vp.width}x${vp.height}] chips editor ${(editorRatio * 100).toFixed(1)}% of modal, ` +
+        `must not be starved (dialog=${d.height}px, editor=${e.height}px)`,
+    );
+    await page.close();
+  }
+});
+// ── T1.2.3 — "+ Add" per rail section, the nested modal, and the stacked
+//    pair. Every selector below picks a dialog by its `aria-label`, NEVER a
+//    bare "dialog" — with two <dialog>s open, `document.querySelector
+//    ("dialog")` silently returns the OUTER one and an assertion built on
+//    that would pass while measuring nothing (no rig before this one has
+//    ever had two dialogs open at once). ───────────────────────────────────
+
+test("A4 — clicking + Add stacks a SECOND real <dialog> over the editor's own, distinguishable by aria-label", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  const info = await page.evaluate(() => ({
+    openCount: document.querySelectorAll("dialog[open]").length,
+    editorOpen: !!document.querySelector('dialog[aria-label="Edit expression"][open]'),
+    addOpen: !!document.querySelector('dialog[aria-label="Add variable"][open]'),
+  }));
+  assert.equal(info.openCount, 2, `expected exactly 2 open <dialog>s, got: ${JSON.stringify(info)}`);
+  assert.ok(info.editorOpen, `the editor's own dialog must stay open, got: ${JSON.stringify(info)}`);
+  assert.ok(info.addOpen, `the nested Add-variable dialog must be open, got: ${JSON.stringify(info)}`);
+  await page.close();
+});
+
+test("A8 — Escape closes ONLY the nested dialog; the editor's own dialog stays open", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(100);
+  const info = await page.evaluate(() => ({
+    addOpen: !!document.querySelector('dialog[aria-label="Add variable"][open]'),
+    editorOpen: !!document.querySelector('dialog[aria-label="Edit expression"][open]'),
+  }));
+  assert.equal(info.addOpen, false, `Escape must close the nested dialog, got: ${JSON.stringify(info)}`);
+  assert.equal(
+    info.editorOpen,
+    true,
+    `Escape on the nested dialog must NOT close the editor's own dialog, got: ${JSON.stringify(info)}`,
+  );
+  await page.close();
+});
+
+test("A8 — a click on the nested dialog's own backdrop closes ONLY the nested dialog", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click('[data-testid="expr-add-secret"]');
+  await page.waitForSelector('dialog[aria-label="Add secret"][open]');
+  // The nested dialog is centered and well short of the viewport corner at
+  // 1440x900 — a click there lands on the TOPMOST (nested) dialog's own
+  // ::backdrop, never inside its box.
+  await page.mouse.click(4, 4);
+  await page.waitForTimeout(100);
+  const info = await page.evaluate(() => ({
+    addOpen: !!document.querySelector('dialog[aria-label="Add secret"][open]'),
+    editorOpen: !!document.querySelector('dialog[aria-label="Edit expression"][open]'),
+  }));
+  assert.equal(
+    info.addOpen,
+    false,
+    `a backdrop click must close the nested dialog, got: ${JSON.stringify(info)}`,
+  );
+  assert.equal(
+    info.editorOpen,
+    true,
+    `a click on the NESTED backdrop must not bubble into closing the editor's own dialog, got: ${JSON.stringify(info)}`,
+  );
+  await page.close();
+});
+
+test("A7 + A9 — the caret returns to the chips editor after a successful create (next keystroke appends, no click needed), and no browser dialog was ever invoked", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("abc", { delay: 30 });
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  await page.fill('[data-testid="expr-add-value-name"]', "brand_new_var");
+  await page.fill('[data-testid="expr-add-value-value"]', "hello");
+  await page.click('[data-testid="expr-add-value-save"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"]', { state: "detached" });
+  await page.waitForTimeout(100);
+  // No click — a bare `el.focus()` with no `placeCaretAtEnd` would land the
+  // caret at the START and this would read "Xabc" instead.
+  await page.keyboard.type("X", { delay: 30 });
+  await page.waitForTimeout(100);
+  const text = await page.evaluate(
+    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+  );
+  assert.equal(text, "abcX", `caret must be at the END after the round trip; got: ${JSON.stringify(text)}`);
+  const dialogCalls = await page.evaluate(() => window.__dialogCalls ?? -1);
+  assert.equal(dialogCalls, 0, "window.prompt/confirm/alert must never be reached by the + Add flow");
+  await page.close();
+});
+
+test("A2 + A7 — the editor stays MOUNTED across the create flow: chips text byte-identical, rail gains the new name, + Add still rendered", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("abc", { delay: 30 });
+  await page.waitForTimeout(100);
+  const before = await page.evaluate(
+    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+  );
+  assert.equal(before, "abc");
+
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  await page.fill('[data-testid="expr-add-value-name"]', "brand_new_var");
+  await page.fill('[data-testid="expr-add-value-value"]', "hello");
+  await page.click('[data-testid="expr-add-value-save"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"]', { state: "detached" });
+  await page.waitForTimeout(100);
+
+  const info = await page.evaluate(() => ({
+    text: document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+    railHasNew: Array.from(document.querySelectorAll(".w6w-exprmodal-source-label")).some(
+      (el) => el.textContent === "brand_new_var",
+    ),
+    addBtnStillThere: !!document.querySelector('[data-testid="expr-add-var"]'),
+  }));
+  assert.equal(
+    info.text,
+    before,
+    `the in-progress expression must survive the create flow unchanged, got: ${JSON.stringify(info)}`,
+  );
+  assert.ok(info.railHasNew, `the rail must gain a source for the newly created var, got: ${JSON.stringify(info)}`);
+  assert.ok(
+    info.addBtnStillThere,
+    `+ Add must still be rendered after the flow, got: ${JSON.stringify(info)}`,
+  );
+  await page.close();
 });
