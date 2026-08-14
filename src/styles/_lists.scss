@@ -1,20 +1,20 @@
 .w6w-list-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--w6w-text);
   text-align: left;
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   cursor: pointer;
 }
 button.w6w-list-item {
   font: inherit;
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
 }
 .w6w-list-item:hover {
   background: var(--w6w-panel-2);
@@ -37,7 +37,7 @@ button.w6w-list-item {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 2px;
+  gap: var(--w6w-sp-0-5);
 }
 .w6w-list-item-title {
   overflow: hidden;
@@ -46,7 +46,7 @@ button.w6w-list-item {
 }
 .w6w-list-item-subtitle {
   color: var(--w6w-muted);
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1,18 +1,18 @@
 .w6w-testout {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
 }
 .w6w-testout-label {
   font-size: 0.72em;
-  font-weight: 600;
+  font-weight: var(--w6w-fw-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--w6w-muted);
 }
 /* Console output reads as a terminal — monospace + muted, distinct from Result. */
 .w6w-testout-console {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   color: var(--w6w-muted);
   border-style: dashed;
 }
@@ -22,8 +22,8 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 10px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
+  font-family: var(--w6w-font-mono);
   font-size: 0.85em;
   white-space: pre-wrap;
   word-break: break-word;
@@ -56,7 +56,7 @@
 }
 .w6w-tester-embedded-cols {
   display: flex;
-  gap: 16px;
+  gap: var(--w6w-sp-4);
   align-items: flex-start;
 }
 .w6w-tester-embedded-main {
@@ -72,7 +72,7 @@
 .w6w-tester-actions-footer {
   margin-top: auto;
   border-top: 1px solid var(--w6w-border);
-  padding-top: 12px;
+  padding-top: var(--w6w-sp-3);
 }
 
 /* ActionTestForm's OWN pop-out (`Modal size="full"`, the "Edit params" ⤢

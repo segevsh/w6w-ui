@@ -1,14 +1,14 @@
 .w6w-stepconfig-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   flex-shrink: 0;
 }
 /* Connection + action share a row and wrap on narrow widths. */
 .w6w-stepconfig-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
   align-items: flex-start;
 }
 .w6w-stepconfig-conn,
@@ -23,25 +23,25 @@
 .w6w-conn-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 6px 8px 6px 10px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2) var(--w6w-sp-1-5) var(--w6w-sp-2-5);
   min-height: 36px;
 }
 .w6w-conn-label-name {
   flex: 1;
   min-width: 0;
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .w6w-btn-sm {
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  font-size: var(--w6w-fs-xs);
   flex-shrink: 0;
 }
 /* Only the parameters form scrolls; x-padding keeps fields off the edge + scrollbar. */
@@ -49,14 +49,14 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-inline: 4px;
-  padding-right: 8px;
+  padding-inline: var(--w6w-sp-1);
+  padding-right: var(--w6w-sp-2);
 }
 /* Footer pinned to the modal bottom, outside the scroll area. */
 .w6w-stepconfig-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--w6w-border);
-  padding-top: 12px;
+  padding-top: var(--w6w-sp-3);
   margin-top: 0;
 }
 /* Test-required note — always rendered (empty when there is nothing to say),
@@ -79,7 +79,7 @@
 .w6w-stepconfig-body:has(> .w6w-code-editor, > .w6w-json-editor) {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
 }
 .w6w-stepconfig-body > .w6w-code-editor,
 .w6w-stepconfig-body > .w6w-json-editor {
@@ -94,7 +94,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
 }
 /* Full-view JSON modal body — fill the dialog so the editor is roomy. */
 .w6w-json-fullview {

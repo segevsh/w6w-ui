@@ -2,7 +2,7 @@
   background: transparent;
   border: none;
   border-radius: 6px;
-  padding: 5px 12px;
+  padding: 5px var(--w6w-sp-3);
   color: var(--w6w-muted);
   font-size: 13px;
   cursor: pointer;
@@ -13,7 +13,7 @@
 .w6w-subtab.active {
   background: var(--w6w-panel);
   color: var(--w6w-text);
-  font-weight: 500;
+  font-weight: var(--w6w-fw-medium);
 }
 .w6w-subtab:disabled {
   opacity: 0.4;
@@ -28,9 +28,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
   border-bottom: 1px solid var(--w6w-border);
-  padding-bottom: 8px;
+  padding-bottom: var(--w6w-sp-2);
   flex-shrink: 0;
 }
 .w6w-icon-btn:disabled {

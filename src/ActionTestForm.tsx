@@ -534,13 +534,13 @@ export function ActionTestForm({
   // inside the `Modal` when it's open — so there's a single instance bound to the
   // single `values`/`setValues` state (no copy-on-open, edits stay in sync).
   const paramsRegion = (
-    <div className="w6w-stack" style={{ gap: 6 }}>
+    <div className="w6w-stack" style={{ gap: "var(--w6w-sp-1-5)" }}>
       <div
         className="w6w-field-labelrow"
         style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
       >
         <span className="w6w-muted w6w-small">Parameters</span>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: "var(--w6w-sp-1)" }}>
           <button
             type="button"
             className={`w6w-btn w6w-btn-sm w6w-btn-ghost${viewMode === "form" ? " active" : ""}`}
@@ -609,7 +609,7 @@ export function ActionTestForm({
   // The saved-tests rail — the right pane of the pop-out. Only meaningful when a
   // connection is fixed; hidden entirely otherwise (guarded on `connectionId`).
   const savedTestsRail = connectionId ? (
-    <div className="w6w-stack" style={{ gap: 6 }}>
+    <div className="w6w-stack" style={{ gap: "var(--w6w-sp-1-5)" }}>
       <div
         className="w6w-field-labelrow"
         style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
@@ -624,7 +624,10 @@ export function ActionTestForm({
       {railTests.length === 0 ? (
         <p className="w6w-muted w6w-small">No saved tests for this action yet.</p>
       ) : (
-        <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
+        <ul
+          className="w6w-stack"
+          style={{ listStyle: "none", margin: 0, padding: 0, gap: "var(--w6w-sp-1-5)" }}
+        >
           {railTests.map((t) => (
             <li key={t.id}>
               {/* Clicking a saved test loads it for editing — no per-row
@@ -669,7 +672,10 @@ export function ActionTestForm({
           >
             <span className="w6w-muted w6w-small">Recent runs</span>
           </div>
-          <ul className="w6w-stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
+          <ul
+            className="w6w-stack"
+            style={{ listStyle: "none", margin: 0, padding: 0, gap: "var(--w6w-sp-1-5)" }}
+          >
             {railRunHistory.map((r) => (
               <li key={r.id}>
                 <ListItem
@@ -724,7 +730,7 @@ export function ActionTestForm({
               <code className="w6w-muted">{selectedAction.key}</code>
             </strong>
             {selectedAction.description && (
-              <p className="w6w-muted w6w-small" style={{ margin: "2px 0 0" }}>
+              <p className="w6w-muted w6w-small" style={{ margin: "var(--w6w-sp-0-5) 0 0" }}>
                 {selectedAction.description}
               </p>
             )}
@@ -735,16 +741,22 @@ export function ActionTestForm({
             // by every layout (inline body, pop-out modal, embedded footer layout)
             // so it stays a single instance bound to the single `values` state.
             const paramsAndResult = (
-              <>
+              <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
                 {paramsRegion}
                 {error && (
                   <div className="w6w-result w6w-error">
                     <strong>{error.headline}</strong>
-                    {error.hint && <div style={{ marginTop: 6 }}>{error.hint}</div>}
+                    {error.hint && (
+                      <div style={{ marginTop: "var(--w6w-sp-1-5)" }}>{error.hint}</div>
+                    )}
                     {error.detail && (
                       <div
                         className="w6w-muted w6w-small"
-                        style={{ marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                        style={{
+                          marginTop: "var(--w6w-sp-1-5)",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}
                       >
                         {error.detail}
                       </div>
@@ -752,13 +764,13 @@ export function ActionTestForm({
                   </div>
                 )}
                 {result !== undefined && (
-                  <div className="w6w-stack" style={{ gap: 4 }}>
+                  <div className="w6w-stack" style={{ gap: "var(--w6w-sp-1)" }}>
                     <strong className="w6w-small">Result</strong>
                     <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
                   </div>
                 )}
                 <ApiCallsPanel calls={apiCalls} />
-              </>
+              </div>
             );
             // Bottom-anchored actions: Run / Save always; Delete only when an
             // editing id is set (an already-saved test is loaded). In embedded mode
@@ -768,7 +780,7 @@ export function ActionTestForm({
                 className={`w6w-tester-actions${
                   embedded || modalOpen ? " w6w-tester-actions-footer" : ""
                 }`}
-                style={{ display: "flex", gap: 8 }}
+                style={{ display: "flex", gap: "var(--w6w-sp-2)" }}
               >
                 <button type="button" className="w6w-btn" disabled={running} onClick={run}>
                   {running ? "Running…" : "Run action"}
@@ -794,7 +806,7 @@ export function ActionTestForm({
             // when the pop-out modal is closed, and inside the pop-out modal (left
             // pane, saved-tests rail on the right) when open.
             const body = (
-              <div className="w6w-stack" style={{ gap: 12 }}>
+              <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
                 {paramsAndResult}
                 {actionBar}
               </div>
@@ -835,7 +847,13 @@ export function ActionTestForm({
                 <div className="w6w-tester-popout">
                   <div className="w6w-tester-popout-scroll">
                     {savedTestsRail ? (
-                      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "var(--w6w-sp-4)",
+                          alignItems: "flex-start",
+                        }}
+                      >
                         <div style={{ flex: 1, minWidth: 0 }}>{paramsAndResult}</div>
                         <div style={{ width: 260, flexShrink: 0 }}>{savedTestsRail}</div>
                       </div>
@@ -855,7 +873,7 @@ export function ActionTestForm({
             <Modal title="Save test" onClose={() => setNameModalOpen(false)}>
               <form
                 className="w6w-stack"
-                style={{ gap: 12 }}
+                style={{ gap: "var(--w6w-sp-3)" }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   void submitSaveTest();
@@ -875,7 +893,9 @@ export function ActionTestForm({
                     {savedTestsError}
                   </span>
                 )}
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <div
+                  style={{ display: "flex", gap: "var(--w6w-sp-2)", justifyContent: "flex-end" }}
+                >
                   <button
                     type="button"
                     className="w6w-btn w6w-btn-ghost"

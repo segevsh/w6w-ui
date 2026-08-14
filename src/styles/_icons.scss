@@ -5,7 +5,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 6px;
+  padding: var(--w6w-sp-1-5);
   color: var(--w6w-muted);
   cursor: pointer;
 }
@@ -22,8 +22,8 @@
 /* Segmented sub-tabs inside the edit modal's form view (Parameters | Config). */
 .w6w-subtabs {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--w6w-sp-0-5);
+  padding: var(--w6w-sp-0-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;

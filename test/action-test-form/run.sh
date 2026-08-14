@@ -43,9 +43,10 @@ SRC="${UI_SRC:-$PKG/src}"
 ENGINE="${ENGINE:-chromium}"
 PW_VERSION="${PW_VERSION:-1.60.0}"
 PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
-# One top-level test() (M-popout-scroll). A tree that fails to bundle, or a
-# run that dies half-way, reports DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-1}"
+# Two top-level test()s (M-popout-scroll, and T2.1.1's defect-1 gap check). A
+# tree that fails to bundle, or a run that dies half-way, reports DID NOT RUN
+# rather than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-2}"
 
 fatal() {
   echo "FATAL: $*"

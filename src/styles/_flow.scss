@@ -66,9 +66,9 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   max-width: 280px;
-  padding: 4px 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
   background: var(--w6w-panel);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
@@ -84,11 +84,11 @@
 /* Per-node control toolbar (React Flow NodeToolbar) */
 .w6w-node-toolbar {
   display: flex;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 4px;
+  padding: var(--w6w-sp-1);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 .w6w-node-toolbar-btn {
@@ -100,7 +100,7 @@
   border-radius: 6px;
   padding: 5px;
   color: var(--w6w-text);
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   cursor: pointer;
 }
 .w6w-node-toolbar-btn:hover {

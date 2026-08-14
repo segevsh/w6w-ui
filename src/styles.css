@@ -227,14 +227,14 @@
 .w6w-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
 }
 
 /* Form fields */
 .w6w-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   color: var(--w6w-muted);
   font-size: 0.9em;
 }
@@ -251,9 +251,9 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   font-family: inherit;
 }
 
@@ -282,7 +282,7 @@
 .w6w-field-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
 }
 
 .w6w-field-row > .w6w-field {
@@ -294,21 +294,21 @@
 .w6w-array {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   align-items: flex-start;
 }
 
 .w6w-array-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   width: 100%;
 }
 
 .w6w-array-cells {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   flex: 1;
   min-width: 0;
 }
@@ -331,7 +331,7 @@
 .w6w-array-check {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   flex: 0 0 auto;
   margin: 0;
   font-size: 13px;
@@ -363,9 +363,9 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2);
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   font-family: inherit;
 }
 
@@ -385,7 +385,7 @@
   border-radius: 8px;
   background: transparent;
   color: var(--w6w-muted);
-  font-size: 16px;
+  font-size: var(--w6w-fs-base);
   line-height: 1;
   cursor: pointer;
 }
@@ -396,7 +396,7 @@
 }
 
 .w6w-array-add {
-  margin-top: 2px;
+  margin-top: var(--w6w-sp-0-5);
 }
 
 /* Material-style multi-select: chips live INSIDE a single input-like box,
@@ -405,11 +405,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   min-height: 38px;
 }
 
@@ -430,9 +430,9 @@
   border: none;
   background: transparent;
   color: var(--w6w-muted);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   font-family: inherit;
-  padding: 2px 0;
+  padding: var(--w6w-sp-0-5) 0;
   outline: none;
   cursor: pointer;
 }
@@ -446,11 +446,11 @@
 .w6w-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel);
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
-  padding: 2px 4px 2px 8px;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-1) var(--w6w-sp-0-5) var(--w6w-sp-2);
   font-size: 13px;
   line-height: 1.4;
   color: var(--w6w-text);
@@ -466,7 +466,7 @@
   border-radius: 4px;
   background: transparent;
   color: var(--w6w-muted);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   line-height: 1;
   cursor: pointer;
 }
@@ -483,7 +483,7 @@
 .w6w-state-override {
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2);
 }
 
 .w6w-state-override > summary {
@@ -494,12 +494,12 @@
 
 /* Breathing room only once it is open: closed, the summary IS the whole box. */
 .w6w-state-override[open] > summary {
-  margin-bottom: 6px;
+  margin-bottom: var(--w6w-sp-1-5);
 }
 
 .w6w-state-override > .w6w-hint {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--w6w-sp-1);
 }
 
 /* Incoming-state seed picker: upstream steps' saved tests offered as one-click
@@ -507,14 +507,14 @@
 .w6w-seed-picker {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: var(--w6w-sp-1);
+  margin-bottom: var(--w6w-sp-1-5);
 }
 
 .w6w-seed-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
 }
 
 .w6w-seed-chip {
@@ -537,7 +537,7 @@
 .w6w-expr {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
 }
 
 /* Inline expression field: ONE input-like box holding the editable surface plus
@@ -549,11 +549,11 @@
 .w6w-expr-field {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
   min-height: 38px;
 }
 
@@ -576,10 +576,10 @@
 .w6w-expr-edit {
   flex-shrink: 0;
   color: var(--w6w-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   font-size: 13px;
   line-height: 1;
-  padding: 4px 6px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-1-5);
   cursor: pointer;
 }
 
@@ -591,11 +591,11 @@
 .w6w-expr-sealed {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   min-height: 38px;
 }
 
@@ -617,7 +617,7 @@
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
   background: var(--w6w-panel-2);
-  padding: 10px;
+  padding: var(--w6w-sp-2-5);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -631,22 +631,22 @@
 
 .w6w-exprmodal-group-label {
   font-size: 0.72em;
-  font-weight: 600;
+  font-weight: var(--w6w-fw-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--w6w-muted);
-  margin-bottom: 2px;
+  margin-bottom: var(--w6w-sp-0-5);
 }
 
 .w6w-exprmodal-source {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   color: var(--w6w-text);
   font-size: 13px;
   font-family: inherit;
@@ -679,7 +679,7 @@
   flex-direction: column;
   gap: 3px;
   margin-left: 9px;
-  padding-left: 8px;
+  padding-left: var(--w6w-sp-2);
   border-left: 1px solid var(--w6w-border);
 }
 
@@ -688,20 +688,20 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
 }
 
 .w6w-exprmodal-editor {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   min-height: 0;
   flex: 1 1 auto;
 }
 
 .w6w-exprmodal-pane-label {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--w6w-fw-semibold);
   color: var(--w6w-text);
 }
 
@@ -713,9 +713,9 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   line-height: 2.1;
   outline: none;
   white-space: pre-wrap;
@@ -745,7 +745,7 @@
 .w6w-exprmodal-preview {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
 }
 
 /* The Result pane's own share of `.w6w-exprmodal-main`'s flex column — the
@@ -770,9 +770,9 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
   color: var(--w6w-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   font-size: 12.5px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -781,13 +781,13 @@
 
 .w6w-exprmodal-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
 }
 
 .w6w-expr-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
 }
 
 /* fx toggle — an end decoration INSIDE the field, not a button beside it. The
@@ -797,11 +797,11 @@
 .w6w-fx-wrap {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
   min-height: 38px;
 }
 
@@ -844,7 +844,7 @@
   border: none;
   background: transparent;
   border-radius: 0;
-  padding: 4px 2px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-0-5);
   outline: none;
   /* EVERY property in this block is load-bearing, for the same reason
      `.w6w-fx-inline-label`'s `margin: 0` is (see below): a host page layers its
@@ -903,7 +903,7 @@
 .w6w-fx-inline {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
 }
 
 .w6w-fx-inline > input[type=checkbox] {
@@ -944,9 +944,9 @@
   flex-shrink: 0;
   color: var(--w6w-muted);
   font-size: 13px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   line-height: 1;
-  padding: 4px 6px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-1-5);
   cursor: pointer;
 }
 
@@ -1066,12 +1066,12 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
   min-height: 38px;
   color: var(--w6w-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   font-size: 13px;
-  line-height: 1.7;
+  line-height: var(--w6w-lh-relaxed);
 }
 
 .w6w-expr-raw:focus {
@@ -1084,11 +1084,11 @@
    and the focus ring all belong to that box. */
 .w6w-expr-editor {
   width: 100%;
-  padding: 2px 0;
+  padding: var(--w6w-sp-0-5) 0;
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   font-family: inherit;
-  line-height: 1.7;
+  line-height: var(--w6w-lh-relaxed);
   outline: none;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1123,11 +1123,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   min-height: 38px;
 }
 
@@ -1136,7 +1136,7 @@
 .w6w-expr-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   vertical-align: baseline;
   box-sizing: border-box;
   /* Never exceed the field's content box; the label truncates before the chip
@@ -1144,11 +1144,11 @@
   max-width: 100%;
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
-  padding: 1px 6px;
+  padding: 1px var(--w6w-sp-1-5);
   margin: 0 3px;
   font-size: 12.5px;
   line-height: 1.4;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   color: var(--w6w-text);
   background: var(--w6w-panel);
   white-space: nowrap;
@@ -1180,7 +1180,7 @@
 
 .w6w-expr-chip-sigil {
   flex: none;
-  font-weight: 600;
+  font-weight: var(--w6w-fw-semibold);
   opacity: 0.8;
 }
 
@@ -1189,7 +1189,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: var(--w6w-fw-medium);
 }
 
 .w6w-expr-chip-x {
@@ -1203,7 +1203,7 @@
   background: transparent;
   color: inherit;
   opacity: 0.6;
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   line-height: 1;
   cursor: pointer;
 }
@@ -1225,7 +1225,7 @@
   background: transparent;
   color: inherit;
   opacity: 0.6;
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   line-height: 1;
   cursor: pointer;
 }
@@ -1240,9 +1240,9 @@
   border-radius: 6px;
   background: transparent;
   color: var(--w6w-muted);
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   font-family: inherit;
-  padding: 3px 8px;
+  padding: 3px var(--w6w-sp-2);
   cursor: pointer;
 }
 
@@ -1262,9 +1262,9 @@
   border-radius: 6px;
   background: transparent;
   color: var(--w6w-muted);
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   font-family: inherit;
-  padding: 3px 8px;
+  padding: 3px var(--w6w-sp-2);
   cursor: pointer;
 }
 
@@ -1275,34 +1275,34 @@
 
 .w6w-expr-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--w6w-sp-1));
   left: 0;
   z-index: 60;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
   min-width: 200px;
   background: var(--w6w-panel);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 8px;
+  padding: var(--w6w-sp-2);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
 .w6w-expr-menu-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
 }
 
 .w6w-expr-menu-group + .w6w-expr-menu-group {
   border-top: 1px solid var(--w6w-border);
-  padding-top: 8px;
+  padding-top: var(--w6w-sp-2);
 }
 
 .w6w-expr-menu-label {
   font-size: 0.72em;
-  font-weight: 600;
+  font-weight: var(--w6w-fw-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--w6w-muted);
@@ -1313,7 +1313,7 @@
 .w6w-expr-menu-group.is-primary {
   background: var(--w6w-panel-2);
   border-radius: 6px;
-  padding: 6px;
+  padding: var(--w6w-sp-1-5);
   margin: -2px;
 }
 
@@ -1322,9 +1322,9 @@
 }
 
 .w6w-expr-menu-empty {
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   color: var(--w6w-muted);
-  padding: 2px 8px;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-2);
   font-style: italic;
 }
 
@@ -1333,7 +1333,7 @@
   background: transparent;
   border: none;
   border-radius: 6px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   color: var(--w6w-text);
   font-size: 13px;
   font-family: inherit;
@@ -1346,7 +1346,7 @@
 
 .w6w-expr-menu-add {
   display: flex;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   align-items: center;
 }
 
@@ -1356,7 +1356,7 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   color: var(--w6w-text);
   font-size: 13px;
   font-family: inherit;
@@ -1371,7 +1371,7 @@
 .w6w-datavar-row {
   display: grid;
   grid-template-columns: 1fr 110px 1fr auto;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   /* Align to the end so that on an `expression` row — where the value cell is a
      taller ExpressionInput (toolbar above its editor) — the key/type/remove
      cells line up with the editor at the bottom, not the toolbar. Single-line
@@ -1384,7 +1384,7 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2);
   color: var(--w6w-text);
   font-size: 13px;
   font-family: inherit;
@@ -1408,7 +1408,7 @@
 }
 
 .w6w-datavar-row .w6w-btn {
-  padding: 6px 10px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2-5);
 }
 
 /* Buttons */
@@ -1417,8 +1417,8 @@
   color: white;
   border: none;
   border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 14px;
+  padding: var(--w6w-sp-2) 14px;
+  font-size: var(--w6w-fs-sm);
   cursor: pointer;
 }
 
@@ -1458,21 +1458,21 @@
 .w6w-list-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--w6w-text);
   text-align: left;
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   cursor: pointer;
 }
 
 button.w6w-list-item {
   font: inherit;
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
 }
 
 .w6w-list-item:hover {
@@ -1500,7 +1500,7 @@ button.w6w-list-item {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 2px;
+  gap: var(--w6w-sp-0-5);
 }
 
 .w6w-list-item-title {
@@ -1511,7 +1511,7 @@ button.w6w-list-item {
 
 .w6w-list-item-subtitle {
   color: var(--w6w-muted);
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1531,14 +1531,14 @@ button.w6w-list-item {
 .w6w-health-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 8px 2px 7px;
+  gap: var(--w6w-sp-1-5);
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-2) var(--w6w-sp-0-5) 7px;
   border: 1px solid color-mix(in srgb, var(--w6w-health-color) 40%, var(--w6w-border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--w6w-health-color) 12%, transparent);
   color: var(--w6w-text);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--w6w-fs-xs);
+  line-height: var(--w6w-lh-normal);
   white-space: nowrap;
   --w6w-health-color: var(--w6w-health-unknown);
 }
@@ -1576,7 +1576,7 @@ button.w6w-list-item {
 .w6w-app-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
 }
 
 /* Modal */
@@ -1586,7 +1586,7 @@ button.w6w-list-item {
   background: rgba(0, 0, 0, 0.55);
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: var(--w6w-sp-5);
   z-index: 50;
 }
 
@@ -1602,10 +1602,10 @@ dialog.w6w-modal {
   max-width: 800px;
   max-height: 90vh;
   overflow: auto;
-  padding: 20px;
+  padding: var(--w6w-sp-5);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
 }
 
 dialog.w6w-modal::backdrop {
@@ -1641,20 +1641,20 @@ dialog.w6w-modal.w6w-modal-full {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
 }
 
 .w6w-modal-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   min-width: 0;
 }
 
 .w6w-modal-subtitle {
   color: var(--w6w-muted);
   font-size: 0.7em;
-  font-weight: 400;
+  font-weight: var(--w6w-fw-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1666,7 +1666,7 @@ dialog.w6w-modal.w6w-modal-full {
 
 .w6w-modal-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
   justify-content: flex-end;
   /* Pin the action row to the modal's bottom rather than letting it float right
      under short content — the dialog is a flex column, so `auto` pushes it down. */
@@ -1676,7 +1676,7 @@ dialog.w6w-modal.w6w-modal-full {
 /* Icon-button view toggle (e.g. Form ⇄ JSON), inline with a modal header. */
 .w6w-view-toggle {
   display: flex;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   flex-shrink: 0;
 }
 
@@ -1687,7 +1687,7 @@ dialog.w6w-modal.w6w-modal-full {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 6px;
+  padding: var(--w6w-sp-1-5);
   color: var(--w6w-muted);
   cursor: pointer;
 }
@@ -1706,8 +1706,8 @@ dialog.w6w-modal.w6w-modal-full {
 /* Segmented sub-tabs inside the edit modal's form view (Parameters | Config). */
 .w6w-subtabs {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--w6w-sp-0-5);
+  padding: var(--w6w-sp-0-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
@@ -1718,7 +1718,7 @@ dialog.w6w-modal.w6w-modal-full {
   background: transparent;
   border: none;
   border-radius: 6px;
-  padding: 5px 12px;
+  padding: 5px var(--w6w-sp-3);
   color: var(--w6w-muted);
   font-size: 13px;
   cursor: pointer;
@@ -1731,7 +1731,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-subtab.active {
   background: var(--w6w-panel);
   color: var(--w6w-text);
-  font-weight: 500;
+  font-weight: var(--w6w-fw-medium);
 }
 
 .w6w-subtab:disabled {
@@ -1748,9 +1748,9 @@ dialog.w6w-modal.w6w-modal-full {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
   border-bottom: 1px solid var(--w6w-border);
-  padding-bottom: 8px;
+  padding-bottom: var(--w6w-sp-2);
   flex-shrink: 0;
 }
 
@@ -1778,7 +1778,7 @@ dialog.w6w-modal.w6w-modal-full {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   font-size: 0.8em;
   color: var(--w6w-muted);
 }
@@ -1797,11 +1797,11 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepbuilder-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   width: 140px;
   flex-shrink: 0;
   border-right: 1px solid var(--w6w-border);
-  padding-right: 12px;
+  padding-right: var(--w6w-sp-3);
 }
 
 .w6w-stepbuilder-tab {
@@ -1809,9 +1809,9 @@ dialog.w6w-modal.w6w-modal-full {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
   color: var(--w6w-muted);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   cursor: pointer;
 }
 
@@ -1823,7 +1823,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepbuilder-tab.active {
   background: var(--w6w-panel-2);
   color: var(--w6w-text);
-  font-weight: 500;
+  font-weight: var(--w6w-fw-medium);
 }
 
 .w6w-stepbuilder-content {
@@ -1841,7 +1841,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepbuilder-apps {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   height: 100%;
   min-height: 0;
 }
@@ -1852,16 +1852,16 @@ dialog.w6w-modal.w6w-modal-full {
      outer modal content — owns the scrollbar. */
   flex: 1;
   min-height: 0;
-  padding-right: 4px;
+  padding-right: var(--w6w-sp-1);
 }
 
 .w6w-stepbuilder-search {
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   font-family: inherit;
   width: 100%;
 }
@@ -1874,21 +1874,21 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepbuilder-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
 }
 
 .w6w-stepbuilder-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   text-align: left;
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
   color: var(--w6w-text);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
 }
 
 .w6w-stepbuilder-item:hover {
@@ -1898,7 +1898,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepbuilder-item-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--w6w-sp-0-5);
   min-width: 0;
 }
 
@@ -1934,23 +1934,23 @@ dialog.w6w-modal.w6w-modal-full {
   flex: 1;
   height: 100%;
   min-height: 0;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
   /* Horizontal breathing room so header/footer align with the padded body. */
-  padding-inline: 4px;
+  padding-inline: var(--w6w-sp-1);
 }
 
 /* Inline step rename (pencil) shown next to the modal title. */
 .w6w-step-rename {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
 }
 
 .w6w-step-rename input {
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-accent);
   border-radius: 6px;
-  padding: 2px 6px;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-1-5);
   color: var(--w6w-text);
   font-size: 0.9em;
   font-family: inherit;
@@ -1959,7 +1959,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepconfig-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   flex-shrink: 0;
 }
 
@@ -1967,7 +1967,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepconfig-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
   align-items: flex-start;
 }
 
@@ -1985,11 +1985,11 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-conn-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 6px 8px 6px 10px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2) var(--w6w-sp-1-5) var(--w6w-sp-2-5);
   min-height: 36px;
 }
 
@@ -1997,15 +1997,15 @@ dialog.w6w-modal.w6w-modal-full {
   flex: 1;
   min-width: 0;
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .w6w-btn-sm {
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  font-size: var(--w6w-fs-xs);
   flex-shrink: 0;
 }
 
@@ -2014,15 +2014,15 @@ dialog.w6w-modal.w6w-modal-full {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-inline: 4px;
-  padding-right: 8px;
+  padding-inline: var(--w6w-sp-1);
+  padding-right: var(--w6w-sp-2);
 }
 
 /* Footer pinned to the modal bottom, outside the scroll area. */
 .w6w-stepconfig-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--w6w-border);
-  padding-top: 12px;
+  padding-top: var(--w6w-sp-3);
   margin-top: 0;
 }
 
@@ -2046,7 +2046,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-stepconfig-body:has(> .w6w-code-editor, > .w6w-json-editor) {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
 }
 
 .w6w-stepconfig-body > .w6w-code-editor,
@@ -2064,7 +2064,7 @@ dialog.w6w-modal.w6w-modal-full {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
 }
 
 /* Full-view JSON modal body — fill the dialog so the editor is roomy. */
@@ -2151,9 +2151,9 @@ dialog.w6w-modal.w6w-modal-full {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   max-width: 280px;
-  padding: 4px 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
   background: var(--w6w-panel);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
@@ -2170,11 +2170,11 @@ dialog.w6w-modal.w6w-modal-full {
 /* Per-node control toolbar (React Flow NodeToolbar) */
 .w6w-node-toolbar {
   display: flex;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 4px;
+  padding: var(--w6w-sp-1);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
@@ -2187,7 +2187,7 @@ dialog.w6w-modal.w6w-modal-full {
   border-radius: 6px;
   padding: 5px;
   color: var(--w6w-text);
-  font-size: 12px;
+  font-size: var(--w6w-fs-xs);
   cursor: pointer;
 }
 
@@ -2210,19 +2210,19 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-section {
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
 }
 
 .w6w-section > summary {
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--w6w-sp-0-5);
 }
 
 .w6w-section-title {
   color: var(--w6w-text);
-  font-weight: 600;
+  font-weight: var(--w6w-fw-semibold);
 }
 
 .w6w-section-subtitle {
@@ -2231,33 +2231,33 @@ dialog.w6w-modal.w6w-modal-full {
 }
 
 .w6w-section-body {
-  margin-top: 8px;
+  margin-top: var(--w6w-sp-2);
 }
 
 /* Inline "Test run" block in the step builder (sits above the footer). */
 .w6w-steptest {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
   flex-shrink: 0;
 }
 
 .w6w-steptest-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
 }
 
 /* A labeled test-run output block (Result vs Console). */
 .w6w-testout {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
 }
 
 .w6w-testout-label {
   font-size: 0.72em;
-  font-weight: 600;
+  font-weight: var(--w6w-fw-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--w6w-muted);
@@ -2265,7 +2265,7 @@ dialog.w6w-modal.w6w-modal-full {
 
 /* Console output reads as a terminal — monospace + muted, distinct from Result. */
 .w6w-testout-console {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   color: var(--w6w-muted);
   border-style: dashed;
 }
@@ -2275,8 +2275,8 @@ dialog.w6w-modal.w6w-modal-full {
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 10px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
+  font-family: var(--w6w-font-mono);
   font-size: 0.85em;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2313,7 +2313,7 @@ dialog.w6w-modal.w6w-modal-full {
 
 .w6w-tester-embedded-cols {
   display: flex;
-  gap: 16px;
+  gap: var(--w6w-sp-4);
   align-items: flex-start;
 }
 
@@ -2332,7 +2332,7 @@ dialog.w6w-modal.w6w-modal-full {
 .w6w-tester-actions-footer {
   margin-top: auto;
   border-top: 1px solid var(--w6w-border);
-  padding-top: 12px;
+  padding-top: var(--w6w-sp-3);
 }
 
 /* ActionTestForm's OWN pop-out (`Modal size="full"`, the "Edit params" ⤢
@@ -2374,7 +2374,7 @@ dialog.w6w-modal.w6w-modal-full {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  gap: 2px;
+  gap: var(--w6w-sp-0-5);
   height: 22px;
   min-width: 0;
   align-items: stretch;
@@ -2440,14 +2440,14 @@ dialog.w6w-modal.w6w-modal-full {
   border-radius: var(--w6w-radius);
   margin: 0;
   overflow-x: auto;
-  padding: 12px 14px;
+  padding: var(--w6w-sp-3) 14px;
   tab-size: 2;
 }
 
 .w6w-code-block code {
   background: none;
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   font-size: 13px;
   line-height: 1.55;
   padding: 0;
@@ -2457,7 +2457,7 @@ dialog.w6w-modal.w6w-modal-full {
    than inside it — a number inside the flow would be caught by a copy. */
 .w6w-code-line {
   display: flex;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
   white-space: pre;
 }
 

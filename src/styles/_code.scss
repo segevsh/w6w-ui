@@ -4,13 +4,13 @@
   border-radius: var(--w6w-radius);
   margin: 0;
   overflow-x: auto;
-  padding: 12px 14px;
+  padding: var(--w6w-sp-3) 14px;
   tab-size: 2;
 }
 .w6w-code-block code {
   background: none;
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   font-size: 13px;
   line-height: 1.55;
   padding: 0;
@@ -19,7 +19,7 @@
    than inside it — a number inside the flow would be caught by a copy. */
 .w6w-code-line {
   display: flex;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
   white-space: pre;
 }
 .w6w-code-line-text {

@@ -4,8 +4,8 @@
   color: white;
   border: none;
   border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 14px;
+  padding: var(--w6w-sp-2) 14px;
+  font-size: var(--w6w-fs-sm);
   cursor: pointer;
 }
 .w6w-btn:hover {

@@ -2,7 +2,7 @@
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  gap: 2px;
+  gap: var(--w6w-sp-0-5);
   height: 22px;
   min-width: 0;
   align-items: stretch;

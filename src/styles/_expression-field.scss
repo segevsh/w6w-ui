@@ -5,7 +5,7 @@
 .w6w-expr {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
 }
 /* Inline expression field: ONE input-like box holding the editable surface plus
    a ƒx button that reads as a trailing decoration INSIDE it — the same idiom as
@@ -16,11 +16,11 @@
 .w6w-expr-field {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
   min-height: 38px;
 }
 .w6w-expr-field:focus-within {
@@ -39,10 +39,10 @@
 .w6w-expr-edit {
   flex-shrink: 0;
   color: var(--w6w-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   font-size: 13px;
   line-height: 1;
-  padding: 4px 6px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-1-5);
   cursor: pointer;
 }
 .w6w-expr-edit:hover {
@@ -52,11 +52,11 @@
 .w6w-expr-sealed {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   min-height: 38px;
 }
 .w6w-expr-sealed.is-readonly {

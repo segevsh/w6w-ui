@@ -4,12 +4,12 @@
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
   min-height: 38px;
   color: var(--w6w-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   font-size: 13px;
-  line-height: 1.7;
+  line-height: var(--w6w-lh-relaxed);
 }
 .w6w-expr-raw:focus {
   outline: none;
@@ -20,11 +20,11 @@
    and the focus ring all belong to that box. */
 .w6w-expr-editor {
   width: 100%;
-  padding: 2px 0;
+  padding: var(--w6w-sp-0-5) 0;
   color: var(--w6w-text);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   font-family: inherit;
-  line-height: 1.7;
+  line-height: var(--w6w-lh-relaxed);
   outline: none;
   white-space: pre-wrap;
   word-break: break-word;
@@ -54,10 +54,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   min-height: 38px;
 }
