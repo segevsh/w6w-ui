@@ -23,6 +23,13 @@ const params = new URLSearchParams(location.search);
 // STRING `"{{ vars.a }}"` (not an `ExprValue`), no typing and no blur — T1.2.2
 // acceptance 4's durable-location proof: this must chip through
 // `valueToParts` at mount, or the fix is in the wrong place.
+// `addable` — the "+ Add" (T1.2.3) fixture: `createVar`/`createSecret` are
+// bound, so the rail's "+ Add" controls render and the nested Add-value
+// dialog is reachable. Both resolve immediately, recording their input on
+// `window` and re-rendering the SAME mount (same `createRoot` root — the
+// editor stays mounted across the flow, per the "stays-mounted" guard) with
+// `options.vars`/`.secrets` grown by the new name, so the rail refresh a real
+// host would get from a query invalidation is reproduced here too.
 const v = params.get("v") || "empty";
 
 const VALUES: Record<string, string | ExprValue> = {
@@ -47,7 +54,69 @@ if (!mount) throw new Error("no #root to mount into");
 // re-reading the DOM, since the whole point of P4/Q1 is what gets WRITTEN.
 (window as unknown as { __saves: unknown[] }).__saves = [];
 
-if (v === "inline") {
+// window.prompt/confirm/alert must never be reached by the "+ Add" flow
+// (A9) — stubbed everywhere, not only for `v=addable`, so any OTHER scenario
+// that accidentally reached one would also increment the counter.
+(window as unknown as { __dialogCalls: number }).__dialogCalls = 0;
+const bumpDialogCalls = () => {
+  (window as unknown as { __dialogCalls: number }).__dialogCalls += 1;
+};
+window.prompt = ((..._args: unknown[]) => {
+  bumpDialogCalls();
+  return null;
+}) as typeof window.prompt;
+window.confirm = ((..._args: unknown[]) => {
+  bumpDialogCalls();
+  return false;
+}) as typeof window.confirm;
+window.alert = ((..._args: unknown[]) => {
+  bumpDialogCalls();
+}) as typeof window.alert;
+
+if (v === "addable") {
+  type AddInput = { name: string; value: string; description?: string };
+  const w = window as unknown as {
+    __createVarCalls: AddInput[];
+    __createSecretCalls: AddInput[];
+  };
+  w.__createVarCalls = [];
+  w.__createSecretCalls = [];
+
+  // Local mutable rail state, grown in place as each stub "creates" a value —
+  // mirrors the studio host's real refresh path (mutation resolves ->
+  // invalidate -> the page's vars/secrets query refetches -> new
+  // `options.vars`/`.secrets` -> re-render), without actually depending on
+  // react-query or a server.
+  let vars = ["a"];
+  let secrets = ["s"];
+  const root = createRoot(mount);
+  const paint = () => {
+    root.render(
+      <ExpressionEditorModal
+        value=""
+        options={{
+          vars,
+          secrets,
+          createVar: async (input) => {
+            w.__createVarCalls.push(input);
+            vars = [...vars, input.name];
+            paint();
+          },
+          createSecret: async (input) => {
+            w.__createSecretCalls.push(input);
+            secrets = [...secrets, input.name];
+            paint();
+          },
+        }}
+        onSave={(next) => {
+          (window as unknown as { __saves: unknown[] }).__saves.push(next);
+        }}
+        onClose={() => {}}
+      />,
+    );
+  };
+  paint();
+} else if (v === "inline") {
   createRoot(mount).render(
     <ExpressionInput
       value={{ type: "expr", parts: [{ kind: "var", ref: "vars.a" }] }}

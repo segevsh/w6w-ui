@@ -308,3 +308,131 @@ test("T-height — the Result pane is 30-50% of the modal height (a RATIO, never
     await page.close();
   }
 });
+// ── T1.2.3 — "+ Add" per rail section, the nested modal, and the stacked
+//    pair. Every selector below picks a dialog by its `aria-label`, NEVER a
+//    bare "dialog" — with two <dialog>s open, `document.querySelector
+//    ("dialog")` silently returns the OUTER one and an assertion built on
+//    that would pass while measuring nothing (no rig before this one has
+//    ever had two dialogs open at once). ───────────────────────────────────
+
+test("A4 — clicking + Add stacks a SECOND real <dialog> over the editor's own, distinguishable by aria-label", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  const info = await page.evaluate(() => ({
+    openCount: document.querySelectorAll("dialog[open]").length,
+    editorOpen: !!document.querySelector('dialog[aria-label="Edit expression"][open]'),
+    addOpen: !!document.querySelector('dialog[aria-label="Add variable"][open]'),
+  }));
+  assert.equal(info.openCount, 2, `expected exactly 2 open <dialog>s, got: ${JSON.stringify(info)}`);
+  assert.ok(info.editorOpen, `the editor's own dialog must stay open, got: ${JSON.stringify(info)}`);
+  assert.ok(info.addOpen, `the nested Add-variable dialog must be open, got: ${JSON.stringify(info)}`);
+  await page.close();
+});
+
+test("A8 — Escape closes ONLY the nested dialog; the editor's own dialog stays open", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(100);
+  const info = await page.evaluate(() => ({
+    addOpen: !!document.querySelector('dialog[aria-label="Add variable"][open]'),
+    editorOpen: !!document.querySelector('dialog[aria-label="Edit expression"][open]'),
+  }));
+  assert.equal(info.addOpen, false, `Escape must close the nested dialog, got: ${JSON.stringify(info)}`);
+  assert.equal(
+    info.editorOpen,
+    true,
+    `Escape on the nested dialog must NOT close the editor's own dialog, got: ${JSON.stringify(info)}`,
+  );
+  await page.close();
+});
+
+test("A8 — a click on the nested dialog's own backdrop closes ONLY the nested dialog", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click('[data-testid="expr-add-secret"]');
+  await page.waitForSelector('dialog[aria-label="Add secret"][open]');
+  // The nested dialog is centered and well short of the viewport corner at
+  // 1440x900 — a click there lands on the TOPMOST (nested) dialog's own
+  // ::backdrop, never inside its box.
+  await page.mouse.click(4, 4);
+  await page.waitForTimeout(100);
+  const info = await page.evaluate(() => ({
+    addOpen: !!document.querySelector('dialog[aria-label="Add secret"][open]'),
+    editorOpen: !!document.querySelector('dialog[aria-label="Edit expression"][open]'),
+  }));
+  assert.equal(
+    info.addOpen,
+    false,
+    `a backdrop click must close the nested dialog, got: ${JSON.stringify(info)}`,
+  );
+  assert.equal(
+    info.editorOpen,
+    true,
+    `a click on the NESTED backdrop must not bubble into closing the editor's own dialog, got: ${JSON.stringify(info)}`,
+  );
+  await page.close();
+});
+
+test("A7 + A9 — the caret returns to the chips editor after a successful create (next keystroke appends, no click needed), and no browser dialog was ever invoked", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("abc", { delay: 30 });
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  await page.fill('[data-testid="expr-add-value-name"]', "brand_new_var");
+  await page.fill('[data-testid="expr-add-value-value"]', "hello");
+  await page.click('[data-testid="expr-add-value-save"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"]', { state: "detached" });
+  await page.waitForTimeout(100);
+  // No click — a bare `el.focus()` with no `placeCaretAtEnd` would land the
+  // caret at the START and this would read "Xabc" instead.
+  await page.keyboard.type("X", { delay: 30 });
+  await page.waitForTimeout(100);
+  const text = await page.evaluate(
+    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+  );
+  assert.equal(text, "abcX", `caret must be at the END after the round trip; got: ${JSON.stringify(text)}`);
+  const dialogCalls = await page.evaluate(() => window.__dialogCalls ?? -1);
+  assert.equal(dialogCalls, 0, "window.prompt/confirm/alert must never be reached by the + Add flow");
+  await page.close();
+});
+
+test("A2 + A7 — the editor stays MOUNTED across the create flow: chips text byte-identical, rail gains the new name, + Add still rendered", async () => {
+  const page = await open(browser, { v: "addable" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("abc", { delay: 30 });
+  await page.waitForTimeout(100);
+  const before = await page.evaluate(
+    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+  );
+  assert.equal(before, "abc");
+
+  await page.click('[data-testid="expr-add-var"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"][open]');
+  await page.fill('[data-testid="expr-add-value-name"]', "brand_new_var");
+  await page.fill('[data-testid="expr-add-value-value"]', "hello");
+  await page.click('[data-testid="expr-add-value-save"]');
+  await page.waitForSelector('dialog[aria-label="Add variable"]', { state: "detached" });
+  await page.waitForTimeout(100);
+
+  const info = await page.evaluate(() => ({
+    text: document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+    railHasNew: Array.from(document.querySelectorAll(".w6w-exprmodal-source-label")).some(
+      (el) => el.textContent === "brand_new_var",
+    ),
+    addBtnStillThere: !!document.querySelector('[data-testid="expr-add-var"]'),
+  }));
+  assert.equal(
+    info.text,
+    before,
+    `the in-progress expression must survive the create flow unchanged, got: ${JSON.stringify(info)}`,
+  );
+  assert.ok(info.railHasNew, `the rail must gain a source for the newly created var, got: ${JSON.stringify(info)}`);
+  assert.ok(
+    info.addBtnStillThere,
+    `+ Add must still be rendered after the flow, got: ${JSON.stringify(info)}`,
+  );
+  await page.close();
+});
