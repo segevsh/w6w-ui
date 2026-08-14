@@ -1,0 +1,88 @@
+.w6w-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 50;
+}
+dialog.w6w-modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+dialog.w6w-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+dialog.w6w-modal h3,
+dialog.w6w-modal h4,
+dialog.w6w-modal p {
+  color: var(--w6w-text);
+  margin: 0;
+}
+dialog.w6w-modal.w6w-modal-wide {
+  max-width: min(850px, 80vw);
+  min-height: min(70vh, 560px);
+}
+dialog.w6w-modal.w6w-modal-xl {
+  max-width: 1040px;
+  min-height: min(70vh, 620px);
+}
+dialog.w6w-modal.w6w-modal-full {
+  max-width: min(1200px, 96vw);
+  width: 96vw;
+  height: 92vh;
+  max-height: 92vh;
+  overflow: hidden;
+}
+.w6w-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.w6w-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.w6w-modal-subtitle {
+  color: var(--w6w-muted);
+  font-size: 0.7em;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.w6w-modal-subtitle code {
+  font-size: inherit;
+}
+.w6w-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  /* Pin the action row to the modal's bottom rather than letting it float right
+     under short content — the dialog is a flex column, so `auto` pushes it down. */
+  margin-top: auto;
+}
+
+/* Icon-button view toggle (e.g. Form ⇄ JSON), inline with a modal header. */
+.w6w-view-toggle {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}

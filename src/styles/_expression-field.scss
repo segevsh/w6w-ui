@@ -1,0 +1,65 @@
+/* Expression input: a field whose contents are inline SEGMENTS — plain text
+   plus var/secret/expr chips, edited in place (contentEditable, like a Notion /
+   Zapier block field). A small toolbar carries the Insert menu + the {{ }} (fx)
+   mode toggle. Theme-aware via the shared tokens. */
+.w6w-expr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Inline expression field: ONE input-like box holding the editable surface plus
+   a ƒx button that reads as a trailing decoration INSIDE it — the same idiom as
+   `.w6w-multiselect` above and `.w6w-expr-sealed` below. The box lives here so
+   the standalone uses still render as a field (the `secret` param path and the
+   public ExpressionInput export). When this rides inside a `.w6w-fx-wrap`, that
+   wrapper is the box and this is flattened — see `.w6w-fx-wrap` below. */
+.w6w-expr-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-height: 38px;
+}
+.w6w-expr-field:focus-within {
+  border-color: var(--w6w-accent);
+}
+.w6w-expr-field .w6w-expr-editor {
+  flex: 1;
+  min-width: 0;
+}
+/* The ƒx rides inside the box, so it draws no chrome of its own — only its
+   colour states remain. */
+.w6w-expr-field .w6w-expr-edit {
+  border: none;
+  background: transparent;
+}
+.w6w-expr-edit {
+  flex-shrink: 0;
+  color: var(--w6w-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.w6w-expr-edit:hover {
+  color: var(--w6w-accent);
+}
+/* Sealed at-rest secret (masked chip + Replace). */
+.w6w-expr-sealed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-height: 38px;
+}
+.w6w-expr-sealed.is-readonly {
+  opacity: 0.7;
+}
+/* Expression editor modal: left data sources | right (editor over preview). */

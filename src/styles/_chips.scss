@@ -1,0 +1,210 @@
+/* Chips: a var/secret/expr segment. Distinct look per kind; sits inline in the
+   text flow. */
+.w6w-expr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+  box-sizing: border-box;
+  /* Never exceed the field's content box; the label truncates before the chip
+     can overrun the adjacent ƒx button. */
+  max-width: 100%;
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin: 0 3px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--w6w-text);
+  background: var(--w6w-panel);
+  white-space: nowrap;
+  user-select: none;
+}
+.w6w-expr-chip-var {
+  border-color: var(--w6w-accent);
+  color: var(--w6w-accent);
+  background: color-mix(in srgb, var(--w6w-accent) 14%, transparent);
+}
+.w6w-expr-chip-secret {
+  border-color: var(--w6w-danger);
+  color: var(--w6w-danger);
+  background: color-mix(in srgb, var(--w6w-danger) 14%, transparent);
+}
+.w6w-expr-chip-expr {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--w6w-text) 8%, transparent);
+}
+.w6w-expr-chip-render {
+  border-color: var(--w6w-success);
+  color: var(--w6w-success);
+  background: color-mix(in srgb, var(--w6w-success) 14%, transparent);
+}
+.w6w-expr-chip-sigil {
+  flex: none;
+  font-weight: 600;
+  opacity: 0.8;
+}
+.w6w-expr-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.w6w-expr-chip-x {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.w6w-expr-chip-x:hover {
+  opacity: 1;
+  background: var(--w6w-border);
+}
+/* The render affordance: flips a var/render chip in place (see `makeChip`). */
+.w6w-expr-chip-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.w6w-expr-chip-toggle:hover {
+  opacity: 1;
+  background: var(--w6w-border);
+}
+.w6w-expr-replace {
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.w6w-expr-replace:hover {
+  color: var(--w6w-text);
+  background: var(--w6w-panel);
+}
+/* Insert affordance + popover menu (variable / secret / expression). */
+.w6w-expr-insert {
+  position: relative;
+  display: inline-flex;
+}
+.w6w-expr-insert-btn {
+  border: 1px dashed var(--w6w-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.w6w-expr-insert-btn:hover {
+  color: var(--w6w-text);
+  border-color: var(--w6w-accent);
+}
+.w6w-expr-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.w6w-expr-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.w6w-expr-menu-group + .w6w-expr-menu-group {
+  border-top: 1px solid var(--w6w-border);
+  padding-top: 8px;
+}
+.w6w-expr-menu-label {
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w6w-muted);
+}
+/* A secret-typed field surfaces the Secrets group first + highlighted, so
+   picking a secret is the obvious one-click path (task 3.2). */
+.w6w-expr-menu-group.is-primary {
+  background: var(--w6w-panel-2);
+  border-radius: 6px;
+  padding: 6px;
+  margin: -2px;
+}
+.w6w-expr-menu-group.is-primary .w6w-expr-menu-label {
+  color: var(--w6w-accent);
+}
+.w6w-expr-menu-empty {
+  font-size: 12px;
+  color: var(--w6w-muted);
+  padding: 2px 8px;
+  font-style: italic;
+}
+.w6w-expr-menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.w6w-expr-menu-item:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-expr-menu-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.w6w-expr-menu-add input {
+  flex: 1;
+  min-width: 0;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.w6w-expr-menu-add input:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+
+/* Typed key/value rows (the `vars` form element / `data` control step). */

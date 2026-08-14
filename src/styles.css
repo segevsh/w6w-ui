@@ -1,3 +1,10 @@
+/* GENERATED FILE — DO NOT EDIT.
+ *
+ * Compiled from src/styles.scss by scripts/build-css.mjs (`pnpm build:css`).
+ * Edit the .scss partials under src/styles/ instead; `pnpm check:css` fails
+ * if this file has drifted from them.
+ */
+@charset "UTF-8";
 /*
  * @w6w/ui — styles for the pure-presentation components.
  *
@@ -25,7 +32,6 @@
  * host rule — even a plain `:root { ... }` — wins without !important. Tokens are
  * defined on :root so every `.w6w-*` component inherits them out of the box.
  */
-
 /* Light — the base defaults. */
 :where(:root) {
   --w6w-bg: #f7f8fa;
@@ -70,19 +76,18 @@
     --w6w-health-down: var(--w6w-danger);
     --w6w-health-unknown: #9aa3b2;
     --w6w-icon-swatch: #1f232c;
-  --w6w-code-comment: #7d8797;
-  --w6w-code-keyword: #d2a8ff;
-  --w6w-code-string: #7ee787;
-  --w6w-code-number: #ffab70;
-  --w6w-code-function: #79c0ff;
-  --w6w-code-punctuation: #9aa3b2;
-  --w6w-code-variable: #ffa657;
+    --w6w-code-comment: #7d8797;
+    --w6w-code-keyword: #d2a8ff;
+    --w6w-code-string: #7ee787;
+    --w6w-code-number: #ffab70;
+    --w6w-code-function: #79c0ff;
+    --w6w-code-punctuation: #9aa3b2;
+    --w6w-code-variable: #ffa657;
   }
 }
-
 /* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
    a forced data-theme always beats the OS preference. */
-:where([data-theme="light"]) {
+:where([data-theme=light]) {
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -105,7 +110,8 @@
   --w6w-code-punctuation: #5f6875;
   --w6w-code-variable: #953800;
 }
-:where([data-theme="dark"]) {
+
+:where([data-theme=dark]) {
   --w6w-bg: #0f1115;
   --w6w-panel: #181b22;
   --w6w-panel-2: #1f232c;
@@ -132,6 +138,7 @@
 .w6w-muted {
   color: var(--w6w-muted);
 }
+
 .w6w-small {
   font-size: 0.85em;
 }
@@ -151,12 +158,14 @@
   color: var(--w6w-muted);
   font-size: 0.9em;
 }
+
 .w6w-field > span {
   color: var(--w6w-muted);
 }
-.w6w-field input[type="text"],
-.w6w-field input[type="password"],
-.w6w-field input[type="number"],
+
+.w6w-field input[type=text],
+.w6w-field input[type=password],
+.w6w-field input[type=number],
 .w6w-field select,
 .w6w-field textarea {
   background: var(--w6w-panel-2);
@@ -167,12 +176,14 @@
   font-size: 14px;
   font-family: inherit;
 }
+
 .w6w-field input:focus,
 .w6w-field select:focus,
 .w6w-field textarea:focus {
   outline: none;
   border-color: var(--w6w-accent);
 }
+
 /* Credential inputs are plain text fields (never type="password", which would
    trigger the browser's save-password prompt + suggestions). Mask them visually
    so a secret still reads as dots. WebKit/Blink support text-security; other
@@ -181,16 +192,19 @@
   -webkit-text-security: disc;
   text-security: disc;
 }
+
 .w6w-hint {
   color: var(--w6w-muted);
   font-size: 0.8em;
 }
+
 /* Side-by-side fields: params sharing a `row` id lay out horizontally. */
 .w6w-field-row {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
+
 .w6w-field-row > .w6w-field {
   flex: 1 1 140px;
   min-width: 0;
@@ -203,12 +217,14 @@
   gap: 6px;
   align-items: flex-start;
 }
+
 .w6w-array-row {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
 }
+
 .w6w-array-cells {
   display: flex;
   flex-wrap: wrap;
@@ -216,9 +232,11 @@
   flex: 1;
   min-width: 0;
 }
+
 .w6w-array-cells > .w6w-array-input {
   flex: 1 1 120px;
 }
+
 /* An object-item array row's boolean cell: `<label><checkbox><span>`. It is a
    `<label>`, so `margin: 0` is load-bearing for the same reason it is on
    `.w6w-fx-inline-label` further down — a host page layers an unscoped
@@ -241,6 +259,7 @@
   white-space: nowrap;
   cursor: pointer;
 }
+
 /* `> input[type="checkbox"]`, not `input`: a bare `.w6w-array-check input` is
    (0,1,1), which TIES with a host `input[type="checkbox"] { margin-right: 6px }`
    (studio/src/styles.css:785) and then loses on source order — measured
@@ -248,9 +267,10 @@
    present. The compound form is (0,2,1) and wins outright. Same shape as
    `.w6w-fx-inline > input[type="checkbox"]`, which is why that one was never
    affected. */
-.w6w-array-check > input[type="checkbox"] {
+.w6w-array-check > input[type=checkbox] {
   margin: 0;
 }
+
 .w6w-field .w6w-array-input {
   flex: 1;
   min-width: 0;
@@ -268,10 +288,12 @@
   font-size: 14px;
   font-family: inherit;
 }
+
 .w6w-field .w6w-array-input:focus {
   outline: none;
   border-color: var(--w6w-accent);
 }
+
 .w6w-array-x {
   display: inline-flex;
   align-items: center;
@@ -287,10 +309,12 @@
   line-height: 1;
   cursor: pointer;
 }
+
 .w6w-array-x:hover {
   background: var(--w6w-panel-2);
   color: var(--w6w-text);
 }
+
 .w6w-array-add {
   margin-top: 2px;
 }
@@ -308,12 +332,15 @@
   padding: 5px 8px;
   min-height: 38px;
 }
+
 .w6w-multiselect:focus-within {
   border-color: var(--w6w-accent);
 }
+
 .w6w-multiselect.is-readonly {
   opacity: 0.7;
 }
+
 /* The add-dropdown blends into the box (no border/background) — compound
    selector so it beats the global `.w6w-field select` styling. */
 .w6w-field .w6w-multiselect-add,
@@ -329,10 +356,12 @@
   outline: none;
   cursor: pointer;
 }
+
 .w6w-multiselect .w6w-multiselect-add:disabled {
   cursor: default;
   opacity: 0.6;
 }
+
 /* A selected value, rendered as a filled chip inside the box. */
 .w6w-chip {
   display: inline-flex;
@@ -346,6 +375,7 @@
   line-height: 1.4;
   color: var(--w6w-text);
 }
+
 .w6w-chip-x {
   display: inline-flex;
   align-items: center;
@@ -360,6 +390,7 @@
   line-height: 1;
   cursor: pointer;
 }
+
 .w6w-chip-x:hover {
   background: var(--w6w-border);
   color: var(--w6w-text);
@@ -374,15 +405,18 @@
   border-radius: 6px;
   padding: 6px 8px;
 }
+
 .w6w-state-override > summary {
   cursor: pointer;
   color: var(--w6w-muted);
   font-size: 0.85em;
 }
+
 /* Breathing room only once it is open: closed, the summary IS the whole box. */
 .w6w-state-override[open] > summary {
   margin-bottom: 6px;
 }
+
 .w6w-state-override > .w6w-hint {
   display: block;
   margin-top: 4px;
@@ -396,21 +430,26 @@
   gap: 4px;
   margin-bottom: 6px;
 }
+
 .w6w-seed-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .w6w-seed-chip {
   cursor: pointer;
 }
+
 .w6w-seed-chip:hover:not(:disabled) {
   border-color: var(--w6w-text);
 }
+
 .w6w-seed-chip:disabled {
   cursor: default;
   opacity: 0.6;
 }
+
 /* Expression input: a field whose contents are inline SEGMENTS — plain text
    plus var/secret/expr chips, edited in place (contentEditable, like a Notion /
    Zapier block field). A small toolbar carries the Insert menu + the {{ }} (fx)
@@ -420,6 +459,7 @@
   flex-direction: column;
   gap: 6px;
 }
+
 /* Inline expression field: ONE input-like box holding the editable surface plus
    a ƒx button that reads as a trailing decoration INSIDE it — the same idiom as
    `.w6w-multiselect` above and `.w6w-expr-sealed` below. The box lives here so
@@ -436,19 +476,23 @@
   padding: 4px 8px;
   min-height: 38px;
 }
+
 .w6w-expr-field:focus-within {
   border-color: var(--w6w-accent);
 }
+
 .w6w-expr-field .w6w-expr-editor {
   flex: 1;
   min-width: 0;
 }
+
 /* The ƒx rides inside the box, so it draws no chrome of its own — only its
    colour states remain. */
 .w6w-expr-field .w6w-expr-edit {
   border: none;
   background: transparent;
 }
+
 .w6w-expr-edit {
   flex-shrink: 0;
   color: var(--w6w-muted);
@@ -458,9 +502,11 @@
   padding: 4px 6px;
   cursor: pointer;
 }
+
 .w6w-expr-edit:hover {
   color: var(--w6w-accent);
 }
+
 /* Sealed at-rest secret (masked chip + Replace). */
 .w6w-expr-sealed {
   display: flex;
@@ -472,9 +518,11 @@
   padding: 5px 8px;
   min-height: 38px;
 }
+
 .w6w-expr-sealed.is-readonly {
   opacity: 0.7;
 }
+
 /* Expression editor modal: left data sources | right (editor over preview). */
 .w6w-exprmodal {
   flex: 1;
@@ -483,6 +531,7 @@
   grid-template-columns: 260px 1fr;
   gap: 14px;
 }
+
 .w6w-exprmodal-sources {
   overflow: auto;
   border: 1px solid var(--w6w-border);
@@ -493,11 +542,13 @@
   flex-direction: column;
   gap: 14px;
 }
+
 .w6w-exprmodal-group {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
+
 .w6w-exprmodal-group-label {
   font-size: 0.72em;
   font-weight: 600;
@@ -506,6 +557,7 @@
   color: var(--w6w-muted);
   margin-bottom: 2px;
 }
+
 .w6w-exprmodal-source {
   display: flex;
   align-items: center;
@@ -520,21 +572,26 @@
   font-family: inherit;
   cursor: pointer;
 }
+
 .w6w-exprmodal-source:hover {
   background: var(--w6w-panel);
   border-color: var(--w6w-border);
 }
+
 .w6w-exprmodal-source.w6w-expr-chip-var {
   color: var(--w6w-accent);
 }
+
 .w6w-exprmodal-source.w6w-expr-chip-secret {
   color: var(--w6w-danger);
 }
+
 .w6w-exprmodal-source-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 /* A step's per-field sources, nested under its whole-output source, so three
    upstream steps x four fields reads as a tree rather than a flat wall. */
 .w6w-exprmodal-subsources {
@@ -545,6 +602,7 @@
   padding-left: 8px;
   border-left: 1px solid var(--w6w-border);
 }
+
 .w6w-exprmodal-main {
   min-width: 0;
   min-height: 0;
@@ -552,6 +610,7 @@
   flex-direction: column;
   gap: 12px;
 }
+
 .w6w-exprmodal-editor {
   display: flex;
   flex-direction: column;
@@ -559,11 +618,13 @@
   min-height: 0;
   flex: 1 1 auto;
 }
+
 .w6w-exprmodal-pane-label {
   font-size: 13px;
   font-weight: 600;
   color: var(--w6w-text);
 }
+
 /* The WYSIWYG chip editor: tags flow inline with text (colored + spaced). */
 .w6w-exprmodal-chips {
   flex: 1;
@@ -580,27 +641,33 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 .w6w-exprmodal-chips:focus {
   border-color: var(--w6w-accent);
 }
+
 .w6w-exprmodal-chips.is-empty::before {
   content: attr(data-placeholder);
   color: var(--w6w-muted);
   pointer-events: none;
 }
+
 .w6w-exprmodal-chips.is-masked {
   -webkit-text-security: disc;
   text-security: disc;
 }
+
 .w6w-exprmodal-chips.is-masked .w6w-expr-chip {
   -webkit-text-security: none;
   text-security: none;
 }
+
 .w6w-exprmodal-preview {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+
 /* The Result pane's own share of `.w6w-exprmodal-main`'s flex column — the
    SHARE lives on this wrapper, not on the `<pre>` below: the `<pre>`'s parent
    is this wrapper (`.w6w-exprmodal-preview`, a flex column), not `-main`
@@ -613,6 +680,7 @@
   flex: 0 0 42%;
   min-height: 0;
 }
+
 .w6w-exprmodal-result {
   flex: 1 1 auto;
   min-height: 0;
@@ -630,15 +698,18 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 .w6w-exprmodal-actions {
   display: flex;
   gap: 8px;
 }
+
 .w6w-expr-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 /* fx toggle — an end decoration INSIDE the field, not a button beside it. The
    WRAPPER owns the input chrome (background/border/radius/min-height and the
    focus ring) and every widget it holds is flattened below, so the value and its
@@ -653,14 +724,17 @@
   padding: 4px 8px;
   min-height: 38px;
 }
+
 /* A textarea is taller than the ƒx, so there the decoration rides at the top. */
 .w6w-fx-wrap:has(> textarea) {
   align-items: flex-start;
 }
+
 /* Focus reads on the box now that the inner widget has no border of its own. */
 .w6w-fx-wrap:focus-within {
   border-color: var(--w6w-accent);
 }
+
 .w6w-fx-wrap > input,
 .w6w-fx-wrap > select,
 .w6w-fx-wrap > textarea,
@@ -669,21 +743,22 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
 /* The widget inside the wrapper carries NO chrome of its own. COMPOUND
    selectors, because the global `.w6w-field input|select|textarea` rule is
    (0,2,1) and a bare `.w6w-fx-wrap > input` at (0,1,1) would lose to it — the
    same trap documented on `.w6w-multiselect-add` above. `.w6w-datavar-row
    input|select` is the second rule to beat, for the `bare` vars-row cell. */
-.w6w-field .w6w-fx-wrap input[type="text"],
-.w6w-field .w6w-fx-wrap input[type="password"],
-.w6w-field .w6w-fx-wrap input[type="number"],
+.w6w-field .w6w-fx-wrap input[type=text],
+.w6w-field .w6w-fx-wrap input[type=password],
+.w6w-field .w6w-fx-wrap input[type=number],
 .w6w-field .w6w-fx-wrap select,
 .w6w-field .w6w-fx-wrap textarea,
 .w6w-datavar-row .w6w-fx-wrap input,
 .w6w-datavar-row .w6w-fx-wrap select,
-.w6w-fx-wrap input[type="text"],
-.w6w-fx-wrap input[type="password"],
-.w6w-fx-wrap input[type="number"],
+.w6w-fx-wrap input[type=text],
+.w6w-fx-wrap input[type=password],
+.w6w-fx-wrap input[type=number],
 .w6w-fx-wrap select,
 .w6w-fx-wrap textarea {
   border: none;
@@ -727,6 +802,7 @@
   margin: 0;
   min-height: 0;
 }
+
 /* …and the two widgets that own an input-like box themselves are flattened too,
    so the wrapper never draws a box around a box. */
 .w6w-fx-wrap .w6w-expr-field,
@@ -737,6 +813,7 @@
   padding: 0;
   min-height: 0;
 }
+
 /* The OTHER wrapper FxField can render (`variant="inline"`). A control that does
    not FILL a text-field box — today only a `boolean`'s ~13px checkbox — opts out
    of the box at the component seam and lands here instead, so `.w6w-fx-wrap`'s
@@ -748,10 +825,12 @@
   align-items: center;
   gap: 8px;
 }
-.w6w-fx-inline > input[type="checkbox"] {
+
+.w6w-fx-inline > input[type=checkbox] {
   flex: 0 0 auto;
   margin: 0;
 }
+
 /* The label reads as the control's own text, next to it (mirrors
    `.w6w-array-check` above, the existing inline-checkbox idiom).
    `margin: 0` is LOAD-BEARING, not tidiness: a host page may carry an unscoped
@@ -770,6 +849,7 @@
   font-size: 13px;
   cursor: pointer;
 }
+
 /* The ƒx itself is a decoration inside whichever wrapper holds it: no chrome,
    colour only. This is where the UA button border/background is removed (the
    `.w6w-expr-fx` block below declares neither), so the inline wrapper has to be
@@ -779,6 +859,7 @@
   border: none;
   background: transparent;
 }
+
 .w6w-expr-fx {
   flex-shrink: 0;
   color: var(--w6w-muted);
@@ -788,12 +869,15 @@
   padding: 4px 6px;
   cursor: pointer;
 }
+
 .w6w-expr-fx:hover {
   color: var(--w6w-text);
 }
+
 .w6w-expr-fx.is-active {
   color: var(--w6w-accent);
 }
+
 /* The raw {{ }} input stands alone, so it keeps an input box of its own. */
 .w6w-expr-raw {
   width: 100%;
@@ -807,10 +891,12 @@
   font-size: 13px;
   line-height: 1.7;
 }
+
 .w6w-expr-raw:focus {
   outline: none;
   border-color: var(--w6w-accent);
 }
+
 /* The inline editor surface (one continuous field) sits INSIDE
    `.w6w-expr-field`'s box, so it draws no chrome — the border, the background
    and the focus ring all belong to that box. */
@@ -825,26 +911,31 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 .w6w-expr-editor.is-readonly,
 .w6w-expr-input.is-readonly {
   opacity: 0.7;
 }
+
 /* Placeholder for the empty contentEditable field. */
 .w6w-expr-editor.is-empty::before {
   content: attr(data-placeholder);
   color: var(--w6w-muted);
   pointer-events: none;
 }
+
 /* Masked (secret) fields: mask typed TEXT as dots; chips are exempt — a chip
    shows a name/label, never a secret value. */
 .w6w-expr-editor.is-masked {
   -webkit-text-security: disc;
   text-security: disc;
 }
+
 .w6w-expr-editor.is-masked .w6w-expr-chip {
   -webkit-text-security: none;
   text-security: none;
 }
+
 /* Sealed at-rest secret uses a simple flex wrapper (chip + Replace). */
 .w6w-expr-input {
   display: flex;
@@ -857,6 +948,7 @@
   padding: 5px 8px;
   min-height: 38px;
 }
+
 /* Chips: a var/secret/expr segment. Distinct look per kind; sits inline in the
    text flow. */
 .w6w-expr-chip {
@@ -880,30 +972,36 @@
   white-space: nowrap;
   user-select: none;
 }
+
 .w6w-expr-chip-var {
   border-color: var(--w6w-accent);
   color: var(--w6w-accent);
   background: color-mix(in srgb, var(--w6w-accent) 14%, transparent);
 }
+
 .w6w-expr-chip-secret {
   border-color: var(--w6w-danger);
   color: var(--w6w-danger);
   background: color-mix(in srgb, var(--w6w-danger) 14%, transparent);
 }
+
 .w6w-expr-chip-expr {
   border-style: dashed;
   background: color-mix(in srgb, var(--w6w-text) 8%, transparent);
 }
+
 .w6w-expr-chip-render {
   border-color: var(--w6w-success);
   color: var(--w6w-success);
   background: color-mix(in srgb, var(--w6w-success) 14%, transparent);
 }
+
 .w6w-expr-chip-sigil {
   flex: none;
   font-weight: 600;
   opacity: 0.8;
 }
+
 .w6w-expr-chip-label {
   min-width: 0;
   overflow: hidden;
@@ -911,6 +1009,7 @@
   white-space: nowrap;
   font-weight: 500;
 }
+
 .w6w-expr-chip-x {
   display: inline-flex;
   flex: none;
@@ -926,10 +1025,12 @@
   line-height: 1;
   cursor: pointer;
 }
+
 .w6w-expr-chip-x:hover {
   opacity: 1;
   background: var(--w6w-border);
 }
+
 /* The render affordance: flips a var/render chip in place (see `makeChip`). */
 .w6w-expr-chip-toggle {
   display: inline-flex;
@@ -946,10 +1047,12 @@
   line-height: 1;
   cursor: pointer;
 }
+
 .w6w-expr-chip-toggle:hover {
   opacity: 1;
   background: var(--w6w-border);
 }
+
 .w6w-expr-replace {
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
@@ -960,15 +1063,18 @@
   padding: 3px 8px;
   cursor: pointer;
 }
+
 .w6w-expr-replace:hover {
   color: var(--w6w-text);
   background: var(--w6w-panel);
 }
+
 /* Insert affordance + popover menu (variable / secret / expression). */
 .w6w-expr-insert {
   position: relative;
   display: inline-flex;
 }
+
 .w6w-expr-insert-btn {
   border: 1px dashed var(--w6w-border);
   border-radius: 6px;
@@ -979,10 +1085,12 @@
   padding: 3px 8px;
   cursor: pointer;
 }
+
 .w6w-expr-insert-btn:hover {
   color: var(--w6w-text);
   border-color: var(--w6w-accent);
 }
+
 .w6w-expr-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -998,15 +1106,18 @@
   padding: 8px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
+
 .w6w-expr-menu-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+
 .w6w-expr-menu-group + .w6w-expr-menu-group {
   border-top: 1px solid var(--w6w-border);
   padding-top: 8px;
 }
+
 .w6w-expr-menu-label {
   font-size: 0.72em;
   font-weight: 600;
@@ -1014,6 +1125,7 @@
   text-transform: uppercase;
   color: var(--w6w-muted);
 }
+
 /* A secret-typed field surfaces the Secrets group first + highlighted, so
    picking a secret is the obvious one-click path (task 3.2). */
 .w6w-expr-menu-group.is-primary {
@@ -1022,15 +1134,18 @@
   padding: 6px;
   margin: -2px;
 }
+
 .w6w-expr-menu-group.is-primary .w6w-expr-menu-label {
   color: var(--w6w-accent);
 }
+
 .w6w-expr-menu-empty {
   font-size: 12px;
   color: var(--w6w-muted);
   padding: 2px 8px;
   font-style: italic;
 }
+
 .w6w-expr-menu-item {
   text-align: left;
   background: transparent;
@@ -1042,14 +1157,17 @@
   font-family: inherit;
   cursor: pointer;
 }
+
 .w6w-expr-menu-item:hover {
   background: var(--w6w-panel-2);
 }
+
 .w6w-expr-menu-add {
   display: flex;
   gap: 6px;
   align-items: center;
 }
+
 .w6w-expr-menu-add input {
   flex: 1;
   min-width: 0;
@@ -1061,6 +1179,7 @@
   font-size: 13px;
   font-family: inherit;
 }
+
 .w6w-expr-menu-add input:focus {
   outline: none;
   border-color: var(--w6w-accent);
@@ -1077,6 +1196,7 @@
      rows are unaffected (every cell is the same height). */
   align-items: end;
 }
+
 .w6w-datavar-row input,
 .w6w-datavar-row select {
   background: var(--w6w-panel-2);
@@ -1088,6 +1208,7 @@
   font-family: inherit;
   min-width: 0;
 }
+
 /* The block above is `.w6w-datavar-row input` at (0,1,1), which TIES with a host
    `input[type="text"] { margin-top: 4px }` and loses on source order — so the
    margin has to be re-declared at a specificity that wins, rather than added to
@@ -1097,11 +1218,13 @@
 .w6w-field .w6w-datavar-row select {
   margin: 0;
 }
+
 .w6w-datavar-row input:focus,
 .w6w-datavar-row select:focus {
   outline: none;
   border-color: var(--w6w-accent);
 }
+
 .w6w-datavar-row .w6w-btn {
   padding: 6px 10px;
 }
@@ -1116,25 +1239,31 @@
   font-size: 14px;
   cursor: pointer;
 }
+
 .w6w-btn:hover {
   filter: brightness(1.08);
 }
+
 .w6w-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }
+
 .w6w-btn-ghost {
   background: transparent;
   border: 1px solid var(--w6w-border);
   color: var(--w6w-text);
 }
+
 .w6w-btn-ghost:hover {
   background: var(--w6w-panel-2);
 }
+
 .w6w-btn-ghost.active {
   border-color: var(--w6w-accent);
   background: var(--w6w-panel-2);
 }
+
 /* Destructive confirm button (ConfirmModal's default). Styled from the same
    --w6w-danger token the error notices and health pills already use. */
 .w6w-btn-danger {
@@ -1158,38 +1287,46 @@
   font-size: 14px;
   cursor: pointer;
 }
+
 button.w6w-list-item {
   font: inherit;
   font-size: 14px;
 }
+
 .w6w-list-item:hover {
   background: var(--w6w-panel-2);
 }
+
 .w6w-list-item:focus-visible {
   outline: none;
   border-color: var(--w6w-accent);
   box-shadow: 0 0 0 2px var(--w6w-accent);
 }
+
 .w6w-list-item.active {
   border-color: var(--w6w-accent);
   background: var(--w6w-panel-2);
 }
+
 .w6w-list-item-icon {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
 }
+
 .w6w-list-item-body {
   display: flex;
   flex-direction: column;
   min-width: 0;
   gap: 2px;
 }
+
 .w6w-list-item-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .w6w-list-item-subtitle {
   color: var(--w6w-muted);
   font-size: 12px;
@@ -1197,6 +1334,7 @@ button.w6w-list-item {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .w6w-list-item-trailing {
   margin-left: auto;
   display: inline-flex;
@@ -1222,18 +1360,23 @@ button.w6w-list-item {
   white-space: nowrap;
   --w6w-health-color: var(--w6w-health-unknown);
 }
+
 .w6w-health-pill-ok {
   --w6w-health-color: var(--w6w-health-ok);
 }
+
 .w6w-health-pill-degraded {
   --w6w-health-color: var(--w6w-health-degraded);
 }
+
 .w6w-health-pill-down {
   --w6w-health-color: var(--w6w-health-down);
 }
+
 .w6w-health-pill-unknown {
   --w6w-health-color: var(--w6w-health-unknown);
 }
+
 .w6w-health-pill-dot {
   flex-shrink: 0;
   width: 8px;
@@ -1241,6 +1384,7 @@ button.w6w-list-item {
   border-radius: 50%;
   background: var(--w6w-health-color);
 }
+
 .w6w-health-pill-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1263,6 +1407,7 @@ button.w6w-list-item {
   padding: 20px;
   z-index: 50;
 }
+
 dialog.w6w-modal {
   position: fixed;
   inset: 0;
@@ -1280,23 +1425,28 @@ dialog.w6w-modal {
   flex-direction: column;
   gap: 12px;
 }
+
 dialog.w6w-modal::backdrop {
   background: rgba(0, 0, 0, 0.55);
 }
+
 dialog.w6w-modal h3,
 dialog.w6w-modal h4,
 dialog.w6w-modal p {
   color: var(--w6w-text);
   margin: 0;
 }
+
 dialog.w6w-modal.w6w-modal-wide {
   max-width: min(850px, 80vw);
   min-height: min(70vh, 560px);
 }
+
 dialog.w6w-modal.w6w-modal-xl {
   max-width: 1040px;
   min-height: min(70vh, 620px);
 }
+
 dialog.w6w-modal.w6w-modal-full {
   max-width: min(1200px, 96vw);
   width: 96vw;
@@ -1304,18 +1454,21 @@ dialog.w6w-modal.w6w-modal-full {
   max-height: 92vh;
   overflow: hidden;
 }
+
 .w6w-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
+
 .w6w-modal-title {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
 }
+
 .w6w-modal-subtitle {
   color: var(--w6w-muted);
   font-size: 0.7em;
@@ -1324,9 +1477,11 @@ dialog.w6w-modal.w6w-modal-full {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .w6w-modal-subtitle code {
   font-size: inherit;
 }
+
 .w6w-modal-actions {
   display: flex;
   gap: 8px;
@@ -1342,6 +1497,7 @@ dialog.w6w-modal.w6w-modal-full {
   gap: 4px;
   flex-shrink: 0;
 }
+
 .w6w-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -1353,10 +1509,12 @@ dialog.w6w-modal.w6w-modal-full {
   color: var(--w6w-muted);
   cursor: pointer;
 }
+
 .w6w-icon-btn:hover {
   background: var(--w6w-panel-2);
   color: var(--w6w-text);
 }
+
 .w6w-icon-btn.active {
   background: var(--w6w-panel-2);
   border-color: var(--w6w-accent);
@@ -1373,6 +1531,7 @@ dialog.w6w-modal.w6w-modal-full {
   border-radius: 8px;
   align-self: flex-start;
 }
+
 .w6w-subtab {
   background: transparent;
   border: none;
@@ -1382,18 +1541,22 @@ dialog.w6w-modal.w6w-modal-full {
   font-size: 13px;
   cursor: pointer;
 }
+
 .w6w-subtab:hover {
   color: var(--w6w-text);
 }
+
 .w6w-subtab.active {
   background: var(--w6w-panel);
   color: var(--w6w-text);
   font-weight: 500;
 }
+
 .w6w-subtab:disabled {
   opacity: 0.4;
   cursor: default;
 }
+
 .w6w-subtab:disabled:hover {
   color: var(--w6w-muted);
 }
@@ -1408,10 +1571,12 @@ dialog.w6w-modal.w6w-modal-full {
   padding-bottom: 8px;
   flex-shrink: 0;
 }
+
 .w6w-icon-btn:disabled {
   opacity: 0.35;
   cursor: default;
 }
+
 .w6w-icon-btn:disabled:hover {
   background: transparent;
   color: var(--w6w-muted);
@@ -1435,6 +1600,7 @@ dialog.w6w-modal.w6w-modal-full {
   font-size: 0.8em;
   color: var(--w6w-muted);
 }
+
 .w6w-step-meta code {
   color: var(--w6w-text);
 }
@@ -1445,6 +1611,7 @@ dialog.w6w-modal.w6w-modal-full {
   gap: 14px;
   min-height: 340px;
 }
+
 .w6w-stepbuilder-sidebar {
   display: flex;
   flex-direction: column;
@@ -1454,6 +1621,7 @@ dialog.w6w-modal.w6w-modal-full {
   border-right: 1px solid var(--w6w-border);
   padding-right: 12px;
 }
+
 .w6w-stepbuilder-tab {
   text-align: left;
   background: transparent;
@@ -1464,15 +1632,18 @@ dialog.w6w-modal.w6w-modal-full {
   font-size: 14px;
   cursor: pointer;
 }
+
 .w6w-stepbuilder-tab:hover {
   background: var(--w6w-panel-2);
   color: var(--w6w-text);
 }
+
 .w6w-stepbuilder-tab.active {
   background: var(--w6w-panel-2);
   color: var(--w6w-text);
   font-weight: 500;
 }
+
 .w6w-stepbuilder-content {
   flex: 1;
   min-width: 0;
@@ -1482,6 +1653,7 @@ dialog.w6w-modal.w6w-modal-full {
   height: min(70vh, 520px);
   overflow: auto;
 }
+
 /* Apps flow: a fixed search header + a separately scrolling list, so the
    scrollbar is contained to the list and never runs alongside the search. */
 .w6w-stepbuilder-apps {
@@ -1491,6 +1663,7 @@ dialog.w6w-modal.w6w-modal-full {
   height: 100%;
   min-height: 0;
 }
+
 .w6w-stepbuilder-scroll {
   overflow-y: auto;
   /* Fill the remaining height below the search header; the list — not the
@@ -1499,6 +1672,7 @@ dialog.w6w-modal.w6w-modal-full {
   min-height: 0;
   padding-right: 4px;
 }
+
 .w6w-stepbuilder-search {
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
@@ -1509,15 +1683,18 @@ dialog.w6w-modal.w6w-modal-full {
   font-family: inherit;
   width: 100%;
 }
+
 .w6w-stepbuilder-search:focus {
   outline: none;
   border-color: var(--w6w-accent);
 }
+
 .w6w-stepbuilder-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+
 .w6w-stepbuilder-item {
   display: flex;
   align-items: center;
@@ -1531,9 +1708,11 @@ dialog.w6w-modal.w6w-modal-full {
   cursor: pointer;
   font-size: 14px;
 }
+
 .w6w-stepbuilder-item:hover {
   border-color: var(--w6w-accent);
 }
+
 .w6w-stepbuilder-item-main {
   display: flex;
   flex-direction: column;
@@ -1557,6 +1736,7 @@ dialog.w6w-modal.w6w-modal-full {
   flex-direction: column;
   overflow: hidden;
 }
+
 .w6w-apppicker-host > .w6w-stepbuilder-apps {
   height: auto;
   flex: 1 1 auto;
@@ -1576,12 +1756,14 @@ dialog.w6w-modal.w6w-modal-full {
   /* Horizontal breathing room so header/footer align with the padded body. */
   padding-inline: 4px;
 }
+
 /* Inline step rename (pencil) shown next to the modal title. */
 .w6w-step-rename {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
+
 .w6w-step-rename input {
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-accent);
@@ -1591,12 +1773,14 @@ dialog.w6w-modal.w6w-modal-full {
   font-size: 0.9em;
   font-family: inherit;
 }
+
 .w6w-stepconfig-header {
   display: flex;
   flex-direction: column;
   gap: 10px;
   flex-shrink: 0;
 }
+
 /* Connection + action share a row and wrap on narrow widths. */
 .w6w-stepconfig-row {
   display: flex;
@@ -1604,14 +1788,17 @@ dialog.w6w-modal.w6w-modal-full {
   gap: 12px;
   align-items: flex-start;
 }
+
 .w6w-stepconfig-conn,
 .w6w-stepconfig-action {
   flex: 1 1 240px;
   min-width: 0;
 }
+
 .w6w-stepconfig-conn-empty {
   flex: 1 1 100%;
 }
+
 /* Selected connection rendered as a static label (not a dropdown). */
 .w6w-conn-label {
   display: flex;
@@ -1623,6 +1810,7 @@ dialog.w6w-modal.w6w-modal-full {
   padding: 6px 8px 6px 10px;
   min-height: 36px;
 }
+
 .w6w-conn-label-name {
   flex: 1;
   min-width: 0;
@@ -1632,11 +1820,13 @@ dialog.w6w-modal.w6w-modal-full {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .w6w-btn-sm {
   padding: 4px 8px;
   font-size: 12px;
   flex-shrink: 0;
 }
+
 /* Only the parameters form scrolls; x-padding keeps fields off the edge + scrollbar. */
 .w6w-stepconfig-body {
   flex: 1;
@@ -1645,6 +1835,7 @@ dialog.w6w-modal.w6w-modal-full {
   padding-inline: 4px;
   padding-right: 8px;
 }
+
 /* Footer pinned to the modal bottom, outside the scroll area. */
 .w6w-stepconfig-footer {
   flex-shrink: 0;
@@ -1652,6 +1843,7 @@ dialog.w6w-modal.w6w-modal-full {
   padding-top: 12px;
   margin-top: 0;
 }
+
 /* Test-required note — always rendered (empty when there is nothing to say),
    so its reserved height keeps the footer's buttons at the same x/y whether
    the note has text or not; one line, ellipsized rather than wrapped. */
@@ -1674,14 +1866,17 @@ dialog.w6w-modal.w6w-modal-full {
   flex-direction: column;
   gap: 10px;
 }
+
 .w6w-stepconfig-body > .w6w-code-editor,
 .w6w-stepconfig-body > .w6w-json-editor {
   flex: 1 1 auto;
   min-height: 0;
 }
+
 .w6w-stepconfig-body .w6w-field > textarea {
   resize: vertical;
 }
+
 /* Field label row with a trailing action (e.g. the JSON "open full view" btn). */
 .w6w-field-labelrow {
   display: flex;
@@ -1689,6 +1884,7 @@ dialog.w6w-modal.w6w-modal-full {
   justify-content: space-between;
   gap: 8px;
 }
+
 /* Full-view JSON modal body — fill the dialog so the editor is roomy. */
 .w6w-json-fullview {
   display: flex;
@@ -1697,6 +1893,7 @@ dialog.w6w-modal.w6w-modal-full {
   flex: 1 1 auto;
   height: 60vh;
 }
+
 .w6w-json-fullview > .w6w-json-editor {
   flex: 1 1 auto;
   min-height: 0;
@@ -1744,9 +1941,11 @@ dialog.w6w-modal.w6w-modal-full {
   stroke: var(--w6w-danger);
   stroke-dasharray: 6 4;
 }
+
 .w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-text {
   fill: var(--w6w-danger);
 }
+
 .w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-textbg {
   fill: var(--w6w-panel);
 }
@@ -1777,6 +1976,7 @@ dialog.w6w-modal.w6w-modal-full {
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
 }
+
 /* An inline refusal (re-laning would mint an id another edge already holds).
    Rendered here rather than through a browser dialog — see .ai/conventions.md ·
    "No browser dialogs" — and on its own row so the buttons don't reflow. */
@@ -1795,6 +1995,7 @@ dialog.w6w-modal.w6w-modal-full {
   padding: 4px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
+
 .w6w-node-toolbar-btn {
   display: inline-flex;
   align-items: center;
@@ -1807,9 +2008,11 @@ dialog.w6w-modal.w6w-modal-full {
   font-size: 12px;
   cursor: pointer;
 }
+
 .w6w-node-toolbar-btn:hover {
   background: var(--w6w-panel-2);
 }
+
 .w6w-node-toolbar-btn.danger:hover {
   background: var(--w6w-danger);
   color: white;
@@ -1827,20 +2030,24 @@ dialog.w6w-modal.w6w-modal-full {
   border-radius: 8px;
   padding: 8px 10px;
 }
+
 .w6w-section > summary {
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
+
 .w6w-section-title {
   color: var(--w6w-text);
   font-weight: 600;
 }
+
 .w6w-section-subtitle {
   color: var(--w6w-muted);
   font-size: 0.8em;
 }
+
 .w6w-section-body {
   margin-top: 8px;
 }
@@ -1852,17 +2059,20 @@ dialog.w6w-modal.w6w-modal-full {
   gap: 8px;
   flex-shrink: 0;
 }
+
 .w6w-steptest-bar {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
 /* A labeled test-run output block (Result vs Console). */
 .w6w-testout {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+
 .w6w-testout-label {
   font-size: 0.72em;
   font-weight: 600;
@@ -1870,6 +2080,7 @@ dialog.w6w-modal.w6w-modal-full {
   text-transform: uppercase;
   color: var(--w6w-muted);
 }
+
 /* Console output reads as a terminal — monospace + muted, distinct from Result. */
 .w6w-testout-console {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1889,6 +2100,7 @@ dialog.w6w-modal.w6w-modal-full {
   word-break: break-word;
   color: var(--w6w-text);
 }
+
 .w6w-result.w6w-error {
   border-color: var(--w6w-danger);
   color: var(--w6w-danger);
@@ -1903,30 +2115,36 @@ dialog.w6w-modal.w6w-modal-full {
   flex: 1;
   min-height: 0;
 }
+
 .w6w-tester-embedded {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
 }
+
 .w6w-tester-embedded-scroll {
   flex: 1;
   min-height: 0;
   overflow: auto;
 }
+
 .w6w-tester-embedded-cols {
   display: flex;
   gap: 16px;
   align-items: flex-start;
 }
+
 .w6w-tester-embedded-main {
   flex: 1;
   min-width: 0;
 }
+
 .w6w-tester-embedded-rail {
   width: 260px;
   flex-shrink: 0;
 }
+
 /* The action bar as a pinned footer: kept out of the scroll region and separated
    with a top border so Run / Save / Delete stay visible however long the params. */
 .w6w-tester-actions-footer {
@@ -1952,6 +2170,7 @@ dialog.w6w-modal.w6w-modal-full {
   flex: 1;
   min-height: 0;
 }
+
 .w6w-tester-popout-scroll {
   flex: 1;
   min-height: 0;
@@ -1978,6 +2197,7 @@ dialog.w6w-modal.w6w-modal-full {
   min-width: 0;
   align-items: stretch;
 }
+
 .w6w-uptime-cell {
   --w6w-health-color: var(--w6w-health-unknown);
   --w6w-uptime-fill: 100%;
@@ -1989,6 +2209,7 @@ dialog.w6w-modal.w6w-modal-full {
   background: color-mix(in srgb, var(--w6w-border) 55%, transparent);
   overflow: hidden;
 }
+
 .w6w-uptime-cell::after {
   content: "";
   position: absolute;
@@ -1999,30 +2220,31 @@ dialog.w6w-modal.w6w-modal-full {
   border-radius: inherit;
   background: var(--w6w-health-color);
 }
+
 .w6w-uptime-cell-ok {
   --w6w-health-color: var(--w6w-health-ok);
   --w6w-uptime-fill: 35%;
 }
+
 .w6w-uptime-cell-degraded {
   --w6w-health-color: var(--w6w-health-degraded);
   --w6w-uptime-fill: 65%;
 }
+
 .w6w-uptime-cell-down {
   --w6w-health-color: var(--w6w-health-down);
   --w6w-uptime-fill: 100%;
 }
+
 .w6w-uptime-cell-unknown {
   --w6w-health-color: var(--w6w-health-unknown);
   --w6w-uptime-fill: 100%;
 }
+
 /* No solid fill for `unknown` — a hatch, so an unmeasured day can never be
    mistaken for a healthy or a failing one, with or without colour. */
 .w6w-uptime-cell-unknown::after {
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--w6w-health-color) 45%, transparent) 0 2px,
-    transparent 2px 5px
-  );
+  background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--w6w-health-color) 45%, transparent) 0 2px, transparent 2px 5px);
   border: 1px solid color-mix(in srgb, var(--w6w-health-color) 35%, var(--w6w-border));
 }
 
@@ -2039,6 +2261,7 @@ dialog.w6w-modal.w6w-modal-full {
   padding: 12px 14px;
   tab-size: 2;
 }
+
 .w6w-code-block code {
   background: none;
   display: block;
@@ -2047,6 +2270,7 @@ dialog.w6w-modal.w6w-modal-full {
   line-height: 1.55;
   padding: 0;
 }
+
 /* Each line is its own row so a line number can sit beside the text rather
    than inside it — a number inside the flow would be caught by a copy. */
 .w6w-code-line {
@@ -2054,9 +2278,11 @@ dialog.w6w-modal.w6w-modal-full {
   gap: 12px;
   white-space: pre;
 }
+
 .w6w-code-line-text {
   white-space: inherit;
 }
+
 /* `user-select: none` keeps the gutter out of a mouse selection; `aria-hidden`
    on the element keeps it out of the accessibility tree. Both are needed —
    neither one alone stops a copy from picking up the digits. */
@@ -2068,6 +2294,7 @@ dialog.w6w-modal.w6w-modal-full {
   text-align: right;
   user-select: none;
 }
+
 /* Wrapped mode indents continuation rows to the text column so a wrapped line
    still reads as one line. */
 .w6w-code-block--wrap .w6w-code-line,
@@ -2075,6 +2302,7 @@ dialog.w6w-modal.w6w-modal-full {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 .w6w-code-block--wrap {
   overflow-x: hidden;
 }
@@ -2087,6 +2315,7 @@ dialog.w6w-modal.w6w-modal-full {
   font-size: 0.85em;
   font-style: italic;
 }
+
 .w6w-param-unevaluated {
   color: var(--w6w-muted);
   font-size: 0.85em;

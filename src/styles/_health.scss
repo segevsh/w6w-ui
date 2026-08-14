@@ -1,0 +1,46 @@
+.w6w-health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--w6w-health-color) 40%, var(--w6w-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--w6w-health-color) 12%, transparent);
+  color: var(--w6w-text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  --w6w-health-color: var(--w6w-health-unknown);
+}
+.w6w-health-pill-ok {
+  --w6w-health-color: var(--w6w-health-ok);
+}
+.w6w-health-pill-degraded {
+  --w6w-health-color: var(--w6w-health-degraded);
+}
+.w6w-health-pill-down {
+  --w6w-health-color: var(--w6w-health-down);
+}
+.w6w-health-pill-unknown {
+  --w6w-health-color: var(--w6w-health-unknown);
+}
+.w6w-health-pill-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--w6w-health-color);
+}
+.w6w-health-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* App summary block */
+.w6w-app-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Modal */

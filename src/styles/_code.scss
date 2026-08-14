@@ -1,0 +1,62 @@
+.w6w-code-block {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  margin: 0;
+  overflow-x: auto;
+  padding: 12px 14px;
+  tab-size: 2;
+}
+.w6w-code-block code {
+  background: none;
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 0;
+}
+/* Each line is its own row so a line number can sit beside the text rather
+   than inside it — a number inside the flow would be caught by a copy. */
+.w6w-code-line {
+  display: flex;
+  gap: 12px;
+  white-space: pre;
+}
+.w6w-code-line-text {
+  white-space: inherit;
+}
+/* `user-select: none` keeps the gutter out of a mouse selection; `aria-hidden`
+   on the element keeps it out of the accessibility tree. Both are needed —
+   neither one alone stops a copy from picking up the digits. */
+.w6w-code-line-no {
+  color: var(--w6w-muted);
+  flex: 0 0 auto;
+  min-width: 2ch;
+  opacity: 0.65;
+  text-align: right;
+  user-select: none;
+}
+/* Wrapped mode indents continuation rows to the text column so a wrapped line
+   still reads as one line. */
+.w6w-code-block--wrap .w6w-code-line,
+.w6w-code-block--wrap .w6w-code-line-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-code-block--wrap {
+  overflow-x: hidden;
+}
+
+/* Resolved params (Test tab, read-only): inline badge weight — like
+   JsonParamField's "Invalid JSON" hint, not a full `.w6w-result.w6w-error`
+   block per param, since either can appear once per configured param. */
+.w6w-param-unresolved {
+  color: var(--w6w-danger);
+  font-size: 0.85em;
+  font-style: italic;
+}
+.w6w-param-unevaluated {
+  color: var(--w6w-muted);
+  font-size: 0.85em;
+  font-style: italic;
+}

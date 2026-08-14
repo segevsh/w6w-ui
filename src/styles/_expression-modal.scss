@@ -1,0 +1,163 @@
+.w6w-exprmodal {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 14px;
+}
+.w6w-exprmodal-sources {
+  overflow: auto;
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  background: var(--w6w-panel-2);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.w6w-exprmodal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.w6w-exprmodal-group-label {
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w6w-muted);
+  margin-bottom: 2px;
+}
+.w6w-exprmodal-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.w6w-exprmodal-source:hover {
+  background: var(--w6w-panel);
+  border-color: var(--w6w-border);
+}
+.w6w-exprmodal-source.w6w-expr-chip-var {
+  color: var(--w6w-accent);
+}
+.w6w-exprmodal-source.w6w-expr-chip-secret {
+  color: var(--w6w-danger);
+}
+.w6w-exprmodal-source-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A step's per-field sources, nested under its whole-output source, so three
+   upstream steps x four fields reads as a tree rather than a flat wall. */
+.w6w-exprmodal-subsources {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: 9px;
+  padding-left: 8px;
+  border-left: 1px solid var(--w6w-border);
+}
+.w6w-exprmodal-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.w6w-exprmodal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.w6w-exprmodal-pane-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--w6w-text);
+}
+/* The WYSIWYG chip editor: tags flow inline with text (colored + spaced). */
+.w6w-exprmodal-chips {
+  flex: 1;
+  min-height: 180px;
+  overflow: auto;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  line-height: 2.1;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-exprmodal-chips:focus {
+  border-color: var(--w6w-accent);
+}
+.w6w-exprmodal-chips.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--w6w-muted);
+  pointer-events: none;
+}
+.w6w-exprmodal-chips.is-masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+.w6w-exprmodal-chips.is-masked .w6w-expr-chip {
+  -webkit-text-security: none;
+  text-security: none;
+}
+.w6w-exprmodal-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* The Result pane's own share of `.w6w-exprmodal-main`'s flex column — the
+   SHARE lives on this wrapper, not on the `<pre>` below: the `<pre>`'s parent
+   is this wrapper (`.w6w-exprmodal-preview`, a flex column), not `-main`
+   itself, so a `flex-basis` on the `<pre>` would be a share of a
+   content-sized box and do nothing. 42% keeps the pane in the 30-50% band and
+   the chips editor above the 25% floor at 1440x900, 1280x720 and 1440x1200 —
+   measured in real Chromium, `test/expr-template/expr-template-guards.test.cjs`
+   T-height; see the project's result for the numbers. */
+.w6w-exprmodal-result-pane {
+  flex: 0 0 42%;
+  min-height: 0;
+}
+.w6w-exprmodal-result {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  margin: 0;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--w6w-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-exprmodal-actions {
+  display: flex;
+  gap: 8px;
+}
+.w6w-expr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

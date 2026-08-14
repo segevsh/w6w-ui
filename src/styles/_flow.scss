@@ -1,0 +1,120 @@
+/* React Flow chrome, driven from the app's own tokens.
+
+   React Flow themes every surface through a three-link chain,
+   `var(--xy-X-props, var(--xy-X, var(--xy-X-default)))`. The library defines
+   only the `-default` link (light/dark, its own palette); the MIDDLE name is
+   never declared by the library and exists purely as a host hook. Setting those
+   middle names here re-points the zoom/fit control stack at `--w6w-*`, so it
+   matches whatever surface the host theme actually uses — and any ControlButton
+   added to that stack later inherits it with no styling of its own.
+
+   Custom properties, deliberately, rather than a `.react-flow__controls-button`
+   override: `@xyflow/react/dist/style.css` is imported as a side effect from
+   WorkflowFlowEditor.tsx, so it rides in the LAZY chunk and is injected *after*
+   this stylesheet. A bare class override (0,1,0) would tie with the library's
+   own rule and lose on source order. Custom properties inherit and are
+   order-independent, and scoping them on `.w6w-flow` keeps them off the rest of
+   the page.
+
+   Pairs with `colorMode={…}` on <ReactFlow>, which fixes the `-default` link for
+   the chrome this block doesn't name (minimap mask, handles, background dots). */
+.w6w-flow {
+  --xy-controls-button-background-color: var(--w6w-panel);
+  --xy-controls-button-background-color-hover: var(--w6w-panel-2);
+  --xy-controls-button-color: var(--w6w-text);
+  --xy-controls-button-color-hover: var(--w6w-accent);
+  --xy-controls-button-border-color: var(--w6w-border);
+}
+
+/* An error edge — `Edge.when: "error"` (core rfcs/workflow.md · "Amendment —
+   2026-07-29: failure-conditioned edges"). Dashed and drawn in the shared
+   --w6w-danger token (never a hard-coded hex) so the failure lane reads
+   differently from the success lane, and correctly, in BOTH themes.
+
+   ORDER MATTERS — this must stay ABOVE the selected/focused block below.
+   Both selectors are (0,4,0), i.e. exactly equal specificity, so source order
+   decides the winner. Selection has to be able to repaint the edge in the
+   accent colour; put this block after that one and a selected error edge stops
+   highlighting, which reads as a bug. */
+.w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-path {
+  stroke: var(--w6w-danger);
+  stroke-dasharray: 6 4;
+}
+.w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-text {
+  fill: var(--w6w-danger);
+}
+.w6w-flow .react-flow__edge.w6w-edge-error .react-flow__edge-textbg {
+  fill: var(--w6w-panel);
+}
+
+/* Workflow edges: highlight the selected/focused edge in the accent colour and
+   thicken it, so it's obvious which one Backspace/Delete will remove. The wide,
+   invisible interaction path keeps the click target generous. */
+.w6w-flow .react-flow__edge.selected .react-flow__edge-path,
+.w6w-flow .react-flow__edge:focus .react-flow__edge-path,
+.w6w-flow .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--w6w-accent);
+  stroke-width: 2.5;
+}
+
+/* The edge-lane control — `Run on: Success / Error`, revealed in a React Flow
+   <Panel position="top-right"> when exactly one edge is selected. Unlike the
+   `+ Step` button (a self-contained .w6w-btn), this row mixes a label, two ghost
+   buttons and an inline refusal, so it needs its own surface to stay legible over
+   the canvas background. Same shape as .w6w-node-toolbar below; tokens only. */
+.w6w-edge-lane {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 280px;
+  padding: 4px 8px;
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+}
+/* An inline refusal (re-laning would mint an id another edge already holds).
+   Rendered here rather than through a browser dialog — see .ai/conventions.md ·
+   "No browser dialogs" — and on its own row so the buttons don't reflow. */
+.w6w-edge-lane-err {
+  flex: 1 1 100%;
+  color: var(--w6w-danger);
+}
+
+/* Per-node control toolbar (React Flow NodeToolbar) */
+.w6w-node-toolbar {
+  display: flex;
+  gap: 4px;
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.w6w-node-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px;
+  color: var(--w6w-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.w6w-node-toolbar-btn:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-node-toolbar-btn.danger:hover {
+  background: var(--w6w-danger);
+  color: white;
+}
+
+.w6w-params-optional > summary {
+  cursor: pointer;
+}
+
+/* `section` param — a layout-only container. `section: "collapsible"` renders as
+   a titled, bordered disclosure; `section: "group"` reuses `.w6w-field-row` /
+   `.w6w-stack` for its layout (no rules of its own needed). */

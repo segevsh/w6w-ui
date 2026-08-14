@@ -1,0 +1,151 @@
+/* Form fields */
+.w6w-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--w6w-muted);
+  font-size: 0.9em;
+}
+.w6w-field > span {
+  color: var(--w6w-muted);
+}
+.w6w-field input[type="text"],
+.w6w-field input[type="password"],
+.w6w-field input[type="number"],
+.w6w-field select,
+.w6w-field textarea {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+}
+.w6w-field input:focus,
+.w6w-field select:focus,
+.w6w-field textarea:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+/* Credential inputs are plain text fields (never type="password", which would
+   trigger the browser's save-password prompt + suggestions). Mask them visually
+   so a secret still reads as dots. WebKit/Blink support text-security; other
+   engines fall back to plain text, which is acceptable for a credential. */
+.w6w-secret-input {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+.w6w-hint {
+  color: var(--w6w-muted);
+  font-size: 0.8em;
+}
+/* Side-by-side fields: params sharing a `row` id lay out horizontally. */
+.w6w-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.w6w-field-row > .w6w-field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+/* Array control: a row per item + an add button. */
+.w6w-array {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.w6w-array-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.w6w-array-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.w6w-array-cells > .w6w-array-input {
+  flex: 1 1 120px;
+}
+/* An object-item array row's boolean cell: `<label><checkbox><span>`. It is a
+   `<label>`, so `margin: 0` is load-bearing for the same reason it is on
+   `.w6w-fx-inline-label` further down — a host page layers an unscoped
+   `label { margin-bottom: 10px }` after this file (studio's does, at
+   `studio/src/styles.css:499`) and owns any property this block leaves
+   undeclared. `.w6w-array-cells` is a flex row at the default `align-items:
+   stretch`, so a bottom margin does not translate this cell, it SHORTENS its
+   stretched box — and because this block centres its own contents, the checkbox
+   and its caption then ride upward off the row's centre line. Measured before
+   this declaration existed, in [ui+studio]: checkbox cy 792 against the sibling
+   text cell's 799 — 7.0px out, while a ui-only render showed 0.0px. */
+.w6w-array-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 13px;
+  color: var(--w6w-text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* `> input[type="checkbox"]`, not `input`: a bare `.w6w-array-check input` is
+   (0,1,1), which TIES with a host `input[type="checkbox"] { margin-right: 6px }`
+   (studio/src/styles.css:785) and then loses on source order — measured
+   `margin-right: 6px` reaching this checkbox with the `margin: 0` below already
+   present. The compound form is (0,2,1) and wins outright. Same shape as
+   `.w6w-fx-inline > input[type="checkbox"]`, which is why that one was never
+   affected. */
+.w6w-array-check > input[type="checkbox"] {
+  margin: 0;
+}
+.w6w-field .w6w-array-input {
+  flex: 1;
+  min-width: 0;
+  /* Load-bearing, same class as `.w6w-array-check` above: a host
+     `input[type="text"] { margin-top: 4px }` otherwise lands here and drops this
+     cell 2px below its own row's checkbox cell. Measured in [ui+studio]:
+     checkbox cy 797 against this input's 799. This selector is (0,2,0) and beats
+     the host's (0,1,1). */
+  margin: 0;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--w6w-text);
+  font-size: 14px;
+  font-family: inherit;
+}
+.w6w-field .w6w-array-input:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-array-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--w6w-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.w6w-array-x:hover {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+}
+.w6w-array-add {
+  margin-top: 2px;
+}

@@ -1,0 +1,36 @@
+.w6w-section {
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.w6w-section > summary {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.w6w-section-title {
+  color: var(--w6w-text);
+  font-weight: 600;
+}
+.w6w-section-subtitle {
+  color: var(--w6w-muted);
+  font-size: 0.8em;
+}
+.w6w-section-body {
+  margin-top: 8px;
+}
+
+/* Inline "Test run" block in the step builder (sits above the footer). */
+.w6w-steptest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.w6w-steptest-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* A labeled test-run output block (Result vs Console). */

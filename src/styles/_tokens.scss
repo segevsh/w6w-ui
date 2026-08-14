@@ -1,0 +1,137 @@
+/*
+ * @w6w/ui — styles for the pure-presentation components.
+ *
+ * Everything is namespaced under `.w6w-*` class names so this stylesheet
+ * won't collide with your app's CSS.
+ *
+ * THEMING
+ * -------
+ * The library ships a complete DEFAULT theme in BOTH light and dark:
+ *   - Light is the base.
+ *   - Dark applies automatically when the OS prefers dark
+ *     (`prefers-color-scheme: dark`).
+ *   - Either mode can be forced with `data-theme="light" | "dark"` on any
+ *     ancestor (usually <html>) — the same signal the JS components read
+ *     (AppIcon / CodeEditor / JsonEditor: explicit prop > data-theme > OS pref),
+ *     so CSS and components always agree.
+ *
+ * A HOST can override any subset of the tokens — set the ones you care about and
+ * the rest keep their themed defaults:
+ *
+ *   :root { --w6w-accent: #3355e6; }              // one token, both modes
+ *   html[data-theme="dark"] { --w6w-panel: #000 } // mode-specific
+ *
+ * Every default below is declared through `:where(...)` (specificity 0), so ANY
+ * host rule — even a plain `:root { ... }` — wins without !important. Tokens are
+ * defined on :root so every `.w6w-*` component inherits them out of the box.
+ */
+
+/* Light — the base defaults. */
+:where(:root) {
+  --w6w-bg: #f7f8fa;
+  --w6w-panel: #ffffff;
+  --w6w-panel-2: #f0f2f6;
+  --w6w-border: #d9dee5;
+  --w6w-text: #1a1d24;
+  --w6w-muted: #5f6875;
+  --w6w-accent: #3355e6;
+  --w6w-danger: #c1362f;
+  --w6w-success: #2e9e5b;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #c77700;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #5f6875;
+  --w6w-icon-swatch: #f0f2f6;
+  --w6w-code-comment: #6b7280;
+  --w6w-code-keyword: #8250df;
+  --w6w-code-string: #0a7b34;
+  --w6w-code-number: #b3541e;
+  --w6w-code-function: #1f6feb;
+  --w6w-code-punctuation: #5f6875;
+  --w6w-code-variable: #953800;
+  --w6w-radius: 10px;
+}
+
+/* Dark — followed automatically from the OS preference (unless a host has
+   forced a mode via data-theme, which is handled by the blocks below). */
+@media (prefers-color-scheme: dark) {
+  :where(:root) {
+    --w6w-bg: #0f1115;
+    --w6w-panel: #181b22;
+    --w6w-panel-2: #1f232c;
+    --w6w-border: #2a2f3a;
+    --w6w-text: #e6e8ee;
+    --w6w-muted: #9aa3b2;
+    --w6w-accent: #5b8cff;
+    --w6w-danger: #ff6b6b;
+    --w6w-success: #3fbf77;
+    --w6w-health-ok: var(--w6w-success);
+    --w6w-health-degraded: #f0a020;
+    --w6w-health-down: var(--w6w-danger);
+    --w6w-health-unknown: #9aa3b2;
+    --w6w-icon-swatch: #1f232c;
+  --w6w-code-comment: #7d8797;
+  --w6w-code-keyword: #d2a8ff;
+  --w6w-code-string: #7ee787;
+  --w6w-code-number: #ffab70;
+  --w6w-code-function: #79c0ff;
+  --w6w-code-punctuation: #9aa3b2;
+  --w6w-code-variable: #ffa657;
+  }
+}
+
+/* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
+   a forced data-theme always beats the OS preference. */
+:where([data-theme="light"]) {
+  --w6w-bg: #f7f8fa;
+  --w6w-panel: #ffffff;
+  --w6w-panel-2: #f0f2f6;
+  --w6w-border: #d9dee5;
+  --w6w-text: #1a1d24;
+  --w6w-muted: #5f6875;
+  --w6w-accent: #3355e6;
+  --w6w-danger: #c1362f;
+  --w6w-success: #2e9e5b;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #c77700;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #5f6875;
+  --w6w-icon-swatch: #f0f2f6;
+  --w6w-code-comment: #6b7280;
+  --w6w-code-keyword: #8250df;
+  --w6w-code-string: #0a7b34;
+  --w6w-code-number: #b3541e;
+  --w6w-code-function: #1f6feb;
+  --w6w-code-punctuation: #5f6875;
+  --w6w-code-variable: #953800;
+}
+:where([data-theme="dark"]) {
+  --w6w-bg: #0f1115;
+  --w6w-panel: #181b22;
+  --w6w-panel-2: #1f232c;
+  --w6w-border: #2a2f3a;
+  --w6w-text: #e6e8ee;
+  --w6w-muted: #9aa3b2;
+  --w6w-accent: #5b8cff;
+  --w6w-danger: #ff6b6b;
+  --w6w-success: #3fbf77;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #f0a020;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #9aa3b2;
+  --w6w-icon-swatch: #1f232c;
+  --w6w-code-comment: #7d8797;
+  --w6w-code-keyword: #d2a8ff;
+  --w6w-code-string: #7ee787;
+  --w6w-code-number: #ffab70;
+  --w6w-code-function: #79c0ff;
+  --w6w-code-punctuation: #9aa3b2;
+  --w6w-code-variable: #ffa657;
+}
+
+.w6w-muted {
+  color: var(--w6w-muted);
+}
+.w6w-small {
+  font-size: 0.85em;
+}

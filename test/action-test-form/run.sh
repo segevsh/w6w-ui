@@ -89,8 +89,16 @@ ln -sfn "$PKG/node_modules" "$W/tree/node_modules"
   --outfile="$W/bundle.js" --define:process.env.NODE_ENV='"development"'
 [ -s "$W/bundle.js" ] || { echo "DID NOT RUN: the tree at $SRC does not bundle"; exit 3; }
 
-# The stylesheet is <link>ed from the real file, not bundled.
-cp "$SRC/styles.css" "$W/ui.css"
+# The stylesheet is <link>ed from the real file, not bundled. Compiled from the
+# SCSS source rather than copied from the generated `styles.css`, so the harness
+# tests what the partials under src/styles/ currently say and never a stale
+# build artifact. The fallback keeps a `UI_SRC` tree that predates the SCSS
+# conversion working.
+if [ -f "$SRC/styles.scss" ]; then
+  "$PKG/node_modules/.bin/sass" --no-source-map --style=expanded "$SRC/styles.scss" "$W/ui.css"
+else
+  cp "$SRC/styles.css" "$W/ui.css"
+fi
 
 cp "$HERE/action-test-form-guards.test.cjs" "$W/tests.cjs"
 tap="$W/tap.txt"

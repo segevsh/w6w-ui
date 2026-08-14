@@ -1,0 +1,46 @@
+/* Incoming state (WorkflowFlowEditor · `IncomingStateField`, mounted by BOTH the
+   step editor's Test tab and the canvas ▶ Run collect form). The raw JSON box is
+   an OVERRIDE, so it sits behind a disclosure instead of being the first thing
+   the tab shows — the seed chips above it stay in plain sight. */
+.w6w-state-override {
+  border: 1px solid var(--w6w-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.w6w-state-override > summary {
+  cursor: pointer;
+  color: var(--w6w-muted);
+  font-size: 0.85em;
+}
+/* Breathing room only once it is open: closed, the summary IS the whole box. */
+.w6w-state-override[open] > summary {
+  margin-bottom: 6px;
+}
+.w6w-state-override > .w6w-hint {
+  display: block;
+  margin-top: 4px;
+}
+
+/* Incoming-state seed picker: upstream steps' saved tests offered as one-click
+   seeds for the step's incoming state (WorkflowFlowEditor · StepEditModal). */
+.w6w-seed-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.w6w-seed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.w6w-seed-chip {
+  cursor: pointer;
+}
+.w6w-seed-chip:hover:not(:disabled) {
+  border-color: var(--w6w-text);
+}
+.w6w-seed-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

@@ -1,0 +1,38 @@
+.w6w-datavar-row {
+  display: grid;
+  grid-template-columns: 1fr 110px 1fr auto;
+  gap: 6px;
+  /* Align to the end so that on an `expression` row — where the value cell is a
+     taller ExpressionInput (toolbar above its editor) — the key/type/remove
+     cells line up with the editor at the bottom, not the toolbar. Single-line
+     rows are unaffected (every cell is the same height). */
+  align-items: end;
+}
+.w6w-datavar-row input,
+.w6w-datavar-row select {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--w6w-text);
+  font-size: 13px;
+  font-family: inherit;
+  min-width: 0;
+}
+/* The block above is `.w6w-datavar-row input` at (0,1,1), which TIES with a host
+   `input[type="text"] { margin-top: 4px }` and loses on source order — so the
+   margin has to be re-declared at a specificity that wins, rather than added to
+   that block where it would have no effect. `.w6w-field` is always an ancestor
+   here (`VarsField` renders one), giving (0,2,1). */
+.w6w-field .w6w-datavar-row input,
+.w6w-field .w6w-datavar-row select {
+  margin: 0;
+}
+.w6w-datavar-row input:focus,
+.w6w-datavar-row select:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-datavar-row .w6w-btn {
+  padding: 6px 10px;
+}
