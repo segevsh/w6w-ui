@@ -1921,6 +1921,29 @@ dialog.w6w-modal.w6w-modal-full {
   padding-top: 12px;
 }
 
+/* ActionTestForm's OWN pop-out (`Modal size="full"`, the "Edit params" ⤢
+   toggle — not the host-embedded case above). T1.4.1 round 1 made `-full`'s
+   `overflow: hidden` live for the first time; the dialog itself no longer
+   scrolls, so at a realistic param count (15-23 is typical for a first-party
+   action, e.g. followupboss/search-people, youtube/search) content below the
+   fold became unreachable with zero scrollbar. This mirrors the
+   `.w6w-tester-embedded-scroll` mechanism above — flex:1/min-height:0 to fill
+   the dialog's remaining flex-column height, `overflow: auto` to own the
+   scrollbar — so the params + result (+ saved-tests rail) region scrolls
+   internally while the Run/Save/Delete action bar stays a pinned,
+   non-scrolling footer via the SAME `.w6w-tester-actions-footer` class. */
+.w6w-tester-popout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-popout-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 /* Uptime strip — one cell per day, "how has this service behaved lately" at a
    glance. Colour comes from the same `--w6w-health-*` tokens as the health pill,
    through the same single `--w6w-health-color` indirection (set once on the cell,
