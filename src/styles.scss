@@ -26,6 +26,7 @@
 // CSS; `//` comments (like these) do not.
 
 @use "styles/tokens";
+@use "styles/scale";
 @use "styles/layout";
 @use "styles/fields";
 @use "styles/multiselect";

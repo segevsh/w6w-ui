@@ -26,6 +26,7 @@
   },
   "files": [
     "src",
+    "docs",
     "README.md",
     "LICENSE"
   ],
@@ -42,6 +43,7 @@
     "test:picker-layout": "bash test/picker-layout/run.sh",
     "test:expr-template": "bash test/expr-template/run.sh",
     "lint": "biome check .",
+    "lint:tokens": "node scripts/lint-tokens.mjs",
     "format": "biome format --write ."
   },
   "peerDependencies": {
