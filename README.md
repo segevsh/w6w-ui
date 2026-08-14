@@ -37,6 +37,8 @@ import "@w6w/ui/styles.css";
 }
 ```
 
+The same `--w6w-*` namespace also carries a spacing and typography scale — the `--w6w-sp-*` / `--w6w-fs-*` / `--w6w-font-*` families (plus `--w6w-fw-*` weights and `--w6w-lh-*` line-heights), overridable the same way. See [`docs/design-system.md`](docs/design-system.md) for the full ramp, the half-step rule, and how to run the `lint:tokens` gate that keeps new code on it.
+
 ### Where the styles come from
 
 The stylesheet is authored in **Sass**: `src/styles.scss` is the entry point and `src/styles/*.scss`
