@@ -548,8 +548,8 @@
 .w6w-exprmodal-main {
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: 1fr auto;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 .w6w-exprmodal-editor {
@@ -557,19 +557,12 @@
   flex-direction: column;
   gap: 6px;
   min-height: 0;
+  flex: 1 1 auto;
 }
 .w6w-exprmodal-pane-label {
   font-size: 13px;
   font-weight: 600;
   color: var(--w6w-text);
-}
-/* Header row for a pane that also carries a control (e.g. the Template pane's
-   chips/template toggle) — the label stays a plain span everywhere else. */
-.w6w-exprmodal-pane-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 /* The WYSIWYG chip editor: tags flow inline with text (colored + spaced). */
 .w6w-exprmodal-chips {
@@ -603,30 +596,29 @@
   -webkit-text-security: none;
   text-security: none;
 }
-/* Round 2 (F-1): the pane is inert while `mode === "template"` — the DRAFT
-   textarea is the value in play there, not this DOM. */
-.w6w-exprmodal-chips[contenteditable="false"] {
-  cursor: default;
-  opacity: 0.85;
-}
-.w6w-exprmodal-source:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-.w6w-exprmodal-source:disabled:hover {
-  background: transparent;
-  border-color: transparent;
-}
 .w6w-exprmodal-preview {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.w6w-exprmodal-template {
-  margin: 0;
-  min-height: 44px;
-  max-height: 18vh;
+/* The Result pane's own share of `.w6w-exprmodal-main`'s flex column — the
+   SHARE lives on this wrapper, not on the `<pre>` below: the `<pre>`'s parent
+   is this wrapper (`.w6w-exprmodal-preview`, a flex column), not `-main`
+   itself, so a `flex-basis` on the `<pre>` would be a share of a
+   content-sized box and do nothing. 42% keeps the pane in the 30-50% band and
+   the chips editor above the 25% floor at 1440x900, 1280x720 and 1440x1200 —
+   measured in real Chromium, `test/expr-template/expr-template-guards.test.cjs`
+   T-height; see the project's result for the numbers. */
+.w6w-exprmodal-result-pane {
+  flex: 0 0 42%;
+  min-height: 0;
+}
+.w6w-exprmodal-result {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
+  margin: 0;
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
@@ -637,28 +629,6 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-}
-/* The editable template textarea: same footprint as the read-only `<pre>`
-   above (same class), plus what an editable, resizable field itself needs. */
-textarea.w6w-exprmodal-template-input {
-  color: var(--w6w-text);
-  width: 100%;
-  box-sizing: border-box;
-  resize: vertical;
-  outline: none;
-}
-textarea.w6w-exprmodal-template-input:focus {
-  border-color: var(--w6w-accent);
-}
-.w6w-exprmodal-warnings {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--w6w-health-degraded);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.w6w-exprmodal-warnings li {
-  margin: 2px 0;
 }
 .w6w-exprmodal-actions {
   display: flex;
@@ -1319,15 +1289,15 @@ dialog.w6w-modal p {
   color: var(--w6w-text);
   margin: 0;
 }
-.w6w-modal-wide {
+dialog.w6w-modal.w6w-modal-wide {
   max-width: min(850px, 80vw);
   min-height: min(70vh, 560px);
 }
-.w6w-modal-xl {
+dialog.w6w-modal.w6w-modal-xl {
   max-width: 1040px;
   min-height: min(70vh, 620px);
 }
-.w6w-modal-full {
+dialog.w6w-modal.w6w-modal-full {
   max-width: min(1200px, 96vw);
   width: 96vw;
   height: 92vh;
@@ -1682,6 +1652,16 @@ dialog.w6w-modal p {
   padding-top: 12px;
   margin-top: 0;
 }
+/* Test-required note — always rendered (empty when there is nothing to say),
+   so its reserved height keeps the footer's buttons at the same x/y whether
+   the note has text or not; one line, ellipsized rather than wrapped. */
+.w6w-stepconfig-testnote {
+  flex-shrink: 0;
+  min-height: 1.4em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* The whole-config "code"/JSON view is a DIRECT child of the body — stretch it
    to fill the modal height instead of leaving the dialog half-empty (it passes
@@ -1953,6 +1933,29 @@ dialog.w6w-modal p {
   margin-top: auto;
   border-top: 1px solid var(--w6w-border);
   padding-top: 12px;
+}
+
+/* ActionTestForm's OWN pop-out (`Modal size="full"`, the "Edit params" ⤢
+   toggle — not the host-embedded case above). T1.4.1 round 1 made `-full`'s
+   `overflow: hidden` live for the first time; the dialog itself no longer
+   scrolls, so at a realistic param count (15-23 is typical for a first-party
+   action, e.g. followupboss/search-people, youtube/search) content below the
+   fold became unreachable with zero scrollbar. This mirrors the
+   `.w6w-tester-embedded-scroll` mechanism above — flex:1/min-height:0 to fill
+   the dialog's remaining flex-column height, `overflow: auto` to own the
+   scrollbar — so the params + result (+ saved-tests rail) region scrolls
+   internally while the Run/Save/Delete action bar stays a pinned,
+   non-scrolling footer via the SAME `.w6w-tester-actions-footer` class. */
+.w6w-tester-popout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-popout-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* Uptime strip — one cell per day, "how has this service behaved lately" at a

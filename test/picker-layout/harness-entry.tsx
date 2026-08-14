@@ -17,6 +17,12 @@ const mode = params.get("mode") || "ok"; // ok | loading | error | empty
 const cmode = params.get("cmode") || "ok"; // ok | loading | error
 const NOAI = params.get("noai") === "1";
 const DELAY = Number(params.get("delay") || "0");
+// F1 (test-required note): stamps every vendor app with `testRequired: false`,
+// read defensively off the app surface by `isTestRequired`
+// (StepBuilderModal.tsx:723-726) — the note-absent state. Omitted (the
+// default) leaves the flag absent, which `isTestRequired` treats as required
+// — the note-present state.
+const TREQ0 = params.get("treq") === "0";
 // Selects which real component to mount. Seeded into the page HTML as
 // `window.__V__` before this bundle runs (mirrors the discovery rig's `?v=`) —
 // one surface per page load, never both, so the two <dialog>s never stack in
@@ -37,6 +43,7 @@ function apps(n: number) {
       displayName: `App ${i}`,
       version: "1.0.0",
       categories: !NOAI && i % 3 === 0 ? ["ai"] : ["crm"],
+      ...(TREQ0 ? { testRequired: false } : {}),
     });
   }
   if (n > 0) {
@@ -71,11 +78,19 @@ const listConnections = () => {
   return wait(cs);
 };
 
+// F1: one action with an empty `params` array — enough for `actionKey` to be
+// selectable and `configComplete` to become true (StepBuilderModal.tsx:1094-
+// 1098) so the Test subtab is reachable. `getAppAuth` already resolves `[]`
+// through the Proxy default below ⇒ `needsConnection === false` ⇒ no
+// connection step is needed on top of this.
+const getAppActions = () => Promise.resolve([{ key: "act", title: "Action", params: [] }]);
+
 // Everything StepBuilderModal / AddConnectionModal might reach for beyond
-// listApps/listConnections returns an inert empty array — neither component
-// calls anything else on the render paths this gate exercises.
+// listApps/listConnections/getAppActions returns an inert empty array —
+// neither component calls anything else on the render paths this gate
+// exercises.
 const api: unknown = new Proxy(
-  { listApps, listConnections },
+  { listApps, listConnections, getAppActions },
   {
     get(t: Record<string, unknown>, k: string) {
       if (k in t) return t[k];

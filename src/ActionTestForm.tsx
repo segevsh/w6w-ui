@@ -765,7 +765,9 @@ export function ActionTestForm({
             // this becomes a bottom-pinned, bordered footer outside the scroll region.
             const actionBar = (
               <div
-                className={`w6w-tester-actions${embedded ? " w6w-tester-actions-footer" : ""}`}
+                className={`w6w-tester-actions${
+                  embedded || modalOpen ? " w6w-tester-actions-footer" : ""
+                }`}
                 style={{ display: "flex", gap: 8 }}
               >
                 <button type="button" className="w6w-btn" disabled={running} onClick={run}>
@@ -823,14 +825,26 @@ export function ActionTestForm({
                 onClose={() => setModalOpen(false)}
                 size="full"
               >
-                {savedTestsRail ? (
-                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>{body}</div>
-                    <div style={{ width: 260, flexShrink: 0 }}>{savedTestsRail}</div>
+                {/* The pop-out's own internal scroll boundary (T1.4.1 round 2): with
+                    `-full`'s `overflow: hidden` live, the dialog itself no longer
+                    scrolls, so params + result (+ the saved-tests rail) get a
+                    dedicated scroll region here and the action bar stays a pinned
+                    footer below it — mirrors `.w6w-tester-embedded-scroll`'s
+                    mechanism (see styles.css), just for this own-pop-out layout
+                    instead of the host-embedded one. */}
+                <div className="w6w-tester-popout">
+                  <div className="w6w-tester-popout-scroll">
+                    {savedTestsRail ? (
+                      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>{paramsAndResult}</div>
+                        <div style={{ width: 260, flexShrink: 0 }}>{savedTestsRail}</div>
+                      </div>
+                    ) : (
+                      paramsAndResult
+                    )}
                   </div>
-                ) : (
-                  body
-                )}
+                  {actionBar}
+                </div>
               </Modal>
             ) : (
               body
