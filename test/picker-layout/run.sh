@@ -15,7 +15,7 @@
 # is stubbed or fabricated, unlike studio's page-guards, because this gate mounts
 # the real components with no @w6w/ui substitute to fake), bundles with esbuild,
 # and runs the tests in a browser inside the Playwright image with a plain
-# `<W6wUIProvider api={...}>` stub object (no network layer — see
+# `<W6WUIProvider api={...}>` stub object (no network layer — see
 # harness-entry.tsx). It writes ONLY inside its own mktemp -d and the container
 # is --rm: no service, DB, catalog row or checkout is touched, so it is safe to
 # re-run.

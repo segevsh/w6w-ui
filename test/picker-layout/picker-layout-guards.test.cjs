@@ -1,7 +1,7 @@
 // Browser gate for the AppPicker / AddConnectionModal / StepBuilderModal
 // layout invariants (I1-I9). Mounts the REAL components, bundled from source
 // by ./run.sh, into real Chromium via harness-entry.tsx's plain
-// `<W6wUIProvider api={...}>` stub — no jsdom (it performs no layout: every
+// `<W6WUIProvider api={...}>` stub — no jsdom (it performs no layout: every
 // rect would read zero and this suite would pass on the broken tree), no
 // `page.route` API interception (the stub is the API surface, per the
 // project's pinned mechanics).

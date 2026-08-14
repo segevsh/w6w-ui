@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { isInternalApp } from "./flow-types.ts";
-import { useW6wApi } from "./provider.tsx";
+import { useW6WApi } from "./provider.tsx";
 import type { AppSummary, ThemeMode } from "./types.ts";
 
 export interface AppPickerProps {
@@ -33,7 +33,7 @@ export interface AppPickerProps {
 /**
  * Searchable grid of app cards (icon + name + id) — the shared app picker used
  * by both the step builder and the add-connection modal. Fetches the app list
- * from `useW6wApi()` unless the caller passes `apps`; filters alphabetically by
+ * from `useW6WApi()` unless the caller passes `apps`; filters alphabetically by
  * name/id as the user types.
  */
 export function AppPicker({
@@ -46,7 +46,7 @@ export function AppPicker({
   emptyAction,
   apps: providedApps,
 }: AppPickerProps) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const [fetchedApps, setFetchedApps] = useState<AppSummary[] | null>(null);
   const [appsError, setAppsError] = useState<string | null>(null);
   const [query, setQuery] = useState("");

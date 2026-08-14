@@ -5,11 +5,11 @@
  *   import "@w6w/ui/styles.css";
  */
 
-export { W6wUIProvider, useW6wApi } from "./provider.tsx";
-export type { StepTest, TestRunSummary, W6wApi, W6wUIProviderProps } from "./provider.tsx";
+export { W6WUIProvider, useW6WApi } from "./provider.tsx";
+export type { StepTest, TestRunSummary, W6WApi, W6WUIProviderProps } from "./provider.tsx";
 
-export { createW6wApi, ApiError } from "./createW6wApi.ts";
-export type { CreateW6wApiOptions } from "./createW6wApi.ts";
+export { createW6WApi, ApiError } from "./createW6WApi.ts";
+export type { CreateW6WApiOptions } from "./createW6WApi.ts";
 
 export { AddConnectionModal } from "./AddConnectionModal.tsx";
 export type { AddConnectionModalProps } from "./AddConnectionModal.tsx";

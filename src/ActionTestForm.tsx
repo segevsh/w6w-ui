@@ -4,8 +4,8 @@ import { ParamsForm } from "./ParamsForm.tsx";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { ApiError } from "./createW6wApi.ts";
-import { useW6wApi } from "./provider.tsx";
+import { ApiError } from "./createW6WApi.ts";
+import { useW6WApi } from "./provider.tsx";
 import type { TestRunSummary } from "./provider.tsx";
 import type { ActionDef, ApiCallRecord, SavedTest, ThemeMode } from "./types.ts";
 
@@ -181,7 +181,7 @@ function apiCallsOf(e: unknown): ApiCallRecord[] {
  * Schema-driven form to test/run a single action against a connection. Renders
  * the action's declared params through {@link ParamsForm} (the same primitive
  * the step builder uses) instead of a raw JSON textarea, invokes the action via
- * `useW6wApi().invokeAction`, and shows the returned value or error.
+ * `useW6WApi().invokeAction`, and shows the returned value or error.
  *
  * The selected action is either controlled by the caller (`action` prop) or
  * chosen from a built-in `<select>` over `actions`. Param values reset whenever
@@ -200,7 +200,7 @@ export function ActionTestForm({
   onDeleted,
   embedded = false,
 }: ActionTestFormProps) {
-  const api = useW6wApi();
+  const api = useW6WApi();
 
   // Actions sorted for the built-in picker (only used when uncontrolled).
   const sortedActions = useMemo(() => {
