@@ -106,7 +106,15 @@ ln -sfn "$PKG/node_modules" "$W/tree/node_modules"
 # then studio.css, matching studio/src/main.tsx:16-17's load order, so the
 # consumer-layered cascade (e.g. studio's input[type=text] out-specifying
 # .w6w-stepbuilder-search) is reproduced rather than assumed away.
-cp "$SRC/styles.css" "$W/ui.css"
+# ui.css is compiled from the SCSS source rather than copied from the generated
+# `styles.css`, so the harness tests what the partials under src/styles/
+# currently say and never a stale build artifact. The fallback keeps a `UI_SRC`
+# tree that predates the SCSS conversion working.
+if [ -f "$SRC/styles.scss" ]; then
+  "$PKG/node_modules/.bin/sass" --no-source-map --style=expanded "$SRC/styles.scss" "$W/ui.css"
+else
+  cp "$SRC/styles.css" "$W/ui.css"
+fi
 cp "$STUDIO_CSS" "$W/studio.css"
 
 cp "$HERE/picker-layout-guards.test.cjs" "$W/tests.cjs"

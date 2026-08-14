@@ -1,0 +1,64 @@
+.w6w-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2-5);
+  width: 100%;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--w6w-text);
+  text-align: left;
+  font-size: var(--w6w-fs-sm);
+  cursor: pointer;
+}
+button.w6w-list-item {
+  font: inherit;
+  font-size: var(--w6w-fs-sm);
+}
+.w6w-list-item:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-list-item:focus-visible {
+  outline: none;
+  border-color: var(--w6w-accent);
+  box-shadow: 0 0 0 2px var(--w6w-accent);
+}
+.w6w-list-item.active {
+  border-color: var(--w6w-accent);
+  background: var(--w6w-panel-2);
+}
+.w6w-list-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.w6w-list-item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--w6w-sp-0-5);
+}
+.w6w-list-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-list-item-subtitle {
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-list-item-trailing {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Health status pill — a small, theme-aware badge for one health state
+   (ok · degraded · down · unknown). Colour comes from the `--w6w-health-*`
+   tokens so a host can restyle every state by overriding those; the dot tints
+   with the state while the pill keeps a soft tinted background + border. */

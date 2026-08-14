@@ -1,0 +1,24 @@
+{
+  "$comment": "Ratchet baseline for lint:tokens — pre-existing spacing/type literals. Counts may only go DOWN. Regenerate: node scripts/lint-tokens.mjs --update",
+  "files": {
+    "src/styles/_buttons.scss": 1,
+    "src/styles/_chips.scss": 14,
+    "src/styles/_code.scss": 5,
+    "src/styles/_data-vars.scss": 1,
+    "src/styles/_expression-field.scss": 3,
+    "src/styles/_expression-inline.scss": 2,
+    "src/styles/_expression-modal.scss": 12,
+    "src/styles/_fields.scss": 4,
+    "src/styles/_flow.scss": 1,
+    "src/styles/_fx.scss": 3,
+    "src/styles/_health.scss": 1,
+    "src/styles/_incoming-state.scss": 1,
+    "src/styles/_modal.scss": 1,
+    "src/styles/_multiselect.scss": 4,
+    "src/styles/_sections.scss": 1,
+    "src/styles/_step-builder.scss": 3,
+    "src/styles/_tabs.scss": 2,
+    "src/styles/_tester.scss": 2,
+    "src/styles/_tokens.scss": 1
+  }
+}

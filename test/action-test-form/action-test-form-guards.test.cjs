@@ -29,7 +29,9 @@ const HTML = `<!doctype html><html><head><meta charset="utf-8">
 </head><body><div id="root"></div>
 <script src="/bundle.js"></script></body></html>`;
 
-async function open(browser) {
+// `variant` — optional, defaults to today's behaviour (no `?variant=` query,
+// so M-popout-scroll below is untouched by the new fixture switch).
+async function open(browser, variant) {
   const page = await browser.newPage({ viewport: VP });
   const errs = [];
   page.on("pageerror", (e) => errs.push(String(e)));
@@ -41,10 +43,15 @@ async function open(browser) {
     if (p === "/ui.css") return route.fulfill({ contentType: "text/css", path: "/w/ui.css" });
     return route.fulfill({ status: 404, body: "" });
   });
-  await page.goto("http://action-test-form.test/");
+  const url = variant
+    ? `http://action-test-form.test/?variant=${encodeURIComponent(variant)}`
+    : "http://action-test-form.test/";
+  await page.goto(url);
   await page.waitForFunction(() => window.__mounted === true, null, { timeout: 10000 });
   await page.waitForTimeout(150);
-  if (errs.length) throw new Error(`pageerror mounting: ${errs.join("; ")}`);
+  if (errs.length) {
+    throw new Error(`pageerror mounting variant=${variant ?? "(default)"}: ${errs.join("; ")}`);
+  }
   return page;
 }
 
@@ -164,4 +171,63 @@ test("M-popout-scroll — ActionTestForm's -full pop-out shows all content via a
   );
 
   await page.close();
+});
+
+// ── T2.1.1 defect 1 — the error box must NOT sit flush against the params
+//    region above it, in BOTH embedded variants (`.w6w-tester-embedded-main`,
+//    the rail case, AND `.w6w-tester-embedded-scroll`, the no-rail case). A
+//    fix on `.w6w-tester-embedded-main` alone passes the rail variant and
+//    leaves the no-rail one at a 0px gap — that near-miss is exactly why both
+//    variants are exercised in one test rather than one probe each. ────────
+test("T2.1.1 defect 1 — 12px gap between params and the error box, in both embedded variants", async () => {
+  for (const variant of ["embedded-rail", "embedded-norail"]) {
+    const page = await open(browser, variant);
+
+    const runBtn = await page.$(".w6w-tester-actions button");
+    assert.ok(runBtn, `[${variant}] "Run action" button not found`);
+    await runBtn.click();
+    await page.waitForSelector(".w6w-result.w6w-error", { timeout: 5000 });
+    await page.waitForTimeout(150);
+
+    const info = await page.evaluate(() => {
+      const err = document.querySelector(".w6w-result.w6w-error");
+      const prev = err?.previousElementSibling ?? null;
+      const errRect = err?.getBoundingClientRect();
+      const prevRect = prev?.getBoundingClientRect();
+      return {
+        errFound: !!err,
+        errHeight: errRect ? errRect.height : null,
+        prevFound: !!prev,
+        prevClass: prev ? prev.className : null,
+        prevText: prev ? prev.textContent.trim().slice(0, 20) : null,
+        gap: errRect && prevRect ? errRect.top - prevRect.bottom : null,
+      };
+    });
+
+    // The fixture must be real, or the gap assertion below passes for the
+    // wrong reason (nothing to measure a gap between).
+    assert.ok(info.errFound, `[${variant}] .w6w-result.w6w-error not found`);
+    assert.ok(
+      info.errHeight > 0,
+      `[${variant}] .w6w-result.w6w-error has zero height (errH ${info.errHeight})`,
+    );
+    assert.ok(info.prevFound, `[${variant}] error box has no previous sibling to measure against`);
+    assert.ok(
+      info.prevClass && info.prevClass.includes("w6w-stack"),
+      `[${variant}] error box's previous sibling is "${info.prevClass}", expected the params region's "w6w-stack"`,
+    );
+    assert.ok(
+      info.prevText && info.prevText.startsWith("Parameters"),
+      `[${variant}] error box's previous sibling does not start with "Parameters" (got "${info.prevText}")`,
+    );
+
+    // The literal 12, not a self-referential read of --w6w-sp-3 — a tree that
+    // redefines the token to 0 must fail this, not pass it.
+    assert.ok(
+      info.gap >= 11 && info.gap <= 13,
+      `[${variant}] gap between params region and error box is ${info.gap}px, expected 12px ±1`,
+    );
+
+    await page.close();
+  }
 });

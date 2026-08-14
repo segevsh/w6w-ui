@@ -1,5 +1,6 @@
 import { Highlight, Prism } from "prism-react-renderer";
 import type { PrismTheme } from "prism-react-renderer";
+import { Copyable } from "./components/Copyable.tsx";
 
 /**
  * Shell grammar, registered onto the bundled Prism.
@@ -87,6 +88,14 @@ export interface CodeBlockProps {
   className?: string;
   /** Accessible label. Falls back to naming the language. */
   "aria-label"?: string;
+  /**
+   * Wrap the block in `<Copyable readOnly>` so a click anywhere in the box,
+   * or the in-box button, copies the displayed source verbatim. Off by
+   * default: every current caller renders identically. `className` still
+   * lands on the `<pre>` itself — this adds a wrapper around it, it does not
+   * change what the `<pre>` renders.
+   */
+  copyable?: boolean;
 }
 
 /**
@@ -145,63 +154,80 @@ const THEME: PrismTheme = {
  * — a snippet built from user or third-party data cannot inject markup.
  */
 export function CodeBlock(props: CodeBlockProps) {
-  const { code, language = "plaintext", wrap, showLineNumbers, maxHeight, className } = props;
+  const {
+    code,
+    language = "plaintext",
+    wrap,
+    showLineNumbers,
+    maxHeight,
+    className,
+    copyable,
+  } = props;
 
   // Trailing newlines would render as a blank final row with a line number.
   const source = code.replace(/\n+$/, "");
 
   return (
     <Highlight theme={THEME} code={source} language={language}>
-      {({ className: prismClass, style, tokens, getLineProps, getTokenProps }) => (
-        <pre
-          className={[
-            "w6w-code-block",
-            wrap ? "w6w-code-block--wrap" : "",
-            showLineNumbers ? "w6w-code-block--numbered" : "",
-            prismClass,
-            className ?? "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          style={{ ...style, ...(maxHeight ? { maxHeight, overflowY: "auto" } : null) }}
-          aria-label={props["aria-label"] ?? `${language} code`}
-        >
-          <code>
-            {(() => {
-              // Keys are the token's OFFSET IN THE SOURCE, not its array index.
-              // Two identical lines then still get distinct keys, and the key
-              // means something a reader can check. `let` is safe here: the
-              // walk is synchronous and the closure is not reused across
-              // renders.
-              let offset = 0;
-              return tokens.map((line, i) => {
-                const lineProps = getLineProps({ line });
-                const cls = `w6w-code-line ${lineProps.className ?? ""}`;
-                const lineKey = `L${offset}`;
-                let col = offset;
-                const spans = line.map((token) => {
-                  const tokenProps = getTokenProps({ token });
-                  const key = `T${col}`;
-                  col += token.content.length;
-                  return <span {...tokenProps} key={key} />;
+      {({ className: prismClass, style, tokens, getLineProps, getTokenProps }) => {
+        const pre = (
+          <pre
+            className={[
+              "w6w-code-block",
+              wrap ? "w6w-code-block--wrap" : "",
+              showLineNumbers ? "w6w-code-block--numbered" : "",
+              prismClass,
+              className ?? "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={{ ...style, ...(maxHeight ? { maxHeight, overflowY: "auto" } : null) }}
+            aria-label={props["aria-label"] ?? `${language} code`}
+          >
+            <code>
+              {(() => {
+                // Keys are the token's OFFSET IN THE SOURCE, not its array index.
+                // Two identical lines then still get distinct keys, and the key
+                // means something a reader can check. `let` is safe here: the
+                // walk is synchronous and the closure is not reused across
+                // renders.
+                let offset = 0;
+                return tokens.map((line, i) => {
+                  const lineProps = getLineProps({ line });
+                  const cls = `w6w-code-line ${lineProps.className ?? ""}`;
+                  const lineKey = `L${offset}`;
+                  let col = offset;
+                  const spans = line.map((token) => {
+                    const tokenProps = getTokenProps({ token });
+                    const key = `T${col}`;
+                    col += token.content.length;
+                    return <span {...tokenProps} key={key} />;
+                  });
+                  // +1 for the newline the tokenizer stripped.
+                  offset = col + 1;
+                  return (
+                    <span {...lineProps} key={lineKey} className={cls}>
+                      {showLineNumbers && (
+                        <span className="w6w-code-line-no" aria-hidden="true">
+                          {i + 1}
+                        </span>
+                      )}
+                      <span className="w6w-code-line-text">{spans}</span>
+                    </span>
+                  );
                 });
-                // +1 for the newline the tokenizer stripped.
-                offset = col + 1;
-                return (
-                  <span {...lineProps} key={lineKey} className={cls}>
-                    {showLineNumbers && (
-                      <span className="w6w-code-line-no" aria-hidden="true">
-                        {i + 1}
-                      </span>
-                    )}
-                    <span className="w6w-code-line-text">{spans}</span>
-                  </span>
-                );
-              });
-            })()}
-          </code>
-        </pre>
-      )}
+              })()}
+            </code>
+          </pre>
+        );
+        return copyable ? (
+          <Copyable value={source} readOnly>
+            {pre}
+          </Copyable>
+        ) : (
+          pre
+        );
+      }}
     </Highlight>
   );
 }

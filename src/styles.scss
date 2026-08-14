@@ -1,0 +1,53 @@
+// @w6w/ui — stylesheet entry point.
+//
+// The authored source of truth. `src/styles.css` beside it is GENERATED from
+// this file (`pnpm build:css`) and is what the package exports as
+// `@w6w/ui/styles.css`, so a consumer needs no Sass toolchain of its own.
+// `pnpm check:css` fails if the two have drifted — never hand-edit the .css.
+//
+// Partials are split by component family and `@use`d in their ORIGINAL source
+// order. That order is load-bearing: several families resolve ties on source
+// order rather than specificity (see `_flow.scss`'s note on `@xyflow/react`
+// being injected after this stylesheet, and `_tokens.scss`'s explicit-mode
+// blocks, which must follow the `prefers-color-scheme` media query at equal
+// specificity). Reordering these lines changes the cascade.
+//
+// Two rules for anyone editing a partial:
+//
+//   1. `--w6w-*` custom properties stay CSS custom properties. They are the
+//      public theming contract — hosts override them at runtime, per mode, and
+//      a Sass variable is compiled away before the browser ever sees it.
+//   2. `.w6w-*` class names are public API too. They are what a host targets
+//      to restyle a component, which is also why this is a plain global
+//      stylesheet and not CSS/SCSS Modules — module hashing would rename every
+//      one of them.
+//
+// Comments written as `/* … */` inside the partials survive into the compiled
+// CSS; `//` comments (like these) do not.
+
+@use "styles/tokens";
+@use "styles/scale";
+@use "styles/layout";
+@use "styles/fields";
+@use "styles/multiselect";
+@use "styles/incoming-state";
+@use "styles/expression-field";
+@use "styles/expression-modal";
+@use "styles/fx";
+@use "styles/copyable";
+@use "styles/expression-inline";
+@use "styles/chips";
+@use "styles/data-vars";
+@use "styles/buttons";
+@use "styles/lists";
+@use "styles/health";
+@use "styles/modal";
+@use "styles/icons";
+@use "styles/tabs";
+@use "styles/step-builder";
+@use "styles/step-config";
+@use "styles/flow";
+@use "styles/sections";
+@use "styles/tester";
+@use "styles/uptime";
+@use "styles/code";

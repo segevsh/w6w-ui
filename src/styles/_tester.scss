@@ -1,0 +1,111 @@
+.w6w-testout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+}
+.w6w-testout-label {
+  font-size: 0.72em;
+  font-weight: var(--w6w-fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w6w-muted);
+}
+/* Console output reads as a terminal — monospace + muted, distinct from Result. */
+.w6w-testout-console {
+  font-family: var(--w6w-font-mono);
+  color: var(--w6w-muted);
+  border-style: dashed;
+}
+
+/* Result / error box */
+.w6w-result {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
+  font-family: var(--w6w-font-mono);
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--w6w-text);
+}
+.w6w-result.w6w-error {
+  border-color: var(--w6w-danger);
+  color: var(--w6w-danger);
+}
+
+/* Host-embedded ActionTestForm (studio's ConnectionTesterModal wraps it in its
+   OWN full modal). The widget then fills that modal as a full-height flex column:
+   the params + saved-tests region scrolls, and the action bar is a bottom-pinned,
+   non-scrolling footer. These classes are only applied in `embedded` mode, so the
+   inline / own-pop-out layout is untouched. */
+.w6w-tester-embedded-root {
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-embedded {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-embedded-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.w6w-tester-embedded-cols {
+  display: flex;
+  gap: var(--w6w-sp-4);
+  align-items: flex-start;
+}
+.w6w-tester-embedded-main {
+  flex: 1;
+  min-width: 0;
+}
+.w6w-tester-embedded-rail {
+  width: 260px;
+  flex-shrink: 0;
+}
+/* The action bar as a pinned footer: kept out of the scroll region and separated
+   with a top border so Run / Save / Delete stay visible however long the params. */
+.w6w-tester-actions-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--w6w-border);
+  padding-top: var(--w6w-sp-3);
+}
+
+/* ActionTestForm's OWN pop-out (`Modal size="full"`, the "Edit params" ⤢
+   toggle — not the host-embedded case above). T1.4.1 round 1 made `-full`'s
+   `overflow: hidden` live for the first time; the dialog itself no longer
+   scrolls, so at a realistic param count (15-23 is typical for a first-party
+   action, e.g. followupboss/search-people, youtube/search) content below the
+   fold became unreachable with zero scrollbar. This mirrors the
+   `.w6w-tester-embedded-scroll` mechanism above — flex:1/min-height:0 to fill
+   the dialog's remaining flex-column height, `overflow: auto` to own the
+   scrollbar — so the params + result (+ saved-tests rail) region scrolls
+   internally while the Run/Save/Delete action bar stays a pinned,
+   non-scrolling footer via the SAME `.w6w-tester-actions-footer` class. */
+.w6w-tester-popout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-popout-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Uptime strip — one cell per day, "how has this service behaved lately" at a
+   glance. Colour comes from the same `--w6w-health-*` tokens as the health pill,
+   through the same single `--w6w-health-color` indirection (set once on the cell,
+   remapped by the per-state class below), so overriding a token restyles the pill
+   and the strip together.
+
+   Colour is never the only signal: the FILL HEIGHT encodes severity, so the row
+   stays readable in greyscale and for a colour-blind viewer — `ok` a short
+   baseline bar, `degraded` taller, `down` the full cell, and `unknown` a hatched
+   outline with no solid fill (nothing was measured: not a good day, not a bad
+   one). Each cell also carries a `title` with its day and state. */

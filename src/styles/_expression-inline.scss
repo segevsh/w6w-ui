@@ -1,0 +1,63 @@
+/* The raw {{ }} input stands alone, so it keeps an input box of its own. */
+.w6w-expr-raw {
+  width: 100%;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  min-height: 38px;
+  color: var(--w6w-text);
+  font-family: var(--w6w-font-mono);
+  font-size: 13px;
+  line-height: var(--w6w-lh-relaxed);
+}
+.w6w-expr-raw:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+/* The inline editor surface (one continuous field) sits INSIDE
+   `.w6w-expr-field`'s box, so it draws no chrome — the border, the background
+   and the focus ring all belong to that box. */
+.w6w-expr-editor {
+  width: 100%;
+  padding: var(--w6w-sp-0-5) 0;
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  font-family: inherit;
+  line-height: var(--w6w-lh-relaxed);
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.w6w-expr-editor.is-readonly,
+.w6w-expr-input.is-readonly {
+  opacity: 0.7;
+}
+/* Placeholder for the empty contentEditable field. */
+.w6w-expr-editor.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--w6w-muted);
+  pointer-events: none;
+}
+/* Masked (secret) fields: mask typed TEXT as dots; chips are exempt — a chip
+   shows a name/label, never a secret value. */
+.w6w-expr-editor.is-masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+.w6w-expr-editor.is-masked .w6w-expr-chip {
+  -webkit-text-security: none;
+  text-security: none;
+}
+/* Sealed at-rest secret uses a simple flex wrapper (chip + Replace). */
+.w6w-expr-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--w6w-sp-1-5);
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: 5px var(--w6w-sp-2);
+  min-height: 38px;
+}
