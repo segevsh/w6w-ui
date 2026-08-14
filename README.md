@@ -26,6 +26,21 @@ import "@w6w/ui/styles.css";
 />
 ```
 
+One component breaks the "pure presentation" rule above on purpose: `Copyable` performs a real
+browser side effect — it writes to `navigator.clipboard`. Decorate any value-displaying control
+(an `<input>`, a `<textarea>`, or a `<CodeBlock>`) with an in-box copy affordance; in read-only mode
+a click anywhere in the box copies too, not just the icon.
+
+```tsx
+import { CodeBlock, Copyable } from "@w6w/ui";
+
+<Copyable value={apiKey} readOnly>
+  <input readOnly value={apiKey} />
+</Copyable>
+
+<CodeBlock code={curlSnippet} language="bash" copyable />
+```
+
 ## Theming
 
 `styles.css` defines defaults for CSS custom properties under the `--w6w-*` namespace (`--w6w-panel`, `--w6w-border`, `--w6w-text`, `--w6w-muted`, `--w6w-accent`, `--w6w-danger`, `--w6w-radius`). Override them at `:root` (or any parent) to theme the components.
