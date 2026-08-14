@@ -1,10 +1,10 @@
 /**
- * Default fetch-based W6wApi client. Convenience for partners without their
+ * Default fetch-based W6WApi client. Convenience for partners without their
  * own HTTP client — studio wires react-query around its own implementation
  * and doesn't use this. Every method calls the w6w server directly and
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
-import type { StepTest, TestRunSummary, W6wApi } from "./provider.tsx";
+import type { StepTest, TestRunSummary, W6WApi } from "./provider.tsx";
 import type {
   ActionDef,
   ApiCallRecord,
@@ -14,7 +14,7 @@ import type {
   SavedTest,
 } from "./types.ts";
 
-export interface CreateW6wApiOptions {
+export interface CreateW6WApiOptions {
   /** Absolute URL or path prefix — e.g. `"https://w6w.example.com"` or `"/api"`. */
   baseUrl: string;
   /**
@@ -43,8 +43,8 @@ export class ApiError extends Error {
   }
 }
 
-/** Build a fetch-based W6wApi client bound to a base URL + token supplier. */
-export function createW6wApi(opts: CreateW6wApiOptions): W6wApi {
+/** Build a fetch-based W6WApi client bound to a base URL + token supplier. */
+export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
   const baseUrl = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetch ?? globalThis.fetch;
   const getToken = () => (typeof opts.token === "function" ? opts.token() : opts.token);

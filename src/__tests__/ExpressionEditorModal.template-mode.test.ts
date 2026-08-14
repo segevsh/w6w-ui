@@ -5,7 +5,7 @@
 // docstring) plus the two extra shims `WorkflowFlowEditor.test-tab.test.ts`
 // adds for a mounted `Modal` (`HTMLDialogElement.prototype.showModal`,
 // `matchMedia`) — no third harness stood up here. `ExpressionEditorModal`
-// needs no `W6wUIProvider` (it takes `options` as a plain prop, not via a
+// needs no `W6WUIProvider` (it takes `options` as a plain prop, not via a
 // hook), so this file is simpler than those two on that one point.
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
 import { type StepTestPersist, requiredParamsFilled } from "./StepBuilderModal.tsx";
-import { useW6wApi, useWorkflowProject } from "./provider.tsx";
+import { useW6WApi, useWorkflowProject } from "./provider.tsx";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 
 type TestState =
@@ -59,7 +59,7 @@ export function TriggerFillForm({
    */
   persist?: StepTestPersist;
 }) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   // The workflow's selected project scopes document-expression resolution in the
   // trigger test (undefined outside the editor → server default project).
   const project = useWorkflowProject();

@@ -2,10 +2,10 @@
  * Provider + hook that give every component a single, typed w6w API client.
  *
  * Consumers wrap their app once and every component under it can grab the
- * client via `useW6wApi()` — no more per-component callback prop drilling.
+ * client via `useW6WApi()` — no more per-component callback prop drilling.
  *
- *   const api = createW6wApi({ baseUrl: "/api", token });
- *   <W6wUIProvider api={api}>...</W6wUIProvider>
+ *   const api = createW6WApi({ baseUrl: "/api", token });
+ *   <W6WUIProvider api={api}>...</W6WUIProvider>
  */
 import { type ReactNode, createContext, useContext } from "react";
 import type {
@@ -84,7 +84,7 @@ export interface StepStartState {
  * new members are added at the end so consumer implementations only need to
  * grow when they want to use the new component.
  */
-export interface W6wApi {
+export interface W6WApi {
   /** List registered apps to pick from in the connection modal. */
   listApps(): Promise<AppSummary[]>;
 
@@ -230,28 +230,28 @@ export interface W6wApi {
   listStepTests(workflowId: string, stepId: string): Promise<StepTest[]>;
 }
 
-const Ctx = createContext<W6wApi | null>(null);
+const Ctx = createContext<W6WApi | null>(null);
 
-export interface W6wUIProviderProps {
-  api: W6wApi;
+export interface W6WUIProviderProps {
+  api: W6WApi;
   children: ReactNode;
 }
 
 /** Provides the w6w API client to every component under it. */
-export function W6wUIProvider({ api, children }: W6wUIProviderProps) {
+export function W6WUIProvider({ api, children }: W6WUIProviderProps) {
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }
 
 /**
  * Access the w6w API client. Throws a helpful error if used outside a
- * `<W6wUIProvider>` — the common mistake is forgetting to wrap the app root.
+ * `<W6WUIProvider>` — the common mistake is forgetting to wrap the app root.
  */
-export function useW6wApi(): W6wApi {
+export function useW6WApi(): W6WApi {
   const api = useContext(Ctx);
   if (!api) {
     throw new Error(
-      "useW6wApi must be used inside <W6wUIProvider>. " +
-        "Wrap your app root with <W6wUIProvider api={api}>...</W6wUIProvider>.",
+      "useW6WApi must be used inside <W6WUIProvider>. " +
+        "Wrap your app root with <W6WUIProvider api={api}>...</W6WUIProvider>.",
     );
   }
   return api;

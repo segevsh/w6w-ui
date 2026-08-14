@@ -18,7 +18,7 @@ import {
   isTriggerApp,
 } from "./flow-types.ts";
 import { paramsToJson, stepToJson } from "./flow-utils.ts";
-import { type StepStartState, useW6wApi, useWorkflowProject } from "./provider.tsx";
+import { type StepStartState, useW6WApi, useWorkflowProject } from "./provider.tsx";
 import { startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
@@ -67,7 +67,7 @@ export interface StepBuilderModalProps {
   /**
    * Workflow-step context, when the builder is opened for a step that already
    * lives in a workflow. When present the `testRequired` save-gate can discover a
-   * previously-saved **passing** test for the step via {@link W6wApi.listStepTests}.
+   * previously-saved **passing** test for the step via {@link W6WApi.listStepTests}.
    * Absent in the plain add-step flow (the step has no id yet) — there the gate is
    * satisfied by running a passing test in-session.
    */
@@ -207,7 +207,7 @@ export function ConfigViewToggle({
  * internal nodes: triggers, flow control (if/foreach/parallel/wait), and compute
  * (script/data). Emits a `BuiltStep` via `onAdd`.
  *
- * Data + IO come from `useW6wApi()`, so mount it under `<W6wUIProvider>`.
+ * Data + IO come from `useW6WApi()`, so mount it under `<W6WUIProvider>`.
  */
 export function StepBuilderModal({
   onClose,
@@ -801,7 +801,7 @@ export const StepTestRun = forwardRef<
   },
   ref,
 ) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   // Resolve document expressions against the workflow's selected project (the
   // editor provides it; undefined outside the editor → server default project).
   const project = useWorkflowProject();
@@ -926,7 +926,7 @@ function ConnectedAppsFlow({
   onBrowseAll: () => void;
   theme?: ThemeMode;
 }) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const [connectedIds, setConnectedIds] = useState<Set<string> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -998,7 +998,7 @@ export function AppStepConfig({
   /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
   upstreamSteps?: ExpressionStepSource[];
 }) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);

@@ -76,10 +76,10 @@ const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { StepEditModal } = await import("../WorkflowFlowEditor.tsx");
-const { W6wUIProvider } = await import("../provider.tsx");
+const { W6WUIProvider } = await import("../provider.tsx");
 const { ExpressionOptionsProvider } = await import("../components/ExpressionOptions.tsx");
 const { isTriggerApp } = await import("../flow-types.ts");
-type W6wApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6wApi>>;
+type W6WApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6WApi>>;
 
 // Re-routed from T1.1.1's eval (harvested there, dropped by a mis-scoped
 // contract): the predicate is pinned against arm REMOVAL but not arm
@@ -175,7 +175,7 @@ function fakeApi(overrides: Record<string, unknown> = {}) {
           ]
         : [],
     ...overrides,
-  } as unknown as W6wApi;
+  } as unknown as W6WApi;
 }
 
 function setTextareaValue(el: Element | null, value: string) {
@@ -195,7 +195,7 @@ test("Test tab — lists every configured param with its resolved value, disting
 
   await act(async () => {
     root.render(
-      React.createElement(W6wUIProvider, {
+      React.createElement(W6WUIProvider, {
         api: fakeApi(),
         children: React.createElement(ExpressionOptionsProvider, {
           value: { sampleValues: { "vars.from_email": "hello@example.com" } },
@@ -416,7 +416,7 @@ test("A3 — every visible param at its default renders a distinct, non-blank em
 
   await act(async () => {
     root.render(
-      React.createElement(W6wUIProvider, {
+      React.createElement(W6WUIProvider, {
         api: fakeApi({
           getAppActions: async () => [{ key: "send", title: "Send", params: ALL_DEFAULT_PARAMS }],
         }),

@@ -1,6 +1,6 @@
 // picker-layout browser-gate harness entry. Mounts the REAL AddConnectionModal /
 // StepBuilderModal (compiled from the source tree under test) into a real
-// Chromium page via a plain <W6wUIProvider api={...}> stub — no network layer,
+// Chromium page via a plain <W6WUIProvider api={...}> stub — no network layer,
 // no jsdom. Copied into `<tree>/src/__picker_layout_entry.tsx` and bundled with
 // packages/ui's own esbuild by run.sh; the relative imports below therefore
 // resolve against the tree under test ($UI_SRC), so a mutated copy of `src`
@@ -8,7 +8,7 @@
 import { createRoot } from "react-dom/client";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { StepBuilderModal } from "./StepBuilderModal.tsx";
-import { W6wUIProvider } from "./provider.tsx";
+import { W6WUIProvider } from "./provider.tsx";
 
 const params = new URLSearchParams(location.search);
 const N = Number(params.get("n") || "60");
@@ -93,6 +93,6 @@ const el =
 
 const mount = document.getElementById("root");
 if (!mount) throw new Error("no #root to mount into");
-// biome-ignore lint/suspicious/noExplicitAny: the harness stub is intentionally untyped against W6wApi.
-createRoot(mount).render(<W6wUIProvider api={api as any}>{el}</W6wUIProvider>);
+// biome-ignore lint/suspicious/noExplicitAny: the harness stub is intentionally untyped against W6WApi.
+createRoot(mount).render(<W6WUIProvider api={api as any}>{el}</W6WUIProvider>);
 (window as unknown as { __mounted: boolean }).__mounted = true;

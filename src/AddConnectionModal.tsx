@@ -4,7 +4,7 @@ import { AppIcon } from "./components/AppIcon.tsx";
 import { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { startOAuthPopup } from "./oauth-popup.ts";
-import { useW6wApi } from "./provider.tsx";
+import { useW6WApi } from "./provider.tsx";
 import type { AppSummary, AuthDef, AuthField, ThemeMode } from "./types.ts";
 
 export interface AddConnectionModalProps {
@@ -26,10 +26,10 @@ export interface AddConnectionModalProps {
  * chosen app's connection fields for step two — minus the tabs. Pick an app →
  * pick an auth method → fill the fields (or run OAuth) → submit. The
  * `AuthDef.fields` array drives the form, so no app-specific knowledge is baked
- * in. Data + IO come from `useW6wApi()`.
+ * in. Data + IO come from `useW6WApi()`.
  */
 export function AddConnectionModal(props: AddConnectionModalProps) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
   const [resolvingInitial, setResolvingInitial] = useState<boolean>(Boolean(props.initialAppId));
 
@@ -132,7 +132,7 @@ function ConnectionConfig({
   onCreated: (result: { connectionId: string }) => void;
   onClose: () => void;
 }) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
   const [authKey, setAuthKey] = useState<string>("");
   const [displayName, setDisplayName] = useState("");

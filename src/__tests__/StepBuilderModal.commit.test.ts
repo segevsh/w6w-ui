@@ -51,8 +51,8 @@ const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { AppStepConfig, ControlStepConfig } = await import("../StepBuilderModal.tsx");
-const { W6wUIProvider } = await import("../provider.tsx");
-type W6wApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6wApi>>;
+const { W6WUIProvider } = await import("../provider.tsx");
+type W6WApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6WApi>>;
 
 function fakeApi(overrides: Record<string, unknown> = {}) {
   return {
@@ -84,7 +84,7 @@ function fakeApi(overrides: Record<string, unknown> = {}) {
     startAppOAuthFlow: async () => ({ authorizationUrl: "" }),
     listStepTests: async () => [],
     ...overrides,
-  } as unknown as W6wApi;
+  } as unknown as W6WApi;
 }
 
 function setInputValue(input: Element | null, value: string) {
@@ -114,7 +114,7 @@ test("AppStepConfig commits once on setup-complete, then routes edits through on
 
   await act(async () => {
     root.render(
-      React.createElement(W6wUIProvider, {
+      React.createElement(W6WUIProvider, {
         api: fakeApi(),
         children: React.createElement(AppStepConfig, {
           appId: "sendgrid",
@@ -203,17 +203,17 @@ test("ControlStepConfig commits on mount, then routes edits through onDraftChang
     params: [{ key: "cond", type: "string", required: true, label: "Condition" }],
   };
 
-  // Wrapped in `W6wUIProvider` (not in the contract's original snippet):
+  // Wrapped in `W6WUIProvider` (not in the contract's original snippet):
   // `ControlStepConfig` unconditionally mounts `useSeedSources`, which reads
-  // `useW6wApi()` regardless of `enabled` (T1.1.1, merged after this contract
+  // `useW6WApi()` regardless of `enabled` (T1.1.1, merged after this contract
   // was drafted — same file, "different concern" per the contract's Context
-  // note) — so a bare render now throws "useW6wApi must be used inside
-  // <W6wUIProvider>" before it ever reaches the commit-on-mount effect this
+  // note) — so a bare render now throws "useW6WApi must be used inside
+  // <W6WUIProvider>" before it ever reaches the commit-on-mount effect this
   // test is pinning. Wrapping supplies that context without touching
   // T1.1.1's wiring or this test's assertions.
   await act(async () => {
     root.render(
-      React.createElement(W6wUIProvider, {
+      React.createElement(W6WUIProvider, {
         api: fakeApi(),
         children: React.createElement(ControlStepConfig, {
           node,

@@ -178,7 +178,7 @@ export function stepBuilderUpstreamSteps(
  * canvas ▶ Run collect form, and `StepBuilderModal`'s add-step Test tab — so
  * the `gate_1 · succeeded` chip behaves identically everywhere.
  *
- * `listStepTests` is injected (rather than reached for via `useW6wApi()`
+ * `listStepTests` is injected (rather than reached for via `useW6WApi()`
  * directly) so this stays a plain async function `node --test` can call with a
  * stub — the React-facing wrapper is `use-seed-sources.ts`'s `useSeedSources`.
  * It returns oldest-first per step, so the last entry is the most recent

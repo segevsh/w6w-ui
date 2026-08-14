@@ -96,7 +96,7 @@ import {
   type StepStartState,
   type StepTest,
   WorkflowProjectProvider,
-  useW6wApi,
+  useW6WApi,
 } from "./provider.tsx";
 // One implementation of the incoming-state pipeline, shared by every surface
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
@@ -270,7 +270,7 @@ function Inner({
   exprOptions,
   project,
 }: WorkflowFlowEditorProps) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
   const [runResult, setRunResult] = useState<StepRunState | null>(null);
   // Re-hydrate nodes+edges only when the workflow id changes identity. Local
@@ -1411,7 +1411,7 @@ function StepRunCollect({
   onRun: (values: Record<string, unknown>, state?: StepStartState) => void;
   onCancel: () => void;
 }) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const isTrigger = isTriggerApp(step.uses.app);
   const isInternal = isInternalApp(step.uses.app);
   const defs = useMemo(
@@ -1818,7 +1818,7 @@ export function StepEditModal({
   readOnly?: boolean;
   initialView?: EditView;
 }) {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure

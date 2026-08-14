@@ -1,14 +1,14 @@
 /**
  * The React-facing wrapper around `step-preview-state.ts`'s pure
  * {@link fetchSeedSources} — the one piece of the seed pipeline that must stay
- * a hook (it reaches for `useW6wApi()` + `useState`/`useEffect`), so it lives
+ * a hook (it reaches for `useW6WApi()` + `useState`/`useEffect`), so it lives
  * apart from that JSX-free module. Every surface that offers upstream seed
  * chips mounts this SAME hook: the step editor's Test tab, the canvas ▶ Run
  * collect form, and `StepBuilderModal`'s add-step Test tab.
  */
 import { useEffect, useState } from "react";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
-import { useW6wApi } from "./provider.tsx";
+import { useW6WApi } from "./provider.tsx";
 import { type SeedSource, fetchSeedSources } from "./step-preview-state.ts";
 
 /**
@@ -29,7 +29,7 @@ export function useSeedSources(
   upstreamSteps: ExpressionStepSource[],
   enabled: boolean,
 ): SeedSource[] {
-  const api = useW6wApi();
+  const api = useW6WApi();
   const [seedSources, setSeedSources] = useState<SeedSource[]>([]);
   const idsKey = JSON.stringify(upstreamSteps.map((s) => [s.id, s.label]));
   useEffect(() => {
