@@ -1,0 +1,93 @@
+/* Copyable — an in-box copy affordance decorating a value-displaying control
+   (an <input>, a <textarea>, or CodeBlock's <pre>). Mirrors `.w6w-fx-wrap`
+   (`_fx.scss:1-88`): the WRAPPER owns the box chrome and every child it holds
+   is flattened below, so the value and the copy affordance read as ONE box. */
+.w6w-copyable {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  /* Box-family invariant: byte-identical to `.w6w-fx-wrap`'s at `_fx.scss:13` —
+     six rules across four partials share this value (`building-blocks.md` §3
+     row 7); a scale token here would drift the moment that family moves. */
+  min-height: 38px;
+}
+/* A textarea/pre is taller than the button, so the button rides at the top —
+   mirrors `.w6w-fx-wrap:has(> textarea)` (`_fx.scss:16-18`). */
+.w6w-copyable:has(> textarea),
+.w6w-copyable:has(> pre) {
+  align-items: flex-start;
+}
+/* Focus reads on the box now that the inner control has no border of its own. */
+.w6w-copyable:focus-within {
+  border-color: var(--w6w-accent);
+}
+.w6w-copyable > input,
+.w6w-copyable > textarea,
+.w6w-copyable > pre {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* The control inside the wrapper carries NO chrome of its own. Mirrors
+   `_fx.scss:36-88`'s selector list and property list WHOLESALE
+   (s/w6w-fx-wrap/w6w-copyable/g) — not re-derived, gated for parity by the
+   project's test plan. See that file for the measured leak evidence (7.0px
+   alignment / 2px / 29% height) each property below defends against; a host
+   page's unscoped `input[type="text"], … textarea { … }` rule (studio's own,
+   layered AFTER this stylesheet) is exactly what these declarations beat. */
+.w6w-field .w6w-copyable input[type="text"],
+.w6w-field .w6w-copyable input[type="password"],
+.w6w-field .w6w-copyable input[type="number"],
+.w6w-field .w6w-copyable select,
+.w6w-field .w6w-copyable textarea,
+.w6w-datavar-row .w6w-copyable input,
+.w6w-datavar-row .w6w-copyable select,
+.w6w-copyable input[type="text"],
+.w6w-copyable input[type="password"],
+.w6w-copyable input[type="number"],
+.w6w-copyable select,
+.w6w-copyable textarea {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  /* lint-tokens-allow: mirrors _fx.scss:36-88 byte-for-byte, required by the parity gate */
+  padding: 4px 2px;
+  outline: none;
+  margin: 0;
+  min-height: 0;
+}
+/* The wrapper never draws a box around a box (mirrors `_fx.scss:91-98`). */
+.w6w-copyable .w6w-code-block {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+/* Button chrome extends `.w6w-icon-btn` (`_icons.scss:1-11`) in markup — this
+   class only pins the flex behaviour and the copied state, no re-authored
+   hover/active states. */
+.w6w-copyable-btn {
+  flex: none;
+}
+.w6w-copyable-btn.is-copied {
+  /* Mirrors `.w6w-expr-chip-render`'s "confirmed/success" convention exactly
+     (`_chips.scss:38-42`) — the one visual for a copied/success state. */
+  border-color: var(--w6w-success);
+  color: var(--w6w-success);
+  background: color-mix(in srgb, var(--w6w-success) 14%, transparent);
+}
+/* Scoped visually-hidden live region — not a new general `sr-only` utility
+   (none exists in `ui` to extend; see `Copyable.tsx` for why this, not the
+   button's own accessible name, carries the "Copied" announcement). */
+.w6w-copyable-status {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  white-space: nowrap;
+  clip-path: inset(50%);
+  border: 0;
+  padding: 0;
+}

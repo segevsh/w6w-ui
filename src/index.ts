@@ -39,6 +39,8 @@ export { CodeEditor } from "./CodeEditor.tsx";
 export type { CodeEditorProps } from "./CodeEditor.tsx";
 
 export { Modal } from "./components/Modal.tsx";
+export { Copyable } from "./components/Copyable.tsx";
+export type { CopyableProps } from "./components/Copyable.tsx";
 export { ConfirmModal } from "./components/ConfirmModal.tsx";
 export type { ConfirmModalProps } from "./components/ConfirmModal.tsx";
 export { AppIcon } from "./components/AppIcon.tsx";
