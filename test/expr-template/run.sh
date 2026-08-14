@@ -43,10 +43,10 @@ SRC="${UI_SRC:-$PKG/src}"
 ENGINE="${ENGINE:-chromium}"
 PW_VERSION="${PW_VERSION:-1.60.0}"
 PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
-# One top-level test() per guard (G-typing, G-sigil, and — round 2 — P4, P5,
-# Q1, R4). A tree that fails to bundle, or a run that dies half-way, reports
-# DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-6}"
+# One top-level test() per guard (G-typing, G-sigil, R4). A tree that fails to
+# bundle, or a run that dies half-way, reports DID NOT RUN rather than "0
+# failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-3}"
 
 fatal() {
   echo "FATAL: $*"

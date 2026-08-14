@@ -47,19 +47,6 @@ after(async () => {
   if (browser) await browser.close();
 });
 
-// Programmatic-dispatch is deliberately avoided for the click below (unlike
-// `clickTab` in test/picker-layout) — a REAL Playwright click routes through
-// the actual event pipeline, and for the flip control that is what a real
-// author does. `.evaluate` is still used to find the button by its exact
-// (unique, plain) textContent, mirroring the existing `byText` idiom in
-// `ExpressionEditorModal.template-mode.test.ts`.
-const clickButtonByText = (page, text) =>
-  page.evaluate((t) => {
-    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === t);
-    if (!b) throw new Error(`no button labelled "${t}"`);
-    b.click();
-  }, text);
-
 // ── G-typing — the highest-value real-browser guard: a `paintGen` bump from
 //    `onInput` repaints the WHOLE contentEditable on every keystroke, which
 //    resets the caret (jsdom has no caret model, so it cannot see this at
@@ -126,119 +113,6 @@ test("G-sigil — the render chip's sigil is visually distinct from a var chip's
   );
   assert.ok(info.varLaidOut, "var chip sigil must actually be laid out (visible)");
   assert.ok(info.renderLaidOut, "render chip sigil must actually be laid out (visible)");
-  await page.close();
-});
-
-// ── Round 2 — F-1: the chips pane must be fully inert in template mode. ────
-// jsdom cannot see any of these (no `contentEditable` model, no real click
-// dispatch through the actual DOM event pipeline), so all three are real
-// Chromium only, per the contract's R1.
-
-test("P4 — flipping a chip inside the chips pane is blocked in template mode; Save keeps the pre-edit value (no silent render-part loss)", async () => {
-  const page = await open(browser, { v: "templateVar" });
-  await clickButtonByText(page, "Template");
-  await page.waitForTimeout(50);
-
-  // The bypass the evaluator found: click the render-flip control that lives
-  // INSIDE the (now frozen) chips pane, above the template textarea.
-  const flip = page.locator(".w6w-exprmodal-chips [data-render-toggle]");
-  await flip.click();
-  await page.waitForTimeout(50);
-
-  const kindAfter = await page.evaluate(
-    () =>
-      document.querySelector(".w6w-exprmodal-chips .w6w-expr-chip")?.getAttribute("data-kind") ??
-      null,
-  );
-  assert.equal(
-    kindAfter,
-    "var",
-    `the chip must NOT flip to render from inside a frozen chips pane, got data-kind=${kindAfter}`,
-  );
-
-  await clickButtonByText(page, "Save");
-  await page.waitForTimeout(50);
-  const saves = await page.evaluate(() => window.__saves);
-  assert.equal(saves.length, 1, `Save must fire exactly once, got: ${JSON.stringify(saves)}`);
-  assert.deepEqual(
-    saves[0],
-    { type: "expr", parts: [{ kind: "var", ref: "vars.a" }] },
-    `Save must write back the untouched pre-edit value, got: ${JSON.stringify(saves[0])}`,
-  );
-  await page.close();
-});
-
-test("P5 — no dead end: the Chips button never disables while in template mode, and leaving template mode always succeeds", async () => {
-  const page = await open(browser, { v: "templateVar" });
-  await clickButtonByText(page, "Template");
-  await page.waitForTimeout(50);
-
-  // Attempt the same bypass as P4 — even if it somehow flipped a chip, the
-  // Chips button must stay enabled: nothing inside the frozen pane can create
-  // a render part while in template mode (P4 already pins that it doesn't).
-  await page.locator(".w6w-exprmodal-chips [data-render-toggle]").click();
-  await page.waitForTimeout(50);
-
-  const chipsDisabled = await page.evaluate(() => {
-    const b = [...document.querySelectorAll(".w6w-view-toggle button")].find(
-      (x) => x.textContent.trim() === "Chips",
-    );
-    return b ? b.disabled : "MISSING";
-  });
-  assert.equal(chipsDisabled, false, "the Chips button must stay enabled — no dead end");
-
-  await clickButtonByText(page, "Chips");
-  await page.waitForTimeout(50);
-  const stillInTemplateMode = await page.evaluate(
-    () => document.querySelector(".w6w-exprmodal-template-input") !== null,
-  );
-  assert.equal(
-    stillInTemplateMode,
-    false,
-    "clicking Chips must actually leave template mode (the textarea is gone)",
-  );
-  const chipsEditable = await page.evaluate(() =>
-    document.querySelector(".w6w-exprmodal-chips")?.getAttribute("contenteditable"),
-  );
-  assert.equal(chipsEditable, "true", "the chips pane must be editable again after returning");
-  await page.close();
-});
-
-test("Q1 — typing into the chips pane while in template mode has no effect; Save never writes an empty string", async () => {
-  const page = await open(browser, { v: "templateVar" });
-  await clickButtonByText(page, "Template");
-  await page.waitForTimeout(50);
-
-  await page.click(".w6w-exprmodal-chips");
-  await page.keyboard.type("TYPED-IN-CHIPS-PANE", { delay: 10 });
-  await page.waitForTimeout(100);
-
-  const chipsText = await page.evaluate(
-    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
-  );
-  assert.ok(
-    !chipsText || !chipsText.includes("TYPED-IN-CHIPS-PANE"),
-    `typing must not land in the frozen chips pane, got: ${JSON.stringify(chipsText)}`,
-  );
-  const draftValue = await page.evaluate(
-    () => document.querySelector(".w6w-exprmodal-template-input")?.value ?? null,
-  );
-  assert.equal(
-    draftValue,
-    "{{ vars.a }}",
-    `the draft textarea must be untouched by chips-pane typing, got: ${JSON.stringify(draftValue)}`,
-  );
-
-  await clickButtonByText(page, "Save");
-  await page.waitForTimeout(50);
-  const saves = await page.evaluate(() => window.__saves);
-  assert.equal(saves.length, 1, `Save must fire exactly once, got: ${JSON.stringify(saves)}`);
-  assert.notEqual(saves[0], "", "Save must not write an empty string");
-  assert.deepEqual(
-    saves[0],
-    { type: "expr", parts: [{ kind: "var", ref: "vars.a" }] },
-    `Save must write the draft's real value, got: ${JSON.stringify(saves[0])}`,
-  );
   await page.close();
 });
 

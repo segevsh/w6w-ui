@@ -15,8 +15,8 @@ const params = new URLSearchParams(location.search);
 // `render` — a var chip AND a render chip already present, for the
 // sigil-distinction guard (G-sigil), the disabled-toggle guard, and (R4) the
 // modal-side `[data-render-toggle]` presence count.
-// `templateVar` — a single legal var chip (no render part), for the round-2
-// chips-pane-freeze guards (P4/P5/Q1 below `templateVar`'s value).
+// `templateVar` — a single legal var chip (no render part). Reserved as the
+// chip-ify commit's seed scenario for a future guard.
 // `inline` — mounts the REAL inline `ExpressionInput`, not the modal, for
 // (R4)'s absence count: F-2 was the toggle leaking into this exact component.
 const v = params.get("v") || "empty";
