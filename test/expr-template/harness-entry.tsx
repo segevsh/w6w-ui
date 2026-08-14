@@ -15,10 +15,14 @@ const params = new URLSearchParams(location.search);
 // `render` — a var chip AND a render chip already present, for the
 // sigil-distinction guard (G-sigil), the disabled-toggle guard, and (R4) the
 // modal-side `[data-render-toggle]` presence count.
-// `templateVar` — a single legal var chip (no render part). Reserved as the
-// chip-ify commit's seed scenario for a future guard.
+// `templateVar` — a single legal var chip (no render part). The chip-ify
+// commit's seed scenario (T1.2.2).
 // `inline` — mounts the REAL inline `ExpressionInput`, not the modal, for
 // (R4)'s absence count: F-2 was the toggle leaking into this exact component.
+// `inlineTyped` — mounts the REAL inline `ExpressionInput` on the PLAIN
+// STRING `"{{ vars.a }}"` (not an `ExprValue`), no typing and no blur — T1.2.2
+// acceptance 4's durable-location proof: this must chip through
+// `valueToParts` at mount, or the fix is in the wrong place.
 const v = params.get("v") || "empty";
 
 const VALUES: Record<string, string | ExprValue> = {
@@ -47,6 +51,15 @@ if (v === "inline") {
   createRoot(mount).render(
     <ExpressionInput
       value={{ type: "expr", parts: [{ kind: "var", ref: "vars.a" }] }}
+      options={{ vars: ["a"], secrets: [] }}
+      onChange={() => {}}
+      aria-label="inline expression"
+    />,
+  );
+} else if (v === "inlineTyped") {
+  createRoot(mount).render(
+    <ExpressionInput
+      value="{{ vars.a }}"
       options={{ vars: ["a"], secrets: [] }}
       onChange={() => {}}
       aria-label="inline expression"

@@ -112,6 +112,15 @@ export function ExpressionInput({
   };
 
   // Seal on blur — but not while the editor modal is open (focus moved there).
+  //
+  // Deliberate behaviour change (CONDUCTOR AMENDMENT 2026-08-14, T1.2.2):
+  // `valueToParts`'s string arm now root-anchor-parses, so a masked field
+  // holding a ROOTED `{{ vars.x }}` yields an `ExprValue` here — `typeof v ===
+  // "string"` is false, and it no longer seals (sealing would encrypt the
+  // template text and permanently break resolution). A masked field holding
+  // an UNROOTED placeholder like `{{name}}` still parses to a plain string
+  // and still seals, exactly as before — see `expression-template.test.ts`'s
+  // CA-4 tests for both arms.
   const onLeave = (e: React.FocusEvent) => {
     if (modalOpen || !masked || readOnly || sealing) return;
     const next = e.relatedTarget as Node | null;

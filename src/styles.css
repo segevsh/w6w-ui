@@ -548,8 +548,8 @@
 .w6w-exprmodal-main {
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: 1fr auto;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 .w6w-exprmodal-editor {
@@ -557,6 +557,7 @@
   flex-direction: column;
   gap: 6px;
   min-height: 0;
+  flex: 1 1 auto;
 }
 .w6w-exprmodal-pane-label {
   font-size: 13px;
@@ -600,11 +601,24 @@
   flex-direction: column;
   gap: 6px;
 }
-.w6w-exprmodal-template {
-  margin: 0;
-  min-height: 44px;
-  max-height: 18vh;
+/* The Result pane's own share of `.w6w-exprmodal-main`'s flex column — the
+   SHARE lives on this wrapper, not on the `<pre>` below: the `<pre>`'s parent
+   is this wrapper (`.w6w-exprmodal-preview`, a flex column), not `-main`
+   itself, so a `flex-basis` on the `<pre>` would be a share of a
+   content-sized box and do nothing. 42% keeps the pane in the 30-50% band and
+   the chips editor above the 25% floor at 1440x900, 1280x720 and 1440x1200 —
+   measured in real Chromium, `test/expr-template/expr-template-guards.test.cjs`
+   T-height; see the project's result for the numbers. */
+.w6w-exprmodal-result-pane {
+  flex: 0 0 42%;
+  min-height: 0;
+}
+.w6w-exprmodal-result {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
+  margin: 0;
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
