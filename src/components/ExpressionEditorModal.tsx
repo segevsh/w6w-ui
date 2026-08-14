@@ -13,7 +13,7 @@ import {
   varLabel,
 } from "./expression-dom.ts";
 import {
-  parseTemplate,
+  parseRootAnchoredTemplate,
   partsToValue,
   renderResult,
   serializeTemplate,
@@ -103,20 +103,20 @@ export function ExpressionEditorModal({
   // the control below immediately, and flipping back must re-enable it.
   const hasRenderPart = parts.some((p) => p.kind === "render");
 
-  // Adopt a text form as the parts and repaint the chips editor with focus
-  // restored — the chip-ify commit mechanism: parse `text`, set it as the new
-  // `parts`, and bump `paintGen` so the `useLayoutEffect` above repaints and
-  // moves the caret into the chips editor. No caller in this file today; the
-  // typed-`{{ }}` chip-ify commit wires it up.
-  const adoptText = (text: string) => {
-    setParts(parseTemplate(text));
-    focusChipsAfterPaint.current = true;
+  // Adopt a text form as the parts and repaint the chips editor — the
+  // chip-ify commit mechanism: root-anchor-parse `text` (never the naive
+  // `parseTemplate` — a hand-typed vendor placeholder like `{{name}}` must
+  // stay literal, see `expression-template.ts`'s `parseRootAnchoredTemplate`),
+  // set it as the new `parts`, and bump `paintGen` so the `useLayoutEffect`
+  // above repaints. `restoreFocus` is `false` from `onBlur` (the editor has
+  // already lost focus; forcing it back would yank focus out of Save/Cancel —
+  // caret position is moot there) and `true` for a caller that wants the
+  // caret restored into the chips editor after the repaint.
+  const adoptText = (text: string, { restoreFocus }: { restoreFocus: boolean }) => {
+    setParts(parseRootAnchoredTemplate(text));
+    if (restoreFocus) focusChipsAfterPaint.current = true;
     setPaintGen((g) => g + 1);
   };
-  // `tsconfig.json`'s `noUnusedLocals` rejects a truly callerless const —
-  // this reference keeps it "used" without calling it, until the typed-`{{ }}`
-  // chip-ify commit wires a real call site in.
-  void adoptText;
 
   const save = () => {
     const el = editorRef.current;
@@ -337,6 +337,36 @@ export function ExpressionEditorModal({
               onInput={() => {
                 sync();
               }}
+              onBlur={() => {
+                // Discrete-event chip-ify commit #1: the editor just lost
+                // focus, so any hand-typed `{{ … }}` left as raw text gets
+                // one chance to become a chip. NEVER do this from `onInput`
+                // above — see the `paintGen` warning at the top of this file
+                // and G-typing in `expr-template-guards.test.cjs`.
+                const el = editorRef.current;
+                if (!el) return;
+                adoptText(serializeTemplate(readParts(el)), { restoreFocus: false });
+              }}
+              onPaste={(e) => {
+                // Discrete-event chip-ify commit #2. `insertNodeAtCaret` is
+                // the SAME mechanism a rail click uses, so the caret is
+                // preserved by construction — no bespoke caret-offset repaint
+                // needed (out of scope by contract). No `setPaintGen`: each
+                // part is inserted directly into the live DOM, exactly like a
+                // rail insertion, so the existing chips are never re-painted.
+                e.preventDefault();
+                const el = editorRef.current;
+                if (!el) return;
+                const text = e.clipboardData?.getData("text/plain") ?? "";
+                for (const part of parseRootAnchoredTemplate(text)) {
+                  if (part.kind === "text") {
+                    insertNodeAtCaret(el, el.ownerDocument.createTextNode(part.value ?? ""));
+                  } else {
+                    insertNodeAtCaret(el, makeChip(el.ownerDocument, part, { renderToggle: true }));
+                  }
+                }
+                sync();
+              }}
               onClick={(e) => {
                 const target = e.target as HTMLElement;
                 const x = target.closest("[data-x]");
@@ -407,12 +437,12 @@ export function ExpressionEditorModal({
               ))}
             </div>
           )}
-          <div className="w6w-exprmodal-preview">
+          <div className="w6w-exprmodal-preview w6w-exprmodal-result-pane">
             <span className="w6w-exprmodal-pane-label">
               Result
               <span className="w6w-muted w6w-small"> — live preview against the sample values</span>
             </span>
-            <pre className="w6w-exprmodal-template">{result || " "}</pre>
+            <pre className="w6w-exprmodal-result">{result || " "}</pre>
           </div>
         </div>
       </div>

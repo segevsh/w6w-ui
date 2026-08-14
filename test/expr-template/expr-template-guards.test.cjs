@@ -20,8 +20,18 @@ const HTML = (v) => `<!doctype html><html><head><meta charset="utf-8">
 <script>window.__V__=${JSON.stringify(v)};</script>
 <script src="/bundle.js"></script></body></html>`;
 
-async function open(browser, { v = "empty" } = {}) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+// T1.2.2 §M3 — three viewports, copied from picker-layout-guards.test.cjs's
+// `wide`/`med` plus a `tall` entry: the mutation class is "the Result pane's
+// height is not proportional to the modal", and two viewports can't kill a
+// fixed `height: 300px` (35% at wide, 43% at med, but 26.7% at tall).
+const VP = {
+  wide: { width: 1440, height: 900 },
+  med: { width: 1280, height: 720 },
+  tall: { width: 1440, height: 1200 },
+};
+
+async function open(browser, { v = "empty", vp = VP.wide } = {}) {
+  const page = await browser.newPage({ viewport: vp });
   const errs = [];
   page.on("pageerror", (e) => errs.push(String(e)));
   await page.route("**/*", async (route) => {
@@ -38,6 +48,25 @@ async function open(browser, { v = "empty" } = {}) {
   if (errs.length) throw new Error(`pageerror mounting v=${v}: ${errs.join("; ")}`);
   return page;
 }
+
+// Lifted from picker-layout-guards.test.cjs's `rect()`, with `left` added
+// (needed by a caret/order assertion elsewhere in this project's stream).
+// `document.querySelector(sel)` is why every caller below selects
+// `dialog.w6w-modal` / `.w6w-exprmodal-result` / `.w6w-exprmodal-editor`
+// explicitly, never a bare tag — a second `<dialog>` open elsewhere would
+// otherwise be measured silently.
+const rect = (page, sel) =>
+  page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      top: Math.round(r.top),
+      left: Math.round(r.left),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
+  }, sel);
 
 let browser;
 before(async () => {
@@ -136,4 +165,112 @@ test("R4 — [data-render-toggle] is present in the modal and ABSENT from the re
     `expected 0 [data-render-toggle] nodes in the real inline ExpressionInput, got ${inlineCount}`,
   );
   await inlinePage.close();
+});
+
+// ── T1.2.2 — chip-ify hand-typed/pasted/re-opened `{{ … }}`, and the Result
+//    pane's height as a ratio (CONDUCTOR AMENDMENT 2026-08-14, root-anchored
+//    parsing: `{{ vars.a }}` chips, a vendor placeholder like `{{name}}`
+//    never does). ──────────────────────────────────────────────────────────
+
+test("T-typed — a hand-typed {{ vars.a }} becomes a chip on blur, and every typed character landed in order first (no reordering, no onInput commit)", async () => {
+  const page = await open(browser, { v: "empty" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("{{ vars.a }}", { delay: 30 });
+  await page.waitForTimeout(150);
+  // Asserted BEFORE the blur commit — the same G-typing idiom: an over-eager
+  // paintGen bump from onInput would show up here as REORDERED text, not
+  // merely wrong text.
+  const preBlur = await page.evaluate(
+    () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
+  );
+  assert.equal(
+    preBlur,
+    "{{ vars.a }}",
+    `typed characters must land in order before the blur commit; got: ${JSON.stringify(preBlur)}`,
+  );
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.waitForTimeout(150);
+  const chip = await page.evaluate(
+    () => !!document.querySelector('.w6w-expr-chip[data-ref="vars.a"]'),
+  );
+  assert.ok(chip, "a typed {{ vars.a }}, once blurred, must become a chip");
+  await page.close();
+});
+
+test("T-paste — pasting {{ vars.a }} mid-string produces a chip and preserves the surrounding text order and the caret", async () => {
+  const page = await open(browser, { v: "empty" });
+  await page.click(".w6w-exprmodal-chips");
+  await page.keyboard.type("HEADTAIL", { delay: 10 });
+  // Place the caret between "HEAD" and "TAIL" — 4 chars from the end.
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowLeft");
+  await page.evaluate(() => {
+    const el = document.querySelector(".w6w-exprmodal-chips");
+    el.focus();
+    const dt = new DataTransfer();
+    dt.setData("text/plain", "{{ vars.a }}");
+    const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+  });
+  await page.waitForTimeout(150);
+  const order = await page.evaluate(() => {
+    const el = document.querySelector(".w6w-exprmodal-chips");
+    return Array.from(el.childNodes).map((n) => {
+      if (n.nodeType === Node.TEXT_NODE) return { type: "text", value: n.textContent };
+      const ref = n.getAttribute?.("data-ref");
+      if (ref) return { type: "chip", ref };
+      return { type: "other", tag: n.tagName };
+    });
+  });
+  assert.deepEqual(
+    order,
+    [
+      { type: "text", value: "HEAD" },
+      { type: "chip", ref: "vars.a" },
+      { type: "text", value: "TAIL" },
+    ],
+    `pasted chip must land BETWEEN "HEAD" and "TAIL", in order; got: ${JSON.stringify(order)}`,
+  );
+  await page.close();
+});
+
+test("T-inline (acceptance 4, the durable-location proof) — the real inline ExpressionInput, mounted on the plain string \"{{ vars.a }}\" with NO typing and NO blur, renders a chip", async () => {
+  const page = await open(browser, { v: "inlineTyped" });
+  const chip = await page.evaluate(
+    () => !!document.querySelector('.w6w-expr-chip[data-ref="vars.a"]'),
+  );
+  assert.ok(
+    chip,
+    "ExpressionInput mounted on the plain string {{ vars.a }} must chip through valueToParts at mount",
+  );
+  await page.close();
+});
+
+test("T-height — the Result pane is 30-50% of the modal height (a RATIO, never a pixel) at three viewports, with the chips editor not starved", async () => {
+  for (const [name, vp] of Object.entries(VP)) {
+    const page = await open(browser, { v: "empty", vp });
+    const d = await rect(page, "dialog.w6w-modal");
+    const r = await rect(page, ".w6w-exprmodal-result");
+    const e = await rect(page, ".w6w-exprmodal-editor");
+    assert.ok(
+      d && r && e,
+      `[${name}] dialog/.w6w-exprmodal-result/.w6w-exprmodal-editor must all be measurable`,
+    );
+    const resultRatio = r.height / d.height;
+    const editorRatio = e.height / d.height;
+    console.log(
+      `  [T-height ${name} ${vp.width}x${vp.height}] dialog=${d.height}px result=${r.height}px ` +
+        `(${(resultRatio * 100).toFixed(1)}%) editor=${e.height}px (${(editorRatio * 100).toFixed(1)}%)`,
+    );
+    assert.ok(
+      resultRatio >= 0.3 && resultRatio <= 0.5,
+      `[${name} ${vp.width}x${vp.height}] result pane ${(resultRatio * 100).toFixed(1)}% of modal ` +
+        `(dialog=${d.height}px, result=${r.height}px)`,
+    );
+    assert.ok(
+      editorRatio >= 0.25,
+      `[${name} ${vp.width}x${vp.height}] chips editor ${(editorRatio * 100).toFixed(1)}% of modal, ` +
+        `must not be starved (dialog=${d.height}px, editor=${e.height}px)`,
+    );
+    await page.close();
+  }
 });

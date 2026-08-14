@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Runner for ./expr-template-guards.test.cjs — the two chips/template
-# invariants no `node --test src/**/*.test.ts` can reach: real typing order
-# in a real contentEditable (jsdom has no caret, so an over-eager `paintGen`
-# bump from `onInput` can only be caught by actually typing into a browser),
-# and whether the render chip's sigil is genuinely visually distinct from a
-# var chip's (a jsdom/JSDOM assertion on `textContent` can't tell "painted
-# and visible" from "present in the DOM tree but never laid out"). This gate
-# mounts the REAL `ExpressionEditorModal`, compiled from source, in real
+# Runner for ./expr-template-guards.test.cjs — the chips/template invariants
+# no `node --test src/**/*.test.ts` can reach: real typing/paste order and
+# caret behaviour in a real contentEditable (jsdom has no caret, so an
+# over-eager `paintGen` bump from `onInput` can only be caught by actually
+# typing into a browser — G-typing, T-typed, T-paste), whether the render
+# chip's sigil is genuinely visually distinct from a var chip's (a jsdom
+# assertion on `textContent` can't tell "painted and visible" from "present in
+# the DOM tree but never laid out" — G-sigil), whether the render-toggle stays
+# opt-in (R4), whether a plain string chips at mount through `valueToParts`
+# (T-inline), and whether the Result pane's height is a real proportion of the
+# modal, not a pixel hard-code (T-height). This gate mounts the REAL
+# `ExpressionEditorModal` / `ExpressionInput`, compiled from source, in real
 # Chromium — mirrors `test/picker-layout/`'s mechanics verbatim (copy the
 # source tree, symlink in this checkout's own node_modules, bundle with
 # esbuild, run in the Playwright image), no third rig invented.
@@ -43,10 +47,11 @@ SRC="${UI_SRC:-$PKG/src}"
 ENGINE="${ENGINE:-chromium}"
 PW_VERSION="${PW_VERSION:-1.60.0}"
 PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
-# One top-level test() per guard (G-typing, G-sigil, R4). A tree that fails to
-# bundle, or a run that dies half-way, reports DID NOT RUN rather than "0
-# failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-3}"
+# One top-level test() per guard: G-typing, G-sigil, R4 (pre-existing) plus
+# T1.2.2's T-typed, T-paste, T-inline, T-height (chip-ify hand-typed/pasted
+# `{{ }}` and the Result pane's height ratio). A tree that fails to bundle, or
+# a run that dies half-way, reports DID NOT RUN rather than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-7}"
 
 fatal() {
   echo "FATAL: $*"
