@@ -4,7 +4,7 @@
   background: rgba(0, 0, 0, 0.55);
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: var(--w6w-sp-5);
   z-index: 50;
 }
 dialog.w6w-modal {
@@ -19,10 +19,10 @@ dialog.w6w-modal {
   max-width: 800px;
   max-height: 90vh;
   overflow: auto;
-  padding: 20px;
+  padding: var(--w6w-sp-5);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
 }
 dialog.w6w-modal::backdrop {
   background: rgba(0, 0, 0, 0.55);
@@ -52,18 +52,18 @@ dialog.w6w-modal.w6w-modal-full {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--w6w-sp-3);
 }
 .w6w-modal-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
   min-width: 0;
 }
 .w6w-modal-subtitle {
   color: var(--w6w-muted);
   font-size: 0.7em;
-  font-weight: 400;
+  font-weight: var(--w6w-fw-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -73,7 +73,7 @@ dialog.w6w-modal.w6w-modal-full {
 }
 .w6w-modal-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
   justify-content: flex-end;
   /* Pin the action row to the modal's bottom rather than letting it float right
      under short content — the dialog is a flex column, so `auto` pushes it down. */
@@ -83,6 +83,6 @@ dialog.w6w-modal.w6w-modal-full {
 /* Icon-button view toggle (e.g. Form ⇄ JSON), inline with a modal header. */
 .w6w-view-toggle {
   display: flex;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   flex-shrink: 0;
 }

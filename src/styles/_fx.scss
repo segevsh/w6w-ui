@@ -5,11 +5,11 @@
 .w6w-fx-wrap {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
   min-height: 38px;
 }
 /* A textarea is taller than the ƒx, so there the decoration rides at the top. */
@@ -48,7 +48,7 @@
   border: none;
   background: transparent;
   border-radius: 0;
-  padding: 4px 2px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-0-5);
   outline: none;
   /* EVERY property in this block is load-bearing, for the same reason
      `.w6w-fx-inline-label`'s `margin: 0` is (see below): a host page layers its
@@ -105,7 +105,7 @@
 .w6w-fx-inline {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--w6w-sp-2);
 }
 .w6w-fx-inline > input[type="checkbox"] {
   flex: 0 0 auto;
@@ -142,9 +142,9 @@
   flex-shrink: 0;
   color: var(--w6w-muted);
   font-size: 13px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--w6w-font-mono);
   line-height: 1;
-  padding: 4px 6px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-1-5);
   cursor: pointer;
 }
 .w6w-expr-fx:hover {

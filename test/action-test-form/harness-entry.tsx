@@ -12,15 +12,36 @@ import { ActionTestForm } from "./ActionTestForm.tsx";
 import { W6WUIProvider } from "./provider.tsx";
 import type { ActionDef } from "./types.ts";
 
-// Fake API: every method returns a promise that never resolves. Neither the
-// action select (controlled via `action`) nor opening the pop-out needs a
-// real network call to lay out — `connectionId` is left unset, so the
-// saved-tests/run-history effects never fire.
+// `variant` fixture switch (T2.1.1). Default (no query) renders EXACTLY
+// today's tree — the pre-existing M-popout-scroll guard depends on that not
+// changing. Two new variants exercise defect 1 (the error box flush against
+// the hint text): both `embedded`, both give `invokeAction` a REJECTING
+// promise (every other method still never resolves — neither the saved-tests
+// rail nor the run-history effect needs a real response to lay out), so
+// clicking "Run action" reliably produces a `.w6w-result.w6w-error` box.
+//   embedded-rail   — embedded + connectionId set → renders `savedTestsRail`
+//                     → exercises `.w6w-tester-embedded-main` (the
+//                     screenshot's own configuration).
+//   embedded-norail — embedded, no connectionId → exercises
+//                     `.w6w-tester-embedded-scroll` directly.
+const variant = new URLSearchParams(location.search).get("variant");
+
+// Fake API: every method returns a promise that never resolves, EXCEPT
+// `invokeAction` on the two `embedded-*` variants, which rejects so the
+// error box has something real to render.
 // biome-ignore lint/suspicious/noExplicitAny: harness stub, intentionally untyped against W6WApi.
 const api: any = new Proxy(
   {},
   {
-    get: () => (..._args: unknown[]) => new Promise(() => {}),
+    get: (_t, prop) => {
+      if (
+        (variant === "embedded-rail" || variant === "embedded-norail") &&
+        prop === "invokeAction"
+      ) {
+        return () => Promise.reject(new Error("action-test-form harness: invokeAction rejected"));
+      }
+      return (..._args: unknown[]) => new Promise(() => {});
+    },
   },
 );
 
@@ -40,9 +61,18 @@ const action: ActionDef = {
 const mount = document.getElementById("root");
 if (!mount) throw new Error("no #root to mount into");
 
+const embedded = variant === "embedded-rail" || variant === "embedded-norail";
+const connectionId = variant === "embedded-rail" ? "conn-1" : undefined;
+
 createRoot(mount).render(
   <W6WUIProvider api={api}>
-    <ActionTestForm appId="app-x" actions={[action]} action={action} />
+    <ActionTestForm
+      appId="app-x"
+      actions={[action]}
+      action={action}
+      embedded={embedded}
+      connectionId={connectionId}
+    />
   </W6WUIProvider>,
 );
 

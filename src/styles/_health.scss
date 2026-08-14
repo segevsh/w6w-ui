@@ -1,14 +1,14 @@
 .w6w-health-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 8px 2px 7px;
+  gap: var(--w6w-sp-1-5);
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-2) var(--w6w-sp-0-5) 7px;
   border: 1px solid color-mix(in srgb, var(--w6w-health-color) 40%, var(--w6w-border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--w6w-health-color) 12%, transparent);
   color: var(--w6w-text);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--w6w-fs-xs);
+  line-height: var(--w6w-lh-normal);
   white-space: nowrap;
   --w6w-health-color: var(--w6w-health-unknown);
 }
@@ -40,7 +40,7 @@
 .w6w-app-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--w6w-sp-2-5);
 }
 
 /* Modal */

@@ -4,11 +4,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--w6w-sp-1-5);
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 5px var(--w6w-sp-2);
   min-height: 38px;
 }
 .w6w-multiselect:focus-within {
@@ -26,9 +26,9 @@
   border: none;
   background: transparent;
   color: var(--w6w-muted);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   font-family: inherit;
-  padding: 2px 0;
+  padding: var(--w6w-sp-0-5) 0;
   outline: none;
   cursor: pointer;
 }
@@ -40,11 +40,11 @@
 .w6w-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   background: var(--w6w-panel);
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
-  padding: 2px 4px 2px 8px;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-1) var(--w6w-sp-0-5) var(--w6w-sp-2);
   font-size: 13px;
   line-height: 1.4;
   color: var(--w6w-text);
@@ -59,7 +59,7 @@
   border-radius: 4px;
   background: transparent;
   color: var(--w6w-muted);
-  font-size: 14px;
+  font-size: var(--w6w-fs-sm);
   line-height: 1;
   cursor: pointer;
 }

@@ -42,6 +42,7 @@
     "test": "node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts",
     "test:picker-layout": "bash test/picker-layout/run.sh",
     "test:expr-template": "bash test/expr-template/run.sh",
+    "test:action-test-form": "bash test/action-test-form/run.sh",
     "lint": "biome check .",
     "lint:tokens": "node scripts/lint-tokens.mjs",
     "format": "biome format --write ."
