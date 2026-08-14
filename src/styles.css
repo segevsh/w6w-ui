@@ -1682,6 +1682,16 @@ dialog.w6w-modal p {
   padding-top: 12px;
   margin-top: 0;
 }
+/* Test-required note — always rendered (empty when there is nothing to say),
+   so its reserved height keeps the footer's buttons at the same x/y whether
+   the note has text or not; one line, ellipsized rather than wrapped. */
+.w6w-stepconfig-testnote {
+  flex-shrink: 0;
+  min-height: 1.4em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* The whole-config "code"/JSON view is a DIRECT child of the body — stretch it
    to fill the modal height instead of leaving the dialog half-empty (it passes

@@ -83,7 +83,12 @@ const rect = (page, sel) =>
     const el = document.querySelector(s);
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { top: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+    return {
+      top: Math.round(r.top),
+      left: Math.round(r.left),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
   }, sel);
 
 const overflow = (page, sel) =>
@@ -449,5 +454,133 @@ test("I9 — Connected-apps tab error/loading paths stay hosted and nested", asy
       `Connected-apps tab "${label}" path: .w6w-apppicker-host must be nested inside .w6w-stepbuilder-content, not replace or escape it`,
     );
     await page.close();
+  }
+});
+
+// ── F1 — the test-required note never moves the footer buttons. The axis is
+//    note-present vs note-absent, NOT before-vs-after a failed test run:
+//    `testPassed` starts false and `testRequired` defaults true
+//    (StepBuilderModal.tsx:1065-1066, :723-726), so the note is already on
+//    screen the moment the Test tab is reached — a before/after-failure delta
+//    is zero and would pass on the broken tree. Height is also the wrong
+//    measurement: on the base tree the note moves Cancel's LEFT by ~422px
+//    while the primary button and the footer's height both move 0px, so only
+//    per-button left+top (not height) discriminates. ───────────────────────
+test("F1 — the test-required note never moves the footer buttons", async () => {
+  const NARROW = { width: 820, height: 900 };
+
+  // Drives AppStepConfig's Test tab from the real component — no fifth rig,
+  // no transcribed footer markup: Apps tab -> first app row -> the Setup
+  // tab's action <select> -> the "Test" subtab. `treq=0` (see harness-entry)
+  // makes the harness stamp `testRequired: false` on every seeded app — the
+  // note-absent state; omitting it is the note-present (default-required)
+  // state.
+  async function openTestTab(q, vp) {
+    const page = await open(browser, { v: "step", q, vp });
+    await clickTab(page, "Apps");
+    await page.waitForTimeout(150);
+    const rowClicked = await page.evaluate(() => {
+      const btn = document.querySelector(".w6w-stepbuilder-item");
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+    assert.ok(rowClicked, "no .w6w-stepbuilder-item to click");
+    await page.waitForTimeout(150);
+    const actionPicked = await page.evaluate(() => {
+      const sel = document.querySelector("select");
+      if (!sel) return false;
+      const opt = [...sel.options].find((o) => o.value !== "");
+      if (!opt) return false;
+      sel.value = opt.value;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    });
+    assert.ok(actionPicked, "no selectable action option in the Setup tab's <select>");
+    await page.waitForTimeout(150);
+    const testClicked = await page.evaluate(() => {
+      const b = [...document.querySelectorAll(".w6w-subtab")].find(
+        (x) => x.textContent.trim() === "Test",
+      );
+      if (!b) return false;
+      b.click();
+      return true;
+    });
+    assert.ok(testClicked, 'no .w6w-subtab labelled "Test"');
+    await page.waitForTimeout(150);
+    return page;
+  }
+
+  for (const vp of [VP.wide, NARROW]) {
+    const label = `vp=${vp.width}x${vp.height}`;
+
+    const presentPage = await openTestTab("n=60", vp);
+    const cPresent = await rect(presentPage, ".w6w-stepconfig-footer .w6w-btn-ghost");
+    const pPresent = await rect(
+      presentPage,
+      ".w6w-stepconfig-footer .w6w-btn:not(.w6w-btn-ghost)",
+    );
+    const fPresent = await rect(presentPage, ".w6w-stepconfig-footer");
+    const nPresent = await rect(presentPage, ".w6w-stepconfig-testnote");
+    const noteText = await presentPage.evaluate(
+      () => document.querySelector(".w6w-stepconfig-testnote")?.textContent ?? "",
+    );
+    await presentPage.close();
+
+    assert.ok(cPresent, `${label} note-present: Cancel button not found`);
+    assert.ok(pPresent, `${label} note-present: primary button not found`);
+    assert.ok(fPresent, `${label} note-present: .w6w-stepconfig-footer not found`);
+    assert.ok(nPresent, `${label} note-present: .w6w-stepconfig-testnote not found`);
+    // Anti-deletion: the note must still be rendered and visible (deleting it
+    // also stops the buttons moving — this is the check that forbids that).
+    assert.ok(
+      nPresent.width > 0 && nPresent.height > 0,
+      `${label} note-present: .w6w-stepconfig-testnote must have a non-zero rect, got ${JSON.stringify(nPresent)}`,
+    );
+    assert.ok(
+      noteText.includes("a passing test is required before this step can be published"),
+      `${label} note-present: note text missing the expected copy, got "${noteText}"`,
+    );
+
+    const absentPage = await openTestTab("n=60&treq=0", vp);
+    const cAbsent = await rect(absentPage, ".w6w-stepconfig-footer .w6w-btn-ghost");
+    const pAbsent = await rect(absentPage, ".w6w-stepconfig-footer .w6w-btn:not(.w6w-btn-ghost)");
+    const fAbsent = await rect(absentPage, ".w6w-stepconfig-footer");
+    await absentPage.close();
+
+    assert.ok(cAbsent, `${label} note-absent: Cancel button not found`);
+    assert.ok(pAbsent, `${label} note-absent: primary button not found`);
+    assert.ok(fAbsent, `${label} note-absent: .w6w-stepconfig-footer not found`);
+
+    assert.equal(
+      cPresent.left,
+      cAbsent.left,
+      `${label}: Cancel left moved (present ${cPresent.left} vs absent ${cAbsent.left})`,
+    );
+    assert.equal(
+      cPresent.top,
+      cAbsent.top,
+      `${label}: Cancel top moved (present ${cPresent.top} vs absent ${cAbsent.top})`,
+    );
+    assert.equal(
+      pPresent.left,
+      pAbsent.left,
+      `${label}: primary button left moved (present ${pPresent.left} vs absent ${pAbsent.left})`,
+    );
+    assert.equal(
+      pPresent.top,
+      pAbsent.top,
+      `${label}: primary button top moved (present ${pPresent.top} vs absent ${pAbsent.top})`,
+    );
+    assert.equal(
+      fPresent.height,
+      fAbsent.height,
+      `${label}: footer height moved (present ${fPresent.height} vs absent ${fAbsent.height})`,
+    );
+    assert.equal(
+      fPresent.top,
+      fAbsent.top,
+      `${label}: footer top moved (present ${fPresent.top} vs absent ${fAbsent.top})`,
+    );
   }
 });

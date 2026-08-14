@@ -44,10 +44,12 @@ PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 # One top-level test() per invariant I1-I9 (I5's body also carries the
 # cross-tab panel-width check folded in per the amendment, plus the host==
 # content width check added for TA4's H2; I8's body carries TA4's H3/H4
-# additions). The verdict below is REFUSED unless exactly this many ran: a
-# tree that fails to bundle, or a run that dies half-way, reports DID NOT RUN
-# rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-9}"
+# additions), plus F1 — the test-required note (AppStepConfig's Test tab)
+# never moves the footer's Cancel/primary buttons, note-present vs
+# note-absent, at two viewports. The verdict below is REFUSED unless exactly
+# this many ran: a tree that fails to bundle, or a run that dies half-way,
+# reports DID NOT RUN rather than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-10}"
 
 fatal() {
   echo "FATAL: $*"
