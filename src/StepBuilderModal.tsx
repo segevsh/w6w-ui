@@ -1379,6 +1379,20 @@ export function AppStepConfig({
           ))}
       </div>
 
+      {/* Test-required note — always rendered while on the Test tab, as a
+          sibling ABOVE the footer, so the footer's two buttons never move
+          whether the note has text or not (the row's reserved min-height
+          keeps both states geometrically identical). */}
+      {tab === "test" && (
+        <div className="w6w-stepconfig-testnote">
+          {testRequired && !testPassed && (
+            <span className="w6w-muted w6w-small">
+              Not yet tested — a passing test is required before this step can be published.
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Footer — pinned to the modal bottom. Each tab has a Next button; the
           last (Test) commits the step. */}
       <div className="w6w-modal-actions w6w-stepconfig-footer">
@@ -1386,21 +1400,14 @@ export function AppStepConfig({
           Cancel
         </button>
         {tab === "test" ? (
-          <>
-            {testRequired && !testPassed && (
-              <span className="w6w-muted w6w-small">
-                Not yet tested — a passing test is required before this step can be published.
-              </span>
-            )}
-            <button
-              type="button"
-              className="w6w-btn"
-              disabled={committedId === null && !canAdd}
-              onClick={committedId !== null ? onClose : add}
-            >
-              {committedId !== null ? "Done" : "Add step"}
-            </button>
-          </>
+          <button
+            type="button"
+            className="w6w-btn"
+            disabled={committedId === null && !canAdd}
+            onClick={committedId !== null ? onClose : add}
+          >
+            {committedId !== null ? "Done" : "Add step"}
+          </button>
         ) : (
           <button
             type="button"
