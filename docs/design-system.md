@@ -188,3 +188,8 @@ git add scripts/lint-tokens.baseline.json
 The baseline may only shrink over time — `--update` is how a substitution
 pass (e.g. the `ui` adoption that follows this doc) commits the smaller count
 it earned.
+
+**v1 limitation, named rather than silently dropped:** the gate scans `.scss`
+only. It does not see inline `style={{ gap: 12 }}`-style literals in `.tsx`
+files — `ui` alone has roughly 48 of those. Closing that gap is tracked in
+`FOLLOWUPS.md` (D-g), not assumed away.
