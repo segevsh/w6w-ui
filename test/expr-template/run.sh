@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Runner for ./expr-template-guards.test.cjs — the two chips/template
-# invariants no `node --test src/**/*.test.ts` can reach: real typing order
-# in a real contentEditable (jsdom has no caret, so an over-eager `paintGen`
-# bump from `onInput` can only be caught by actually typing into a browser),
-# and whether the render chip's sigil is genuinely visually distinct from a
-# var chip's (a jsdom/JSDOM assertion on `textContent` can't tell "painted
-# and visible" from "present in the DOM tree but never laid out"). This gate
-# mounts the REAL `ExpressionEditorModal`, compiled from source, in real
-# Chromium — mirrors `test/picker-layout/`'s mechanics verbatim (copy the
-# source tree, symlink in this checkout's own node_modules, bundle with
-# esbuild, run in the Playwright image), no third rig invented.
+# Runner for ./expr-template-guards.test.cjs — invariants no `node --test
+# src/**/*.test.ts` can reach: real typing order in a real contentEditable
+# (jsdom has no caret, so an over-eager `paintGen` bump from `onInput` can
+# only be caught by actually typing into a browser), whether the render
+# chip's sigil is genuinely visually distinct from a var chip's (a
+# jsdom/JSDOM assertion on `textContent` can't tell "painted and visible"
+# from "present in the DOM tree but never laid out"), and (T1.2.3) whether a
+# SECOND real `<dialog>` — the nested "+ Add" modal — actually stacks over
+# the editor's own, honours Escape/backdrop scoping, and returns the caret on
+# close (jsdom's `<dialog>` shim has no top-layer stacking or focus-restore
+# to get wrong in the first place, so none of that is reachable there
+# either). This gate mounts the REAL `ExpressionEditorModal`, compiled from
+# source, in real Chromium — mirrors `test/picker-layout/`'s mechanics
+# verbatim (copy the source tree, symlink in this checkout's own
+# node_modules, bundle with esbuild, run in the Playwright image), no third
+# rig invented.
 #
 #   pnpm test:expr-template                    # from packages/ui
 #   ENGINE=firefox pnpm test:expr-template      # the same tests in another engine
@@ -43,10 +48,13 @@ SRC="${UI_SRC:-$PKG/src}"
 ENGINE="${ENGINE:-chromium}"
 PW_VERSION="${PW_VERSION:-1.60.0}"
 PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
-# One top-level test() per guard (G-typing, G-sigil, R4). A tree that fails to
-# bundle, or a run that dies half-way, reports DID NOT RUN rather than "0
-# failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-3}"
+# One top-level test() per guard: G-typing, G-sigil, R4 (chips/template), plus
+# T1.2.3's "+ Add" guards — A4 (stacked dialog), A8-escape, A8-backdrop,
+# "A7 + A9" (caret returns, no browser dialog invoked), and "A2 + A7"
+# (stays-mounted: chips text unchanged, rail gains the new name, + Add still
+# rendered). A tree that fails to bundle, or a run that dies half-way, reports
+# DID NOT RUN rather than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-8}"
 
 fatal() {
   echo "FATAL: $*"

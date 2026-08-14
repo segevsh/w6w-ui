@@ -70,6 +70,10 @@ export function ExpressionEditorModal({
   // User-supplied sample values (keyed by var ref) that the Result pane previews
   // the expression against. Design-time only — never sent to the engine.
   const [samples, setSamples] = useState<Record<string, string>>({});
+  // Which store's "+ Add" nested dialog is open, or none. Gated at render by
+  // whether the host supplied the matching callback (`options.createVar` /
+  // `.createSecret`) — see the rail below.
+  const [adding, setAdding] = useState<"var" | "secret" | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paint on `paintGen`, not on every `parts` change; edits otherwise flow through the DOM.
   useLayoutEffect(() => {
@@ -122,6 +126,18 @@ export function ExpressionEditorModal({
     const el = editorRef.current;
     onSave(partsToValue(el ? readParts(el) : parts));
     onClose();
+  };
+
+  // Close the nested "+ Add" dialog and return focus + caret to the chips
+  // editor. `Modal.tsx` never calls `el.close()` on unmount, so React would
+  // otherwise leave a still-`open` `<dialog>` for the browser to tear down and
+  // restore focus to `<body>` — the author loses their insertion point right
+  // when they come back to insert the value they just created. Reuse the same
+  // programmatic-repaint mechanism `exitTemplate` used for the same problem.
+  const closeAdding = () => {
+    setAdding(null);
+    focusChipsAfterPaint.current = true;
+    setPaintGen((g) => g + 1);
   };
 
   const vars = options.vars ?? [];
@@ -231,7 +247,19 @@ export function ExpressionEditorModal({
         {/* Left: the data sources in scope. */}
         <aside className="w6w-exprmodal-sources">
           <div className="w6w-exprmodal-group">
-            <span className="w6w-exprmodal-group-label">Variables</span>
+            <div className="w6w-field-labelrow">
+              <span className="w6w-exprmodal-group-label">Variables</span>
+              {options.createVar && (
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  data-testid="expr-add-var"
+                  onClick={() => setAdding("var")}
+                >
+                  + Add
+                </button>
+              )}
+            </div>
             {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
             {vars.map((v) =>
               source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
@@ -239,7 +267,19 @@ export function ExpressionEditorModal({
           </div>
 
           <div className="w6w-exprmodal-group">
-            <span className="w6w-exprmodal-group-label">Secrets</span>
+            <div className="w6w-field-labelrow">
+              <span className="w6w-exprmodal-group-label">Secrets</span>
+              {options.createSecret && (
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  data-testid="expr-add-secret"
+                  onClick={() => setAdding("secret")}
+                >
+                  + Add
+                </button>
+              )}
+            </div>
             {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
             {secrets.map((s) =>
               source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
@@ -414,6 +454,129 @@ export function ExpressionEditorModal({
             </span>
             <pre className="w6w-exprmodal-template">{result || " "}</pre>
           </div>
+        </div>
+      </div>
+
+      {/* Nested "+ Add" dialog — last child of this Modal, so its own
+          <dialog> stacks over this one in the browser's top layer
+          (structurally identical to StepBuilderModal's AddConnectionModal
+          nesting). Gated the same way the rail button was, so state can
+          never point at a store the host didn't wire a callback for. */}
+      {adding === "var" && options.createVar && (
+        <AddValueModal kind="var" onCreate={options.createVar} onClose={closeAdding} />
+      )}
+      {adding === "secret" && options.createSecret && (
+        <AddValueModal kind="secret" onCreate={options.createSecret} onClose={closeAdding} />
+      )}
+    </Modal>
+  );
+}
+
+interface AddValueModalProps {
+  kind: "var" | "secret";
+  onCreate: (input: { name: string; value: string; description?: string }) => Promise<void>;
+  onClose: () => void;
+}
+
+/**
+ * The nested "+ Add" form. Same shape as `AddConnectionModal`'s
+ * `ConnectionConfig` — `w6w-stack` body, one `w6w-field` label per input, an
+ * inline `w6w-result w6w-error` block, ghost-Cancel + primary footer — but it
+ * never fetches: `onCreate` (the host's `ExpressionOptions.createVar` /
+ * `.createSecret`) is the only IO, so this mounts fine with no
+ * `<W6WUIProvider>` around it (see `ExpressionEditorModal`'s own module
+ * contract). A rejection leaves the dialog open with the message shown, name
+ * hint copy matches studio's Vars/Vault pages.
+ */
+function AddValueModal({ kind, onCreate, onClose }: AddValueModalProps) {
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const noun = kind === "var" ? "variable" : "secret";
+
+  async function submit() {
+    setError(null);
+    setPending(true);
+    try {
+      await onCreate({ name, value, description: description || undefined });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal title={`Add ${noun}`} onClose={onClose}>
+      <div className="w6w-stack">
+        <label className="w6w-field">
+          <span>Name</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={kind === "var" ? "e.g. api_base_url" : "e.g. openai_api_key"}
+            autoComplete="off"
+            data-testid="expr-add-value-name"
+            // biome-ignore lint/a11y/noAutofocus: nested dialog opened on demand — showModal() already moved focus in, this just picks the first field.
+            autoFocus
+          />
+          <span className="w6w-muted w6w-small">
+            Lowercase letters, digits, and underscores. Must start with a letter or underscore.
+          </span>
+        </label>
+
+        <label className="w6w-field">
+          <span>Value</span>
+          <input
+            type={kind === "secret" ? "password" : "text"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoComplete="off"
+            data-testid="expr-add-value-value"
+          />
+          {kind === "secret" && (
+            <span className="w6w-muted w6w-small">
+              Stored encrypted at rest. Once saved, it is not readable through the UI.
+            </span>
+          )}
+        </label>
+
+        <label className="w6w-field">
+          <span>Description</span>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional"
+            autoComplete="off"
+          />
+        </label>
+
+        {error && <div className="w6w-result w6w-error">{error}</div>}
+
+        <div className="w6w-modal-actions">
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            data-testid="expr-add-value-cancel"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="w6w-btn"
+            data-testid="expr-add-value-save"
+            disabled={!name || !value || pending}
+            onClick={submit}
+          >
+            {pending ? "Saving…" : "Save"}
+          </button>
         </div>
       </div>
     </Modal>
