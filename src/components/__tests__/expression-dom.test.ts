@@ -9,11 +9,9 @@ import { test } from "node:test";
 import {
   ensureFillerBreak,
   insertNodeAtCaret,
-  isCanonicalRef,
   isRefSafeKey,
   paintParts,
   readParts,
-  templateWarnings,
   varLabel,
 } from "../expression-dom.ts";
 import { parseTemplate, serializeTemplate } from "../expression-template.ts";
@@ -545,78 +543,4 @@ test("isRefSafeKey — every safe key survives the full ref round trip", () => {
     // …and the label it displays is the short form, unambiguously.
     assert.equal(varLabel(ref), `gate_1.${k}`, k);
   }
-});
-
-// --- T3.1.1: isCanonicalRef / templateWarnings — the prose root list in
-// `varLabel`'s doc comment, turned into checkable data + a warning function.
-
-test("isCanonicalRef — a step-output ref and a plain root both pass; a wrong shape or root fail", () => {
-  assert.equal(isCanonicalRef("steps.gate_1.output.x"), true);
-  assert.equal(isCanonicalRef("steps.gate_1.output"), true);
-  assert.equal(isCanonicalRef("documents.a.b"), true);
-  assert.equal(isCanonicalRef("vars.from_email"), true);
-  assert.equal(isCanonicalRef("trigger.event"), true);
-  assert.equal(isCanonicalRef("secrets.jwt_key"), true);
-  assert.equal(isCanonicalRef("inputs.name"), true);
-  assert.equal(isCanonicalRef("foreach.item"), true);
-  assert.equal(isCanonicalRef("output.x"), true);
-  // A `steps.` ref missing the `.output` SHAPE fails, even though "steps" is
-  // a canonical root — the engine never resolves `steps.gate_1` bare.
-  assert.equal(isCanonicalRef("steps.gate_1"), false);
-  assert.equal(isCanonicalRef("step.gate_1"), false); // not a root at all
-  assert.equal(isCanonicalRef("Vars.x"), false); // case-sensitive
-  assert.equal(isCanonicalRef("nope.x"), false);
-});
-
-test("templateWarnings — the three sources fire, canonical refs and known secrets stay silent", () => {
-  const secrets = ["known_key"];
-  const parts: Parameters<typeof templateWarnings>[0] = [
-    { kind: "var", ref: "steps.gate_1.output.x" }, // clean
-    { kind: "var", ref: "documents.a.b" }, // clean
-    { kind: "var", ref: "step.gate_1" }, // warns: not a canonical root
-    { kind: "var", ref: "Vars.x" }, // warns: case-sensitive miss
-    { kind: "var", ref: "nope.x" }, // warns: not a canonical root
-    { kind: "secret", ref: "known_key" }, // clean — in `secrets`
-    { kind: "secret", ref: "unknown_key" }, // warns: not offered
-    { kind: "text", value: "plain text, no braces" }, // clean
-    { kind: "text", value: "literal {{ oops" }, // warns: will become a chip
-  ];
-  const warnings = templateWarnings(parts, secrets);
-  assert.equal(warnings.length, 5, `expected exactly 5 warnings, got: ${JSON.stringify(warnings)}`);
-  assert.ok(warnings.some((w) => w.includes("step.gate_1")));
-  assert.ok(warnings.some((w) => w.includes("Vars.x")));
-  assert.ok(warnings.some((w) => w.includes("nope.x")));
-  assert.ok(warnings.some((w) => w.includes("unknown_key")));
-  assert.ok(warnings.some((w) => w.includes("{{")));
-  // The clean refs must never be QUOTED in any warning message — a plain
-  // `.includes(clean)` would be fooled by "known_key" being a substring of
-  // "unknown_key"'s own (correctly warned) message.
-  for (const clean of ["steps.gate_1.output.x", "documents.a.b", "known_key"]) {
-    assert.ok(
-      !warnings.some((w) => w.includes(`"${clean}"`)),
-      `"${clean}" is canonical/known and must not warn`,
-    );
-  }
-});
-
-test("templateWarnings — a render part is fed the SAME root predicate as a var part", () => {
-  const varWarning = templateWarnings([{ kind: "var", ref: "nope.x" }], []);
-  const renderWarning = templateWarnings([{ kind: "render", ref: "nope.x" }], []);
-  assert.equal(varWarning.length, 1);
-  assert.deepEqual(renderWarning, varWarning);
-  // …and a canonical render ref is silent, exactly like a canonical var ref.
-  assert.deepEqual(templateWarnings([{ kind: "render", ref: "documents.a.body" }], []), []);
-});
-
-test("templateWarnings — never blocks: an all-clean part list yields an empty list, not a throw", () => {
-  assert.deepEqual(
-    templateWarnings(
-      [
-        { kind: "text", value: "Hi " },
-        { kind: "var", ref: "vars.name" },
-      ],
-      [],
-    ),
-    [],
-  );
 });
