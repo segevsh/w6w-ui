@@ -1,29 +1,25 @@
 #!/usr/bin/env bash
-# Runner for ./expr-template-guards.test.cjs — the chips/template invariants
-# no `node --test src/**/*.test.ts` can reach: real typing/paste order and
-# caret behaviour in a real contentEditable (jsdom has no caret, so an
-# over-eager `paintGen` bump from `onInput` can only be caught by actually
-# typing into a browser — G-typing, T-typed, T-paste), whether the render
-# chip's sigil is genuinely visually distinct from a var chip's (a jsdom
-# assertion on `textContent` can't tell "painted and visible" from "present in
-# the DOM tree but never laid out" — G-sigil), whether the render-toggle stays
-# opt-in (R4), whether a plain string chips at mount through `valueToParts`
-# (T-inline), and whether the Result pane's height is a real proportion of the
-# modal, not a pixel hard-code (T-height). This gate mounts the REAL
-# `ExpressionEditorModal` / `ExpressionInput`, compiled from source, in real
-# Chromium — mirrors `test/picker-layout/`'s mechanics verbatim (copy the
-# source tree, symlink in this checkout's own node_modules, bundle with
-# esbuild, run in the Playwright image), no third rig invented.
+# Runner for ./action-test-form-guards.test.cjs — ActionTestForm's OWN
+# pop-out ("Edit params", `Modal size="full"`) layout invariant no
+# `node --test src/**/*.test.ts` can reach: jsdom performs no layout
+# (getBoundingClientRect and scrollHeight/clientHeight are all zeros), so a
+# jsdom test would pass on a tree that clips real content. This gate mounts
+# the REAL ActionTestForm, compiled from source, in real Chromium — mirrors
+# `test/expr-template/`'s mechanics verbatim (copy the source tree, symlink
+# in this checkout's own node_modules, bundle with esbuild, run in the
+# Playwright image), no fourth rig invented beyond what T1.4.1 round 2
+# adopted from the evaluator's own throwaway harness.
 #
-#   pnpm test:expr-template                    # from packages/ui
-#   ENGINE=firefox pnpm test:expr-template      # the same tests in another engine
+#   pnpm exec bash test/action-test-form/run.sh        # from packages/ui
+#   ENGINE=firefox bash test/action-test-form/run.sh   # the same test in another engine
 #
 # What it does: copies the source tree into a scratch dir, symlinks in the
-# checkout's own node_modules (react/react-dom — everything
-# `ExpressionEditorModal`'s import graph actually reaches; nothing is stubbed
-# or fabricated — this gate mounts the real component, unlike studio's
-# page-guards which fake @w6w/ui), bundles with esbuild, and runs the tests in
-# a browser inside the Playwright image. It writes ONLY inside its own
+# checkout's own node_modules (react/react-dom — everything ActionTestForm's
+# own import graph reaches; nothing is stubbed or fabricated — this gate
+# mounts the real component, unlike studio's page-guards which fake
+# @w6w/ui), bundles with esbuild, and runs the test in a browser inside the
+# Playwright image with a plain `<W6WUIProvider api={...}>` stub object (no
+# network layer — see harness-entry.tsx). It writes ONLY inside its own
 # `mktemp -d` and the container is `--rm`: no service, DB, catalog row or
 # checkout is touched, so it is safe to re-run.
 #
@@ -36,8 +32,8 @@
 #     accident" the way it can for an undeclared tool.
 #
 # Knobs: ENGINE, PW_CORE, PW_VERSION, PW_IMAGE, ESBUILD, EXPECTED_TESTS, and
-# UI_SRC — point that at a copy of `src` to run the tests against a tree other
-# than this checkout's (how the guards are mutation-tested without dirtying a
+# UI_SRC — point that at a copy of `src` to run the test against a tree other
+# than this checkout's (how the guard is mutation-tested without dirtying a
 # shared working tree — see the project's result for the exact mutants run).
 set -uo pipefail
 
@@ -47,13 +43,9 @@ SRC="${UI_SRC:-$PKG/src}"
 ENGINE="${ENGINE:-chromium}"
 PW_VERSION="${PW_VERSION:-1.60.0}"
 PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
-# One top-level test() per guard. Pre-existing: G-typing, G-sigil, R4.
-# T1.2.2 added T-typed, T-paste, T-inline, T-height (chip-ify hand-typed/pasted
-# `{{ }}` and the Result pane's height ratio). T1.4.1 added M-full (the -full
-# size modifier actually applying). UNION of both branches' additions — never
-# one side's count. A tree that fails to bundle, or a run that dies half-way,
-# reports DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-8}"
+# One top-level test() (M-popout-scroll). A tree that fails to bundle, or a
+# run that dies half-way, reports DID NOT RUN rather than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-1}"
 
 fatal() {
   echo "FATAL: $*"
@@ -61,8 +53,8 @@ fatal() {
 }
 
 [ -d "$SRC" ] || fatal "no source tree at $SRC"
-[ -f "$SRC/components/ExpressionEditorModal.tsx" ] ||
-  fatal "$SRC does not look like packages/ui's src/ (no components/ExpressionEditorModal.tsx)"
+[ -f "$SRC/ActionTestForm.tsx" ] ||
+  fatal "$SRC does not look like packages/ui's src/ (no ActionTestForm.tsx)"
 command -v docker >/dev/null 2>&1 || fatal "docker is required to run a real browser"
 docker image inspect "$PW_IMAGE" >/dev/null 2>&1 || fatal "image $PW_IMAGE is not present — docker pull $PW_IMAGE"
 
@@ -84,15 +76,15 @@ echo "== engine: $ENGINE · image: $PW_IMAGE · playwright-core: $PW_CORE"
 
 mkdir -p "$W/tree/src"
 cp -a "$SRC/." "$W/tree/src/"
-cp "$HERE/harness-entry.tsx" "$W/tree/src/__expr_template_entry.tsx"
+cp "$HERE/harness-entry.tsx" "$W/tree/src/__action_test_form_entry.tsx"
 
-# Real react / react-dom — everything ExpressionEditorModal's own import graph
+# Real react / react-dom — everything ActionTestForm's own import graph
 # reaches. One read-only symlink to the checkout's own node_modules; the
 # checkout itself is never written to.
 [ -d "$PKG/node_modules" ] || fatal "missing $PKG/node_modules — run pnpm install in $PKG"
 ln -sfn "$PKG/node_modules" "$W/tree/node_modules"
 
-"$ESBUILD" "$W/tree/src/__expr_template_entry.tsx" --bundle --loader:.tsx=tsx --loader:.ts=ts \
+"$ESBUILD" "$W/tree/src/__action_test_form_entry.tsx" --bundle --loader:.tsx=tsx --loader:.ts=ts \
   --jsx=automatic --jsx-import-source=react --format=iife --log-level=warning \
   --outfile="$W/bundle.js" --define:process.env.NODE_ENV='"development"'
 [ -s "$W/bundle.js" ] || { echo "DID NOT RUN: the tree at $SRC does not bundle"; exit 3; }
@@ -100,7 +92,7 @@ ln -sfn "$PKG/node_modules" "$W/tree/node_modules"
 # The stylesheet is <link>ed from the real file, not bundled.
 cp "$SRC/styles.css" "$W/ui.css"
 
-cp "$HERE/expr-template-guards.test.cjs" "$W/tests.cjs"
+cp "$HERE/action-test-form-guards.test.cjs" "$W/tests.cjs"
 tap="$W/tap.txt"
 # Two reporters: `spec` on the console for a human, `tap` into a file for the
 # verdict below — the spec reporter's totals are decorated and
@@ -127,9 +119,9 @@ if [ -z "$tests" ] || [ -z "$fails" ] || [ "$tests" != "$EXPECTED_TESTS" ]; then
   exit 3
 fi
 if [ "$fails" != 0 ]; then
-  echo "RED: $fails of $tests expr-template guard tests failed (engine=$ENGINE, source=$SRC)"
+  echo "RED: $fails of $tests action-test-form guard tests failed (engine=$ENGINE, source=$SRC)"
   { grep -E '^not ok' "$tap" || true; }
   exit 1
 fi
-echo "GREEN: $passes/$tests expr-template guard tests pass (engine=$ENGINE, source=$SRC)"
+echo "GREEN: $passes/$tests action-test-form guard tests pass (engine=$ENGINE, source=$SRC)"
 exit 0

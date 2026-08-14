@@ -147,6 +147,40 @@ test("G-sigil — the render chip's sigil is visually distinct from a var chip's
 
 // ── Round 2 — F-2: the render-toggle control is opt-in, off by default. ────
 
+// ── M-full — the -full size modifier actually applies. `dialog.w6w-modal`
+//    (0,1,1) previously out-specified `.w6w-modal-full` (0,1,0), so the
+//    modal's authored `max-width: min(1200px, 96vw)` / `width: 96vw` /
+//    `max-height: 92vh` / `overflow: hidden` never won against the base
+//    rule's 800px/auto. The real ExpressionEditorModal renders `size="full"`
+//    (ExpressionEditorModal.tsx:195), so this mounts it exactly as-is and
+//    measures the live dialog, not a transcribed rect. ─────────────────────
+test("M-full — the -full size modifier actually applies", async () => {
+  const page = await open(browser, { v: "empty" });
+  const info = await page.evaluate(() => {
+    const el = document.querySelector("dialog");
+    const r = el.getBoundingClientRect();
+    return {
+      width: r.width,
+      overflow: getComputedStyle(el).overflow,
+      scrollOverflow: el.scrollHeight - el.clientHeight,
+      docScrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  assert.ok(info.width >= 1150, `-full dialog width ${info.width} < 1150 floor`);
+  assert.equal(info.overflow, "hidden", `-full dialog computed overflow was "${info.overflow}", expected "hidden"`);
+  assert.equal(
+    info.scrollOverflow,
+    0,
+    `-full dialog has clipped content: scrollHeight - clientHeight = ${info.scrollOverflow}`,
+  );
+  assert.ok(
+    info.docScrollWidth <= info.viewportWidth,
+    `-full dialog causes horizontal page scroll: documentElement.scrollWidth ${info.docScrollWidth} > viewport width ${info.viewportWidth}`,
+  );
+  await page.close();
+});
+
 test("R4 — [data-render-toggle] is present in the modal and ABSENT from the real inline ExpressionInput", async () => {
   const modalPage = await open(browser, { v: "render" });
   const modalCount = await modalPage.evaluate(

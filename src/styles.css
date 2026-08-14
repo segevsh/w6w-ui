@@ -1289,15 +1289,15 @@ dialog.w6w-modal p {
   color: var(--w6w-text);
   margin: 0;
 }
-.w6w-modal-wide {
+dialog.w6w-modal.w6w-modal-wide {
   max-width: min(850px, 80vw);
   min-height: min(70vh, 560px);
 }
-.w6w-modal-xl {
+dialog.w6w-modal.w6w-modal-xl {
   max-width: 1040px;
   min-height: min(70vh, 620px);
 }
-.w6w-modal-full {
+dialog.w6w-modal.w6w-modal-full {
   max-width: min(1200px, 96vw);
   width: 96vw;
   height: 92vh;
@@ -1933,6 +1933,29 @@ dialog.w6w-modal p {
   margin-top: auto;
   border-top: 1px solid var(--w6w-border);
   padding-top: 12px;
+}
+
+/* ActionTestForm's OWN pop-out (`Modal size="full"`, the "Edit params" ⤢
+   toggle — not the host-embedded case above). T1.4.1 round 1 made `-full`'s
+   `overflow: hidden` live for the first time; the dialog itself no longer
+   scrolls, so at a realistic param count (15-23 is typical for a first-party
+   action, e.g. followupboss/search-people, youtube/search) content below the
+   fold became unreachable with zero scrollbar. This mirrors the
+   `.w6w-tester-embedded-scroll` mechanism above — flex:1/min-height:0 to fill
+   the dialog's remaining flex-column height, `overflow: auto` to own the
+   scrollbar — so the params + result (+ saved-tests rail) region scrolls
+   internally while the Run/Save/Delete action bar stays a pinned,
+   non-scrolling footer via the SAME `.w6w-tester-actions-footer` class. */
+.w6w-tester-popout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.w6w-tester-popout-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* Uptime strip — one cell per day, "how has this service behaved lately" at a

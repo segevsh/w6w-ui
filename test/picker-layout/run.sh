@@ -46,10 +46,12 @@ PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 # content width check added for TA4's H2; I8's body carries TA4's H3/H4
 # additions), plus F1 — the test-required note (AppStepConfig's Test tab)
 # never moves the footer's Cancel/primary buttons, note-present vs
-# note-absent, at two viewports. The verdict below is REFUSED unless exactly
-# this many ran: a tree that fails to bundle, or a run that dies half-way,
-# reports DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-10}"
+# note-absent, at two viewports. Plus M-xl — both real -xl dialogs
+# (AddConnectionModal, StepBuilderModal) measure >= 1000px wide at VP.wide.
+# The verdict below is REFUSED unless exactly this many ran: a tree that
+# fails to bundle, or a run that dies half-way, reports DID NOT RUN rather
+# than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-11}"
 
 fatal() {
   echo "FATAL: $*"
