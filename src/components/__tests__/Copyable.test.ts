@@ -51,7 +51,7 @@ const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { Copyable } = await import("../Copyable.tsx");
 
-/** Installs a stub `navigator.clipboard.writeText`, recording every call.
+/** Installs a stub clipboard `writeText`, recording every call.
  *  `behavior` lets J4 install a rejecting stub. */
 function stubClipboard(behavior: (text: string) => Promise<void> = async () => {}) {
   const calls: string[] = [];
