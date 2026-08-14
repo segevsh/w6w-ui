@@ -1275,15 +1275,15 @@ dialog.w6w-modal p {
   color: var(--w6w-text);
   margin: 0;
 }
-.w6w-modal-wide {
+dialog.w6w-modal.w6w-modal-wide {
   max-width: min(850px, 80vw);
   min-height: min(70vh, 560px);
 }
-.w6w-modal-xl {
+dialog.w6w-modal.w6w-modal-xl {
   max-width: 1040px;
   min-height: min(70vh, 620px);
 }
-.w6w-modal-full {
+dialog.w6w-modal.w6w-modal-full {
   max-width: min(1200px, 96vw);
   width: 96vw;
   height: 92vh;

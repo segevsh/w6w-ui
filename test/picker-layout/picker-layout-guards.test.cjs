@@ -457,6 +457,24 @@ test("I9 — Connected-apps tab error/loading paths stay hosted and nested", asy
   }
 });
 
+// ── M-xl — the -xl size modifier actually applies. `dialog.w6w-modal`
+//    (0,1,1) previously out-specified `.w6w-modal-xl` (0,1,0), so the
+//    authored `max-width: 1040px` never won against the base rule's 800px —
+//    a fix that reaches only `.w6w-modal-full` must leave this red. Both
+//    real `-xl` dialogs (AddConnectionModal, StepBuilderModal) are checked at
+//    VP.wide. ──────────────────────────────────────────────────────────────
+test("M-xl — the -xl size modifier actually applies, both real -xl dialogs", async () => {
+  const addPage = await open(browser, { v: "add", vp: VP.wide });
+  const addWidth = (await rect(addPage, "dialog")).width;
+  await addPage.close();
+  assert.ok(addWidth >= 1000, `AddConnectionModal dialog width ${addWidth} < 1000 floor`);
+
+  const stepPage = await open(browser, { v: "step", vp: VP.wide });
+  const stepWidth = (await rect(stepPage, "dialog")).width;
+  await stepPage.close();
+  assert.ok(stepWidth >= 1000, `StepBuilderModal dialog width ${stepWidth} < 1000 floor`);
+});
+
 // ── F1 — the test-required note never moves the footer buttons. The axis is
 //    note-present vs note-absent, NOT before-vs-after a failed test run:
 //    `testPassed` starts false and `testRequired` defaults true
