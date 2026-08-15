@@ -1038,6 +1038,42 @@
   flex: none;
 }
 
+/* ── CodeBlock: the button OVERLAYS the box's top-right corner ──────────────
+   For an <input>/<textarea> the button is a flex sibling, which is right: the
+   value is one line and the control shrinks to leave room for it. A <pre> is
+   different — it is a block of many lines, and a flex sibling would carve a
+   permanent empty column out of the full height of it to seat one 28px button.
+   So here the button leaves the flow and sits over the corner instead.
+
+   Absolute against the WRAPPER, not the <pre>, on purpose: the <pre> is the
+   element that scrolls (`overflow-x: auto`, plus `overflow-y` when `maxHeight`
+   is set), so anchoring to it would slide the button out of view on a wide or
+   tall snippet. Anchored to the wrapper it stays pinned to the visible corner. */
+.w6w-copyable:has(> pre) {
+  position: relative;
+}
+
+.w6w-copyable:has(> pre) > .w6w-copyable-btn {
+  position: absolute;
+  top: var(--w6w-sp-1);
+  right: var(--w6w-sp-1);
+  /* An opaque backdrop, which the flex-sibling case does not need: this button
+     sits ON the code, and `.w6w-icon-btn`'s transparent idle state would let
+     the first line's text read through it. It also restores the hover feedback
+     — `.w6w-icon-btn:hover` paints `--w6w-panel-2`, which is the wrapper's own
+     background here and would otherwise be a no-op. */
+  background: var(--w6w-panel);
+  border-color: var(--w6w-border);
+}
+
+/* Keep the first line clear of the button. Deliberately NOT folded into the
+   `.w6w-copyable .w6w-code-block` reset above — that rule mirrors
+   `_fx.scss:91-98` and is held byte-for-byte by the parity gate. 40px = the
+   button's ~28px box + its 4px inset + a 8px gap before the text. */
+.w6w-copyable:has(> pre) > .w6w-code-block {
+  padding-right: var(--w6w-sp-10);
+}
+
 .w6w-copyable-btn.is-copied {
   /* Mirrors `.w6w-expr-chip-render`'s "confirmed/success" convention exactly
      (`_chips.scss:38-42`) — the one visual for a copied/success state. */

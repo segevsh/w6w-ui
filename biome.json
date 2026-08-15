@@ -1,7 +1,13 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+    "include": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "vite.config.ts",
+      ".storybook/**/*.ts",
+      ".storybook/**/*.tsx"
+    ]
   },
   "formatter": {
     "enabled": true,

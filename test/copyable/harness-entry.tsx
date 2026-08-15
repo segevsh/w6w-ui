@@ -13,6 +13,13 @@ import { Copyable } from "./components/Copyable.tsx";
 // non-vacuous — a single-line snippet would pass even if a `\n` got dropped.
 export const SNIPPET = "line one\nline two\nline three";
 
+// C8/C9's block. Ten lines so the gutter reaches TWO digits — a one-digit
+// gutter would let C9 pass on a selection that dropped only the wider rows,
+// and the `10` is the row most likely to leak into a drag.
+export const NUMBERED = Array.from({ length: 10 }, (_, i) => `const value${i + 1} = ${i + 1};`).join(
+  "\n",
+);
+
 function App() {
   return (
     <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24, width: 480 }}>
@@ -50,6 +57,23 @@ function App() {
       <div id="c7">
         <CodeBlock code={SNIPPET} language="plaintext" copyable />
       </div>
+
+      {/* c8 — the button OVERLAYS the code box's top-right corner. Needs a
+          block wide enough that "right half" is a real distinction and tall
+          enough that "top third" is, hence the longer snippet. `copyable` is
+          left to DEFAULT here on purpose: C8 is also what fails if the
+          default ever silently flips back to off. */}
+      <div id="c8">
+        <CodeBlock code={NUMBERED} language="plaintext" />
+      </div>
+
+      {/* c9 — line-number gutter vs a real mouse selection. `user-select:
+          none` is a computed-style property jsdom does not implement and does
+          not honour in layout, so only a real engine can prove the digits stay
+          out of `window.getSelection().toString()`. */}
+      <div id="c9">
+        <CodeBlock code={NUMBERED} language="plaintext" showLineNumbers />
+      </div>
     </div>
   );
 }
@@ -59,3 +83,4 @@ if (!mount) throw new Error("no #root to mount into");
 createRoot(mount).render(<App />);
 (window as unknown as { __mounted: boolean }).__mounted = true;
 (window as unknown as { __SNIPPET: string }).__SNIPPET = SNIPPET;
+(window as unknown as { __NUMBERED: string }).__NUMBERED = NUMBERED;

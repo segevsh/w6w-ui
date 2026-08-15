@@ -89,13 +89,26 @@ export interface CodeBlockProps {
   /** Accessible label. Falls back to naming the language. */
   "aria-label"?: string;
   /**
-   * Wrap the block in `<Copyable readOnly>` so a click anywhere in the box,
-   * or the in-box button, copies the displayed source verbatim. Off by
-   * default: every current caller renders identically. `className` still
-   * lands on the `<pre>` itself — this adds a wrapper around it, it does not
-   * change what the `<pre>` renders.
+   * Wrap the block in `<Copyable readOnly>` so the button in the block's
+   * top-right corner — or a click anywhere in the box — copies the displayed
+   * source verbatim. **On by default**: a code block a reader cannot copy is
+   * the odd one out, not the norm.
+   *
+   * `className` still lands on the `<pre>` itself — this adds a wrapper around
+   * it, it does not change what the `<pre>` renders.
+   *
+   * Turn it OFF for a block that renders without hydration. A React component
+   * server-rendered with no `client:` directive (Astro's default, e.g. the
+   * marketing site's `Snippet.astro`) still emits the button, but nothing is
+   * listening to it — and a dead click target is worse than no button.
    */
   copyable?: boolean;
+  /**
+   * How long the copied checkmark shows before reverting, in ms. Default 1500.
+   * Ignored unless `copyable`. See `Copyable`'s own prop for why the default is
+   * worth keeping.
+   */
+  copiedMs?: number;
 }
 
 /**
@@ -161,7 +174,8 @@ export function CodeBlock(props: CodeBlockProps) {
     showLineNumbers,
     maxHeight,
     className,
-    copyable,
+    copyable = true,
+    copiedMs,
   } = props;
 
   // Trailing newlines would render as a blank final row with a line number.
@@ -221,7 +235,7 @@ export function CodeBlock(props: CodeBlockProps) {
           </pre>
         );
         return copyable ? (
-          <Copyable value={source} readOnly>
+          <Copyable value={source} copiedMs={copiedMs} readOnly>
             {pre}
           </Copyable>
         ) : (

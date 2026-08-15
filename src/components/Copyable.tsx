@@ -48,6 +48,18 @@ const COPIED_MS = 1500;
 export interface CopyableProps {
   /** Exact text written to the clipboard. */
   value: string;
+  /**
+   * How long the checkmark stays before reverting to the copy glyph, in ms.
+   *
+   * Defaults to the 1500 ms every other copy affordance in the tree already
+   * uses — a number worth keeping unless a caller has a reason, because the
+   * revert delay is the only feedback that the copy happened at all and an
+   * inconsistent one reads as a different control.
+   *
+   * `0` is not a way to disable the revert: the timer still fires, it just
+   * fires on the next tick, so the checkmark is effectively never seen.
+   */
+  copiedMs?: number;
   /** Read-only display: a click anywhere in the box copies. Default false ⇒ the icon only. */
   readOnly?: boolean;
   /** Accessible name of the copy button. CONSTANT across states. Default "Copy". */
@@ -73,7 +85,14 @@ export interface CopyableProps {
  * rather than re-implement it.
  */
 export function Copyable(props: CopyableProps) {
-  const { value, readOnly = false, label = "Copy", className, children } = props;
+  const {
+    value,
+    copiedMs = COPIED_MS,
+    readOnly = false,
+    label = "Copy",
+    className,
+    children,
+  } = props;
   const [copied, setCopied] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,11 +113,11 @@ export function Copyable(props: CopyableProps) {
       await navigator.clipboard?.writeText(value);
       setCopied(true);
       if (timerRef.current !== null) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setCopied(false), COPIED_MS);
+      timerRef.current = setTimeout(() => setCopied(false), copiedMs);
     } catch {
       // Absent/denied/rejecting clipboard: stay idle.
     }
-  }, [value]);
+  }, [value, copiedMs]);
 
   const selectInnerControl = useCallback(() => {
     const control = wrapRef.current?.querySelector("input, textarea") as

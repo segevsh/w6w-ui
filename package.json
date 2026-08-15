@@ -1,7 +1,7 @@
 {
   "name": "@w6w/ui",
   "version": "0.0.1",
-  "description": "React components for w6w \u2014 a workflow platform. Build plugins, apps and integrations on them; see LICENSE for the one thing you may not do.",
+  "description": "React components for w6w — a workflow platform. Build plugins, apps and integrations on them; see LICENSE for the one thing you may not do.",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
@@ -20,12 +20,18 @@
       "types": "./src/flow.ts",
       "import": "./src/flow.ts"
     },
+    "./code": {
+      "types": "./src/code.ts",
+      "import": "./src/code.ts"
+    },
     "./styles.css": "./src/styles.css",
+    "./code.css": "./src/code.css",
     "./styles.scss": "./src/styles.scss",
     "./styles/*": "./src/styles/_*.scss"
   },
   "files": [
     "src",
+    "!src/**/*.stories.tsx",
     "docs",
     "README.md",
     "LICENSE"
@@ -44,6 +50,8 @@
     "test:expr-template": "bash test/expr-template/run.sh",
     "test:action-test-form": "bash test/action-test-form/run.sh",
     "test:copyable": "bash test/copyable/run.sh",
+    "storybook": "storybook dev -p 6006 --no-open",
+    "build-storybook": "storybook build",
     "lint": "biome check .",
     "lint:tokens": "node scripts/lint-tokens.mjs",
     "format": "biome format --write ."
@@ -63,6 +71,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@storybook/react-vite": "^10.5.8",
     "@types/jsdom": "^28.0.3",
     "@types/node": "^25.9.1",
     "@types/react": "^18.3.17",
@@ -74,6 +83,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sass": "^1.102.0",
+    "storybook": "^10.5.8",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vite-plugin-dts": "^4.3.0"

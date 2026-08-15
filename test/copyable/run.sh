@@ -49,7 +49,7 @@ PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 # One top-level test() per invariant C1-C7. The verdict below is REFUSED
 # unless exactly this many ran: a tree that fails to bundle, or a run that
 # dies half-way, reports DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-7}"
+EXPECTED_TESTS="${EXPECTED_TESTS:-9}"
 
 fatal() {
   echo "FATAL: $*"

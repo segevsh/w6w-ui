@@ -1,0 +1,39 @@
+// @w6w/ui — the `<CodeBlock>` stylesheet, on its own.
+//
+// A SUBSET of `styles.scss`, for a host that wants the code block and nothing
+// else. `styles.css` is 69 KB of a component library — fields, the flow editor,
+// modals, the step builder — and a page that renders one snippet should not
+// have to ship all of it, nor risk a rule for a component it never mounts.
+//
+// The four partials are exactly `<CodeBlock>`'s dependency closure — verified
+// against the `var(--w6w-*)` references in `_code.scss` and `_copyable.scss`,
+// not assumed:
+//   - `tokens`     — the colour custom properties (`--w6w-panel-2`, `--w6w-border`,
+//                    `--w6w-radius`, `--w6w-muted`, `--w6w-accent`, and the
+//                    `--w6w-code-*` palette Prism's inline styles read), in both
+//                    modes. Every default is declared through `:where(…)`
+//                    (specificity 0), so nothing here can beat a host's own
+//                    `:root` rule.
+//   - `scale`      — `--w6w-font-mono` and `--w6w-sp-*`, which live here and NOT
+//                    in `tokens`. Dropping it does not fail loudly: an undefined
+//                    custom property makes the declaration invalid at
+//                    computed-value time, so the block silently loses its
+//                    padding and its monospace font.
+//   - `code`       — `.w6w-code-block` itself.
+//   - `copyable`   — the wrapper `<CodeBlock copyable>` renders. Included even
+//                    though the prop is off by default: leaving it out would
+//                    make one documented prop silently render unstyled, which
+//                    reads as a bug rather than as a missing import.
+//
+// They are `@use`d in their `styles.scss` order, which is the order the cascade
+// there resolves in. Anyone importing BOTH stylesheets gets duplicate rules but
+// no conflict — they are byte-identical, and idempotent.
+//
+// `src/code.css` beside this file is GENERATED from it (`pnpm build:css`) and is
+// what the package exports as `@w6w/ui/code.css`. Never hand-edit the .css;
+// `pnpm check:css` fails if the two have drifted.
+
+@use "styles/tokens";
+@use "styles/scale";
+@use "styles/copyable";
+@use "styles/code";
