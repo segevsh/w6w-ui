@@ -1,0 +1,110 @@
+.w6w-stepconfig-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2-5);
+  flex-shrink: 0;
+}
+/* Connection + action share a row and wrap on narrow widths. */
+.w6w-stepconfig-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--w6w-sp-3);
+  align-items: flex-start;
+}
+.w6w-stepconfig-conn,
+.w6w-stepconfig-action {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.w6w-stepconfig-conn-empty {
+  flex: 1 1 100%;
+}
+/* Selected connection rendered as a static label (not a dropdown). */
+.w6w-conn-label {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2) var(--w6w-sp-1-5) var(--w6w-sp-2-5);
+  min-height: 36px;
+}
+.w6w-conn-label-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-btn-sm {
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  font-size: var(--w6w-fs-xs);
+  flex-shrink: 0;
+}
+/* Only the parameters form scrolls; x-padding keeps fields off the edge + scrollbar. */
+.w6w-stepconfig-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-inline: var(--w6w-sp-1);
+  padding-right: var(--w6w-sp-2);
+}
+/* Footer pinned to the modal bottom, outside the scroll area. */
+.w6w-stepconfig-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--w6w-border);
+  padding-top: var(--w6w-sp-3);
+  margin-top: 0;
+}
+/* Test-required note — always rendered (empty when there is nothing to say),
+   so its reserved height keeps the footer's buttons at the same x/y whether
+   the note has text or not; one line, ellipsized rather than wrapped. */
+.w6w-stepconfig-testnote {
+  flex-shrink: 0;
+  min-height: 1.4em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The whole-config "code"/JSON view is a DIRECT child of the body — stretch it
+   to fill the modal height instead of leaving the dialog half-empty (it passes
+   height="100%"). Inline json/code PARAM fields live inside a `.w6w-field` and
+   size to their content, capped by the editor's own maxHeight (grow, then
+   scroll inside), so they are intentionally NOT stretched here — that was the
+   cause of the empty space + overlap under short group/json fields. */
+.w6w-stepconfig-body:has(> .w6w-code-editor, > .w6w-json-editor) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2-5);
+}
+.w6w-stepconfig-body > .w6w-code-editor,
+.w6w-stepconfig-body > .w6w-json-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.w6w-stepconfig-body .w6w-field > textarea {
+  resize: vertical;
+}
+/* Field label row with a trailing action (e.g. the JSON "open full view" btn). */
+.w6w-field-labelrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--w6w-sp-2);
+}
+/* Full-view JSON modal body — fill the dialog so the editor is roomy. */
+.w6w-json-fullview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 60vh;
+}
+.w6w-json-fullview > .w6w-json-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}

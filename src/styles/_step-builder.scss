@@ -1,0 +1,164 @@
+.w6w-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--w6w-sp-1-5);
+  font-size: 0.8em;
+  color: var(--w6w-muted);
+}
+.w6w-step-meta code {
+  color: var(--w6w-text);
+}
+
+/* Step builder (sidebar + content) */
+.w6w-stepbuilder {
+  display: flex;
+  gap: 14px;
+  min-height: 340px;
+}
+.w6w-stepbuilder-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+  width: 140px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--w6w-border);
+  padding-right: var(--w6w-sp-3);
+}
+.w6w-stepbuilder-tab {
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-sm);
+  cursor: pointer;
+}
+.w6w-stepbuilder-tab:hover {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+}
+.w6w-stepbuilder-tab.active {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+  font-weight: var(--w6w-fw-medium);
+}
+.w6w-stepbuilder-content {
+  flex: 1;
+  min-width: 0;
+  /* Fixed height (not content-driven) so the modal never resizes when toggling
+     tabs, and the sidebar divider — which stretches to this row — stays a
+     constant length regardless of the right pane's content. */
+  height: min(70vh, 520px);
+  overflow: auto;
+}
+/* Apps flow: a fixed search header + a separately scrolling list, so the
+   scrollbar is contained to the list and never runs alongside the search. */
+.w6w-stepbuilder-apps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2-5);
+  height: 100%;
+  min-height: 0;
+}
+.w6w-stepbuilder-scroll {
+  overflow-y: auto;
+  /* Fill the remaining height below the search header; the list — not the
+     outer modal content — owns the scrollbar. */
+  flex: 1;
+  min-height: 0;
+  padding-right: var(--w6w-sp-1);
+}
+.w6w-stepbuilder-search {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  font-family: inherit;
+  width: 100%;
+}
+.w6w-stepbuilder-search:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+.w6w-stepbuilder-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1-5);
+}
+.w6w-stepbuilder-item {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2-5);
+  text-align: left;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
+  color: var(--w6w-text);
+  cursor: pointer;
+  font-size: var(--w6w-fs-sm);
+}
+.w6w-stepbuilder-item:hover {
+  border-color: var(--w6w-accent);
+}
+.w6w-stepbuilder-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  min-width: 0;
+}
+
+/* AppPicker's own layout owner, nested inside `.w6w-stepbuilder-content` (never
+   applied in its place — see the call sites). A flex item's automatic minimum
+   size is its min-content size unless `overflow` is non-`visible` or
+   `min-height:0` is set; `.w6w-stepbuilder-content` has neither, so its
+   min-content (every app row, unclipped) pushes `dialog.w6w-modal` up against
+   `max-height:90vh`. This host's explicit `height` + `overflow:hidden` zeroes
+   that contribution, so the dialog falls back to `.w6w-modal-xl`'s
+   `min-height: min(70vh, 620px)` — the step builder's own height. */
+.w6w-apppicker-host {
+  flex: 0 0 auto;
+  min-width: 0;
+  height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.w6w-apppicker-host > .w6w-stepbuilder-apps {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Step config (app action / control node): a fixed header (connection + action)
+   that never scrolls, a scrolling parameters body, and a pinned footer — mirrors
+   the fixed-header/scroll-body split used by `.w6w-stepbuilder-apps`. */
+.w6w-stepconfig {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  gap: var(--w6w-sp-3);
+  /* Horizontal breathing room so header/footer align with the padded body. */
+  padding-inline: var(--w6w-sp-1);
+}
+/* Inline step rename (pencil) shown next to the modal title. */
+.w6w-step-rename {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+}
+.w6w-step-rename input {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-accent);
+  border-radius: 6px;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-1-5);
+  color: var(--w6w-text);
+  font-size: 0.9em;
+  font-family: inherit;
+}

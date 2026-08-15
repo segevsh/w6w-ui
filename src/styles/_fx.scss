@@ -1,0 +1,155 @@
+/* fx toggle — an end decoration INSIDE the field, not a button beside it. The
+   WRAPPER owns the input chrome (background/border/radius/min-height and the
+   focus ring) and every widget it holds is flattened below, so the value and its
+   ƒx affordance read as ONE box. Mirrors `.w6w-multiselect` above. */
+.w6w-fx-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  min-height: 38px;
+}
+/* A textarea is taller than the ƒx, so there the decoration rides at the top. */
+.w6w-fx-wrap:has(> textarea) {
+  align-items: flex-start;
+}
+/* Focus reads on the box now that the inner widget has no border of its own. */
+.w6w-fx-wrap:focus-within {
+  border-color: var(--w6w-accent);
+}
+.w6w-fx-wrap > input,
+.w6w-fx-wrap > select,
+.w6w-fx-wrap > textarea,
+.w6w-fx-wrap > .w6w-multiselect,
+.w6w-fx-wrap > .w6w-expr {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* The widget inside the wrapper carries NO chrome of its own. COMPOUND
+   selectors, because the global `.w6w-field input|select|textarea` rule is
+   (0,2,1) and a bare `.w6w-fx-wrap > input` at (0,1,1) would lose to it — the
+   same trap documented on `.w6w-multiselect-add` above. `.w6w-datavar-row
+   input|select` is the second rule to beat, for the `bare` vars-row cell. */
+.w6w-field .w6w-fx-wrap input[type="text"],
+.w6w-field .w6w-fx-wrap input[type="password"],
+.w6w-field .w6w-fx-wrap input[type="number"],
+.w6w-field .w6w-fx-wrap select,
+.w6w-field .w6w-fx-wrap textarea,
+.w6w-datavar-row .w6w-fx-wrap input,
+.w6w-datavar-row .w6w-fx-wrap select,
+.w6w-fx-wrap input[type="text"],
+.w6w-fx-wrap input[type="password"],
+.w6w-fx-wrap input[type="number"],
+.w6w-fx-wrap select,
+.w6w-fx-wrap textarea {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: var(--w6w-sp-1) var(--w6w-sp-0-5);
+  outline: none;
+  /* EVERY property in this block is load-bearing, for the same reason
+     `.w6w-fx-inline-label`'s `margin: 0` is (see below): a host page layers its
+     own unscoped `input[type="text"], textarea { … }` rule AFTER this file
+     (studio's does, at `studio/src/styles.css:513-533`, `:759-771` and `:788`),
+     so every property this block leaves undeclared is the host's — including
+     inside a box this library draws. The two below were measured leaking, in
+     [ui+studio], before they were declared — and they fix DIFFERENT things:
+
+       margin     — ALIGNMENT. A host `margin-top: 4px` in an `align-items:
+                    center` row drops the control 2px below the ƒx it shares the
+                    row with (string, number and the bare vars cell; select and
+                    multiselect escaped only because the host rule does not list
+                    them). Rendered: control cy 67 vs ƒx cy 65. On the textarea
+                    row — `align-items: flex-start` — the same 4px showed up as
+                    the ƒx sitting 4px off the control's first line. `margin: 0`
+                    is the whole of that fix.
+
+       min-height — SIZE, and nothing else. Do not re-justify this one as
+                    alignment: the counterfactual was rendered (this `margin: 0`
+                    kept, `min-height: 0` removed) and the row measures a 0.0px
+                    top delta with the host's 80px floor fully in effect. What it
+                    fixes is that a host `textarea { min-height: 80px }`, written
+                    for that host's own bare textareas, was sizing the INSIDE of
+                    a box it cannot see — 80px/94px against the 62px/72px the
+                    same markup renders elsewhere, i.e. one of five control types
+                    29% taller than the library drew it. The box is the library's
+                    to size; how many lines it holds is `rows` on the control.
+                    If a taller body field is ever wanted, it belongs HERE, not
+                    in a host element selector.
+
+     Declared, not fought for: this stays at the block's existing specificity and
+     uses no `!important`. A component that is only aligned while the host
+     cooperates is broken. */
+  margin: 0;
+  min-height: 0;
+}
+/* …and the two widgets that own an input-like box themselves are flattened too,
+   so the wrapper never draws a box around a box. */
+.w6w-fx-wrap .w6w-expr-field,
+.w6w-fx-wrap .w6w-multiselect {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  min-height: 0;
+}
+/* The OTHER wrapper FxField can render (`variant="inline"`). A control that does
+   not FILL a text-field box — today only a `boolean`'s ~13px checkbox — opts out
+   of the box at the component seam and lands here instead, so `.w6w-fx-wrap`'s
+   chrome above is never applied and nothing has to be clawed back with a more
+   specific selector. Layout is the review's sketch: <checkbox> <ƒx> <label>,
+   one row, no border/background/padding/min-height of its own. */
+.w6w-fx-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+}
+.w6w-fx-inline > input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+/* The label reads as the control's own text, next to it (mirrors
+   `.w6w-array-check` above, the existing inline-checkbox idiom).
+   `margin: 0` is LOAD-BEARING, not tidiness: a host page may carry an unscoped
+   top-level `label { … margin-bottom: 10px }` (studio's own sheet does, at
+   `studio/src/styles.css:499`), and since it is layered AFTER this file any
+   property this block leaves undeclared is the host's. A bottom margin inside an
+   `align-items: center` row lifts the text off the row's centre line — measured
+   5px above the checkbox and the ƒx before this declaration existed. Every other
+   element of the row is defended the same way: the checkbox's `margin: 0` above
+   out-specifies a host `input[type="checkbox"] { margin-right: … }` (0,2,1 vs
+   0,1,1), and the ƒx's chrome is pinned by `.w6w-fx-inline .w6w-expr-fx` below.
+   A component that only lines up when the host sheet cooperates is broken. */
+.w6w-fx-inline-label {
+  margin: 0;
+  color: var(--w6w-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+/* The ƒx itself is a decoration inside whichever wrapper holds it: no chrome,
+   colour only. This is where the UA button border/background is removed (the
+   `.w6w-expr-fx` block below declares neither), so the inline wrapper has to be
+   listed here too or its ƒx comes back as a grey rounded button. */
+.w6w-fx-wrap .w6w-expr-fx,
+.w6w-fx-inline .w6w-expr-fx {
+  border: none;
+  background: transparent;
+}
+.w6w-expr-fx {
+  flex-shrink: 0;
+  color: var(--w6w-muted);
+  font-size: 13px;
+  font-family: var(--w6w-font-mono);
+  line-height: 1;
+  padding: var(--w6w-sp-1) var(--w6w-sp-1-5);
+  cursor: pointer;
+}
+.w6w-expr-fx:hover {
+  color: var(--w6w-text);
+}
+.w6w-expr-fx.is-active {
+  color: var(--w6w-accent);
+}

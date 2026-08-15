@@ -1,0 +1,432 @@
+/* GENERATED FILE — DO NOT EDIT.
+ *
+ * Compiled from src/code.scss by scripts/build-css.mjs (`pnpm build:css`).
+ * Edit the .scss partials under src/styles/ instead; `pnpm check:css` fails
+ * if this file has drifted from them.
+ */
+@charset "UTF-8";
+/*
+ * @w6w/ui — styles for the pure-presentation components.
+ *
+ * Everything is namespaced under `.w6w-*` class names so this stylesheet
+ * won't collide with your app's CSS.
+ *
+ * THEMING
+ * -------
+ * The library ships a complete DEFAULT theme in BOTH light and dark:
+ *   - Light is the base.
+ *   - Dark applies automatically when the OS prefers dark
+ *     (`prefers-color-scheme: dark`).
+ *   - Either mode can be forced with `data-theme="light" | "dark"` on any
+ *     ancestor (usually <html>) — the same signal the JS components read
+ *     (AppIcon / CodeEditor / JsonEditor: explicit prop > data-theme > OS pref),
+ *     so CSS and components always agree.
+ *
+ * A HOST can override any subset of the tokens — set the ones you care about and
+ * the rest keep their themed defaults:
+ *
+ *   :root { --w6w-accent: #3355e6; }              // one token, both modes
+ *   html[data-theme="dark"] { --w6w-panel: #000 } // mode-specific
+ *
+ * Every default below is declared through `:where(...)` (specificity 0), so ANY
+ * host rule — even a plain `:root { ... }` — wins without !important. Tokens are
+ * defined on :root so every `.w6w-*` component inherits them out of the box.
+ */
+/* Light — the base defaults. */
+:where(:root) {
+  --w6w-bg: #f7f8fa;
+  --w6w-panel: #ffffff;
+  --w6w-panel-2: #f0f2f6;
+  --w6w-border: #d9dee5;
+  --w6w-text: #1a1d24;
+  --w6w-muted: #5f6875;
+  --w6w-accent: #3355e6;
+  --w6w-danger: #c1362f;
+  --w6w-success: #2e9e5b;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #c77700;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #5f6875;
+  --w6w-icon-swatch: #f0f2f6;
+  --w6w-code-comment: #6b7280;
+  --w6w-code-keyword: #8250df;
+  --w6w-code-string: #0a7b34;
+  --w6w-code-number: #b3541e;
+  --w6w-code-function: #1f6feb;
+  --w6w-code-punctuation: #5f6875;
+  --w6w-code-variable: #953800;
+  --w6w-radius: 10px;
+}
+
+/* Dark — followed automatically from the OS preference (unless a host has
+   forced a mode via data-theme, which is handled by the blocks below). */
+@media (prefers-color-scheme: dark) {
+  :where(:root) {
+    --w6w-bg: #0f1115;
+    --w6w-panel: #181b22;
+    --w6w-panel-2: #1f232c;
+    --w6w-border: #2a2f3a;
+    --w6w-text: #e6e8ee;
+    --w6w-muted: #9aa3b2;
+    --w6w-accent: #5b8cff;
+    --w6w-danger: #ff6b6b;
+    --w6w-success: #3fbf77;
+    --w6w-health-ok: var(--w6w-success);
+    --w6w-health-degraded: #f0a020;
+    --w6w-health-down: var(--w6w-danger);
+    --w6w-health-unknown: #9aa3b2;
+    --w6w-icon-swatch: #1f232c;
+    --w6w-code-comment: #7d8797;
+    --w6w-code-keyword: #d2a8ff;
+    --w6w-code-string: #7ee787;
+    --w6w-code-number: #ffab70;
+    --w6w-code-function: #79c0ff;
+    --w6w-code-punctuation: #9aa3b2;
+    --w6w-code-variable: #ffa657;
+  }
+}
+/* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
+   a forced data-theme always beats the OS preference. */
+:where([data-theme=light]) {
+  --w6w-bg: #f7f8fa;
+  --w6w-panel: #ffffff;
+  --w6w-panel-2: #f0f2f6;
+  --w6w-border: #d9dee5;
+  --w6w-text: #1a1d24;
+  --w6w-muted: #5f6875;
+  --w6w-accent: #3355e6;
+  --w6w-danger: #c1362f;
+  --w6w-success: #2e9e5b;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #c77700;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #5f6875;
+  --w6w-icon-swatch: #f0f2f6;
+  --w6w-code-comment: #6b7280;
+  --w6w-code-keyword: #8250df;
+  --w6w-code-string: #0a7b34;
+  --w6w-code-number: #b3541e;
+  --w6w-code-function: #1f6feb;
+  --w6w-code-punctuation: #5f6875;
+  --w6w-code-variable: #953800;
+}
+
+:where([data-theme=dark]) {
+  --w6w-bg: #0f1115;
+  --w6w-panel: #181b22;
+  --w6w-panel-2: #1f232c;
+  --w6w-border: #2a2f3a;
+  --w6w-text: #e6e8ee;
+  --w6w-muted: #9aa3b2;
+  --w6w-accent: #5b8cff;
+  --w6w-danger: #ff6b6b;
+  --w6w-success: #3fbf77;
+  --w6w-health-ok: var(--w6w-success);
+  --w6w-health-degraded: #f0a020;
+  --w6w-health-down: var(--w6w-danger);
+  --w6w-health-unknown: #9aa3b2;
+  --w6w-icon-swatch: #1f232c;
+  --w6w-code-comment: #7d8797;
+  --w6w-code-keyword: #d2a8ff;
+  --w6w-code-string: #7ee787;
+  --w6w-code-number: #ffab70;
+  --w6w-code-function: #79c0ff;
+  --w6w-code-punctuation: #9aa3b2;
+  --w6w-code-variable: #ffa657;
+}
+
+.w6w-muted {
+  color: var(--w6w-muted);
+}
+
+.w6w-small {
+  font-size: 0.85em;
+}
+
+/*
+ * @w6w/ui — the spacing / typography scale.
+ *
+ * Values are MIRRORED, not invented, from `packages/frontend/packages/web`'s
+ * `src/styles/global.css:83-130` — that file is the canonical reference (it
+ * arrived at the same 4px base independently); this block copies its
+ * `--sp-*`/`--fs-*`/`--fw-*`/`--lh-*`/`--font-*` values byte-for-byte under the
+ * `--w6w-*` namespace this package already uses for every other token.
+ * `--fs-hero`'s `clamp()` stays `web`-only (a marketing-page concern; `ui` has
+ * no hero). Colour tokens, `--radius*`, `--shadow-*` and `--transition-fast`
+ * are NOT part of this scale — see `_tokens.scss`.
+ *
+ * HALF-STEPS (`--w6w-sp-0-5` / `--w6w-sp-1-5` / `--w6w-sp-2-5`) are `ui`-only
+ * additions on top of `web`'s set — `web` has none. The rule that keeps this a
+ * system rather than a free-for-all: whole steps for new code; a half-step is
+ * only for preserving an existing measured value that does not sit on a 4px
+ * step. Parity with `web` is therefore DIRECTIONAL — `ui` ⊇ `web` on the
+ * shared key set (every `web` token here has a byte-identical `ui` counterpart;
+ * `ui` additionally declares the three half-steps `web` does not).
+ *
+ * One `:where(:root)` block, not colour's three-way light / prefers-color-scheme /
+ * [data-theme] split — the scale is not theme-dependent, so a single specificity-0
+ * block covers every mode. Positioning this partial's `@use` line immediately
+ * after `styles/tokens` (see `styles.scss`) is a readability convention, not a
+ * cascade constraint: CSS custom properties resolve at computed-value time, so
+ * definition order relative to consumption order does not matter here, unlike
+ * `_tokens.scss`'s internal prefers-color-scheme / [data-theme] ordering, which
+ * IS load-bearing.
+ */
+:where(:root) {
+  /* Spacing — 4px ramp. Values mirror frontend/web's --sp-* verbatim. */
+  --w6w-sp-1: 4px;
+  --w6w-sp-2: 8px;
+  --w6w-sp-3: 12px;
+  --w6w-sp-4: 16px;
+  --w6w-sp-5: 20px;
+  --w6w-sp-6: 24px;
+  --w6w-sp-8: 32px;
+  --w6w-sp-10: 40px;
+  --w6w-sp-12: 48px;
+  --w6w-sp-16: 64px;
+  --w6w-sp-20: 80px;
+  /* Half-steps — ui-only, see the decision above. */
+  --w6w-sp-0-5: 2px;
+  --w6w-sp-1-5: 6px;
+  --w6w-sp-2-5: 10px;
+  /* Type ramp — rem, role names mirror frontend/web's --fs-*. */
+  --w6w-fs-xs: 0.75rem;
+  --w6w-fs-sm: 0.875rem;
+  --w6w-fs-base: 1rem;
+  --w6w-fs-lg: 1.125rem;
+  --w6w-fs-xl: 1.25rem;
+  --w6w-fs-2xl: 1.5rem;
+  --w6w-fs-3xl: 2rem;
+  --w6w-fw-regular: 400;
+  --w6w-fw-medium: 500;
+  --w6w-fw-semibold: 600;
+  --w6w-fw-bold: 700;
+  --w6w-lh-tight: 1.2;
+  --w6w-lh-normal: 1.5;
+  --w6w-lh-relaxed: 1.7;
+  --w6w-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --w6w-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/*
+ * Breakpoints — Sass variables, NOT CSS custom properties.
+ *
+ * `@media (min-width: var(--w6w-bp-md))` is invalid in every browser: a media
+ * query condition cannot read a custom property. So these live as Sass
+ * variables instead, resolved before the browser ever sees the stylesheet.
+ * `!default` lets a Sass consumer override one:
+ *
+ *   @use "@w6w/ui/styles/scale" with ($w6w-bp-md: 960px);
+ *
+ * `ui` itself consumes none of these — it deliberately ships no layout media
+ * queries (the host owns page layout; `ui` owns component internals). They
+ * exist purely so a consumer stops inventing its own breakpoint values (seven
+ * uncoordinated ones exist across the four repos today).
+ */
+/* Copyable — an in-box copy affordance decorating a value-displaying control
+   (an <input>, a <textarea>, or CodeBlock's <pre>). Mirrors `.w6w-fx-wrap`
+   (`_fx.scss:1-88`): the WRAPPER owns the box chrome and every child it holds
+   is flattened below, so the value and the copy affordance read as ONE box. */
+.w6w-copyable {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  /* Box-family invariant: byte-identical to `.w6w-fx-wrap`'s at `_fx.scss:13` —
+     six rules across four partials share this value (`building-blocks.md` §3
+     row 7); a scale token here would drift the moment that family moves. */
+  min-height: 38px;
+}
+
+/* A textarea/pre is taller than the button, so the button rides at the top —
+   mirrors `.w6w-fx-wrap:has(> textarea)` (`_fx.scss:16-18`). */
+.w6w-copyable:has(> textarea),
+.w6w-copyable:has(> pre) {
+  align-items: flex-start;
+}
+
+/* Focus reads on the box now that the inner control has no border of its own. */
+.w6w-copyable:focus-within {
+  border-color: var(--w6w-accent);
+}
+
+.w6w-copyable > input,
+.w6w-copyable > textarea,
+.w6w-copyable > pre {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The control inside the wrapper carries NO chrome of its own. Mirrors
+   `_fx.scss:36-88`'s selector list and property list WHOLESALE
+   (s/w6w-fx-wrap/w6w-copyable/g) — not re-derived, gated for parity by the
+   project's test plan. See that file for the measured leak evidence (7.0px
+   alignment / 2px / 29% height) each property below defends against; a host
+   page's unscoped `input[type="text"], … textarea { … }` rule (studio's own,
+   layered AFTER this stylesheet) is exactly what these declarations beat. */
+.w6w-field .w6w-copyable input[type=text],
+.w6w-field .w6w-copyable input[type=password],
+.w6w-field .w6w-copyable input[type=number],
+.w6w-field .w6w-copyable select,
+.w6w-field .w6w-copyable textarea,
+.w6w-datavar-row .w6w-copyable input,
+.w6w-datavar-row .w6w-copyable select,
+.w6w-copyable input[type=text],
+.w6w-copyable input[type=password],
+.w6w-copyable input[type=number],
+.w6w-copyable select,
+.w6w-copyable textarea {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  /* lint-tokens-allow: mirrors _fx.scss:36-88 byte-for-byte, required by the parity gate */
+  padding: 4px 2px;
+  outline: none;
+  margin: 0;
+  min-height: 0;
+}
+
+/* The wrapper never draws a box around a box (mirrors `_fx.scss:91-98`). */
+.w6w-copyable .w6w-code-block {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+/* Button chrome extends `.w6w-icon-btn` (`_icons.scss:1-11`) in markup — this
+   class only pins the flex behaviour and the copied state, no re-authored
+   hover/active states. */
+.w6w-copyable-btn {
+  flex: none;
+}
+
+/* ── CodeBlock: the button OVERLAYS the box's top-right corner ──────────────
+   For an <input>/<textarea> the button is a flex sibling, which is right: the
+   value is one line and the control shrinks to leave room for it. A <pre> is
+   different — it is a block of many lines, and a flex sibling would carve a
+   permanent empty column out of the full height of it to seat one 28px button.
+   So here the button leaves the flow and sits over the corner instead.
+
+   Absolute against the WRAPPER, not the <pre>, on purpose: the <pre> is the
+   element that scrolls (`overflow-x: auto`, plus `overflow-y` when `maxHeight`
+   is set), so anchoring to it would slide the button out of view on a wide or
+   tall snippet. Anchored to the wrapper it stays pinned to the visible corner. */
+.w6w-copyable:has(> pre) {
+  position: relative;
+}
+
+.w6w-copyable:has(> pre) > .w6w-copyable-btn {
+  position: absolute;
+  top: var(--w6w-sp-1);
+  right: var(--w6w-sp-1);
+  /* An opaque backdrop, which the flex-sibling case does not need: this button
+     sits ON the code, and `.w6w-icon-btn`'s transparent idle state would let
+     the first line's text read through it. It also restores the hover feedback
+     — `.w6w-icon-btn:hover` paints `--w6w-panel-2`, which is the wrapper's own
+     background here and would otherwise be a no-op. */
+  background: var(--w6w-panel);
+  border-color: var(--w6w-border);
+}
+
+/* Keep the first line clear of the button. Deliberately NOT folded into the
+   `.w6w-copyable .w6w-code-block` reset above — that rule mirrors
+   `_fx.scss:91-98` and is held byte-for-byte by the parity gate. 40px = the
+   button's ~28px box + its 4px inset + a 8px gap before the text. */
+.w6w-copyable:has(> pre) > .w6w-code-block {
+  padding-right: var(--w6w-sp-10);
+}
+
+.w6w-copyable-btn.is-copied {
+  /* Mirrors `.w6w-expr-chip-render`'s "confirmed/success" convention exactly
+     (`_chips.scss:38-42`) — the one visual for a copied/success state. */
+  border-color: var(--w6w-success);
+  color: var(--w6w-success);
+  background: color-mix(in srgb, var(--w6w-success) 14%, transparent);
+}
+
+/* Scoped visually-hidden live region — not a new general `sr-only` utility
+   (none exists in `ui` to extend; see `Copyable.tsx` for why this, not the
+   button's own accessible name, carries the "Copied" announcement). */
+.w6w-copyable-status {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  white-space: nowrap;
+  clip-path: inset(50%);
+  border: 0;
+  padding: 0;
+}
+
+.w6w-code-block {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  margin: 0;
+  overflow-x: auto;
+  padding: var(--w6w-sp-3) 14px;
+  tab-size: 2;
+}
+
+.w6w-code-block code {
+  background: none;
+  display: block;
+  font-family: var(--w6w-font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 0;
+}
+
+/* Each line is its own row so a line number can sit beside the text rather
+   than inside it — a number inside the flow would be caught by a copy. */
+.w6w-code-line {
+  display: flex;
+  gap: var(--w6w-sp-3);
+  white-space: pre;
+}
+
+.w6w-code-line-text {
+  white-space: inherit;
+}
+
+/* `user-select: none` keeps the gutter out of a mouse selection; `aria-hidden`
+   on the element keeps it out of the accessibility tree. Both are needed —
+   neither one alone stops a copy from picking up the digits. */
+.w6w-code-line-no {
+  color: var(--w6w-muted);
+  flex: 0 0 auto;
+  min-width: 2ch;
+  opacity: 0.65;
+  text-align: right;
+  user-select: none;
+}
+
+/* Wrapped mode indents continuation rows to the text column so a wrapped line
+   still reads as one line. */
+.w6w-code-block--wrap .w6w-code-line,
+.w6w-code-block--wrap .w6w-code-line-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.w6w-code-block--wrap {
+  overflow-x: hidden;
+}
+
+/* Resolved params (Test tab, read-only): inline badge weight — like
+   JsonParamField's "Invalid JSON" hint, not a full `.w6w-result.w6w-error`
+   block per param, since either can appear once per configured param. */
+.w6w-param-unresolved {
+  color: var(--w6w-danger);
+  font-size: 0.85em;
+  font-style: italic;
+}
+
+.w6w-param-unevaluated {
+  color: var(--w6w-muted);
+  font-size: 0.85em;
+  font-style: italic;
+}

@@ -1,3 +1,15 @@
+# `allowBuilds` MUST be explicit booleans. pnpm writes the placeholder string
+# "set this to true or false" the first time it meets an unapproved build
+# script, and that unresolved value makes a later `pnpm install` exit non-zero —
+# which is what put the frontend dev container into a restart loop once (see the
+# same list in packages/frontend/pnpm-workspace.yaml).
 allowBuilds:
-  '@biomejs/biome': set this to true or false
-  esbuild: set this to true or false
+  # Both ship a prebuilt native binary that their install script links into
+  # place. `pnpm lint` / `pnpm build` invoke exactly those binaries, so skipping
+  # them breaks the toolchain rather than saving anything.
+  '@biomejs/biome': true
+  esbuild: true
+  # Storybook's optional native file watcher. It falls back to a JS watcher when
+  # absent, and this only ever runs `storybook dev` locally — not worth
+  # compiling a native addon on every install.
+  '@parcel/watcher': false

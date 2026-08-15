@@ -1,0 +1,54 @@
+.w6w-subtab {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px var(--w6w-sp-3);
+  color: var(--w6w-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.w6w-subtab:hover {
+  color: var(--w6w-text);
+}
+.w6w-subtab.active {
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  font-weight: var(--w6w-fw-medium);
+}
+.w6w-subtab:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.w6w-subtab:disabled:hover {
+  color: var(--w6w-muted);
+}
+
+/* Full-width tabs bar: segmented tabs on the left, view icons on the right. */
+.w6w-tabsbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--w6w-sp-3);
+  border-bottom: 1px solid var(--w6w-border);
+  padding-bottom: var(--w6w-sp-2);
+  flex-shrink: 0;
+}
+.w6w-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.w6w-icon-btn:disabled:hover {
+  background: transparent;
+  color: var(--w6w-muted);
+}
+
+/* Config modal body (a picked app/node) fills the dialog so the footer pins to
+   the modal's bottom rather than a fixed-height content area. */
+.w6w-stepbuilder-config {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Compact one-line step identity (id · app · action) in the edit modal. */

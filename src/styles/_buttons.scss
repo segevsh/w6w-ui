@@ -1,0 +1,38 @@
+/* Buttons */
+.w6w-btn {
+  background: var(--w6w-accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: var(--w6w-sp-2) 14px;
+  font-size: var(--w6w-fs-sm);
+  cursor: pointer;
+}
+.w6w-btn:hover {
+  filter: brightness(1.08);
+}
+.w6w-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.w6w-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--w6w-border);
+  color: var(--w6w-text);
+}
+.w6w-btn-ghost:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-btn-ghost.active {
+  border-color: var(--w6w-accent);
+  background: var(--w6w-panel-2);
+}
+/* Destructive confirm button (ConfirmModal's default). Styled from the same
+   --w6w-danger token the error notices and health pills already use. */
+.w6w-btn-danger {
+  background: var(--w6w-danger);
+  color: white;
+}
+
+/* List row — a clean, reusable list item (leading icon · title/subtitle · trailing).
+   Mirrors the ghost saved-test button rows it replaces. */
