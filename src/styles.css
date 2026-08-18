@@ -2539,3 +2539,29 @@ dialog.w6w-modal.w6w-modal-full {
   font-size: 0.85em;
   font-style: italic;
 }
+
+.w6w-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: var(--w6w-sp-1-5);
+  color: var(--w6w-muted);
+  cursor: pointer;
+}
+
+.w6w-icon-button:hover:not(:disabled) {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-text);
+}
+
+.w6w-icon-button-danger:hover:not(:disabled) {
+  color: var(--w6w-danger);
+}
+
+.w6w-icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
