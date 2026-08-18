@@ -231,3 +231,59 @@ test("T2.1.1 defect 1 — 12px gap between params and the error box, in both emb
     await page.close();
   }
 });
+
+// ── T1.1.2 — the saved-test Delete button must be gated behind a
+//    ConfirmModal, not call `deleteSavedTest` on the raw click. A tree with
+//    the ConfirmModal rendered-but-unwired (still calling deleteCurrentTest
+//    directly from the Delete button, in ADDITION to opening the confirm)
+//    fails here at the "click Delete" step, before Confirm is even reached —
+//    a bare presence-grep for ConfirmModal would not catch that. ──────────
+test("delete-confirm — Delete is gated behind ConfirmModal, not fired on the raw click", async () => {
+  const page = await open(browser, "delete-confirm");
+
+  const callsBefore = await page.evaluate(() => window.__deleteSavedTestCalls);
+  assert.equal(callsBefore, 0, `__deleteSavedTestCalls should start at 0, got ${callsBefore}`);
+
+  const deleteClicked = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll(".w6w-tester-actions button")].find(
+      (b) => b.textContent.trim() === "Delete",
+    );
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  assert.ok(deleteClicked, '.w6w-tester-actions "Delete" button not found');
+
+  // The mutation must NOT have fired yet — this is the assertion that
+  // distinguishes real gating from a rendered-but-unwired modal.
+  const callsAfterClick = await page.evaluate(() => window.__deleteSavedTestCalls);
+  assert.equal(
+    callsAfterClick,
+    0,
+    `clicking Delete must not call deleteSavedTest directly, got ${callsAfterClick} call(s)`,
+  );
+
+  await page.waitForSelector("dialog[open]", { timeout: 5000 });
+  const confirmClicked = await page.evaluate(() => {
+    const dlg = document.querySelector("dialog[open]");
+    const btn = dlg
+      ? [...dlg.querySelectorAll("button")].find((b) => b.textContent.trim() === "Delete")
+      : null;
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  assert.ok(confirmClicked, 'ConfirmModal "Delete" button not found in the open dialog');
+
+  await page.waitForFunction(() => window.__deleteSavedTestCalls === 1, null, {
+    timeout: 5000,
+  });
+  const callsAfterConfirm = await page.evaluate(() => window.__deleteSavedTestCalls);
+  assert.equal(
+    callsAfterConfirm,
+    1,
+    `deleteSavedTest should have fired exactly once after confirming, got ${callsAfterConfirm}`,
+  );
+
+  await page.close();
+});
