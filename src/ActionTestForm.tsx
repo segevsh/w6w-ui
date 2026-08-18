@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
+import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ApiError } from "./createW6WApi.ts";
@@ -387,6 +388,8 @@ export function ActionTestForm({
   // Name-a-saved-test dialog (in-app Modal — never the browser's prompt()).
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [pendingName, setPendingName] = useState("");
+  // Delete-confirm dialog (in-app ConfirmModal — never the browser's confirm()).
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const refreshSavedTests = () => setSavedTestsNonce((n) => n + 1);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `savedTestsNonce` is a deliberate re-fetch trigger, not read inside the effect.
@@ -702,6 +705,10 @@ export function ActionTestForm({
     </div>
   ) : null;
 
+  // Nullable: `editingTestId` can be seeded from a studio deep link before
+  // `savedTests` itself has finished fetching, so this may not resolve yet.
+  const deletingTestName = savedTests?.find((t) => t.id === editingTestId)?.name;
+
   return (
     <div className={`w6w-stack${embedded ? " w6w-tester-embedded-root" : ""}`}>
       {/* Action picker — only when the caller isn't controlling the selection. */}
@@ -795,7 +802,7 @@ export function ActionTestForm({
                     type="button"
                     className="w6w-btn w6w-btn-ghost"
                     style={{ marginLeft: "auto", color: "var(--w6w-danger)" }}
-                    onClick={() => void deleteCurrentTest()}
+                    onClick={() => setConfirmDeleteOpen(true)}
                   >
                     Delete
                   </button>
@@ -909,6 +916,23 @@ export function ActionTestForm({
                 </div>
               </form>
             </Modal>
+          )}
+
+          {confirmDeleteOpen && (
+            <ConfirmModal
+              title="Delete saved test"
+              message={
+                deletingTestName
+                  ? `Delete "${deletingTestName}"? This cannot be undone.`
+                  : "Delete this saved test? This cannot be undone."
+              }
+              confirmLabel="Delete"
+              onConfirm={() => {
+                setConfirmDeleteOpen(false);
+                void deleteCurrentTest();
+              }}
+              onClose={() => setConfirmDeleteOpen(false)}
+            />
           )}
         </>
       ) : (
