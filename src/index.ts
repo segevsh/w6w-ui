@@ -84,3 +84,10 @@ export type {
   ThemeMode,
 } from "./types.ts";
 export { isExprValue, isSecretValue } from "./types.ts";
+
+export { IconButton } from "./components/IconButton.tsx";
+export type { IconButtonProps } from "./components/IconButton.tsx";
+export { EditButton } from "./components/EditButton.tsx";
+export type { EditButtonProps } from "./components/EditButton.tsx";
+export { DeleteButton } from "./components/DeleteButton.tsx";
+export type { DeleteButtonProps } from "./components/DeleteButton.tsx";
