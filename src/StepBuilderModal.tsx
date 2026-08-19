@@ -84,6 +84,26 @@ export interface StepBuilderModalProps {
    * which have no graph to draw ancestors from.
    */
   upstreamSteps?: ExpressionStepSource[];
+  /**
+   * Pre-select an app when the modal opens. When provided along with
+   * initialAction/initialConnection/initialWith, the modal opens directly
+   * to the action configuration view instead of the app picker.
+   * Used when editing an existing action (e.g., clicking "Change" on an
+   * Endpoint's already-configured target).
+   */
+  initialApp?: AppSummary;
+  /**
+   * Pre-select an action key. Requires initialApp to be set.
+   */
+  initialAction?: string;
+  /**
+   * Pre-select a connection. Requires initialApp and initialAction.
+   */
+  initialConnection?: string;
+  /**
+   * Pre-fill the action's parameter values. Requires initialApp and initialAction.
+   */
+  initialWith?: Record<string, unknown>;
 }
 
 type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
@@ -219,13 +239,18 @@ export function StepBuilderModal({
   workflowId,
   stepId,
   upstreamSteps = [],
+  initialApp,
+  initialAction,
+  initialConnection,
+  initialWith,
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
   const [tab, setTab] = useState<Tab>("connected");
   // When an app is selected the modal collapses to a single-app detail view:
   // the sidebar is hidden and the header switches to the app's name + icon.
-  const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
+  // Initialize with initialApp if provided to skip the app picker.
+  const [selectedApp, setSelectedApp] = useState<AppSummary | null>(initialApp ?? null);
   // Same collapse for a chosen internal node (trigger / control / compute) — its
   // config form (dynamic ParamsForm over the node's schema) shows before adding.
   const [selectedNode, setSelectedNode] = useState<InternalNodeDef | null>(null);
@@ -303,6 +328,9 @@ export function StepBuilderModal({
             workflowId={workflowId}
             stepId={stepId}
             upstreamSteps={upstreamSteps}
+            initialAction={initialAction}
+            initialConnection={initialConnection}
+            initialWith={initialWith}
           />
         </div>
       </Modal>
@@ -983,6 +1011,9 @@ export function AppStepConfig({
   workflowId,
   stepId,
   upstreamSteps = [],
+  initialAction,
+  initialConnection,
+  initialWith,
 }: {
   appId: string;
   app?: AppSummary;
@@ -997,6 +1028,12 @@ export function AppStepConfig({
   stepId?: string;
   /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
   upstreamSteps?: ExpressionStepSource[];
+  /** Pre-selected action key, opens directly to Configure tab when provided with initialWith */
+  initialAction?: string;
+  /** Pre-selected connection id */
+  initialConnection?: string;
+  /** Pre-filled parameter values */
+  initialWith?: Record<string, unknown>;
 }) {
   const api = useW6WApi();
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
@@ -1004,16 +1041,19 @@ export function AppStepConfig({
   const [actions, setActions] = useState<ActionDef[] | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
 
-  const [connectionId, setConnectionId] = useState<string>("");
-  const [actionKey, setActionKey] = useState<string>("");
-  const [withValues, setWithValues] = useState<Record<string, unknown>>({});
+  const [connectionId, setConnectionId] = useState<string>(initialConnection ?? "");
+  const [actionKey, setActionKey] = useState<string>(initialAction ?? "");
+  const [withValues, setWithValues] = useState<Record<string, unknown>>(initialWith ?? {});
   const [showConnModal, setShowConnModal] = useState(false);
   // Once a connection is chosen it renders as a static label; "Change" flips
   // back to the dropdown. No connection selected yet also forces the dropdown.
   const [changingConn, setChangingConn] = useState(false);
   // Setup (app + connection + action) / Configure (params) / Test — same tabs as
   // the node editor, so add + edit are consistent.
-  const [tab, setTab] = useState<StepConfigTab>("setup");
+  // When initial values are provided, skip Setup and open directly to Configure.
+  const [tab, setTab] = useState<StepConfigTab>(
+    initialAction && initialWith ? "configure" : "setup"
+  );
   // The Configure tab's four representations (form / full-step JSON /
   // params-only JSON / node settings).
   const [configView, setConfigView] = useState<ConfigView>("props");
