@@ -244,3 +244,60 @@ test("CA-4 — an unterminated {{ (parseTemplate keeps it literal) still seals t
     ]);
   });
 }
+
+// --- TA2 acceptance-3 fixture table: a `||`/`??` chain is an `expr` part, so it must be
+// validated OPERAND-BY-OPERAND, all-or-nothing, same as any other marker — never the
+// "expr is always ours" exemption the pre-TA2 tree gave every expr part. The engine's own
+// copy of this exact table lives at `w6w-workflow/tests/expr_test.ts`; the two must agree.
+
+test("chain fixture 1 — a rooted single-operand chain chips as one expr part (not a bogus var whose ref is garbage)", () => {
+  assert.deepEqual(parseRootAnchoredTemplate('{{ inputs.from || "+1234567" }}'), [
+    { kind: "expr", expr: { or: [{ var: "inputs.from" }, "+1234567"] } },
+  ]);
+});
+
+test("chain fixture 2 — three rooted var operands chip as one expr part", () => {
+  assert.deepEqual(
+    parseRootAnchoredTemplate("{{ inputs.form || inputs.form2 || vars.defaultValue }}"),
+    [
+      {
+        kind: "expr",
+        expr: {
+          or: [{ var: "inputs.form" }, { var: "inputs.form2" }, { var: "vars.defaultValue" }],
+        },
+      },
+    ],
+  );
+});
+
+test("chain fixture 3 — a ?? chain chips as one expr part", () => {
+  assert.deepEqual(parseRootAnchoredTemplate('{{ vars.a ?? "z" }}'), [
+    { kind: "expr", expr: { "??": [{ var: "vars.a" }, "z"] } },
+  ]);
+});
+
+test("chain fixture 4 — operand 1 unrooted refuses the whole marker to a byte-identical literal", () => {
+  const src = '{{ badroot.x || "y" }}';
+  assert.deepEqual(parseRootAnchoredTemplate(src), [{ kind: "text", value: src }]);
+});
+
+test("chain fixture 5 — operand 2 unrooted refuses too (a first-operand-only check would wrongly pass this)", () => {
+  const src = "{{ vars.a || badroot.x }}";
+  assert.deepEqual(parseRootAnchoredTemplate(src), [{ kind: "text", value: src }]);
+});
+
+test("chain fixture 6 — mixed || and ?? operators refuse via hasRefusedChainToken, never fall through as a plain var", () => {
+  const src = "{{ vars.a || vars.b ?? vars.c }}";
+  assert.deepEqual(parseRootAnchoredTemplate(src), [{ kind: "text", value: src }]);
+});
+
+test("chain fixture 7 — a secrets. operand refuses outright, never falls through as an ordinary var", () => {
+  const src = '{{ secrets.K || "x" }}';
+  assert.deepEqual(parseRootAnchoredTemplate(src), [{ kind: "text", value: src }]);
+});
+
+test("chain fixture 8 — the = escape hatch stays exempt: coalesceOperandRefs does not recognise raw JSONLogic as a chain", () => {
+  assert.deepEqual(parseRootAnchoredTemplate('{{ ={"var":"anything.at.all"} }}'), [
+    { kind: "expr", expr: { var: "anything.at.all" } },
+  ]);
+});

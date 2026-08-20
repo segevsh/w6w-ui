@@ -364,6 +364,45 @@ test("T-typed-second — a SECOND marker promotes in the same still-mounted fiel
   await page.close();
 });
 
+// ── TA2 (D-2) — a hand-typed `||`/`??` chain is a first-class chain
+//    everywhere it is inspected: it chips as ONE `expr` part (not a bogus
+//    `var` whose ref is garbage — see the contract's measured base-tree
+//    bug), and the chip's label renders from its OPERANDS rather than
+//    truncated raw JSON. The intake screenshot's scenario, end to end. ────
+
+test('T-chain-inline — a hand-typed {{ inputs.from || "+1234567" }} chip-ifies as ONE chain chip whose data-expr and label reflect the operands', async () => {
+  const page = await open(browser, { v: "inlineEmpty" });
+  await page.click(".w6w-expr-editor");
+  await page.keyboard.type('{{ inputs.from || "+1234567" }}', { delay: 30 });
+  await page.waitForTimeout(150);
+  const info = await page.evaluate(() => {
+    const el = document.querySelector(".w6w-expr-editor");
+    const chips = el.querySelectorAll(".w6w-expr-chip");
+    const chip = chips[0];
+    return {
+      chipCount: chips.length,
+      dataExpr: chip?.getAttribute("data-expr") ?? null,
+      label: chip?.querySelector(".w6w-expr-chip-label")?.textContent ?? null,
+    };
+  });
+  assert.equal(
+    info.chipCount,
+    1,
+    `a hand-typed chain must chip as exactly ONE chip, not zero and not split; got: ${JSON.stringify(info)}`,
+  );
+  assert.deepEqual(
+    JSON.parse(info.dataExpr ?? "null"),
+    { or: [{ var: "inputs.from" }, "+1234567"] },
+    `data-expr must hold the chain's own JSONLogic (the stored value, unaffected by the label change); got: ${JSON.stringify(info)}`,
+  );
+  assert.equal(
+    info.label,
+    'inputs.from || "+1234567"',
+    `the chip label must render from its operands, not a truncated ƒ + raw-JSON sigil; got: ${JSON.stringify(info)}`,
+  );
+  await page.close();
+});
+
 test("T-dbl-modal — double-clicking a chip converts it to its exact {{ vars.a }} text in place (surrounding text order intact); double-clicking its × removes it and creates no text node", async () => {
   // Arm 1: double-click the chip's BODY.
   {

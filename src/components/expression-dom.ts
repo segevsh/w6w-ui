@@ -1,3 +1,4 @@
+import { type CoalesceChain, parseCoalesceChain } from "@w6w/expr";
 import type { ExprPart } from "../types.ts";
 import { parseRootAnchoredTemplate, serializeTemplate } from "./expression-template.ts";
 
@@ -46,6 +47,37 @@ export const varLabel = (ref: string): string => {
   if (m) return m[2] ? `${m[1]}.${m[2]}` : m[1];
   return ref;
 };
+
+/** `v`'s `var` ref if `v` is a single-key `{ var: <string> }` object, else `undefined`. Mirrors
+ * `@w6w/expr`'s own private `asVarOperand` (`core/packages/expr/src/template.ts`) — not exported,
+ * so this repeats the shape check `parseCoalesceChain` already validated, purely to tell a `var`
+ * operand from a literal one when rendering; it does not re-derive whether `part.expr` IS a chain. */
+function chainOperandVarRef(v: unknown): string | undefined {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const keys = Object.keys(v as Record<string, unknown>);
+  if (keys.length !== 1 || keys[0] !== "var") return undefined;
+  const ref = (v as Record<string, unknown>).var;
+  return typeof ref === "string" ? ref : undefined;
+}
+
+/**
+ * A recognised `||`/`??` chain's chip LABEL (D-2) — mirrors {@link varLabel}'s split between what
+ * a chip DISPLAYS and what it SAVES: `data-expr` (in {@link makeChip}) is the stored JSONLogic
+ * untouched; this is display-only, built from the chain's own operands rather than truncated raw
+ * JSON. A `{ var: ref }` operand renders through `varLabel` (the short form); any other operand (a
+ * JSON primitive literal) renders through `JSON.stringify`. Do NOT call `varLabel` on the whole
+ * chain — only on each `var` operand, same as a standalone `var` chip would.
+ */
+function chainLabel(chain: CoalesceChain): string {
+  const token = chain.op === "or" ? "||" : "??";
+  const text = chain.operands
+    .map((operand) => {
+      const ref = chainOperandVarRef(operand);
+      return ref !== undefined ? varLabel(ref) : JSON.stringify(operand);
+    })
+    .join(` ${token} `);
+  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+}
 
 /**
  * A key that cannot survive the trip from picker to engine, by CHARACTER.
@@ -129,10 +161,16 @@ export function makeChip(
     span.title = `Secret: ${part.ref ?? ""}`;
   } else {
     const raw = typeof part.expr === "string" ? part.expr : JSON.stringify(part.expr ?? "");
-    span.setAttribute("data-expr", raw);
+    span.setAttribute("data-expr", raw); // display-only label below; the stored JSONLogic is unchanged.
     sigil.textContent = "ƒ";
-    label.textContent = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || "expr";
-    span.title = `Expression: ${raw}`;
+    const chain = parseCoalesceChain(part.expr);
+    if (chain) {
+      label.textContent = chainLabel(chain);
+      span.title = `Expression: ${serializeTemplate([part])}`;
+    } else {
+      label.textContent = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || "expr";
+      span.title = `Expression: ${raw}`;
+    }
   }
 
   span.append(sigil, label);
