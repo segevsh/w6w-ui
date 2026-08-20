@@ -1,4 +1,9 @@
-import { parseTemplate, serializeTemplate } from "@w6w/expr";
+import {
+  coalesceOperandRefs,
+  hasRefusedChainToken,
+  parseTemplate,
+  serializeTemplate,
+} from "@w6w/expr";
 import {
   type ExprPart,
   type ExprValue,
@@ -52,8 +57,14 @@ export function partsToValue(parts: ExprPart[]): ExprValue | string {
  * placeholder text (CONDUCTOR AMENDMENT 2026-08-14 on this project's T1.2.2
  * contract). `ui` must not depend on `@w6w/workflow` — the import-map graph
  * runs `core -> w6w-workflow -> server`, and `ui -> studio` only — so this is
- * a LOCAL mirror, kept in sync by hand until T1.5.1 (a different repo) lands
- * the shared `parseResolvableTemplate`; unify the two at that merge.
+ * a LOCAL mirror, kept in sync BY HAND, deliberately and permanently: T1.5.1
+ * already landed (`.ai/projects/done/26-08-13-00-fixes/`) and its `HITL-12`
+ * considered — and declined — putting this predicate in `@w6w/expr` instead
+ * of duplicating it, precisely because `ui` cannot depend on `@w6w/workflow`.
+ * What IS shared is the chain-shape walk (`parseCoalesceChain` /
+ * `coalesceOperandRefs` / `hasRefusedChainToken`, all `@w6w/expr`) — both
+ * sites call the same predicates over their own local root set, so they
+ * cannot silently drift on what a chain IS, only on which roots they accept.
  */
 interface LocalRunScope {
   vars: unknown;
@@ -97,22 +108,40 @@ function firstSegment(ref: string): string {
 
 /**
  * Root-anchored parse (CONDUCTOR AMENDMENT 2026-08-14): builds every marker in
- * `s` via `parseTemplate` (never a second `{{ }}` scanner), then requires
- * EVERY `var` marker's first path segment to be a `RUN_SCOPE_ROOTS` member — a
- * `secret` marker (`secrets.NAME`) or an `expr` marker (`=<jsonlogic>`) is
- * unambiguous by its OWN syntax and needs no separate check. One unrooted `var`
- * marker reverts the WHOLE string to a single literal `text` part (byte-
- * identical to the input) — all-or-nothing, because the grammar has no escape
- * syntax and a mixed string can't half-chip. This is what keeps `{{ vars.a }}`
- * a chip while Mailjet's `{{var:name}}`, Mandrill's Handlebars, and Metabase's
- * `{{tag}}` stay literal text forever (121 spellings surveyed across
- * `packages/apps`, 116 of them vendor placeholders with no root of their own).
+ * `s` via `parseTemplate` (never a second `{{ }}` scanner), then requires:
+ *   - a `var` marker: `hasRefusedChainToken` must be false (a `||`/`??` the
+ *     chain grammar refused — mixed operators, a `secrets.` operand, … — is
+ *     never treated as an ordinary path) AND its first path segment must be a
+ *     `RUN_SCOPE_ROOTS` member;
+ *   - an `expr` marker recognised by `coalesceOperandRefs` as a `||`/`??`
+ *     chain: EVERY operand ref's first path segment must be a
+ *     `RUN_SCOPE_ROOTS` member — a chain is a first-class citizen here, not
+ *     the opaque escape hatch below;
+ *   - any other `expr` marker (`=<jsonlogic>`, or a `{{ }}` chip inserted from
+ *     the rail) or a `secret` marker (`secrets.NAME`): unambiguous by its OWN
+ *     syntax, no separate check.
+ * One unrooted marker/operand reverts the WHOLE string to a single literal
+ * `text` part (byte-identical to the input) — all-or-nothing, because the
+ * grammar has no escape syntax and a mixed string can't half-chip. This is
+ * what keeps `{{ vars.a }}` and `{{ vars.a || "x" }}` chips while Mailjet's
+ * `{{var:name}}`, Mandrill's Handlebars, and Metabase's `{{tag}}` stay literal
+ * text forever (121 spellings surveyed across `packages/apps`, 116 of them
+ * vendor placeholders with no root of their own).
  */
 export function parseRootAnchoredTemplate(s: string): ExprPart[] {
   const parts = parseTemplate(s);
-  const allRooted = parts.every(
-    (p) => p.kind !== "var" || isRunScopeRoot(firstSegment(p.ref ?? "")),
-  );
+  const allRooted = parts.every((p) => {
+    if (p.kind === "var") {
+      const ref = p.ref ?? "";
+      return !hasRefusedChainToken(ref) && isRunScopeRoot(firstSegment(ref));
+    }
+    if (p.kind === "expr") {
+      const refs = coalesceOperandRefs(p.expr);
+      if (refs === null) return true; // not a chain — the `=` escape hatch: always ours.
+      return refs.every((ref) => isRunScopeRoot(firstSegment(ref)));
+    }
+    return true; // `secret` / `text`
+  });
   return allRooted ? parts : [{ kind: "text", value: s }];
 }
 
