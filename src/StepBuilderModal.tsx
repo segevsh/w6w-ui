@@ -10,6 +10,7 @@ import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import {
+  CALL_APP,
   DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
@@ -26,7 +27,10 @@ import type {
   AppSummary,
   AuthDef,
   ConnectionSummary,
+  FunctionSummary,
   ThemeMode,
+  WorkflowDetail,
+  WorkflowSummary,
 } from "./types.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
 
@@ -106,7 +110,16 @@ export interface StepBuilderModalProps {
   initialWith?: Record<string, unknown>;
 }
 
-type Tab = "connected" | "apps" | "ai" | "triggers" | "controls" | "utilities" | "data";
+type Tab =
+  | "connected"
+  | "functions"
+  | "workflows"
+  | "apps"
+  | "ai"
+  | "triggers"
+  | "controls"
+  | "utilities"
+  | "data";
 
 /** Config sub-tabs shared by the add-step config and the node editor. */
 type StepConfigTab = "setup" | "configure" | "test";
@@ -254,6 +267,45 @@ export function StepBuilderModal({
   // Same collapse for a chosen internal node (trigger / control / compute) — its
   // config form (dynamic ParamsForm over the node's schema) shows before adding.
   const [selectedNode, setSelectedNode] = useState<InternalNodeDef | null>(null);
+  // Same collapse for a picked Function/Workflow target (D-12/D-15): both tabs
+  // mint the SAME `@w6w/call` step shape, so one piece of state (family + id +
+  // label) is enough — `CallableStepConfig` decides what to call from `family`.
+  const [selectedCallable, setSelectedCallable] = useState<{
+    family: "function" | "workflow";
+    id: string;
+    label: string;
+  } | null>(null);
+
+  if (selectedCallable) {
+    return (
+      <Modal
+        title={selectedCallable.label}
+        subtitle={<code>{selectedCallable.id}</code>}
+        onClose={onClose}
+        size="xl"
+        headerRight={
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            onClick={() => setSelectedCallable(null)}
+          >
+            ← Back
+          </button>
+        }
+      >
+        <div className="w6w-stepbuilder-config">
+          <CallableStepConfig
+            family={selectedCallable.family}
+            targetId={selectedCallable.id}
+            targetLabel={selectedCallable.label}
+            onAdd={onAdd}
+            onClose={onClose}
+            onDraftChange={onDraftChange}
+          />
+        </div>
+      </Modal>
+    );
+  }
 
   if (selectedNode) {
     return (
@@ -348,6 +400,28 @@ export function StepBuilderModal({
           >
             Connected apps
           </button>
+          {/* Functions/Workflows: the picker's deferred target picker (D-12) —
+              appsOnly hides them exactly like it hides Triggers/Controls/
+              Utilities/Data below, so TargetSelector's action-arm call site
+              (appsOnly) is behaviourally unchanged. */}
+          {!appsOnly && (
+            <>
+              <button
+                type="button"
+                className={`w6w-stepbuilder-tab${tab === "functions" ? " active" : ""}`}
+                onClick={() => setTab("functions")}
+              >
+                Functions
+              </button>
+              <button
+                type="button"
+                className={`w6w-stepbuilder-tab${tab === "workflows" ? " active" : ""}`}
+                onClick={() => setTab("workflows")}
+              >
+                Workflows
+              </button>
+            </>
+          )}
           <button
             type="button"
             className={`w6w-stepbuilder-tab${tab === "apps" ? " active" : ""}`}
@@ -401,6 +475,16 @@ export function StepBuilderModal({
               onSelectApp={setSelectedApp}
               onBrowseAll={() => setTab("apps")}
               theme={theme}
+            />
+          ) : tab === "functions" ? (
+            <CallableList
+              family="function"
+              onSelect={(t) => setSelectedCallable({ family: "function", ...t })}
+            />
+          ) : tab === "workflows" ? (
+            <CallableList
+              family="workflow"
+              onSelect={(t) => setSelectedCallable({ family: "workflow", ...t })}
             />
           ) : tab === "apps" ? (
             <AppPicker onSelectApp={setSelectedApp} theme={theme} />
@@ -693,6 +777,404 @@ export function ControlStepConfig({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Functions / Workflows tabs (F-2.0, D-12/D-15) ───────────────────────────
+//
+// Both tabs mint ONE step shape — an `@w6w/call` step — so there is no
+// per-family component pair: `CallableList` (the browse-and-pick stage,
+// styled after `AppPicker.tsx`) and `CallableStepConfig` (Configure/Test/Add,
+// mirroring `ControlStepConfig`'s progressive-commit shape) both take a single
+// `family: "function" | "workflow"` prop that only decides which endpoints to
+// call and what `with.targetKind` gets stamped.
+
+/**
+ * Searchable list of a family's summaries — the picker's browse-and-pick
+ * stage. Mirrors `AppPicker.tsx`'s shape (search box, sorted/filtered list,
+ * loading/error/empty states); a Function/Workflow summary has no
+ * icon/brandColor, so each row is text-only. `onSelect` hands the picked
+ * target's id + display label up to `StepBuilderModal`, which collapses into
+ * `CallableStepConfig` exactly as picking an app or an internal node does.
+ */
+function CallableList({
+  family,
+  onSelect,
+}: {
+  family: "function" | "workflow";
+  onSelect: (target: { id: string; label: string }) => void;
+}) {
+  const api = useW6WApi();
+  const [items, setItems] = useState<Array<FunctionSummary | WorkflowSummary> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const noun = family === "function" ? "Functions" : "Workflows";
+
+  useEffect(() => {
+    let canceled = false;
+    const p = family === "function" ? api.listFunctions() : api.listWorkflows();
+    p.then((r) => !canceled && setItems(r)).catch(
+      (e) => !canceled && setError((e as Error).message),
+    );
+    return () => {
+      canceled = true;
+    };
+  }, [api, family]);
+
+  // Single layout owner, mirroring `.w6w-apppicker-host`'s role for AppPicker
+  // (I4: every render path — error/loading/empty/loaded — reports the same
+  // host height, so the modal never resizes switching between them).
+  const host = (body: ReactNode) => <div className="w6w-apppicker-host">{body}</div>;
+
+  if (error) return host(<div className="w6w-result w6w-error">{error}</div>);
+  if (items === null) {
+    return host(<p className="w6w-muted w6w-small">Loading {noun.toLowerCase()}…</p>);
+  }
+  if (items.length === 0) {
+    return host(<p className="w6w-muted w6w-small">No {noun.toLowerCase()} registered yet.</p>);
+  }
+
+  const label = (it: FunctionSummary | WorkflowSummary): string => {
+    const dn = it.displayName;
+    if (dn?.trim()) return dn;
+    return "name" in it ? it.name : it.id;
+  };
+  const q = query.trim().toLowerCase();
+  const sorted = [...items].sort((a, b) =>
+    label(a).localeCompare(label(b), undefined, { sensitivity: "base" }),
+  );
+  const visible = q
+    ? sorted.filter((it) => label(it).toLowerCase().includes(q) || it.id.toLowerCase().includes(q))
+    : sorted;
+
+  return host(
+    <div className="w6w-stepbuilder-apps">
+      <input
+        type="text"
+        className="w6w-stepbuilder-search"
+        placeholder={`Search ${noun.toLowerCase()}…`}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label={`Search ${noun.toLowerCase()}`}
+      />
+      {visible.length === 0 ? (
+        <p className="w6w-muted w6w-small">
+          No {noun.toLowerCase()} match “{query}”.
+        </p>
+      ) : (
+        <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">
+          {visible.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              className="w6w-stepbuilder-item"
+              onClick={() => onSelect({ id: it.id, label: label(it) })}
+            >
+              <span className="w6w-stepbuilder-item-main">
+                <strong>{label(it)}</strong>
+                <code className="w6w-muted w6w-small">{it.id}</code>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>,
+  );
+}
+
+/**
+ * A Workflow target's declared inputs, for the picker's Configure stage — the
+ * entry/trigger step's own `with.fields` (core rfcs/node-types.md, the manual
+ * trigger's `fields` param — see `INTERNAL_NODES`). A webhook/schedule trigger
+ * declares no such fields, so this returns `[]` and the Configure stage's
+ * `ParamsForm` renders empty, which is a legitimate call (no inputs to send).
+ */
+const TRIGGER_FIELD_TYPES: readonly string[] = ["string", "number", "boolean", "json"];
+
+function triggerFieldsOf(wf: WorkflowDetail): ActionParam[] {
+  const step = wf.steps.find((s) => isTriggerApp(s.uses.app));
+  const raw = step?.with?.fields;
+  if (!Array.isArray(raw)) return [];
+  const out: ActionParam[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const rec = item as Record<string, unknown>;
+    const key = typeof rec.key === "string" ? rec.key : "";
+    if (!key) continue;
+    const type = typeof rec.type === "string" ? rec.type : "string";
+    out.push({
+      key,
+      label: key,
+      type: (TRIGGER_FIELD_TYPES.includes(type) ? type : "string") as ActionParam["type"],
+      default: rec.default,
+      required: Boolean(rec.required),
+    });
+  }
+  return out;
+}
+
+/**
+ * Config → test → add flow for a picked Function/Workflow target (D-12,
+ * D-15). Mints a single `@w6w/call` step — `family` only decides which
+ * summary/detail/invoke endpoints are called and what `with.targetKind` is
+ * stamped; it is never two near-copies. Mirrors `ControlStepConfig`'s
+ * progressive-commit shape (mint via `onAdd` the instant the target is
+ * picked, then `onDraftChange` on every later change) — unlike `AppStepConfig`
+ * there is no Setup tab (the target picked in `CallableList` IS the identity)
+ * and no `NodeConfigForm` here: a second onError/retry form is out of scope —
+ * `NodeConfigForm` is reached once the `@w6w/call` step already lives on a
+ * canvas, not at add-time.
+ */
+export function CallableStepConfig({
+  family,
+  targetId,
+  targetLabel,
+  onAdd,
+  onClose,
+  onDraftChange,
+}: {
+  family: "function" | "workflow";
+  targetId: string;
+  targetLabel: string;
+  // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
+  onAdd: (s: BuiltStep) => string | undefined | void;
+  onClose: () => void;
+  /** See {@link StepBuilderModalProps.onDraftChange}. */
+  onDraftChange?: (id: string, step: BuiltStep) => void;
+}) {
+  const api = useW6WApi();
+  const [fields, setFields] = useState<ActionParam[] | null>(null);
+  const [fieldsError, setFieldsError] = useState<string | null>(null);
+  const [inputs, setInputs] = useState<Record<string, unknown>>({});
+  const [wait, setWait] = useState(true);
+  const [tab, setTab] = useState<"configure" | "test">("configure");
+  // The id `onAdd` minted at commit time — see `ControlStepConfig`'s identical
+  // field for the progressive-commit rationale.
+  const [committedId, setCommittedId] = useState<string | null>(null);
+
+  // Load the target's own declared inputs (acceptance 2b's seam pin: they
+  // populate the `inputs` object below, never `input` singular).
+  useEffect(() => {
+    let canceled = false;
+    setFields(null);
+    setFieldsError(null);
+    const p =
+      family === "function"
+        ? api.getFunction(targetId).then((d) => d.inputs)
+        : api.getWorkflow(targetId).then(triggerFieldsOf);
+    p.then((f) => !canceled && setFields(f)).catch(
+      (e) => !canceled && setFieldsError((e as Error).message),
+    );
+    return () => {
+      canceled = true;
+    };
+  }, [api, family, targetId]);
+
+  const configComplete = fields !== null && requiredParamsFilled(fields, inputs);
+
+  const buildStep = (): BuiltStep => ({
+    uses: { app: CALL_APP, action: "call" },
+    with: { targetKind: family, targetId, inputs, wait },
+  });
+
+  // Mint — a Function/Workflow target has identity the instant it's picked,
+  // exactly like ControlStepConfig's mount-time mint. `CallableStepConfig` is
+  // only ever mounted for one target: `StepBuilderModal` collapses into it via
+  // `selectedCallable`, and "← Back" unmounts this subtree entirely rather
+  // than re-parenting it onto a new `targetId`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mint fires once on mount only; buildStep/onAdd intentionally read fresh closure state without retriggering this effect.
+  useEffect(() => {
+    if (!onDraftChange) return;
+    const id = onAdd(buildStep());
+    if (id) setCommittedId(id);
+  }, []);
+
+  // Update — keep the already-committed node current on every later change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: buildStep reads fresh closure state; only these fields should retrigger the update.
+  useEffect(() => {
+    if (!onDraftChange || committedId === null) return;
+    onDraftChange(committedId, buildStep());
+  }, [committedId, inputs, wait]);
+
+  const add = () => onAdd(buildStep());
+
+  return (
+    <div className="w6w-stepconfig">
+      <div className="w6w-tabsbar">
+        <div className="w6w-subtabs">
+          <button
+            type="button"
+            className={`w6w-subtab${tab === "configure" ? " active" : ""}`}
+            onClick={() => setTab("configure")}
+          >
+            Configure
+          </button>
+          <button
+            type="button"
+            disabled={!configComplete}
+            title={configComplete ? undefined : "Fill the required fields first"}
+            className={`w6w-subtab${tab === "test" ? " active" : ""}`}
+            onClick={() => configComplete && setTab("test")}
+          >
+            Test
+          </button>
+        </div>
+      </div>
+
+      <div className="w6w-stepconfig-body">
+        {tab === "configure" ? (
+          <div className="w6w-stack">
+            {fieldsError ? (
+              <div className="w6w-result w6w-error">{fieldsError}</div>
+            ) : fields === null ? (
+              <p className="w6w-muted w6w-small">Loading {targetLabel}’s inputs…</p>
+            ) : fields.length === 0 ? (
+              <p className="w6w-muted w6w-small">
+                {targetLabel} declares no inputs — it can be called as-is.
+              </p>
+            ) : (
+              <ParamsForm params={fields} values={inputs} onChange={setInputs} />
+            )}
+            <label className="w6w-field">
+              <span>
+                <input type="checkbox" checked={wait} onChange={(e) => setWait(e.target.checked)} />{" "}
+                Wait for completion
+              </span>
+              <span className="w6w-hint">
+                On: block until the sub-run finishes and expose its output. Off: return a run handle
+                and continue.
+              </span>
+            </label>
+          </div>
+        ) : (
+          <CallableTestRun
+            family={family}
+            targetId={targetId}
+            inputs={inputs}
+            canRun={configComplete}
+          />
+        )}
+      </div>
+
+      {/* Footer — pinned to the modal bottom, outside the scroll area. */}
+      <div className="w6w-modal-actions w6w-stepconfig-footer">
+        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
+          Cancel
+        </button>
+        {tab === "configure" ? (
+          <button
+            type="button"
+            className="w6w-btn"
+            disabled={!configComplete}
+            onClick={() => setTab("test")}
+          >
+            Next →
+          </button>
+        ) : (
+          <button type="button" className="w6w-btn" onClick={committedId !== null ? onClose : add}>
+            {committedId !== null ? "Done" : "Add step"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Inline test run for a picked Function/Workflow — the picker's own Test stage
+ * (D-11/D-15(c)): invokes the SAME `wait: true` path the saved step will take
+ * at run time (`api.invokeFunction` / `api.runWorkflow`), never a client-side
+ * poll. A Workflow's non-`terminal` result (the server's own `?wait=true`
+ * timeout, a `202`) renders as "still running" with its `runId` — never a
+ * silent no-op.
+ */
+function CallableTestRun({
+  family,
+  targetId,
+  inputs,
+  canRun,
+}: {
+  family: "function" | "workflow";
+  targetId: string;
+  inputs: Record<string, unknown>;
+  canRun: boolean;
+}) {
+  const api = useW6WApi();
+  const [state, setState] = useState<
+    | { status: "running" }
+    | { status: "done"; output: unknown; runId?: string; terminal: boolean; error?: unknown }
+    | { status: "error"; error: string }
+    | null
+  >(null);
+
+  const run = async () => {
+    if (!canRun || state?.status === "running") return;
+    setState({ status: "running" });
+    try {
+      if (family === "function") {
+        const output = await api.invokeFunction(targetId, inputs);
+        setState({ status: "done", output, terminal: true });
+      } else {
+        const r = await api.runWorkflow(targetId, { input: inputs });
+        setState({
+          status: "done",
+          output: r.output,
+          runId: r.runId,
+          terminal: r.terminal,
+          error: r.error,
+        });
+      }
+    } catch (e) {
+      setState({ status: "error", error: (e as { message?: string }).message ?? String(e) });
+    }
+  };
+
+  return (
+    <div className="w6w-steptest">
+      <div className="w6w-steptest-bar">
+        <button
+          type="button"
+          className="w6w-btn w6w-btn-ghost"
+          disabled={!canRun || state?.status === "running"}
+          onClick={run}
+        >
+          {state?.status === "running" ? "Running…" : "▶ Test run"}
+        </button>
+        {!canRun && <span className="w6w-muted w6w-small">Fill the required fields to test.</span>}
+      </div>
+      {state?.status === "error" && <div className="w6w-result w6w-error">{state.error}</div>}
+      {state?.status === "done" && !state.terminal && (
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Still running</div>
+          <div className="w6w-result">
+            Run <code>{state.runId}</code> has not finished yet — check its status from the
+            workflow's run history.
+          </div>
+        </div>
+      )}
+      {state?.status === "done" && state.terminal && state.error !== undefined && (
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Run failed</div>
+          <pre
+            className="w6w-result w6w-error"
+            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
+          >
+            {JSON.stringify(state.error, null, 2)}
+          </pre>
+        </div>
+      )}
+      {state?.status === "done" && state.terminal && state.error === undefined && (
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Result</div>
+          <pre
+            className="w6w-result"
+            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
+          >
+            {JSON.stringify(state.output, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

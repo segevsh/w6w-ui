@@ -11,7 +11,11 @@ import type {
   AppSummary,
   AuthDef,
   ConnectionSummary,
+  FunctionDetail,
+  FunctionSummary,
   SavedTest,
+  WorkflowDetail,
+  WorkflowSummary,
 } from "./types.ts";
 
 export interface CreateW6WApiOptions {
@@ -49,7 +53,14 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
   const doFetch = opts.fetch ?? globalThis.fetch;
   const getToken = () => (typeof opts.token === "function" ? opts.token() : opts.token);
 
-  async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  // The shared fetch core: auth header, JSON parse, and the one error-shaping
+  // idiom every member uses. Exposes the response's own status code (`req<T>`
+  // below discards it) — `runWorkflow` is the one caller that needs it, to
+  // derive `terminal` from `200` vs the server's own `202` wait-timeout arm.
+  async function rawReq(
+    path: string,
+    init?: RequestInit,
+  ): Promise<{ status: number; data: unknown }> {
     const headers = new Headers(init?.headers);
     const token = getToken();
     if (token) headers.set("authorization", `Bearer ${token}`);
@@ -88,6 +99,11 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
         {}) as { code?: string; message?: string };
       throw new ApiError(res.status, err.code ?? "error", err.message ?? res.statusText, data);
     }
+    return { status: res.status, data };
+  }
+
+  async function req<T>(path: string, init?: RequestInit): Promise<T> {
+    const { data } = await rawReq(path, init);
     return data as T;
   }
 
@@ -211,5 +227,49 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
         `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/test-runs`,
         { method: "POST", body: JSON.stringify(body) },
       ).then(() => undefined),
+
+    listFunctions: () =>
+      req<{ functions: FunctionSummary[] }>("/functions").then((r) => r.functions ?? []),
+
+    getFunction: (id) =>
+      req<{ function: Omit<FunctionDetail, "valid">; valid: boolean }>(
+        `/functions/${encodeURIComponent(id)}`,
+      ).then((r) => ({ ...r.function, valid: r.valid })),
+
+    // The real synchronous route (`/functions/:id/invoke`) — deliberately NOT
+    // `POST /run`, which would give the test stage a different code path than
+    // the `@w6w/call` node it's standing in for. Returns the raw output,
+    // pinned against the committed `studio/src/repos/functions.ts` signature.
+    invokeFunction: (id, inputs) =>
+      req<{ output?: unknown }>(`/functions/${encodeURIComponent(id)}/invoke`, {
+        method: "POST",
+        body: JSON.stringify({ inputs }),
+      }).then((r) => r.output),
+
+    listWorkflows: () =>
+      req<{ workflows: WorkflowSummary[] }>("/workflows").then((r) => r.workflows ?? []),
+
+    getWorkflow: (id) =>
+      req<{ workflow: WorkflowDetail }>(`/workflows/${encodeURIComponent(id)}`).then(
+        (r) => r.workflow,
+      ),
+
+    // `rawReq`, not `req<T>` — the ONE caller that needs the response's own
+    // status code: `200` (the run reached a terminal state inside the wait
+    // window) vs `202` (the server's own wait-timeout, still running). Both
+    // are 2xx successes; `rawReq` already throws on a non-2xx.
+    runWorkflow: (id, opts = {}) =>
+      rawReq(`/workflows/${encodeURIComponent(id)}/run?wait=true`, {
+        method: "POST",
+        body: JSON.stringify({ variables: opts.variables, input: opts.input }),
+      }).then(({ status, data }) => {
+        const body = (data ?? {}) as {
+          runId: string;
+          status: string;
+          output?: unknown;
+          error?: unknown;
+        };
+        return { ...body, terminal: status === 200 };
+      }),
   };
 }
