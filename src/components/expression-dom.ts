@@ -1,4 +1,5 @@
 import type { ExprPart } from "../types.ts";
+import { parseRootAnchoredTemplate, serializeTemplate } from "./expression-template.ts";
 
 /**
  * DOM helpers for the inline / modal expression editors: they render a value's
@@ -171,6 +172,33 @@ export function makeChip(
 const BLOCK_TAGS = new Set(["div", "p"]);
 
 /**
+ * Decode a chip element back into the part it represents — the one and only
+ * decode in the file. Hoisted out of {@link readParts}'s inline `var` /
+ * `secret` / `render` (`data-ref`) and `expr` (`data-expr` JSON) arms so
+ * {@link chipToText} can reuse the exact same logic rather than re-deriving
+ * it; `readParts` itself now calls this instead of carrying its own copy.
+ * `null` for any element that isn't a chip (`data-kind` absent or not one of
+ * the four kinds) — the caller falls through to its other element handling.
+ */
+export function chipToPart(el: HTMLElement): ExprPart | null {
+  const kind = el.getAttribute("data-kind");
+  if (kind === "var" || kind === "secret" || kind === "render") {
+    return { kind, ref: el.getAttribute("data-ref") ?? "" };
+  }
+  if (kind === "expr") {
+    const raw = el.getAttribute("data-expr") ?? "";
+    let expr: unknown = raw;
+    try {
+      expr = JSON.parse(raw);
+    } catch {
+      expr = raw;
+    }
+    return { kind: "expr", expr };
+  }
+  return null;
+}
+
+/**
  * Reconstruct parts from an editor's DOM (the source of truth while editing).
  *
  * The walk is **recursive**: a native Enter wraps the caret's line in a `<div>`
@@ -201,20 +229,9 @@ export function readParts(root: HTMLElement): ExprPart[] {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
 
-    const kind = el.getAttribute("data-kind");
-    if (kind === "var" || kind === "secret" || kind === "render") {
-      parts.push({ kind, ref: el.getAttribute("data-ref") ?? "" });
-      return;
-    }
-    if (kind === "expr") {
-      const raw = el.getAttribute("data-expr") ?? "";
-      let expr: unknown = raw;
-      try {
-        expr = JSON.parse(raw);
-      } catch {
-        expr = raw;
-      }
-      parts.push({ kind: "expr", expr });
+    const part = chipToPart(el);
+    if (part) {
+      parts.push(part);
       return;
     }
 
@@ -418,4 +435,79 @@ export function insertNodeAtCaret(editor: HTMLElement, node: Node): void {
     placeCaretAtEnd(editor);
   }
   editor.focus();
+}
+
+/**
+ * D-3 (binding): promote a just-closed `{{ … }}` marker to a chip at the
+ * keystroke that closes it — the caret-safe surgery an `onInput` handler can
+ * call directly, with NO `paintGen` bump (see the warning at the top of
+ * `ExpressionEditorModal.tsx` and `G-typing` in `expr-template-guards.test.cjs`:
+ * a repaint here resets the caret and reorders every subsequent keystroke).
+ *
+ * Returns `false`, doing nothing, unless ALL of:
+ *   - the selection is collapsed inside a text node `editor` contains;
+ *   - the two characters immediately before the caret are `}}`;
+ *   - there is a `{{` earlier in THAT SAME text node (a marker interrupted by
+ *     a chip — i.e. split across text nodes — is not a marker, deliberately);
+ *   - `parseRootAnchoredTemplate` of the text from that `{{` to the caret
+ *     parses to exactly ONE part that is not `kind: "text"` (an unrooted
+ *     marker, or one that isn't a single complete part, stays literal).
+ *
+ * On success: deletes exactly that span and inserts the chip in its place —
+ * the same `Range` surgery `insertNodeAtCaret` performs, mirrored rather than
+ * reused because the span here is a slice of an EXISTING text node, not the
+ * live selection — then collapses the caret just after the chip.
+ */
+export function promoteCompletedMarkerAtCaret(
+  editor: HTMLElement,
+  opts: { renderToggle?: boolean } = {},
+): boolean {
+  const doc = editor.ownerDocument;
+  const sel = doc.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) return false;
+
+  const offset = range.startOffset;
+  const text = node.textContent ?? "";
+  if (offset < 2 || text.slice(offset - 2, offset) !== "}}") return false;
+  const openIdx = text.lastIndexOf("{{", offset - 2);
+  if (openIdx === -1) return false;
+
+  const marker = text.slice(openIdx, offset);
+  const parsed = parseRootAnchoredTemplate(marker);
+  if (parsed.length !== 1 || parsed[0].kind === "text") return false;
+
+  const markerRange = doc.createRange();
+  markerRange.setStart(node, openIdx);
+  markerRange.setEnd(node, offset);
+  markerRange.deleteContents();
+  const chip = makeChip(doc, parsed[0], opts);
+  markerRange.insertNode(chip);
+
+  const after = doc.createRange();
+  after.setStartAfter(chip);
+  after.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(after);
+  return true;
+}
+
+/**
+ * D-3: the reverse of {@link promoteCompletedMarkerAtCaret} — a chip back to
+ * its editable `{{ … }}` text, in place. `chipToPart` is the SAME decode
+ * `readParts` uses, so what comes back is exactly what the chip carries, and
+ * `serializeTemplate` is the SAME serializer the round trip already goes
+ * through everywhere else in this file. `null` for an element that isn't a
+ * chip. The caller collapses the caret at the returned node's end — this
+ * function only performs the DOM swap, mirroring `chip.replaceWith` being the
+ * whole of the "remove" arm (`onClick`'s `[data-x]` handler) in both editors.
+ */
+export function chipToText(chip: HTMLElement): Text | null {
+  const part = chipToPart(chip);
+  if (!part) return null;
+  const text = chip.ownerDocument.createTextNode(serializeTemplate([part]));
+  chip.replaceWith(text);
+  return text;
 }

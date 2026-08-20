@@ -3,12 +3,14 @@ import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import type { ExpressionOptions } from "./ExpressionOptions.tsx";
 import { Modal } from "./Modal.tsx";
 import {
+  chipToText,
   ensureFillerBreak,
   insertNodeAtCaret,
   isRefSafeKey,
   makeChip,
   paintParts,
   placeCaretAtEnd,
+  promoteCompletedMarkerAtCaret,
   readParts,
   varLabel,
 } from "./expression-dom.ts";
@@ -375,6 +377,43 @@ export function ExpressionEditorModal({
               data-placeholder="Type text and insert {x} variables, 🔒 secrets, or ▸ step outputs…"
               spellCheck={false}
               onInput={() => {
+                // D-3: promote a just-closed `{{ … }}` marker to a chip AT
+                // THE KEYSTROKE THAT CLOSES IT — caret-safe surgery on the
+                // matched span only (see `promoteCompletedMarkerAtCaret`'s
+                // own docstring). `sync()` unconditionally afterwards either
+                // way: promoted or not, the DOM is the source of truth.
+                // NEVER bump `paintGen` here — see the warning at the top of
+                // this file and `G-typing` in `expr-template-guards.test.cjs`.
+                const el = editorRef.current;
+                if (el) promoteCompletedMarkerAtCaret(el, { renderToggle: true });
+                sync();
+              }}
+              onDoubleClick={(e) => {
+                // D-3, the reverse direction: double-click a chip back to its
+                // editable `{{ … }}` text, in place. Mirrors the onClick
+                // delegate's short-circuit order just below — data-x, then
+                // data-render-toggle — so a precise double-click on either
+                // still wins (in practice the FIRST of the two clicks that
+                // make up a dblclick already removes/flips the chip via
+                // onClick, so by the time this fires there is no
+                // `.w6w-expr-chip` left to find; these checks are the
+                // explicit guard for that intent).
+                const target = e.target as HTMLElement;
+                if (target.closest("[data-x]")) return;
+                if (target.closest("[data-render-toggle]")) return;
+                const chip = target.closest(".w6w-expr-chip") as HTMLElement | null;
+                if (!chip) return;
+                e.preventDefault();
+                const node = chipToText(chip);
+                if (node) {
+                  const doc = node.ownerDocument;
+                  const after = doc.createRange();
+                  after.setStartAfter(node);
+                  after.collapse(true);
+                  const sel = doc.getSelection();
+                  sel?.removeAllRanges();
+                  sel?.addRange(after);
+                }
                 sync();
               }}
               onBlur={() => {

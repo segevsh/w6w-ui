@@ -3,10 +3,12 @@ import type { ExprValue, SecretValue } from "../types.ts";
 import { ExpressionEditorModal } from "./ExpressionEditorModal.tsx";
 import { useExpressionOptions } from "./ExpressionOptions.tsx";
 import {
+  chipToText,
   ensureFillerBreak,
   insertNodeAtCaret,
   paintParts,
   placeCaretAtEnd,
+  promoteCompletedMarkerAtCaret,
   readParts,
 } from "./expression-dom.ts";
 import { partsToValue, valueToParts } from "./expression-template.ts";
@@ -184,12 +186,45 @@ export function ExpressionInput({
           aria-label={ariaLabel}
           data-placeholder={placeholder ?? ""}
           spellCheck={false}
-          onInput={syncFromDom}
+          onInput={() => {
+            // D-3: the more severe half — before this, a plain (unmasked)
+            // inline field had NO promotion path at all (`onLeave` below
+            // early-returns unless `masked`). Promote a just-closed
+            // `{{ … }}` marker to a chip at the keystroke that closes it,
+            // then sync unconditionally either way. NO `renderToggle` (R4 —
+            // the toggle stays absent from this component), and NEVER bump
+            // `paintGen`/repaint the field from here — see `G-typing`.
+            const el = editorRef.current;
+            if (el) promoteCompletedMarkerAtCaret(el);
+            syncFromDom();
+          }}
           onClick={(e) => {
             const x = (e.target as HTMLElement).closest("[data-x]");
             if (!x) return;
             e.preventDefault();
             x.closest(".w6w-expr-chip")?.remove();
+            syncFromDom();
+          }}
+          onDoubleClick={(e) => {
+            // D-3, the reverse direction: double-click a chip back to its
+            // editable `{{ … }}` text, in place. Mirrors the onClick
+            // delegate immediately above — no render-toggle arm here, since
+            // this component never paints one (R4).
+            const target = e.target as HTMLElement;
+            if (target.closest("[data-x]")) return;
+            const chip = target.closest(".w6w-expr-chip") as HTMLElement | null;
+            if (!chip) return;
+            e.preventDefault();
+            const node = chipToText(chip);
+            if (node) {
+              const doc = node.ownerDocument;
+              const after = doc.createRange();
+              after.setStartAfter(node);
+              after.collapse(true);
+              const sel = doc.getSelection();
+              sel?.removeAllRanges();
+              sel?.addRange(after);
+            }
             syncFromDom();
           }}
           onKeyDown={(e) => {
