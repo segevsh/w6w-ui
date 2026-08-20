@@ -206,28 +206,32 @@ test("R4 — [data-render-toggle] is present in the modal and ABSENT from the re
 //    parsing: `{{ vars.a }}` chips, a vendor placeholder like `{{name}}`
 //    never does). ──────────────────────────────────────────────────────────
 
-test("T-typed — a hand-typed {{ vars.a }} becomes a chip on blur, and every typed character landed in order first (no reordering, no onInput commit)", async () => {
+test("T-typed — a hand-typed {{ vars.a }} becomes a chip AT THE KEYSTROKE THAT CLOSES IT, before any blur (D-3: promotion supersedes the old on-blur commit)", async () => {
   const page = await open(browser, { v: "empty" });
   await page.click(".w6w-exprmodal-chips");
-  await page.keyboard.type("{{ vars.a }}", { delay: 30 });
-  await page.waitForTimeout(150);
-  // Asserted BEFORE the blur commit — the same G-typing idiom: an over-eager
-  // paintGen bump from onInput would show up here as REORDERED text, not
+  // Type everything up to but NOT including the closing "}}" first, and pin
+  // the same character-order idiom G-typing uses — an over-eager `paintGen`
+  // bump anywhere on this path would show up here as REORDERED text, not
   // merely wrong text.
-  const preBlur = await page.evaluate(
+  await page.keyboard.type("{{ vars.a }", { delay: 30 });
+  await page.waitForTimeout(100);
+  const preClose = await page.evaluate(
     () => document.querySelector(".w6w-exprmodal-chips")?.textContent ?? null,
   );
   assert.equal(
-    preBlur,
-    "{{ vars.a }}",
-    `typed characters must land in order before the blur commit; got: ${JSON.stringify(preBlur)}`,
+    preClose,
+    "{{ vars.a }",
+    `typed characters must land in order before the marker closes; got: ${JSON.stringify(preClose)}`,
   );
-  await page.evaluate(() => document.activeElement?.blur());
+  // The keystroke that closes the marker — no blur anywhere in this test.
+  await page.keyboard.type("}", { delay: 30 });
   await page.waitForTimeout(150);
-  const chip = await page.evaluate(
-    () => !!document.querySelector('.w6w-expr-chip[data-ref="vars.a"]'),
-  );
-  assert.ok(chip, "a typed {{ vars.a }}, once blurred, must become a chip");
+  const info = await page.evaluate(() => ({
+    chip: !!document.querySelector('.w6w-expr-chip[data-ref="vars.a"]'),
+    stillFocused: document.activeElement === document.querySelector(".w6w-exprmodal-chips"),
+  }));
+  assert.ok(info.chip, `a typed {{ vars.a }} must become a chip at the closing keystroke; got: ${JSON.stringify(info)}`);
+  assert.ok(info.stillFocused, "the editor must still be focused — no blur occurred");
   await page.close();
 });
 
@@ -277,6 +281,193 @@ test("T-inline (acceptance 4, the durable-location proof) — the real inline Ex
     "ExpressionInput mounted on the plain string {{ vars.a }} must chip through valueToParts at mount",
   );
   await page.close();
+});
+
+// ── D-3 (TA3) — live promotion in the INLINE field (the more severe half:
+//    before this fix `ExpressionInput`'s `onLeave` early-returned unless
+//    `masked`, so a plain inline field had NO promotion path at all — the bug
+//    in the human's screenshot), and double-click back to text in both
+//    surfaces. ─────────────────────────────────────────────────────────────
+
+test("T-typed-inline — the real inline ExpressionInput chip-ifies a hand-typed {{ vars.a }} AT THE KEYSTROKE THAT CLOSES IT, before any blur", async () => {
+  const page = await open(browser, { v: "inlineEmpty" });
+  await page.click(".w6w-expr-editor");
+  await page.keyboard.type("{{ vars.a }", { delay: 30 });
+  await page.waitForTimeout(100);
+  const preClose = await page.evaluate(
+    () => document.querySelector(".w6w-expr-editor")?.textContent ?? null,
+  );
+  assert.equal(
+    preClose,
+    "{{ vars.a }",
+    `typed characters must land in order before the marker closes; got: ${JSON.stringify(preClose)}`,
+  );
+  await page.keyboard.type("}", { delay: 30 });
+  await page.waitForTimeout(150);
+  const info = await page.evaluate(() => ({
+    chip: !!document.querySelector('.w6w-expr-editor .w6w-expr-chip[data-ref="vars.a"]'),
+    stillFocused: document.activeElement === document.querySelector(".w6w-expr-editor"),
+  }));
+  assert.ok(
+    info.chip,
+    `a typed {{ vars.a }} in the inline field must become a chip at the closing keystroke; got: ${JSON.stringify(info)}`,
+  );
+  assert.ok(info.stillFocused, "the inline editor must still be focused — no blur occurred");
+  await page.close();
+});
+
+test("T-typed-second — a SECOND marker promotes in the same still-mounted field: two chips plus the literal text between them, in order", async () => {
+  const page = await open(browser, { v: "inlineEmpty" });
+  await page.click(".w6w-expr-editor");
+  await page.keyboard.type("{{ vars.a }}", { delay: 30 });
+  await page.waitForTimeout(150);
+  // The field stays MOUNTED — no reload, no remount — and already holds a
+  // chip when the second marker is typed. A promotion that only works on a
+  // freshly-mounted, single-marker field cannot reach this.
+  await page.keyboard.type(" and {{ vars.b }}", { delay: 30 });
+  await page.waitForTimeout(150);
+  const order = await page.evaluate(() => {
+    const el = document.querySelector(".w6w-expr-editor");
+    const raw = Array.from(el.childNodes).map((n) => {
+      if (n.nodeType === Node.TEXT_NODE) return { type: "text", value: n.textContent };
+      const ref = n.getAttribute?.("data-ref");
+      if (ref) return { type: "chip", ref };
+      return { type: "other", tag: n.tagName };
+    });
+    // Coalesce adjacent text and drop empty text nodes — mirrors readParts's
+    // own `pushText`, so a harmless empty-text-node artifact of the Range
+    // surgery on either side of the inserted chip (a legitimate DOM detail,
+    // not a value the field actually holds) doesn't fail an ORDER assertion.
+    const out = [];
+    for (const item of raw) {
+      if (item.type === "text") {
+        if (!item.value) continue;
+        const last = out[out.length - 1];
+        if (last?.type === "text") {
+          last.value += item.value;
+          continue;
+        }
+      }
+      out.push(item);
+    }
+    return out;
+  });
+  assert.deepEqual(
+    order,
+    [
+      { type: "chip", ref: "vars.a" },
+      { type: "text", value: " and " },
+      { type: "chip", ref: "vars.b" },
+    ],
+    `both chips and the literal text between them must survive, in order; got: ${JSON.stringify(order)}`,
+  );
+  await page.close();
+});
+
+test("T-dbl-modal — double-clicking a chip converts it to its exact {{ vars.a }} text in place (surrounding text order intact); double-clicking its × removes it and creates no text node", async () => {
+  // Arm 1: double-click the chip's BODY.
+  {
+    const page = await open(browser, { v: "dblChip" });
+    const box = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-exprmodal-chips .w6w-expr-chip-label");
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.dblclick(box.x, box.y);
+    await page.waitForTimeout(150);
+    const info = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-exprmodal-chips");
+      return {
+        chipCount: el.querySelectorAll(".w6w-expr-chip").length,
+        order: Array.from(el.childNodes).map((n) =>
+          n.nodeType === Node.TEXT_NODE ? n.textContent : `[${n.tagName}]`,
+        ),
+      };
+    });
+    assert.equal(info.chipCount, 0, `the chip must be gone; got: ${JSON.stringify(info)}`);
+    assert.deepEqual(
+      info.order,
+      ["HEAD ", "{{ vars.a }}", " TAIL"],
+      `double-click must replace the chip with its exact text, surrounding text order intact; got: ${JSON.stringify(info)}`,
+    );
+    await page.close();
+  }
+  // Arm 2: double-click lands on the chip's × — the chip is REMOVED, and no
+  // {{ }} text node appears for it (a chip merely deleted must not be
+  // mistaken for one that was converted).
+  {
+    const page = await open(browser, { v: "dblChip" });
+    const box = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-exprmodal-chips [data-x]");
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.dblclick(box.x, box.y);
+    await page.waitForTimeout(150);
+    const info = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-exprmodal-chips");
+      return { chipCount: el.querySelectorAll(".w6w-expr-chip").length, text: el.textContent };
+    });
+    assert.equal(info.chipCount, 0, `the chip must be removed by the ×; got: ${JSON.stringify(info)}`);
+    assert.equal(
+      info.text,
+      "HEAD  TAIL",
+      `removing via × must leave no {{ }} text for the chip; got: ${JSON.stringify(info)}`,
+    );
+    await page.close();
+  }
+});
+
+test("T-dbl-inline — the real inline ExpressionInput: double-clicking a chip converts it to its exact {{ vars.a }} text in place; double-clicking its × removes it and creates no text node", async () => {
+  // Arm 1: double-click the chip's BODY.
+  {
+    const page = await open(browser, { v: "dblChipInline" });
+    const box = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-expr-editor .w6w-expr-chip-label");
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.dblclick(box.x, box.y);
+    await page.waitForTimeout(150);
+    const info = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-expr-editor");
+      return {
+        chipCount: el.querySelectorAll(".w6w-expr-chip").length,
+        order: Array.from(el.childNodes).map((n) =>
+          n.nodeType === Node.TEXT_NODE ? n.textContent : `[${n.tagName}]`,
+        ),
+      };
+    });
+    assert.equal(info.chipCount, 0, `the chip must be gone; got: ${JSON.stringify(info)}`);
+    assert.deepEqual(
+      info.order,
+      ["HEAD ", "{{ vars.a }}", " TAIL"],
+      `double-click must replace the chip with its exact text, surrounding text order intact; got: ${JSON.stringify(info)}`,
+    );
+    await page.close();
+  }
+  // Arm 2: double-click lands on the chip's ×.
+  {
+    const page = await open(browser, { v: "dblChipInline" });
+    const box = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-expr-editor [data-x]");
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await page.mouse.dblclick(box.x, box.y);
+    await page.waitForTimeout(150);
+    const info = await page.evaluate(() => {
+      const el = document.querySelector(".w6w-expr-editor");
+      return { chipCount: el.querySelectorAll(".w6w-expr-chip").length, text: el.textContent };
+    });
+    assert.equal(info.chipCount, 0, `the chip must be removed by the ×; got: ${JSON.stringify(info)}`);
+    assert.equal(
+      info.text,
+      "HEAD  TAIL",
+      `removing via × must leave no {{ }} text for the chip; got: ${JSON.stringify(info)}`,
+    );
+    await page.close();
+  }
 });
 
 test("T-height — the Result pane is 30-50% of the modal height (a RATIO, never a pixel) at three viewports, with the chips editor not starved", async () => {

@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  chipToPart,
   ensureFillerBreak,
   insertNodeAtCaret,
   isRefSafeKey,
@@ -187,6 +188,42 @@ test("readParts reads a render chip's data-kind/data-ref back verbatim", () => {
     { kind: "text", value: "Body: " },
     { kind: "render", ref: "documents.a.body" },
   ]);
+});
+
+// --- chipToPart (D-3, TA3) — hoisted out of readParts's own arms, and now the
+// ONE decode readParts itself calls. These pin the decode DIRECTLY, by value,
+// so a divergence between "what readParts sees when walking the DOM" and
+// "what chipToPart returns when called on a chip standalone" would show up
+// here even if readParts's own coalescing happened to mask it.
+
+test("chipToPart — decodes each chip kind identically to readParts's own arms", () => {
+  assert.deepEqual(chipToPart(varChip("vars.x") as unknown as HTMLElement), {
+    kind: "var",
+    ref: "vars.x",
+  });
+  assert.deepEqual(chipToPart(secretChip("API_KEY") as unknown as HTMLElement), {
+    kind: "secret",
+    ref: "API_KEY",
+  });
+  assert.deepEqual(chipToPart(renderChip("documents.a.body") as unknown as HTMLElement), {
+    kind: "render",
+    ref: "documents.a.body",
+  });
+  assert.deepEqual(chipToPart(exprChip('{"var":"vars.n"}') as unknown as HTMLElement), {
+    kind: "expr",
+    expr: { var: "vars.n" },
+  });
+  // The raw fallback when the JSON does not parse — mirrors the "chips keep
+  // their identity" case above.
+  assert.deepEqual(chipToPart(exprChip("a + b") as unknown as HTMLElement), {
+    kind: "expr",
+    expr: "a + b",
+  });
+});
+
+test("chipToPart — null for an element that carries no (or an unrecognised) data-kind", () => {
+  assert.equal(chipToPart(el("span", {}, [text("a")]) as unknown as HTMLElement), null);
+  assert.equal(chipToPart(el("span", { "data-kind": "text" }, []) as unknown as HTMLElement), null);
 });
 
 test("<br> inside a nested block still breaks the line", () => {
