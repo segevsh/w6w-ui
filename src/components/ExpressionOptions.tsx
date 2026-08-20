@@ -10,8 +10,42 @@
  * the host (studio) fetches `/vars` + `/vault` and hands the NAMES in via the
  * editor's `exprOptions` prop, which feeds this provider. Only names/refs ever
  * cross this boundary — secret plaintext never reaches the client.
+ *
+ * ## The scope is PROGRESSIVE, and that is the point
+ *
+ * `ExpressionOptionsProvider` **layers over** whatever it inherits rather than
+ * replacing it, so scope is assembled by the tree instead of by one exhaustive
+ * object at each call site:
+ *
+ * ```
+ *   app shell   ── vars · secrets · documents · sampleValues · sealSecret · create*
+ *     └ page    ── + inputs        (a Function's / Endpoint's declared input keys)
+ *         └ region ── + steps      (the workflow state leading to one step)
+ * ```
+ *
+ * Two properties fall out of that, and both are requirements rather than
+ * conveniences:
+ *
+ *   1. **Position, not plumbing, decides scope.** An `ExpressionInput` rendered
+ *      anywhere under the page — a modal, a mapping row, a nested card — sees
+ *      the same rail, because it inherits it. Before this, scope travelled as an
+ *      `exprOptions` prop and a field the prop had not been threaded to opened
+ *      the editor with an empty rail: the `ƒx` toggles on an Implementation
+ *      card's mapping rows offered nothing, while the very same editor reached
+ *      through the card's "Change" button offered everything.
+ *   2. **Narrower scope cannot leak outward.** `inputs` added by a Function page
+ *      is invisible to a sibling route and to anything above the provider,
+ *      because React context only flows down. Navigating away drops it with the
+ *      subtree — no teardown to remember and no chance of one page's `inputs.*`
+ *      appearing in another's picker.
+ *
+ * Merging is **shallow, per key**: a key present in `value` wins outright (a
+ * provider narrowing `vars` replaces the inherited list, it does not union with
+ * it), and a key absent from `value` is inherited. To *remove* an inherited key
+ * for a subtree, pass it explicitly as `undefined` — `{ inputs: undefined }` —
+ * which is a present key and therefore wins.
  */
-import { type ReactNode, createContext, useContext } from "react";
+import { type ReactNode, createContext, useContext, useMemo } from "react";
 import type { SecretValue } from "../types.ts";
 
 /** An upstream step whose output this field can reference (`steps.<id>.output`). */
@@ -96,18 +130,38 @@ export interface ExpressionOptions {
 const ExpressionOptionsCtx = createContext<ExpressionOptions>({});
 
 export interface ExpressionOptionsProviderProps {
+  /**
+   * The scope this level CONTRIBUTES — not the whole scope. Shallow-merged over
+   * whatever is inherited (see the module doc): keys here win, keys absent are
+   * inherited, and an explicit `undefined` removes an inherited key for this
+   * subtree.
+   */
   value: ExpressionOptions;
   children: ReactNode;
 }
 
-/** Provide the var/secret names offered to every `ExpressionInput` below. */
+/**
+ * Contribute expression scope to every `ExpressionInput` below.
+ *
+ * Layers over the inherited scope rather than replacing it, so an app shell can
+ * provide vars/secrets/documents once and a page can add its `inputs` without
+ * restating them — and without a field somewhere in the page missing the rail
+ * because a prop was not threaded to it. See the module doc for the model.
+ */
 export function ExpressionOptionsProvider({ value, children }: ExpressionOptionsProviderProps) {
-  return <ExpressionOptionsCtx.Provider value={value}>{children}</ExpressionOptionsCtx.Provider>;
+  const inherited = useContext(ExpressionOptionsCtx);
+  // Memoised on the two inputs: a fresh object every render would re-render
+  // every consumer below on every parent render, which on the workflow editor
+  // is a repaint of each chip rail.
+  const merged = useMemo(() => ({ ...inherited, ...value }), [inherited, value]);
+  return <ExpressionOptionsCtx.Provider value={merged}>{children}</ExpressionOptionsCtx.Provider>;
 }
 
 /**
- * The var/secret names in scope. Empty by default so a standalone
- * `ExpressionInput` (no provider) still works — authors just type names by hand.
+ * The scope in effect here — every contributing provider above, merged.
+ *
+ * Empty by default so a standalone `ExpressionInput` (no provider) still works
+ * — authors just type names by hand.
  */
 export function useExpressionOptions(): ExpressionOptions {
   return useContext(ExpressionOptionsCtx);

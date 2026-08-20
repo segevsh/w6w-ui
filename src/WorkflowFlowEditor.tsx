@@ -54,6 +54,7 @@ import {
   type ExpressionOptions,
   ExpressionOptionsProvider,
   type ExpressionStepSource,
+  useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
@@ -185,10 +186,15 @@ export interface WorkflowFlowEditorProps {
    */
   apps?: AppSummary[];
   /**
-   * Names offered by each step field's expression picker (task 3.2): the
-   * project's variable + secret names. Fed to every `ExpressionInput` in the
-   * editor via context. Names only — secret plaintext never reaches the client.
-   * The host (studio) fetches `/vars` + `/vault` and passes the names here.
+   * EXTRA scope for each step field's expression picker, on top of whatever
+   * this editor is already mounted under.
+   *
+   * Optional, and normally omitted: `ExpressionOptionsProvider` layers, so a
+   * host that provides the project's vars/secrets/documents above this editor
+   * (studio does, once, in its app shell) needs to pass nothing here. Use it
+   * only to add or override something at this level.
+   *
+   * Names only — secret plaintext never reaches the client.
    */
   exprOptions?: ExpressionOptions;
   /**
@@ -919,17 +925,30 @@ function Inner({
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
   // editor's left panel shows every source at once.
+  //
+  // `ExpressionOptionsProvider` below LAYERS over whatever this editor is
+  // mounted under, so the project's vars/secrets/documents arrive on their own
+  // and need not be restated here — the `exprOptions` PROP is now only for a
+  // host that wants to override or add something at this level.
+  //
+  // `sampleValues` is the one key that must UNION rather than replace, and that
+  // is why the inherited scope is read explicitly: three disjoint ref
+  // namespaces contribute to it (`vars.*`/`documents.*` from the app shell,
+  // anything the prop adds, and `steps.*` computed here), and layering alone
+  // would let the object built below shadow the inherited one wholesale.
+  const inheritedExprOptions = useExpressionOptions();
   const mergedExprOptions = useMemo<ExpressionOptions>(
     () => ({
       ...(exprOptions ?? {}),
       steps: upstreamState.steps,
       hasTrigger: upstreamState.hasTrigger,
-      // EXTEND, never replace: the host seeds `vars.*`/`documents.*` here (studio's
-      // WorkflowsPage) and those must survive. Step refs use a disjoint `steps.*`
-      // prefix, so spreading both is complete and collision-free.
-      sampleValues: { ...(exprOptions?.sampleValues ?? {}), ...stepSampleValues },
+      sampleValues: {
+        ...(inheritedExprOptions.sampleValues ?? {}),
+        ...(exprOptions?.sampleValues ?? {}),
+        ...stepSampleValues,
+      },
     }),
-    [exprOptions, upstreamState, stepSampleValues],
+    [exprOptions, inheritedExprOptions.sampleValues, upstreamState, stepSampleValues],
   );
 
   return (
