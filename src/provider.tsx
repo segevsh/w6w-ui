@@ -14,7 +14,11 @@ import type {
   AppSummary,
   AuthDef,
   ConnectionSummary,
+  FunctionDetail,
+  FunctionSummary,
   SavedTest,
+  WorkflowDetail,
+  WorkflowSummary,
 } from "./types.ts";
 
 /**
@@ -228,6 +232,59 @@ export interface W6WApi {
    * `/workflows/:workflowId/steps/:stepId/tests`.
    */
   listStepTests(workflowId: string, stepId: string): Promise<StepTest[]>;
+
+  /**
+   * List the caller's registered Functions (core rfcs/function.md) — drives
+   * the step builder's Functions tab (F-2.0). GETs `/functions`.
+   */
+  listFunctions(): Promise<FunctionSummary[]>;
+
+  /**
+   * Load one Function's canonical interface (`inputs`), so the Functions tab
+   * can render its Configure stage's `ParamsForm`. GETs `/functions/:id`.
+   */
+  getFunction(id: string): Promise<FunctionDetail>;
+
+  /**
+   * Invoke a Function directly — the Functions tab's Test stage
+   * (`CallableStepConfig`), NOT the `@w6w/call` node's own run-time path (that
+   * goes through `ctx.invokeCallable`, host-side). Returns the raw output —
+   * `unknown`, not an invocation envelope — matching the committed
+   * `studio/src/repos/functions.ts`. POSTs `/functions/:id/invoke`.
+   */
+  invokeFunction(id: string, inputs: Record<string, unknown>): Promise<unknown>;
+
+  /**
+   * List the caller's registered Workflows — drives the step builder's
+   * Workflows tab (F-2.0). GETs `/workflows`.
+   */
+  listWorkflows(): Promise<WorkflowSummary[]>;
+
+  /**
+   * Load one Workflow's full definition, so the Workflows tab can derive its
+   * entry/trigger step's declared `with.fields` for the Configure stage's
+   * `ParamsForm`. GETs `/workflows/:id`.
+   */
+  getWorkflow(id: string): Promise<WorkflowDetail>;
+
+  /**
+   * Run a Workflow synchronously — the Workflows tab's Test stage (D-11/
+   * D-15(c)): the SAME `?wait=true` path the saved `@w6w/call` step takes at
+   * run time, never a client-side enqueue-and-poll. `terminal` is derived from
+   * the response's HTTP status (`200` ⇒ `true`, the server's own `202`
+   * synchronous-wait timeout ⇒ `false` — a legitimate "still running" outcome,
+   * not an error). POSTs `/workflows/:id/run?wait=true`.
+   */
+  runWorkflow(
+    id: string,
+    opts?: { variables?: Record<string, unknown>; input?: Record<string, unknown> },
+  ): Promise<{
+    runId: string;
+    status: string;
+    output?: unknown;
+    error?: unknown;
+    terminal: boolean;
+  }>;
 }
 
 const Ctx = createContext<W6WApi | null>(null);

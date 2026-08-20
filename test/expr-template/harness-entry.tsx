@@ -23,6 +23,13 @@ const params = new URLSearchParams(location.search);
 // STRING `"{{ vars.a }}"` (not an `ExprValue`), no typing and no blur — T1.2.2
 // acceptance 4's durable-location proof: this must chip through
 // `valueToParts` at mount, or the fix is in the wrong place.
+// `inlineEmpty` — mounts the REAL inline `ExpressionInput`, empty (D-3,
+// TA3): the more severe half — before this fix a plain inline field had NO
+// promotion path at all. T-typed-inline and T-typed-second type into this.
+// `dblChip` / `dblChipInline` — a var chip with surrounding TEXT on both
+// sides, in the modal / the inline field respectively (D-3, TA3): the
+// double-click-back-to-text fixture. Surrounding text lets a guard tell
+// "converted in place" from "the chip vanished and the string collapsed".
 // `addable` — the "+ Add" (T1.2.3) fixture: `createVar`/`createSecret` are
 // bound, so the rail's "+ Add" controls render and the nested Add-value
 // dialog is reachable. Both resolve immediately, recording their input on
@@ -44,6 +51,14 @@ const VALUES: Record<string, string | ExprValue> = {
   templateVar: {
     type: "expr",
     parts: [{ kind: "var", ref: "vars.a" }],
+  },
+  dblChip: {
+    type: "expr",
+    parts: [
+      { kind: "text", value: "HEAD " },
+      { kind: "var", ref: "vars.a" },
+      { kind: "text", value: " TAIL" },
+    ],
   },
 };
 
@@ -129,6 +144,24 @@ if (v === "addable") {
   createRoot(mount).render(
     <ExpressionInput
       value="{{ vars.a }}"
+      options={{ vars: ["a"], secrets: [] }}
+      onChange={() => {}}
+      aria-label="inline expression"
+    />,
+  );
+} else if (v === "inlineEmpty") {
+  createRoot(mount).render(
+    <ExpressionInput
+      value=""
+      options={{ vars: ["a", "b"], secrets: [] }}
+      onChange={() => {}}
+      aria-label="inline expression"
+    />,
+  );
+} else if (v === "dblChipInline") {
+  createRoot(mount).render(
+    <ExpressionInput
+      value={VALUES.dblChip}
       options={{ vars: ["a"], secrets: [] }}
       onChange={() => {}}
       aria-label="inline expression"

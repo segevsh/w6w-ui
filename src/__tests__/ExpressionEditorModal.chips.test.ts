@@ -199,6 +199,86 @@ test('mounting directly WITH a render part disables "Use a plain value" immediat
   assert.equal(byText(withoutRender.container, "button", "Use a plain value")?.disabled, false);
 });
 
+// ── D-3 (TA3) — the onInput/onDoubleClick WIRING itself, at the cheap jsdom
+//    tier: no real caret here (jsdom has none — that is what the Chromium
+//    gate's G-typing/T-typed/T-typed-inline/T-typed-second exist for), but
+//    the wiring from a native `input`/`dblclick` DOM event through to
+//    `promoteCompletedMarkerAtCaret`/`chipToText` needs no caret model to
+//    exercise: the DOM state (a text node + a collapsed Selection, or a real
+//    chip element) is set up directly, then a real event is dispatched at the
+//    mounted, real `ExpressionEditorModal`. ─────────────────────────────────
+
+test("onInput wiring — a closed {{ vars.a }} marker promotes to a chip on a real input event, unconditionally followed by sync()", async () => {
+  const { container } = await mountModal({ value: "" });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  await act(async () => {
+    const textNode = dom.window.document.createTextNode("{{ vars.a }}");
+    editor.appendChild(textNode);
+    const range = dom.window.document.createRange();
+    range.setStart(textNode, textNode.length);
+    range.collapse(true);
+    const sel = dom.window.document.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    editor.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  assert.deepEqual(readParts(editor), [{ kind: "var", ref: "vars.a" }]);
+});
+
+test("onInput wiring — an UNCLOSED marker (no trailing }}) is left alone: no chip, text unchanged", async () => {
+  const { container } = await mountModal({ value: "" });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  await act(async () => {
+    const textNode = dom.window.document.createTextNode("{{ vars.a");
+    editor.appendChild(textNode);
+    const range = dom.window.document.createRange();
+    range.setStart(textNode, textNode.length);
+    range.collapse(true);
+    const sel = dom.window.document.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    editor.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  assert.equal(editor.querySelectorAll(".w6w-expr-chip").length, 0);
+  assert.equal(editor.textContent, "{{ vars.a");
+});
+
+test("onDoubleClick wiring — double-clicking a chip's label converts it to its exact {{ vars.a }} text, and syncs", async () => {
+  const { container } = await mountModal({
+    value: { type: "expr", parts: [{ kind: "var", ref: "vars.a" }] },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const label = editor.querySelector(".w6w-expr-chip-label") as HTMLElement;
+  assert.ok(label, "the chip's label must be present to double-click");
+  await act(async () => {
+    label.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
+  });
+  assert.equal(editor.querySelectorAll(".w6w-expr-chip").length, 0);
+  assert.deepEqual(readParts(editor), [{ kind: "text", value: "{{ vars.a }}" }]);
+});
+
+test("onDoubleClick wiring — a dblclick event landing on the chip's × is NOT converted to text (defers to the existing click-based removal)", async () => {
+  const { container } = await mountModal({
+    value: { type: "expr", parts: [{ kind: "var", ref: "vars.a" }] },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const x = editor.querySelector("[data-x]") as HTMLElement;
+  assert.ok(x, "the chip's × must be present to double-click");
+  await act(async () => {
+    x.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
+  });
+  // The dblclick handler's own `[data-x]` short-circuit must fire — the chip
+  // is UNCHANGED (still a chip, never converted to {{ }} text). Actual
+  // removal is the existing CLICK handler's job (proved in real Chromium by
+  // T-dbl-modal's × arm, where the two clicks that make up a double-click
+  // remove the chip before any dblclick can act on it); this pins that the
+  // double-click handler ITSELF never turns a ×-targeted event into a text
+  // conversion — the "converted vs. merely deleted" distinction acceptance 7
+  // requires.
+  assert.equal(editor.querySelectorAll(".w6w-expr-chip").length, 1);
+  assert.deepEqual(readParts(editor), [{ kind: "var", ref: "vars.a" }]);
+});
+
 // ── The Document step: reachable in the palette, exactly one param ─────────
 // Pure — no mount needed. Kept in this file (rather than a new one) because
 // `flow-types.ts` has no dedicated unit-test file and the contract's

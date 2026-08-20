@@ -73,9 +73,15 @@ PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 # T1.2.3's "+ Add" guards — A4 (stacked dialog), A8-escape, A8-backdrop,
 # "A7 + A9" (caret returns, no browser dialog invoked), and "A2 + A7"
 # (stays-mounted: chips text unchanged, rail gains the new name, + Add still
-# rendered). A tree that fails to bundle, or a run that dies half-way, reports
-# DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-13}"
+# rendered). D-3 (TA3) added T-typed-inline, T-typed-second, T-dbl-modal,
+# T-dbl-inline (live promotion in the inline field, a second marker in an
+# already-mounted field, and double-click-back-to-text in both surfaces) and
+# rewrote T-typed itself (same count) to assert promotion at the closing
+# keystroke rather than on blur. TA2 (D-2) added T-chain-inline (a hand-typed
+# `||`/`??` chain chip-ifies as one chip, labelled from its operands). A tree
+# that fails to bundle, or a run that dies half-way, reports DID NOT RUN
+# rather than "0 failures".
+EXPECTED_TESTS="${EXPECTED_TESTS:-18}"
 
 fatal() {
   echo "FATAL: $*"
