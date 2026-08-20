@@ -111,6 +111,136 @@ after(async () => {
   if (browser) await browser.close();
 });
 
+const lastAdd = (page) => page.evaluate(() => window.__lastAdd ?? null);
+
+// ── C1-C4 — the picker's Functions/Workflows tabs (project contract D-12/
+//    D-15): ONE step shape (`@w6w/call`) minted by both tabs, the tabs'
+//    position in the sidebar, and their absence under `appsOnly` — the live
+//    landmine `TargetSelector.tsx:128` would otherwise silently swallow. ────
+
+test("C1 — sidebar's first three tabs are Connected apps, Functions, Workflows, in order", async () => {
+  const page = await open(browser, { v: "step", q: "n=0" });
+  const labels = await page.evaluate(() =>
+    [...document.querySelectorAll(".w6w-stepbuilder-tab")]
+      .slice(0, 3)
+      .map((b) => b.textContent.trim()),
+  );
+  assert.deepEqual(
+    labels,
+    ["Connected apps", "Functions", "Workflows"],
+    `first three sidebar tabs: ${JSON.stringify(labels)}`,
+  );
+  await page.close();
+});
+
+test("C2 — Functions tab: pick fn_1, fill one input, Add emits a @w6w/call step with the seam-pinned `with`", async () => {
+  const page = await open(browser, { v: "step", q: "n=0" });
+  await clickTab(page, "Functions");
+  await page.waitForTimeout(150);
+
+  const picked = await page.evaluate(() => {
+    const b = [...document.querySelectorAll(".w6w-stepbuilder-item")].find((x) =>
+      x.textContent.includes("fn_1"),
+    );
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  assert.ok(picked, "no .w6w-stepbuilder-item for fn_1 in the Functions tab");
+  await page.waitForTimeout(200);
+
+  await page.fill('input[aria-label="Name"]', "Ada");
+  await page.waitForTimeout(150);
+
+  const nextClicked = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Next →");
+    if (!b || b.disabled) return false;
+    b.click();
+    return true;
+  });
+  assert.ok(nextClicked, "Configure -> Test 'Next →' button not clickable after filling the one input");
+  await page.waitForTimeout(150);
+
+  const addClicked = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Add step");
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  assert.ok(addClicked, `no "Add step" button found on the Test tab`);
+  await page.waitForTimeout(150);
+
+  const added = await lastAdd(page);
+  assert.ok(added, "onAdd was never called — window.__lastAdd is still empty");
+  assert.equal(added.uses?.app, "@w6w/call", `uses.app: ${JSON.stringify(added.uses)}`);
+  assert.equal(added.uses?.action, "call", `uses.action: ${JSON.stringify(added.uses)}`);
+  assert.equal(added.with?.targetKind, "function", `with.targetKind: ${JSON.stringify(added.with)}`);
+  assert.equal(added.with?.targetId, "fn_1", `with.targetId: ${JSON.stringify(added.with)}`);
+  assert.equal(added.with?.wait, true, `with.wait: ${JSON.stringify(added.with)}`);
+  assert.equal(added.with?.inputs?.name, "Ada", `with.inputs: ${JSON.stringify(added.with?.inputs)}`);
+  await page.close();
+});
+
+test("C3 — Workflows tab: pick wf_1, fill one input, Add emits the SAME @w6w/call shape with targetKind workflow", async () => {
+  const page = await open(browser, { v: "step", q: "n=0" });
+  await clickTab(page, "Workflows");
+  await page.waitForTimeout(150);
+
+  const picked = await page.evaluate(() => {
+    const b = [...document.querySelectorAll(".w6w-stepbuilder-item")].find((x) =>
+      x.textContent.includes("wf_1"),
+    );
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  assert.ok(picked, "no .w6w-stepbuilder-item for wf_1 in the Workflows tab");
+  await page.waitForTimeout(200);
+
+  await page.fill('input[aria-label="name"]', "Ada");
+  await page.waitForTimeout(150);
+
+  const nextClicked = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Next →");
+    if (!b || b.disabled) return false;
+    b.click();
+    return true;
+  });
+  assert.ok(nextClicked, "Configure -> Test 'Next →' button not clickable after filling the one input");
+  await page.waitForTimeout(150);
+
+  const addClicked = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Add step");
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  assert.ok(addClicked, `no "Add step" button found on the Test tab`);
+  await page.waitForTimeout(150);
+
+  const added = await lastAdd(page);
+  assert.ok(added, "onAdd was never called — window.__lastAdd is still empty");
+  assert.equal(added.uses?.app, "@w6w/call", `uses.app: ${JSON.stringify(added.uses)}`);
+  assert.equal(added.uses?.action, "call", `uses.action: ${JSON.stringify(added.uses)}`);
+  assert.equal(added.with?.targetKind, "workflow", `with.targetKind: ${JSON.stringify(added.with)}`);
+  assert.equal(added.with?.targetId, "wf_1", `with.targetId: ${JSON.stringify(added.with)}`);
+  assert.equal(added.with?.wait, true, `with.wait: ${JSON.stringify(added.with)}`);
+  await page.close();
+});
+
+test("C4 — appsOnly hides Functions/Workflows; Connected apps/Apps/AI still render", async () => {
+  const page = await open(browser, { v: "step", q: "n=0&appsOnly=1" });
+  const labels = await page.evaluate(() =>
+    [...document.querySelectorAll(".w6w-stepbuilder-tab")].map((b) => b.textContent.trim()),
+  );
+  assert.ok(!labels.includes("Functions"), `Functions tab must be absent under appsOnly: ${JSON.stringify(labels)}`);
+  assert.ok(!labels.includes("Workflows"), `Workflows tab must be absent under appsOnly: ${JSON.stringify(labels)}`);
+  assert.ok(labels.includes("Connected apps"), `Connected apps must still render: ${JSON.stringify(labels)}`);
+  assert.ok(labels.includes("Apps"), `Apps must still render: ${JSON.stringify(labels)}`);
+  assert.ok(labels.includes("AI"), `AI must still render: ${JSON.stringify(labels)}`);
+  await page.close();
+});
+
 // ── I1 — the search bar never moves under a triple scroll (list -> host ->
 //    dialog), in both surfaces, at 60 apps. Guards G-A1: the AppPicker layout
 //    host that stops the panel resizing must also stop the search bar

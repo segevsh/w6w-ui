@@ -48,10 +48,13 @@ PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 # never moves the footer's Cancel/primary buttons, note-present vs
 # note-absent, at two viewports. Plus M-xl — both real -xl dialogs
 # (AddConnectionModal, StepBuilderModal) measure >= 1000px wide at VP.wide.
+# Plus C1-C4 — the Functions/Workflows tabs (D-12/D-15): sidebar order/
+# position, both tabs minting the SAME `@w6w/call` step shape via a REAL
+# onAdd (not a discarding stub), and their absence under `appsOnly`.
 # The verdict below is REFUSED unless exactly this many ran: a tree that
 # fails to bundle, or a run that dies half-way, reports DID NOT RUN rather
 # than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-11}"
+EXPECTED_TESTS="${EXPECTED_TESTS:-15}"
 
 fatal() {
   echo "FATAL: $*"

@@ -170,6 +170,71 @@ export interface ActionDef {
   output?: unknown;
 }
 
+/**
+ * Summary of a registered Function, as returned by GET /functions (core
+ * rfcs/function.md). `valid` mirrors the server's `isFunctionValid` — false for
+ * a draft Function (no `impl`, or an incomplete one) — the picker's list stage
+ * doesn't gate on it (an invalid Function still shows up; the server's own
+ * invoke route is what refuses it).
+ */
+export interface FunctionSummary {
+  id: string;
+  key: string;
+  displayName?: string;
+  description?: string;
+  updatedAt?: string;
+  valid: boolean;
+}
+
+/**
+ * A Function's canonical interface, as returned by GET /functions/:id — enough
+ * to render its `inputs` form (core rfcs/function.md). `inputs` reuses the
+ * wire-mirror `ActionParam[]` shape verbatim, exactly as an app action's own
+ * declared `params` do.
+ */
+export interface FunctionDetail {
+  id: string;
+  key: string;
+  displayName?: string;
+  description?: string;
+  inputs: ActionParam[];
+  valid: boolean;
+}
+
+/** Summary of a registered Workflow, as returned by GET /workflows. */
+export interface WorkflowSummary {
+  id: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  status?: string;
+  updatedAt?: string;
+}
+
+/** One step of a Workflow, as returned by GET /workflows/:id — the minimal
+ * shape the picker's Configure stage needs to find the entry/trigger step's
+ * own declared `with.fields` (core rfcs/node-types.md's trigger node). */
+export interface WorkflowStepSummary {
+  id: string;
+  uses: { app: string; action: string };
+  with?: Record<string, unknown>;
+}
+
+/**
+ * Full Workflow definition, as returned by GET /workflows/:id — enough to
+ * derive the trigger's declared input fields for the Functions/Workflows
+ * picker's Configure stage. A deliberately smaller mirror than `FlowWorkflow`
+ * (`flow-types.ts`) — these wire types stay independent of the flow-editor's
+ * own type, matching this file's own "local copy" convention.
+ */
+export interface WorkflowDetail {
+  id: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  steps: WorkflowStepSummary[];
+}
+
 /** Auth method declaration as exposed by an app's manifest. */
 export interface AuthDef {
   key: string;

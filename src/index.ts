@@ -80,8 +80,12 @@ export type {
   ExprPart,
   ExprPartKind,
   ExprValue,
+  FunctionDetail,
+  FunctionSummary,
   SecretValue,
   ThemeMode,
+  WorkflowDetail,
+  WorkflowSummary,
 } from "./types.ts";
 export { isExprValue, isSecretValue } from "./types.ts";
 
@@ -91,3 +95,9 @@ export { EditButton } from "./components/EditButton.tsx";
 export type { EditButtonProps } from "./components/EditButton.tsx";
 export { DeleteButton } from "./components/DeleteButton.tsx";
 export type { DeleteButtonProps } from "./components/DeleteButton.tsx";
+
+// Reachable from studio (TC6's rail tool reuses it — D-10) as of this project;
+// verified absent from every barrel before this line (`src/index.ts` and
+// `src/flow.ts` both 0 hits).
+export { NodeConfigForm } from "./NodeConfigForm.tsx";
+export type { NodeConfig } from "./NodeConfigForm.tsx";
