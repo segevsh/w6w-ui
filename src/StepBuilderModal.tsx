@@ -16,6 +16,7 @@ import {
   type InternalNodeDef,
   internalNodeDefaults,
   isControlApp,
+  isInternalApp,
   isTriggerApp,
 } from "./flow-types.ts";
 import { paramsToJson, stepToJson } from "./flow-utils.ts";
@@ -88,17 +89,7 @@ export interface StepBuilderModalProps {
    * value lives instead of making the author re-find the tab.
    */
   initialTab?: "connected" | "functions" | "workflows";
-  /**
-   * Whether the app tabs (`Connected apps` / `Apps` / `AI`) are offered at
-   * all. Defaults to `true` — F-2.0's homepage leads with them.
-   *
-   * Passed `false` only where an app action is not a legal value for what is
-   * being bound. The error handler is the case: `ErrorReroute.target` is a
-   * `Callable`, which has exactly two arms (Function, Workflow) and no action
-   * arm at all — offering a tab whose every pick would have to be refused is
-   * worse than not offering it.
-   */
-  apps?: boolean;
+
   /** Modal heading. Defaults to "Add a step". */
   title?: string;
   /**
@@ -148,6 +139,16 @@ export interface StepBuilderModalProps {
  *  render (it lands in a `useEffect`-free read path, but a stable identity
  *  keeps it honest for any future memo). */
 const CALLABLE_FAMILIES = ["function", "workflow"] as const;
+
+/** Row glyphs for the home tab's non-app entries, in `InternalIcon`'s
+ *  stroked-24-viewBox idiom so a Function/Workflow row sits on the same tile
+ *  an app row's icon does. Feather `git-branch` for a Workflow (it is a graph)
+ *  and `zap` for a Function (one operation, immediate). */
+const CALLABLE_GLYPH: Record<"function" | "workflow", string> = {
+  workflow:
+    '<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  function: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+};
 
 type Tab =
   | "connected"
@@ -289,7 +290,6 @@ export function StepBuilderModal({
   appsOnly,
   callables = CALLABLE_FAMILIES,
   initialTab,
-  apps = true,
   title,
   workflowId,
   stepId,
@@ -301,7 +301,7 @@ export function StepBuilderModal({
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
-  const [tab, setTab] = useState<Tab>(initialTab ?? (apps ? "connected" : "functions"));
+  const [tab, setTab] = useState<Tab>(initialTab ?? "connected");
   // When an app is selected the modal collapses to a single-app detail view:
   // the sidebar is hidden and the header switches to the app's name + icon.
   // Initialize with initialApp if provided to skip the app picker.
@@ -317,6 +317,18 @@ export function StepBuilderModal({
     id: string;
     label: string;
   } | null>(null);
+
+  // The home tab's contents, fetched here rather than inside the tab, because
+  // whether the TAB EXISTS depends on them: nothing connected and nothing
+  // built ⇒ no "Ready to use" tab at all. Still `"loading"` counts as present,
+  // so the sidebar does not shuffle a beat after it renders.
+  const readyToUse = useReadyToUse(callables);
+  const homeAvailable = readyToUse.state !== "empty";
+  // If the home tab vanishes while it is the open one, fall to the catalogue
+  // rather than rendering a tab body with no tab.
+  useEffect(() => {
+    if (!homeAvailable && tab === "connected") setTab("apps");
+  }, [homeAvailable, tab]);
 
   if (selectedCallable) {
     return (
@@ -435,30 +447,36 @@ export function StepBuilderModal({
     <Modal title={title ?? "Add a step"} onClose={onClose} size="xl">
       <div className="w6w-stepbuilder">
         <nav className="w6w-stepbuilder-sidebar">
-          {apps && (
+          {/* F-2.0's homepage, and the order it asks for:
+                Ready to use · Apps · AI · Workflows · Functions
+              The home tab is ONE list holding connected apps + Workflows +
+              Functions (see `ReadyToUseFlow`); the four after it are the
+              browse-everything tabs. `callables` still narrows the two
+              callable tabs — and the home list with them — for a call site
+              whose contract cannot accept one of the families. */}
+          {homeAvailable && (
             <button
               type="button"
               className={`w6w-stepbuilder-tab${tab === "connected" ? " active" : ""}`}
               onClick={() => setTab("connected")}
             >
-              Connected apps
+              Ready to use
             </button>
           )}
-          {/* Functions/Workflows — F-2.0's homepage, `Connected apps |
-              Functions | Workflows`. Deliberately NOT behind `appsOnly`: a
-              callable target is valid wherever an app action is, and hiding
-              these two behind the graph-only gate is exactly what kept them
-              off the Implementation card's picker. `callables` is their own
-              knob, defaulting to both. */}
-          {callables.includes("function") && (
-            <button
-              type="button"
-              className={`w6w-stepbuilder-tab${tab === "functions" ? " active" : ""}`}
-              onClick={() => setTab("functions")}
-            >
-              Functions
-            </button>
-          )}
+          <button
+            type="button"
+            className={`w6w-stepbuilder-tab${tab === "apps" ? " active" : ""}`}
+            onClick={() => setTab("apps")}
+          >
+            Apps
+          </button>
+          <button
+            type="button"
+            className={`w6w-stepbuilder-tab${tab === "ai" ? " active" : ""}`}
+            onClick={() => setTab("ai")}
+          >
+            AI
+          </button>
           {callables.includes("workflow") && (
             <button
               type="button"
@@ -468,23 +486,14 @@ export function StepBuilderModal({
               Workflows
             </button>
           )}
-          {apps && (
-            <>
-              <button
-                type="button"
-                className={`w6w-stepbuilder-tab${tab === "apps" ? " active" : ""}`}
-                onClick={() => setTab("apps")}
-              >
-                Apps
-              </button>
-              <button
-                type="button"
-                className={`w6w-stepbuilder-tab${tab === "ai" ? " active" : ""}`}
-                onClick={() => setTab("ai")}
-              >
-                AI
-              </button>
-            </>
+          {callables.includes("function") && (
+            <button
+              type="button"
+              className={`w6w-stepbuilder-tab${tab === "functions" ? " active" : ""}`}
+              onClick={() => setTab("functions")}
+            >
+              Functions
+            </button>
           )}
           {!appsOnly && (
             <>
@@ -521,9 +530,10 @@ export function StepBuilderModal({
         </nav>
         <div className="w6w-stepbuilder-content">
           {tab === "connected" ? (
-            <ConnectedAppsFlow
+            <ReadyToUseFlow
+              data={readyToUse}
               onSelectApp={setSelectedApp}
-              onBrowseAll={() => setTab("apps")}
+              onSelectCallable={setSelectedCallable}
               theme={theme}
             />
           ) : tab === "functions" ? (
@@ -885,15 +895,11 @@ function CallableList({
     return host(<p className="w6w-muted w6w-small">No {noun.toLowerCase()} registered yet.</p>);
   }
 
-  const label = (it: FunctionSummary | WorkflowSummary): string => {
-    const dn = it.displayName;
-    if (dn?.trim()) return dn;
-    return "name" in it ? it.name : it.id;
-  };
+  // The same label rule the home tab uses — one definition, so a Function is
+  // named identically wherever it is listed.
+  const label = callableLabel;
   const q = query.trim().toLowerCase();
-  const sorted = [...items].sort((a, b) =>
-    label(a).localeCompare(label(b), undefined, { sensitivity: "base" }),
-  );
+  const sorted = [...items].sort(byLabel(label));
   const visible = q
     ? sorted.filter((it) => label(it).toLowerCase().includes(q) || it.id.toLowerCase().includes(q))
     : sorted;
@@ -914,18 +920,11 @@ function CallableList({
         </p>
       ) : (
         <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">
+          {/* The SAME row component the home tab renders — same glyph, same
+              tinted background. This list used to draw its own bare row, so a
+              Function looked like one thing here and another there. */}
           {visible.map((it) => (
-            <button
-              key={it.id}
-              type="button"
-              className="w6w-stepbuilder-item"
-              onClick={() => onSelect({ id: it.id, label: label(it) })}
-            >
-              <span className="w6w-stepbuilder-item-main">
-                <strong>{label(it)}</strong>
-                <code className="w6w-muted w6w-small">{it.id}</code>
-              </span>
-            </button>
+            <CallableRow key={it.id} family={family} item={it} onSelect={onSelect} />
           ))}
         </div>
       )}
@@ -1477,58 +1476,243 @@ export const StepTestRun = forwardRef<
 
 // ── Connected apps tab (default) ─────────────────────────────────────────────
 
-function ConnectedAppsFlow({
-  onSelectApp,
-  onBrowseAll,
-  theme,
-}: {
-  onSelectApp: (app: AppSummary) => void;
-  onBrowseAll: () => void;
-  theme?: ThemeMode;
-}) {
+/**
+ * What the home tab has to show. Lifted out of the tab's own component because
+ * the MODAL needs the answer too: a home tab with nothing in it is not
+ * rendered at all (no connected apps, no Functions, no Workflows ⇒ no tab),
+ * and that decision belongs to whoever draws the sidebar.
+ *
+ * `state` is deliberately four-valued. "Empty" and "not loaded yet" must not
+ * collapse into one: hiding the tab while its fetches are in flight would make
+ * it appear a beat later, moving the sidebar under the cursor.
+ */
+interface ReadyToUse {
+  state: "loading" | "error" | "empty" | "ready";
+  error?: string;
+  apps: AppSummary[];
+  fns: FunctionSummary[];
+  wfs: WorkflowSummary[];
+}
+
+function useReadyToUse(callables: readonly ("function" | "workflow")[]): ReadyToUse {
   const api = useW6WApi();
   const [connectedIds, setConnectedIds] = useState<Set<string> | null>(null);
+  const [allApps, setAllApps] = useState<AppSummary[] | null>(null);
+  const [fns, setFns] = useState<FunctionSummary[] | null>(null);
+  const [wfs, setWfs] = useState<WorkflowSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const wantFns = callables.includes("function");
+  const wantWfs = callables.includes("workflow");
 
   useEffect(() => {
     let canceled = false;
+    const fail = (e: unknown) => !canceled && setError((e as Error).message);
     api
       .listConnections()
       .then((conns) => !canceled && setConnectedIds(new Set(conns.map((c) => c.appId))))
-      .catch((e) => !canceled && setError((e as Error).message));
+      .catch(fail);
+    api
+      .listApps()
+      .then((r) => !canceled && setAllApps(r))
+      .catch(fail);
+    // A family this picker does not offer is never fetched, and resolves to an
+    // empty list so the readiness check below still completes.
+    if (wantFns) {
+      api
+        .listFunctions()
+        .then((r) => !canceled && setFns(r))
+        .catch(fail);
+    } else setFns([]);
+    if (wantWfs) {
+      api
+        .listWorkflows()
+        .then((r) => !canceled && setWfs(r))
+        .catch(fail);
+    } else setWfs([]);
     return () => {
       canceled = true;
     };
-  }, [api]);
+  }, [api, wantFns, wantWfs]);
 
-  if (error) {
-    return (
-      <div className="w6w-apppicker-host">
-        <div className="w6w-result w6w-error">{error}</div>
-      </div>
-    );
+  if (error) return { state: "error", error, apps: [], fns: [], wfs: [] };
+  if (connectedIds === null || allApps === null || fns === null || wfs === null) {
+    return { state: "loading", apps: [], fns: [], wfs: [] };
   }
-  if (connectedIds === null) {
-    return (
-      <div className="w6w-apppicker-host">
-        <p className="w6w-muted w6w-small">Loading…</p>
-      </div>
-    );
-  }
+  // Reserved `@w6w/*` pseudo-apps are never connectable — they are added from
+  // the Controls/Utilities tabs, exactly as `AppPicker` excludes them.
+  const apps = allApps.filter((a) => !isInternalApp(a.id) && connectedIds.has(a.id));
+  const empty = apps.length === 0 && fns.length === 0 && wfs.length === 0;
+  return { state: empty ? "empty" : "ready", apps, fns, wfs };
+}
 
+/** Sort helper — by display label, case-insensitively. */
+function byLabel<T>(label: (t: T) => string) {
+  return (a: T, b: T) => label(a).localeCompare(label(b), undefined, { sensitivity: "base" });
+}
+
+/** A Function/Workflow summary's display name, falling back to name then id. */
+function callableLabel(it: FunctionSummary | WorkflowSummary): string {
+  const dn = it.displayName;
+  if (dn?.trim()) return dn;
+  return "name" in it ? it.name : it.id;
+}
+
+/**
+ * One Function/Workflow row. Shared by the home tab and by the Workflows and
+ * Functions tabs, so a Function looks like a Function wherever it is offered —
+ * same glyph, same tinted background. Two surfaces drawing the same thing
+ * differently is how a list stops being learnable.
+ */
+function CallableRow({
+  family,
+  item,
+  onSelect,
+}: {
+  family: "function" | "workflow";
+  item: FunctionSummary | WorkflowSummary;
+  onSelect: (t: { id: string; label: string }) => void;
+}) {
+  const label = callableLabel(item);
   return (
-    <AppPicker
-      onSelectApp={onSelectApp}
-      theme={theme}
-      search={false}
-      filter={(a) => connectedIds.has(a.id)}
-      emptyMessage="No connected apps yet. Browse all apps to add your first connection."
-      emptyAction={
-        <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onBrowseAll}>
-          Browse all apps
-        </button>
-      }
-    />
+    <button
+      type="button"
+      className="w6w-stepbuilder-item w6w-stepbuilder-item--callable"
+      data-kind={family}
+      onClick={() => onSelect({ id: item.id, label })}
+    >
+      <InternalIcon icon={CALLABLE_GLYPH[family]} size={24} />
+      <span className="w6w-stepbuilder-item-main">
+        <strong>{label}</strong>
+        <code className="w6w-muted w6w-small">{item.id}</code>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The picker's home tab — **everything already usable**, in the two-column
+ * layout the intake draws:
+ *
+ *     Connnected apps | functions
+ *                     | workflows
+ *
+ * Connected apps down the left; Functions above Workflows down the right, with
+ * a rule between the halves. That sketch is a LAYOUT, not a tab list — it was
+ * built as three sidebar tabs first, and that was wrong twice over: the three
+ * kinds belong on one screen, side by side, so the author sees everything they
+ * can reach without navigating. The browse-everything tabs (Apps, AI,
+ * Workflows, Functions) still sit below this one for the full catalogues.
+ *
+ * "Ready to use" rather than "Connected apps": what unites the columns is that
+ * none of them needs setting up before it can be picked. The Apps tab, by
+ * contrast, is the catalogue, where picking may mean connecting first.
+ *
+ * **Every empty column disappears** — heading and all. A "Workflows" heading
+ * over nothing claims you have workflows ready to use, which is exactly what
+ * an empty list is telling you is false. No connected apps ⇒ no left column,
+ * and the grid collapses to one. Nothing at all ⇒ the modal does not render
+ * the tab (see {@link useReadyToUse}), so this component never sees that case.
+ *
+ * No search box: the original Connected-apps tab ran `AppPicker` with
+ * `search={false}`, and short scoped lists are not the surface a search box
+ * earns. The Apps/Workflows/Functions tabs each keep their own.
+ */
+function ReadyToUseFlow({
+  data,
+  onSelectApp,
+  onSelectCallable,
+  theme,
+}: {
+  data: ReadyToUse;
+  onSelectApp: (app: AppSummary) => void;
+  onSelectCallable: (t: { family: "function" | "workflow"; id: string; label: string }) => void;
+  theme?: ThemeMode;
+}) {
+  // Single layout owner for every exit, so the panel never resizes between
+  // error/loading and the loaded columns — mirrors `.w6w-apppicker-host`'s role
+  // in `AppPicker` and `CallableList`.
+  const host = (body: ReactNode) => <div className="w6w-apppicker-host">{body}</div>;
+
+  if (data.state === "error") {
+    return host(<div className="w6w-result w6w-error">{data.error}</div>);
+  }
+  if (data.state === "loading") return host(<p className="w6w-muted w6w-small">Loading…</p>);
+
+  const apps = [...data.apps].sort(byLabel((a: AppSummary) => a.displayName));
+  const fns = [...data.fns].sort(byLabel(callableLabel));
+  const wfs = [...data.wfs].sort(byLabel(callableLabel));
+
+  /** One column: a heading and its rows. Rendered only when it HAS rows. */
+  const column = (title: string, rows: ReactNode[]) =>
+    rows.length === 0 ? null : (
+      <section className="w6w-readytouse-col">
+        <h4 className="w6w-readytouse-heading">{title}</h4>
+        <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">{rows}</div>
+      </section>
+    );
+
+  const left = column(
+    "Connected apps",
+    apps.map((a) => (
+      <button
+        key={a.id}
+        type="button"
+        className="w6w-stepbuilder-item"
+        data-kind="app"
+        onClick={() => onSelectApp(a)}
+      >
+        <AppIcon
+          src={a.iconSvg}
+          srcDark={a.iconSvgDark}
+          brandColor={a.brandColor}
+          name={a.displayName}
+          theme={theme}
+          size={24}
+        />
+        <span className="w6w-stepbuilder-item-main">
+          <strong>{a.displayName}</strong>
+          <code className="w6w-muted w6w-small">{a.id}</code>
+        </span>
+      </button>
+    )),
+  );
+
+  // Functions above Workflows — the order the intake draws them in.
+  const right = [
+    column(
+      "Functions",
+      fns.map((f) => (
+        <CallableRow
+          key={f.id}
+          family="function"
+          item={f}
+          onSelect={(t) => onSelectCallable({ family: "function", ...t })}
+        />
+      )),
+    ),
+    column(
+      "Workflows",
+      wfs.map((w) => (
+        <CallableRow
+          key={w.id}
+          family="workflow"
+          item={w}
+          onSelect={(t) => onSelectCallable({ family: "workflow", ...t })}
+        />
+      )),
+    ),
+  ].filter(Boolean);
+
+  // `data-cols` drives the grid template, so a missing half collapses rather
+  // than leaving an empty tract — and the divider only exists when there are
+  // in fact two halves to divide.
+  const cols = (left ? 1 : 0) + (right.length > 0 ? 1 : 0);
+  return host(
+    <div className="w6w-readytouse" data-cols={cols}>
+      {left}
+      {right.length > 0 && <div className="w6w-readytouse-stack">{right}</div>}
+    </div>,
   );
 }
 

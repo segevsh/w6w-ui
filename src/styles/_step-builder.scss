@@ -134,6 +134,81 @@
   min-height: 0;
 }
 
+/* The picker's home tab — the intake's two-column layout:
+
+     Connnected apps | functions
+                     | workflows
+
+   Connected apps down the left; Functions above Workflows down the right.
+   Nested inside `.w6w-apppicker-host`, which owns the height, so each column's
+   own list is what scrolls — never the modal. `min-height: 0` on the grid and
+   on every column is load-bearing: a grid/flex item's automatic minimum size
+   is its min-content size, so without it a long list pushes the dialog past
+   `.w6w-apppicker-host`'s fixed height instead of scrolling inside it. */
+.w6w-readytouse {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--w6w-sp-4);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* A half with nothing in it is not rendered at all (an empty "Workflows"
+   heading would claim you have workflows ready to use), so the grid collapses
+   to the one column that survived — and the divider below, which only makes
+   sense between two halves, goes with it. */
+.w6w-readytouse[data-cols="1"] {
+  grid-template-columns: 1fr;
+}
+
+/* The `|` in the intake's sketch. On the right half's leading edge rather than
+   as a third grid track, so it spans the full column height however tall the
+   two halves end up, and disappears with the half itself. */
+.w6w-readytouse[data-cols="2"] > .w6w-readytouse-stack {
+  border-left: 1px solid var(--w6w-border);
+  padding-left: var(--w6w-sp-4);
+}
+
+/* The right half stacks its two sections; they share the height evenly. */
+.w6w-readytouse-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: var(--w6w-sp-3);
+  min-height: 0;
+}
+
+/* A single column: heading pinned, list scrolling under it. */
+.w6w-readytouse-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+  min-height: 0;
+}
+
+/* One section only in the stack — a picker offering a single callable family,
+   or a workspace with Functions but no Workflows. It takes the whole right
+   half rather than leaving a gap under it. */
+.w6w-readytouse-stack > .w6w-readytouse-col:only-child {
+  grid-row: 1 / -1;
+}
+
+.w6w-readytouse-heading {
+  margin: 0;
+  font-size: var(--w6w-fs-sm);
+  font-weight: 600;
+  color: var(--w6w-muted-text, var(--w6w-text));
+}
+
+/* A Function/Workflow row, distinct from an app row at a glance: an app is
+   somebody else's service, a Function/Workflow is something YOU built here.
+   Applied by `CallableRow`, which both the home tab and the Workflows/
+   Functions tabs render — so the tint and the glyph travel together and a
+   Function looks the same wherever it is offered. */
+.w6w-stepbuilder-item--callable {
+  background: var(--w6w-panel);
+  border-style: dashed;
+}
+
 /* Step config (app action / control node): a fixed header (connection + action)
    that never scrolls, a scrolling parameters body, and a pinned footer — mirrors
    the fixed-header/scroll-body split used by `.w6w-stepbuilder-apps`. */
