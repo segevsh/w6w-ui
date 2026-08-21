@@ -813,6 +813,10 @@ async function assertSideBySide(browser, vp) {
       `${vp.width}px: the ${name} half must not span the grid; ${b.width} of ${boxes.gridWidth}`,
     );
   }
+  // A picture of what the assertions above just measured — copied out of the
+  // workdir when SHOT_DIR is set (see run.sh). Assertions prove the layout;
+  // this is how a human checks it without opening the app.
+  await page.screenshot({ path: `/w/readytouse-${vp.width}x${vp.height}.png` });
   await page.close();
 }
 
