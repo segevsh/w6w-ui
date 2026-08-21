@@ -755,3 +755,88 @@ test("F1 — the test-required note never moves the footer buttons", async () =>
     );
   }
 });
+
+// ── C6 — the home tab's columns are SIDE BY SIDE, measured ─────────────────
+//
+// The intake asks for `Connnected apps | functions / workflows` — two COLUMNS.
+// This shipped stacked: Connected apps above Functions, full width, one under
+// the other. The DOM-structure tests all passed, because the structure was
+// right and only the geometry was wrong — which is exactly the failure a
+// structural assertion cannot see. So this one measures boxes.
+test("C6 — Connected apps and the Functions/Workflows stack render side by side", async () => {
+  // Every viewport, not just the roomy one: the modal the human sees is not
+  // 1440px wide, and a layout that only holds at the widest breakpoint is the
+  // same bug with a narrower trigger.
+  for (const vp of [VP.wide, VP.med, VP.short]) {
+    await assertSideBySide(browser, vp);
+  }
+});
+
+async function assertSideBySide(browser, vp) {
+  const page = await open(browser, { v: "step", q: "n=60&conn=5", vp });
+  await page.waitForSelector(".w6w-readytouse");
+  const boxes = await page.evaluate(() => {
+    const grid = document.querySelector(".w6w-readytouse");
+    const left = grid.querySelector(".w6w-readytouse-col");
+    const right = grid.querySelector(".w6w-readytouse-stack");
+    const r = (el) => {
+      const b = el.getBoundingClientRect();
+      return { top: b.top, left: b.left, right: b.right, width: b.width };
+    };
+    return {
+      cols: grid.getAttribute("data-cols"),
+      display: getComputedStyle(grid).display,
+      left: left && r(left),
+      right: right && r(right),
+      gridWidth: grid.getBoundingClientRect().width,
+    };
+  });
+
+  assert.equal(boxes.cols, "2", "both halves are present, so the grid must say two columns");
+  assert.equal(boxes.display, "grid", "the stylesheet must actually reach this element");
+  assert.ok(boxes.left && boxes.right, "both halves must render");
+
+  // Side by side: the two halves share a top edge and do NOT overlap
+  // horizontally. Stacked, the right half's top sits well below the left's.
+  assert.ok(
+    Math.abs(boxes.left.top - boxes.right.top) <= 2,
+    `${vp.width}px: the halves must share a top edge; left.top=${boxes.left.top} right.top=${boxes.right.top}`,
+  );
+  assert.ok(
+    boxes.right.left >= boxes.left.right - 1,
+    `${vp.width}px: the right half must start after the left one ends; left.right=${boxes.left.right} right.left=${boxes.right.left}`,
+  );
+  // Neither may take the whole width — that is the stacked failure's signature.
+  for (const [name, b] of [["left", boxes.left], ["right", boxes.right]]) {
+    assert.ok(
+      b.width < boxes.gridWidth * 0.75,
+      `${vp.width}px: the ${name} half must not span the grid; ${b.width} of ${boxes.gridWidth}`,
+    );
+  }
+  await page.close();
+}
+
+// The `|` itself: a real rule between the halves, and only when there are two.
+test("C7 — a vertical divider sits between the two halves, and goes with the second", async () => {
+  const two = await open(browser, { v: "step", q: "n=60&conn=5", vp: VP.wide });
+  await two.waitForSelector(".w6w-readytouse");
+  const border = await two.evaluate(() => {
+    const el = document.querySelector(".w6w-readytouse-stack");
+    const cs = getComputedStyle(el);
+    return { width: cs.borderLeftWidth, style: cs.borderLeftStyle };
+  });
+  assert.notEqual(border.width, "0px", "the two-column layout must carry a divider");
+  assert.notEqual(border.style, "none");
+  await two.close();
+
+  // Zero connections ⇒ one column ⇒ nothing to divide.
+  const one = await open(browser, { v: "step", q: "n=60&conn=0", vp: VP.wide });
+  await one.waitForSelector(".w6w-readytouse");
+  const solo = await one.evaluate(() => {
+    const el = document.querySelector(".w6w-readytouse-stack");
+    return { cols: document.querySelector(".w6w-readytouse").getAttribute("data-cols"), width: getComputedStyle(el).borderLeftWidth };
+  });
+  assert.equal(solo.cols, "1");
+  assert.equal(solo.width, "0px", "a single column must carry no divider");
+  await one.close();
+});
