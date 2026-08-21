@@ -54,7 +54,7 @@ PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 # The verdict below is REFUSED unless exactly this many ran: a tree that
 # fails to bundle, or a run that dies half-way, reports DID NOT RUN rather
 # than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-15}"
+EXPECTED_TESTS="${EXPECTED_TESTS:-17}"
 
 fatal() {
   echo "FATAL: $*"
@@ -81,7 +81,18 @@ PW_CORE="${PW_CORE:-$PKG/node_modules/playwright-core}"
 
 W="$(mktemp -d)"
 MAIN_PID=$$
-cleanup() { [ "$BASHPID" = "$MAIN_PID" ] && rm -rf "$W"; }
+# SHOT_DIR — when set, any *.png a guard writes into its workdir is copied out
+# before the workdir is removed. The C6 layout guard writes one, so "is it
+# actually two columns?" can be answered by LOOKING, not only by an assertion.
+cleanup() {
+  if [ "$BASHPID" = "$MAIN_PID" ]; then
+    if [ -n "${SHOT_DIR:-}" ]; then
+      mkdir -p "$SHOT_DIR" 2>/dev/null || true
+      cp "$W"/*.png "$SHOT_DIR"/ 2>/dev/null || true
+    fi
+    rm -rf "$W"
+  fi
+}
 trap cleanup EXIT
 
 echo "== source under test: $SRC"

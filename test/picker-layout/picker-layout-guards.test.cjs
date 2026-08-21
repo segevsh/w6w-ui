@@ -118,17 +118,20 @@ const lastAdd = (page) => page.evaluate(() => window.__lastAdd ?? null);
 //    position in the sidebar, and their absence under `appsOnly` — the live
 //    landmine `TargetSelector.tsx:128` would otherwise silently swallow. ────
 
-test("C1 — sidebar's first three tabs are Connected apps, Functions, Workflows, in order", async () => {
-  const page = await open(browser, { v: "step", q: "n=0" });
+// The sidebar order F-2.0 asks for. "Connected apps" became "Ready to use"
+// when that tab stopped being apps-only: it is now the two-column home holding
+// connected apps AND Functions AND Workflows, which is what the intake's
+// `Connnected apps | functions / workflows` sketch draws. The browse-everything
+// tabs follow it.
+test("C1 — the sidebar reads Ready to use, Apps, AI, Workflows, Functions, in order", async () => {
+  const page = await open(browser, { v: "step", q: "n=0&conn=5" });
   const labels = await page.evaluate(() =>
-    [...document.querySelectorAll(".w6w-stepbuilder-tab")]
-      .slice(0, 3)
-      .map((b) => b.textContent.trim()),
+    [...document.querySelectorAll(".w6w-stepbuilder-tab")].map((b) => b.textContent.trim()),
   );
   assert.deepEqual(
-    labels,
-    ["Connected apps", "Functions", "Workflows"],
-    `first three sidebar tabs: ${JSON.stringify(labels)}`,
+    labels.slice(0, 5),
+    ["Ready to use", "Apps", "AI", "Workflows", "Functions"],
+    `sidebar tabs: ${JSON.stringify(labels)}`,
   );
   await page.close();
 });
@@ -228,16 +231,25 @@ test("C3 — Workflows tab: pick wf_1, fill one input, Add emits the SAME @w6w/c
   await page.close();
 });
 
-test("C4 — appsOnly hides Functions/Workflows; Connected apps/Apps/AI still render", async () => {
-  const page = await open(browser, { v: "step", q: "n=0&appsOnly=1" });
+// `appsOnly` hides the GRAPH-ONLY tabs and nothing else. It used to hide
+// Functions/Workflows too, which is exactly why the picker's callable tabs
+// were unreachable from every card that binds a target — a Function and a
+// Workflow are callable targets, not graph-only node kinds. `callables` is
+// their own knob (C5 below).
+test("C4 — appsOnly hides the graph-only tabs and KEEPS Functions/Workflows", async () => {
+  const page = await open(browser, { v: "step", q: "n=0&conn=5&appsOnly=1" });
   const labels = await page.evaluate(() =>
     [...document.querySelectorAll(".w6w-stepbuilder-tab")].map((b) => b.textContent.trim()),
   );
-  assert.ok(!labels.includes("Functions"), `Functions tab must be absent under appsOnly: ${JSON.stringify(labels)}`);
-  assert.ok(!labels.includes("Workflows"), `Workflows tab must be absent under appsOnly: ${JSON.stringify(labels)}`);
-  assert.ok(labels.includes("Connected apps"), `Connected apps must still render: ${JSON.stringify(labels)}`);
-  assert.ok(labels.includes("Apps"), `Apps must still render: ${JSON.stringify(labels)}`);
-  assert.ok(labels.includes("AI"), `AI must still render: ${JSON.stringify(labels)}`);
+  for (const graphOnly of ["Triggers", "Controls", "Utilities", "Data"]) {
+    assert.ok(
+      !labels.includes(graphOnly),
+      `${graphOnly} must be absent under appsOnly: ${JSON.stringify(labels)}`,
+    );
+  }
+  for (const kept of ["Ready to use", "Apps", "AI", "Workflows", "Functions"]) {
+    assert.ok(labels.includes(kept), `${kept} must still render: ${JSON.stringify(labels)}`);
+  }
   await page.close();
 });
 
@@ -398,10 +410,10 @@ test("I5 — step-builder Apps-tab panel/item width floors, and Apps == Triggers
 
 // ── I6 — .w6w-stepbuilder-search count per tab: Connected-apps opts out
 //    (search={false}), Apps and AI both carry exactly one. ─────────────────
-test("I6 — search input count: Connected-apps 0, Apps 1, AI 1", async () => {
+test("I6 — search input count: Ready to use 0, Apps 1, AI 1", async () => {
   const page = await open(browser, { v: "step", q: "n=60&conn=5", vp: VP.wide });
-  assert.equal(await activeTab(page), "Connected apps", "default landing tab must be Connected apps");
-  assert.equal(await searchCount(page), 0, "Connected-apps tab must carry no search input");
+  assert.equal(await activeTab(page), "Ready to use", "default landing tab must be the home tab");
+  assert.equal(await searchCount(page), 0, "the home tab must carry no search input");
 
   await clickTab(page, "Apps");
   await page.waitForTimeout(150);
@@ -437,27 +449,33 @@ test("I7 — AI tab renders strictly fewer items than Apps tab, and carries the 
 //    but I1-I7's geometry cannot see (emptyAction dropped, filter reordered,
 //    the connected-intersection filter dropped). ───────────────────────────
 test("I8 — empty-state escape hatch, AI-tab filter ordering, connected-tab intersection", async () => {
-  // (a) emptyAction (M3): zero connections over a NON-empty catalog must
-  // render "No connected apps yet" (not the search-branch "No apps match"),
-  // the escape-hatch button, and clicking it must actually switch tabs and
-  // list the catalog — an orphaned click handler would render identically.
+  // (a) zero connections over a NON-empty catalog: the home tab's left column
+  // is REMOVED, heading and all — not rendered empty with an escape hatch, as
+  // it was until 2026-08-21. An empty "Connected apps" column claims you have
+  // apps ready to use, which is precisely what the empty list says you do not.
+  // The Functions/Workflows columns still stand, so the tab itself survives.
   {
     const page = await open(browser, { v: "step", q: "n=60&conn=0", vp: VP.wide });
-    const text = await bodyText(page);
-    assert.ok(text.includes("No connected apps yet"), `empty-state copy missing: "${text.slice(0, 120)}"`);
-    assert.ok(!text.includes("No apps match"), "the search-branch empty copy must not appear with search off");
-    const clicked = await page.evaluate(() => {
-      const b = [...document.querySelectorAll("button")].find(
-        (x) => x.textContent.trim() === "Browse all apps",
-      );
-      if (!b) return false;
-      b.click();
-      return true;
-    });
-    assert.ok(clicked, `"Browse all apps" button not found`);
+    const headings = await page.evaluate(() =>
+      [...document.querySelectorAll(".w6w-readytouse-heading")].map((h) => h.textContent.trim()),
+    );
+    assert.ok(
+      !headings.includes("Connected apps"),
+      `the left column must be gone with zero connections: ${JSON.stringify(headings)}`,
+    );
+    assert.ok(
+      headings.length > 0,
+      "the Functions/Workflows columns must still stand, so the tab survives",
+    );
+    // One column ⇒ no divider between halves that no longer exist.
+    const cols = await page.evaluate(
+      () => document.querySelector(".w6w-readytouse")?.getAttribute("data-cols"),
+    );
+    assert.equal(cols, "1", "the grid must collapse to one column");
+    // The catalogue is still one sidebar click away — the escape hatch's job.
+    await clickTab(page, "Apps");
     await page.waitForTimeout(150);
-    assert.equal(await activeTab(page), "Apps", "clicking the escape hatch must switch to the Apps tab");
-    assert.equal((await itemNames(page)).length, 60, "the Apps tab must list the full catalog after the click");
+    assert.equal((await itemNames(page)).length, 60, "the Apps tab must list the full catalog");
     await page.close();
   }
 
@@ -507,13 +525,18 @@ test("I8 — empty-state escape hatch, AI-tab filter ordering, connected-tab int
   }
 
   // (c) connected intersection (M9): 5 connected vendor apps + the always-
-  // "connected" reserved @w6w/http must yield 5 rows, not 6 — the reserved id
-  // stays excluded even when it has a connection.
+  // "connected" reserved @w6w/http must yield 5 rows in the home tab's LEFT
+  // column, not 6 — the reserved id stays excluded even when it has a
+  // connection. Scoped to that column now that the tab holds three of them:
+  // an unscoped count would silently absorb the Functions/Workflows rows.
   {
     const page = await open(browser, { v: "step", q: "n=60&conn=5", vp: VP.wide });
-    assert.equal(await activeTab(page), "Connected apps");
-    const n = (await itemNames(page)).length;
-    assert.equal(n, 5, `connected tab rendered ${n} rows, expected 5 (not 6 — @w6w/http must stay excluded)`);
+    assert.equal(await activeTab(page), "Ready to use");
+    const n = await page.evaluate(
+      () =>
+        document.querySelectorAll('.w6w-readytouse [data-kind="app"]').length,
+    );
+    assert.equal(n, 5, `the connected-apps column rendered ${n} rows, expected 5 (not 6 — @w6w/http must stay excluded)`);
     await page.close();
   }
 
@@ -558,7 +581,7 @@ test("I8 — empty-state escape hatch, AI-tab filter ordering, connected-tab int
 //    like every other tab body — never rendered loose. TA2's binding proof:
 //    this path shipped alongside AppPicker's identical wrapping (I4) but
 //    nothing exercised it. ────────────────────────────────────────────────
-test("I9 — Connected-apps tab error/loading paths stay hosted and nested", async () => {
+test("I9 — the home tab's error/loading paths stay hosted and nested", async () => {
   for (const [label, q] of [
     ["error", "n=60&conn=5&cmode=error"],
     ["loading", "n=60&conn=5&cmode=loading"],
@@ -566,13 +589,13 @@ test("I9 — Connected-apps tab error/loading paths stay hosted and nested", asy
     const page = await open(browser, { v: "step", q });
     assert.equal(
       await activeTab(page),
-      "Connected apps",
-      `${label}: default landing tab must be Connected apps`,
+      "Ready to use",
+      `${label}: default landing tab must be the home tab`,
     );
     const hostRect = await rect(page, ".w6w-apppicker-host");
     assert.ok(
       hostRect,
-      `Connected-apps tab "${label}" path must render inside .w6w-apppicker-host`,
+      `home tab "${label}" path must render inside .w6w-apppicker-host`,
     );
     const nested = await page.evaluate(() => {
       const host = document.querySelector(".w6w-apppicker-host");
@@ -581,7 +604,7 @@ test("I9 — Connected-apps tab error/loading paths stay hosted and nested", asy
     });
     assert.ok(
       nested,
-      `Connected-apps tab "${label}" path: .w6w-apppicker-host must be nested inside .w6w-stepbuilder-content, not replace or escape it`,
+      `home tab "${label}" path: .w6w-apppicker-host must be nested inside .w6w-stepbuilder-content, not replace or escape it`,
     );
     await page.close();
   }
@@ -731,4 +754,93 @@ test("F1 — the test-required note never moves the footer buttons", async () =>
       `${label}: footer top moved (present ${fPresent.top} vs absent ${fAbsent.top})`,
     );
   }
+});
+
+// ── C6 — the home tab's columns are SIDE BY SIDE, measured ─────────────────
+//
+// The intake asks for `Connnected apps | functions / workflows` — two COLUMNS.
+// This shipped stacked: Connected apps above Functions, full width, one under
+// the other. The DOM-structure tests all passed, because the structure was
+// right and only the geometry was wrong — which is exactly the failure a
+// structural assertion cannot see. So this one measures boxes.
+test("C6 — Connected apps and the Functions/Workflows stack render side by side", async () => {
+  // Every viewport, not just the roomy one: the modal the human sees is not
+  // 1440px wide, and a layout that only holds at the widest breakpoint is the
+  // same bug with a narrower trigger.
+  for (const vp of [VP.wide, VP.med, VP.short]) {
+    await assertSideBySide(browser, vp);
+  }
+});
+
+async function assertSideBySide(browser, vp) {
+  const page = await open(browser, { v: "step", q: "n=60&conn=5", vp });
+  await page.waitForSelector(".w6w-readytouse");
+  const boxes = await page.evaluate(() => {
+    const grid = document.querySelector(".w6w-readytouse");
+    const left = grid.querySelector(".w6w-readytouse-col");
+    const right = grid.querySelector(".w6w-readytouse-stack");
+    const r = (el) => {
+      const b = el.getBoundingClientRect();
+      return { top: b.top, left: b.left, right: b.right, width: b.width };
+    };
+    return {
+      cols: grid.getAttribute("data-cols"),
+      display: getComputedStyle(grid).display,
+      left: left && r(left),
+      right: right && r(right),
+      gridWidth: grid.getBoundingClientRect().width,
+    };
+  });
+
+  assert.equal(boxes.cols, "2", "both halves are present, so the grid must say two columns");
+  assert.equal(boxes.display, "grid", "the stylesheet must actually reach this element");
+  assert.ok(boxes.left && boxes.right, "both halves must render");
+
+  // Side by side: the two halves share a top edge and do NOT overlap
+  // horizontally. Stacked, the right half's top sits well below the left's.
+  assert.ok(
+    Math.abs(boxes.left.top - boxes.right.top) <= 2,
+    `${vp.width}px: the halves must share a top edge; left.top=${boxes.left.top} right.top=${boxes.right.top}`,
+  );
+  assert.ok(
+    boxes.right.left >= boxes.left.right - 1,
+    `${vp.width}px: the right half must start after the left one ends; left.right=${boxes.left.right} right.left=${boxes.right.left}`,
+  );
+  // Neither may take the whole width — that is the stacked failure's signature.
+  for (const [name, b] of [["left", boxes.left], ["right", boxes.right]]) {
+    assert.ok(
+      b.width < boxes.gridWidth * 0.75,
+      `${vp.width}px: the ${name} half must not span the grid; ${b.width} of ${boxes.gridWidth}`,
+    );
+  }
+  // A picture of what the assertions above just measured — copied out of the
+  // workdir when SHOT_DIR is set (see run.sh). Assertions prove the layout;
+  // this is how a human checks it without opening the app.
+  await page.screenshot({ path: `/w/readytouse-${vp.width}x${vp.height}.png` });
+  await page.close();
+}
+
+// The `|` itself: a real rule between the halves, and only when there are two.
+test("C7 — a vertical divider sits between the two halves, and goes with the second", async () => {
+  const two = await open(browser, { v: "step", q: "n=60&conn=5", vp: VP.wide });
+  await two.waitForSelector(".w6w-readytouse");
+  const border = await two.evaluate(() => {
+    const el = document.querySelector(".w6w-readytouse-stack");
+    const cs = getComputedStyle(el);
+    return { width: cs.borderLeftWidth, style: cs.borderLeftStyle };
+  });
+  assert.notEqual(border.width, "0px", "the two-column layout must carry a divider");
+  assert.notEqual(border.style, "none");
+  await two.close();
+
+  // Zero connections ⇒ one column ⇒ nothing to divide.
+  const one = await open(browser, { v: "step", q: "n=60&conn=0", vp: VP.wide });
+  await one.waitForSelector(".w6w-readytouse");
+  const solo = await one.evaluate(() => {
+    const el = document.querySelector(".w6w-readytouse-stack");
+    return { cols: document.querySelector(".w6w-readytouse").getAttribute("data-cols"), width: getComputedStyle(el).borderLeftWidth };
+  });
+  assert.equal(solo.cols, "1");
+  assert.equal(solo.width, "0px", "a single column must carry no divider");
+  await one.close();
 });

@@ -18,6 +18,7 @@ export type { ExpressionOptions } from "./components/ExpressionOptions.tsx";
 
 export type { FlowEdge, FlowStep, FlowWorkflow, InternalNodeDef } from "./flow-types.ts";
 export {
+  CALL_APP,
   CONTROL_APP,
   DATA_APP,
   INTERNAL_NODES,
