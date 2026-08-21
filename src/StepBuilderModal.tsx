@@ -61,11 +61,44 @@ export interface StepBuilderModalProps {
   onDraftChange?: (id: string, step: BuiltStep) => void;
   theme?: ThemeMode;
   /**
-   * Restrict the picker to real app actions — hides the Triggers / Controls /
-   * Utilities (flow-control / internal `@w6w/*` node) tabs. Used where only an
-   * app action makes sense, e.g. binding a Function's implementation.
+   * Hide the GRAPH-ONLY tabs — Triggers / Controls / Utilities / Data, the
+   * flow-control and internal `@w6w/*` node kinds that only mean something
+   * inside a workflow canvas. Used by every picker that binds a *target*
+   * rather than adding a node to a graph.
+   *
+   * ⚠️ It does NOT hide Functions and Workflows, and did not always behave
+   * that way: it used to, which is why the Implementation card's picker
+   * showed only `Connected apps / Apps / AI` and F-2.0's tabs were
+   * unreachable outside the canvas. A Function and a Workflow are *callable
+   * targets*, not graph-only node kinds — they belong in every picker.
+   * {@link StepBuilderModalProps.callables} is the knob for those two.
    */
   appsOnly?: boolean;
+  /**
+   * Which callable families the Functions/Workflows tabs offer. Defaults to
+   * BOTH, so a caller that says nothing keeps the full F-2.0 homepage
+   * (`Connected apps | Functions | Workflows`). Pass a narrower array — or
+   * `[]` — where the surrounding contract cannot accept one of them.
+   */
+  callables?: readonly ("function" | "workflow")[];
+  /**
+   * Which homepage tab opens first. Defaults to `"connected"` — F-2.0's
+   * homepage. A caller re-opening the picker for an already-bound target
+   * passes that target's own family, so "Change" lands where the current
+   * value lives instead of making the author re-find the tab.
+   */
+  initialTab?: "connected" | "functions" | "workflows";
+  /**
+   * Whether the app tabs (`Connected apps` / `Apps` / `AI`) are offered at
+   * all. Defaults to `true` — F-2.0's homepage leads with them.
+   *
+   * Passed `false` only where an app action is not a legal value for what is
+   * being bound. The error handler is the case: `ErrorReroute.target` is a
+   * `Callable`, which has exactly two arms (Function, Workflow) and no action
+   * arm at all — offering a tab whose every pick would have to be refused is
+   * worse than not offering it.
+   */
+  apps?: boolean;
   /** Modal heading. Defaults to "Add a step". */
   title?: string;
   /**
@@ -109,6 +142,12 @@ export interface StepBuilderModalProps {
    */
   initialWith?: Record<string, unknown>;
 }
+
+/** {@link StepBuilderModalProps.callables}'s default — both families. Module
+ *  scope so the default is one shared frozen array, never a fresh literal per
+ *  render (it lands in a `useEffect`-free read path, but a stable identity
+ *  keeps it honest for any future memo). */
+const CALLABLE_FAMILIES = ["function", "workflow"] as const;
 
 type Tab =
   | "connected"
@@ -248,6 +287,9 @@ export function StepBuilderModal({
   onDraftChange,
   theme,
   appsOnly,
+  callables = CALLABLE_FAMILIES,
+  initialTab,
+  apps = true,
   title,
   workflowId,
   stepId,
@@ -259,7 +301,7 @@ export function StepBuilderModal({
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
-  const [tab, setTab] = useState<Tab>("connected");
+  const [tab, setTab] = useState<Tab>(initialTab ?? (apps ? "connected" : "functions"));
   // When an app is selected the modal collapses to a single-app detail view:
   // the sidebar is hidden and the header switches to the app's name + icon.
   // Initialize with initialApp if provided to skip the app picker.
@@ -393,49 +435,57 @@ export function StepBuilderModal({
     <Modal title={title ?? "Add a step"} onClose={onClose} size="xl">
       <div className="w6w-stepbuilder">
         <nav className="w6w-stepbuilder-sidebar">
-          <button
-            type="button"
-            className={`w6w-stepbuilder-tab${tab === "connected" ? " active" : ""}`}
-            onClick={() => setTab("connected")}
-          >
-            Connected apps
-          </button>
-          {/* Functions/Workflows: the picker's deferred target picker (D-12) —
-              appsOnly hides them exactly like it hides Triggers/Controls/
-              Utilities/Data below, so TargetSelector's action-arm call site
-              (appsOnly) is behaviourally unchanged. */}
-          {!appsOnly && (
+          {apps && (
+            <button
+              type="button"
+              className={`w6w-stepbuilder-tab${tab === "connected" ? " active" : ""}`}
+              onClick={() => setTab("connected")}
+            >
+              Connected apps
+            </button>
+          )}
+          {/* Functions/Workflows — F-2.0's homepage, `Connected apps |
+              Functions | Workflows`. Deliberately NOT behind `appsOnly`: a
+              callable target is valid wherever an app action is, and hiding
+              these two behind the graph-only gate is exactly what kept them
+              off the Implementation card's picker. `callables` is their own
+              knob, defaulting to both. */}
+          {callables.includes("function") && (
+            <button
+              type="button"
+              className={`w6w-stepbuilder-tab${tab === "functions" ? " active" : ""}`}
+              onClick={() => setTab("functions")}
+            >
+              Functions
+            </button>
+          )}
+          {callables.includes("workflow") && (
+            <button
+              type="button"
+              className={`w6w-stepbuilder-tab${tab === "workflows" ? " active" : ""}`}
+              onClick={() => setTab("workflows")}
+            >
+              Workflows
+            </button>
+          )}
+          {apps && (
             <>
               <button
                 type="button"
-                className={`w6w-stepbuilder-tab${tab === "functions" ? " active" : ""}`}
-                onClick={() => setTab("functions")}
+                className={`w6w-stepbuilder-tab${tab === "apps" ? " active" : ""}`}
+                onClick={() => setTab("apps")}
               >
-                Functions
+                Apps
               </button>
               <button
                 type="button"
-                className={`w6w-stepbuilder-tab${tab === "workflows" ? " active" : ""}`}
-                onClick={() => setTab("workflows")}
+                className={`w6w-stepbuilder-tab${tab === "ai" ? " active" : ""}`}
+                onClick={() => setTab("ai")}
               >
-                Workflows
+                AI
               </button>
             </>
           )}
-          <button
-            type="button"
-            className={`w6w-stepbuilder-tab${tab === "apps" ? " active" : ""}`}
-            onClick={() => setTab("apps")}
-          >
-            Apps
-          </button>
-          <button
-            type="button"
-            className={`w6w-stepbuilder-tab${tab === "ai" ? " active" : ""}`}
-            onClick={() => setTab("ai")}
-          >
-            AI
-          </button>
           {!appsOnly && (
             <>
               <button
@@ -1534,7 +1584,7 @@ export function AppStepConfig({
   // the node editor, so add + edit are consistent.
   // When initial values are provided, skip Setup and open directly to Configure.
   const [tab, setTab] = useState<StepConfigTab>(
-    initialAction && initialWith ? "configure" : "setup"
+    initialAction && initialWith ? "configure" : "setup",
   );
   // The Configure tab's four representations (form / full-step JSON /
   // params-only JSON / node settings).
