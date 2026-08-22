@@ -48,6 +48,29 @@ dialog.w6w-modal.w6w-modal-full {
   max-height: 92vh;
   overflow: hidden;
 }
+/* Edge-to-edge surface: the whole viewport, no rounded corners and no visible
+   backdrop margin. Distinct from `.w6w-modal-full` (96vw x 92vh), which is
+   deliberately inset so the page behind stays visible as context — the
+   expression editor and the action tester both rely on that.
+   `position: fixed; inset: 0` already sizes to the viewport, so width/height
+   here are belt-and-braces against a UA stylesheet's `dialog` sizing.
+   The header is pinned; the caller's own child scrolls (it must set
+   `flex: 1; min-height: 0; overflow: auto` on itself). */
+dialog.w6w-modal.w6w-modal-fullscreen {
+  max-width: none;
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+  padding: var(--w6w-sp-5) var(--w6w-sp-6);
+}
+dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
+  flex-shrink: 0;
+  padding-bottom: var(--w6w-sp-4);
+  border-bottom: 1px solid var(--w6w-border);
+}
 .w6w-modal-header {
   display: flex;
   align-items: center;

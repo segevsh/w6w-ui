@@ -10,9 +10,15 @@ interface ModalProps {
   /**
    * Dialog width. `"wide"` fits a sidebar + content layout; `"xl"` is a large
    * work surface (e.g. the app picker); `"full"` is a near-fullscreen work
-   * surface (e.g. the expression editor) that fills most of the viewport.
+   * surface (e.g. the expression editor) that fills most of the viewport;
+   * `"fullscreen"` is edge-to-edge 100vw x 100vh with no visible backdrop.
+   *
+   * `"fullscreen"` leaves NO backdrop to click, so outside-click dismissal is
+   * unreachable by construction — a caller using it must give the user a
+   * visible way out via {@link ModalProps.headerRight} (Esc alone is not a
+   * discoverable affordance).
    */
-  size?: "default" | "wide" | "xl" | "full";
+  size?: "default" | "wide" | "xl" | "full" | "fullscreen";
   /** Optional node rendered next to the title (e.g. an app icon). */
   titleIcon?: ReactNode;
   /** Optional muted meta rendered after the title (e.g. an app's id + version). */
@@ -31,6 +37,7 @@ const SIZE_CLASS: Record<NonNullable<ModalProps["size"]>, string> = {
   wide: " w6w-modal-wide",
   xl: " w6w-modal-xl",
   full: " w6w-modal-full",
+  fullscreen: " w6w-modal-fullscreen",
 };
 
 export function Modal({
