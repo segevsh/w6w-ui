@@ -107,6 +107,13 @@ export interface ActionParam {
    * `row` id — e.g. a username/password pair side by side.
    */
   row?: string;
+  /**
+   * Allow multiple values (array of `type`). Renders as an add/remove list via
+   * the same `ArrayField` a `type: "array"` param uses, with a synthesized
+   * `item` — sugar for `type: "array"`; see rfcs/param.md's `repeat` amendment.
+   * Mirrors `@w6w/types`' `Param.repeat`.
+   */
+  repeat?: boolean;
   /** Element schema when `type: "array"` (a scalar list or a list of objects). */
   item?: ParamArrayItem;
   /**
@@ -161,6 +168,9 @@ export interface ParamArrayItem {
   fields?: ActionParam[];
   /** Placeholder for a scalar item's input. */
   placeholder?: string;
+  /** For a scalar item — constrained choices, carried over from a `repeat: true`
+   *  param's own `options` (a `repeat` scalar with `options` still needs them). */
+  options?: ParamOption[];
 }
 
 /**
