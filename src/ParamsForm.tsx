@@ -70,6 +70,59 @@ function renderFieldRows(
   return out;
 }
 
+/**
+ * Builds the `renderOne` dispatch a param list is rendered through: `section`
+ * (layout-only, shares the caller's `values`/`set`/`effective`), `repeat: true`
+ * (→ {@link RepeatField}, the existing `ArrayField` with a synthesized `item`),
+ * `type: "group"` with a non-empty `children` (→ {@link GroupField}, a nested
+ * form), else the plain {@link ParamField}. Factored out so {@link GroupField}
+ * can build its OWN dispatch bound to its nested `values`/`set`/`effective` —
+ * the one place a group's value-plumbing must differ from `SectionField`'s (see
+ * `GroupField`'s own doc comment).
+ */
+function makeRenderOne(
+  values: Record<string, unknown>,
+  set: (key: string, value: unknown) => void,
+  effective: (key: string) => unknown,
+  readOnly: boolean | undefined,
+): (p: ActionParam) => ReactNode {
+  const renderOne = (p: ActionParam): ReactNode => {
+    if (p.type === "section") {
+      return <SectionField key={p.key} param={p} effective={effective} renderOne={renderOne} />;
+    }
+    // `repeat` is sugar for `type: "array"` (rfcs/param.md's amendment) — an
+    // explicit `type: "array"` param already routes through `ParamField`'s own
+    // `array` arm, so it's excluded here to avoid double-synthesizing `item`.
+    if (p.repeat && p.type !== "array") {
+      return (
+        <RepeatField
+          key={p.key}
+          param={p}
+          value={values[p.key]}
+          onChange={set}
+          readOnly={readOnly}
+        />
+      );
+    }
+    if (p.type === "group" && p.children && p.children.length > 0) {
+      return (
+        <GroupField
+          key={p.key}
+          param={p}
+          value={values[p.key]}
+          onChange={set}
+          effective={effective}
+          readOnly={readOnly}
+        />
+      );
+    }
+    return (
+      <ParamField key={p.key} param={p} value={values[p.key]} onChange={set} readOnly={readOnly} />
+    );
+  };
+  return renderOne;
+}
+
 export interface ParamsFormProps {
   /** Declared params of the selected action. */
   params: ActionParam[];
@@ -115,12 +168,7 @@ export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormPro
   // crucially — passes the TOP-LEVEL `set`/`values` down, so section children
   // write to the enclosing form values, not nested under the section key. Note a
   // section IS the disclosure, so a child's `advanced` flag is not re-split here.
-  const renderOne = (p: ActionParam): ReactNode =>
-    p.type === "section" ? (
-      <SectionField key={p.key} param={p} effective={effective} renderOne={renderOne} />
-    ) : (
-      <ParamField key={p.key} param={p} value={values[p.key]} onChange={set} readOnly={readOnly} />
-    );
+  const renderOne = makeRenderOne(values, set, effective, readOnly);
 
   return (
     <div className="w6w-stack">
@@ -184,6 +232,117 @@ function SectionField({
     return <div className="w6w-field-row">{visibleChildren.map(renderOne)}</div>;
   }
   return <div className="w6w-stack">{renderFieldRows(visibleChildren, renderOne)}</div>;
+}
+
+/** Scalar-only types `ArrayItemInput` (`:795-850` below) actually renders — a
+ *  select, checkbox, number or text input. Anything else (a `secret`, or a
+ *  child carrying its own `children`) falls back to the JSON editor for the
+ *  whole group rather than half-rendering it (D-2, rfcs/param.md's amendment). */
+const ARRAY_ITEM_SCALAR_TYPES = new Set(["string", "text", "number", "boolean", "select"]);
+
+function fitsArrayItemFields(fields: ActionParam[]): boolean {
+  return (
+    fields.length > 0 && fields.every((f) => ARRAY_ITEM_SCALAR_TYPES.has(f.type) && !f.children)
+  );
+}
+
+/**
+ * A `type: "group"` param with a non-empty `children` — a **nested** form.
+ * Mirrors `SectionField`'s shape (a heading + `renderFieldRows` over the
+ * visible children) with the ONE inversion a group requires: values write
+ * NESTED under this param's own key (`onChange(param.key, {...current,
+ * [childKey]: v})`), matching `resolveParams`' own nesting and
+ * rfcs/param.md:190 — a section's children stay flat, a group's do not, so
+ * this is deliberately a separate component rather than `SectionField`
+ * parameterized to do both (that would conflate two value contracts in one
+ * component's props).
+ *
+ * Bare container (D-1): `param.label`/`param.key` as a plain heading (reusing
+ * the existing `.w6w-section-title`/`.w6w-section-body` type styles — no new
+ * class, no border, no `<details>`), children stacked below.
+ *
+ * Group-local `showIf` (D-3): a child's `showIf` resolves against the group's
+ * OWN children first, falling back to the enclosing form's `effective` for any
+ * key the group doesn't declare — the same rule rfcs/param.md:256 already
+ * states for `dependsOn`, extended here to `showIf`.
+ */
+function GroupField({
+  param,
+  value,
+  onChange,
+  effective,
+  readOnly,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  /** The ENCLOSING form's `effective` — the fallback for a key this group
+   *  doesn't declare among its own (flattened) children. */
+  effective: (key: string) => unknown;
+  readOnly?: boolean;
+}) {
+  const children = param.children ?? [];
+  const groupValue = (value ?? {}) as Record<string, unknown>;
+  const groupSet = (key: string, v: unknown) => onChange(param.key, { ...groupValue, [key]: v });
+  // Flattened so a `section` nested inside this group (which writes flat at
+  // the group's own level) still counts as "the group's own" for showIf
+  // resolution — mirrors flattenParams' existing section-descent, reused as-is.
+  const flatChildren = flattenParams(children);
+  const groupEffective = (key: string): unknown => {
+    const local = flatChildren.find((c) => c.key === key);
+    if (!local) return effective(key);
+    return groupValue[key] !== undefined ? groupValue[key] : local.default;
+  };
+  const visibleChildren = children.filter((c) => isParamVisible(c, groupEffective));
+  const groupRenderOne = makeRenderOne(groupValue, groupSet, groupEffective, readOnly);
+
+  return (
+    <div className="w6w-stack">
+      <span className="w6w-section-title">{param.label ?? param.key}</span>
+      <div className="w6w-stack w6w-section-body">
+        {renderFieldRows(visibleChildren, groupRenderOne)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A `repeat: true` param — sugar for `type: "array"` with a synthesized `item`
+ * (rfcs/param.md's amendment); routes to the SAME `ArrayField` an explicit
+ * `type: "array"` param uses, never a second list component:
+ *   - scalar (`param.type` is not `group`/`section`/`array`): `item = { type:
+ *     param.type, options: param.options }`, passed explicitly because
+ *     `ArrayField`'s own fallback (`param.item ?? { type: "string" }`) is the
+ *     literal `"string"`, not `param.type`.
+ *   - `type: "group"` with scalar-only `children` (the D-2 ceiling above):
+ *     `item = { type: "object", fields: param.children }`.
+ *   - `type: "group"` with no `children`, or any child the ceiling excludes:
+ *     falls back to the JSON editor for the whole group.
+ */
+function RepeatField({
+  param,
+  value,
+  onChange,
+  readOnly,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+}) {
+  if (param.type === "group") {
+    const children = param.children ?? [];
+    if (!fitsArrayItemFields(children)) {
+      return <JsonParamField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
+    }
+    const synthesized: ActionParam = { ...param, item: { type: "object", fields: children } };
+    return <ArrayField param={synthesized} value={value} onChange={onChange} readOnly={readOnly} />;
+  }
+  const synthesized: ActionParam = {
+    ...param,
+    item: { type: param.type, options: param.options },
+  };
+  return <ArrayField param={synthesized} value={value} onChange={onChange} readOnly={readOnly} />;
 }
 
 function ParamField({
