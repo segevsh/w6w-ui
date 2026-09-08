@@ -6,7 +6,7 @@ import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { useW6WApi } from "./provider.tsx";
-import type { TestRunSummary } from "./provider.tsx";
+import type { RequestOverrides, TestRunSummary } from "./provider.tsx";
 import type { ActionDef, ApiCallRecord, SavedTest, ThemeMode } from "./types.ts";
 
 export interface ActionTestFormProps {
@@ -204,6 +204,44 @@ function apiCallsOf(e: unknown): ApiCallRecord[] {
 }
 
 /**
+ * One Overrides sub-editor's local state (`body`/`query`/`headers`): raw text
+ * (the widget's source of truth), the last value that parsed as a plain JSON
+ * object, and whether the CURRENT text is invalid. Empty/whitespace text is
+ * always valid and means "not set" — never blocks Run — matching the
+ * requirement that clearing a field returns to "no override", not an error.
+ *
+ * Deliberately re-parses on every keystroke here rather than wiring
+ * `JsonEditor`'s own `onValidChange`/`onValidityChange`: that pair reports an
+ * emptied field as `{valid: false, error: "Empty"}`, which would wrongly keep
+ * Run refusing the moment a touched field is cleared back out.
+ */
+function useOverrideJsonField() {
+  const [text, setText] = useState("");
+  const [value, setValue] = useState<Record<string, unknown> | undefined>(undefined);
+  const [invalid, setInvalid] = useState(false);
+  const onChange = (next: string) => {
+    setText(next);
+    const trimmed = next.trim();
+    if (trimmed === "") {
+      setInvalid(false);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        setValue(parsed as Record<string, unknown>);
+        setInvalid(false);
+      } else {
+        setInvalid(true);
+      }
+    } catch {
+      setInvalid(true);
+    }
+  };
+  return { text, value, invalid, onChange } as const;
+}
+
+/**
  * Schema-driven form to test/run a single action against a connection. Renders
  * the action's declared params through {@link ParamsForm} (the same primitive
  * the step builder uses) instead of a raw JSON textarea, invokes the action via
@@ -247,6 +285,37 @@ export function ActionTestForm({
   // Populated on success AND failure — a wrong payload is usually only visible
   // on the wire, not in the value.
   const [apiCalls, setApiCalls] = useState<ApiCallRecord[]>([]);
+
+  // Overrides region (T2.1.1): a RequestOverrides envelope submitted as a
+  // fourth field alongside params — architecturally NOT a Param (it never
+  // enters `resolveParams`), so it is a SIBLING region to `paramsRegion`
+  // rather than a slot inside `ParamsForm`'s "Additional parameters"
+  // disclosure. See `.claude/docs/overrides.md`.
+  const ovBody = useOverrideJsonField();
+  const ovQuery = useOverrideJsonField();
+  const ovHeaders = useOverrideJsonField();
+  const [ovTarget, setOvTarget] = useState<"" | "first" | "first-write" | "all">("");
+  const [ovMatch, setOvMatch] = useState("");
+  // Any sub-editor currently holding invalid JSON blocks the run outright —
+  // never send a half-parsed envelope.
+  const overridesInvalid = ovBody.invalid || ovQuery.invalid || ovHeaders.invalid;
+  // Built fresh from current state on every call — an untouched (or cleared)
+  // control leaves every field empty, so this returns `undefined` and the run
+  // sends no `overrides` key at all: byte-identical to a request from before
+  // this control existed.
+  const currentOverrides = (): RequestOverrides | undefined => {
+    const out: RequestOverrides = {};
+    if (ovBody.text.trim() !== "" && ovBody.value !== undefined) out.body = ovBody.value;
+    if (ovQuery.text.trim() !== "" && ovQuery.value !== undefined) {
+      out.query = ovQuery.value as Record<string, string | number | boolean | null>;
+    }
+    if (ovHeaders.text.trim() !== "" && ovHeaders.value !== undefined) {
+      out.headers = ovHeaders.value as Record<string, string>;
+    }
+    if (ovTarget) out.target = ovTarget;
+    if (ovMatch.trim() !== "") out.match = ovMatch.trim();
+    return Object.keys(out).length > 0 ? out : undefined;
+  };
 
   // Params view: the schema-driven form, or the whole `values` object as raw JSON.
   const [viewMode, setViewMode] = useState<"form" | "json">("form");
@@ -362,14 +431,23 @@ export function ActionTestForm({
   // The single invoke path — used by "Run action" and by re-running a saved test.
   const runWith = async (params: Record<string, unknown>) => {
     if (!selectedAction) return;
+    // An invalid Overrides sub-editor refuses the run outright — the Run
+    // button is also disabled for this, but guard here too so a saved-test
+    // re-run (which bypasses the button) can't slip a half-parsed envelope
+    // through either.
+    if (overridesInvalid) return;
     const actionKey = selectedAction.key;
     setRunning(true);
     setError(null);
     setResult(undefined);
     setApiCalls([]);
     let outcome: { ok: boolean; summary: string; result?: unknown };
+    const overrides = currentOverrides();
     try {
-      const r = await api.invokeAction(appId, actionKey, params, { connectionId });
+      const r = await api.invokeAction(appId, actionKey, params, {
+        connectionId,
+        ...(overrides ? { overrides } : {}),
+      });
       setResult(r.value);
       setApiCalls(r.apiCalls ?? []);
       outcome = { ok: true, summary: "OK", result: r.value };
@@ -634,6 +712,95 @@ export function ActionTestForm({
     </div>
   );
 
+  // The Overrides region: a sibling to `paramsRegion`, never nested inside it
+  // (and never inside `ParamsForm`'s own "Additional parameters" disclosure —
+  // `overrides` is not a Param). Collapsed by default via `<details>`, reusing
+  // the same `.w6w-section` disclosure `SectionField` renders for a
+  // `section: "collapsible"` param, since this is the identical visual shape
+  // (titled, collapsed-by-default disclosure) applied to a hand-built control
+  // instead of a schema-driven one.
+  const overridesRegion = (
+    <details className="w6w-section" data-testid="overrides-region">
+      <summary className="w6w-section-summary">
+        <span className="w6w-section-title">Overrides</span>
+        <span className="w6w-section-subtitle">
+          Reach a vendor field this action's own params don't declare
+        </span>
+      </summary>
+      <div className="w6w-stack w6w-section-body" style={{ gap: "var(--w6w-sp-2)" }}>
+        <div className="w6w-field">
+          <span>Body</span>
+          <JsonEditor
+            value={ovBody.text}
+            onChange={ovBody.onChange}
+            minHeight="80px"
+            aria-label="Overrides body (JSON)"
+          />
+          {ovBody.invalid && (
+            <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+              Invalid JSON
+            </span>
+          )}
+        </div>
+        <div className="w6w-field">
+          <span>Query</span>
+          <JsonEditor
+            value={ovQuery.text}
+            onChange={ovQuery.onChange}
+            minHeight="80px"
+            aria-label="Overrides query (JSON)"
+          />
+          {ovQuery.invalid && (
+            <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+              Invalid JSON
+            </span>
+          )}
+        </div>
+        <div className="w6w-field">
+          <span>Headers</span>
+          <JsonEditor
+            value={ovHeaders.text}
+            onChange={ovHeaders.onChange}
+            minHeight="80px"
+            aria-label="Overrides headers (JSON)"
+          />
+          {ovHeaders.invalid && (
+            <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
+              Invalid JSON
+            </span>
+          )}
+        </div>
+        <label className="w6w-field">
+          <span>Target</span>
+          <select
+            aria-label="Overrides target"
+            value={ovTarget}
+            onChange={(e) => setOvTarget(e.target.value as typeof ovTarget)}
+          >
+            <option value="">— default (first) —</option>
+            <option value="first">first</option>
+            <option value="first-write">first-write</option>
+            <option value="all">all</option>
+          </select>
+        </label>
+        <label className="w6w-field">
+          <span>Match</span>
+          <input
+            type="text"
+            aria-label="Overrides match"
+            value={ovMatch}
+            placeholder="Restrict to requests whose URL contains…"
+            onChange={(e) => setOvMatch(e.target.value)}
+          />
+        </label>
+        <span className="w6w-hint">
+          Merged onto the outbound request at the wire, never into the params above — name a field
+          the way the vendor's own API documents it.
+        </span>
+      </div>
+    </details>
+  );
+
   // The saved-tests rail — the right pane of the pop-out. Only meaningful when a
   // connection is fixed; hidden entirely otherwise (guarded on `connectionId`).
   const savedTestsRail = connectionId ? (
@@ -775,6 +942,7 @@ export function ActionTestForm({
             const paramsAndResult = (
               <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
                 {paramsRegion}
+                {overridesRegion}
                 {error && (
                   <div className="w6w-result w6w-error">
                     <strong>{error.headline}</strong>
@@ -814,7 +982,12 @@ export function ActionTestForm({
                 }`}
                 style={{ display: "flex", gap: "var(--w6w-sp-2)" }}
               >
-                <button type="button" className="w6w-btn" disabled={running} onClick={run}>
+                <button
+                  type="button"
+                  className="w6w-btn"
+                  disabled={running || overridesInvalid}
+                  onClick={run}
+                >
                   {running ? "Running…" : "Run action"}
                 </button>
                 {connectionId && (
