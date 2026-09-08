@@ -91,6 +91,27 @@ export interface StepStartState {
 }
 
 /**
+ * A caller-supplied override merged into an app action's outbound request at
+ * the wire — the escape hatch for a vendor field the Action's own `params`
+ * don't declare (`.claude/docs/overrides.md`). Rides on the invocation
+ * envelope beside `params`, never inside it; `resolveParams` never sees it.
+ * Mirrors the server's `RequestOverrides`
+ * (`core/packages/types/src/overrides.ts`) structurally.
+ */
+export interface RequestOverrides {
+  /** Merged over the request body — deep-merges objects, index-merges arrays. */
+  body?: Record<string, unknown>;
+  /** Merged into the URL's query string; `null` removes a key the action set. */
+  query?: Record<string, string | number | boolean | null>;
+  /** Added to the request headers; applied before the auth `sign` hook, so it can't hijack it. */
+  headers?: Record<string, string>;
+  /** Which outbound request receives the overrides. Defaults to `"first"`. */
+  target?: "first" | "first-write" | "all";
+  /** Restrict the merge to requests whose URL contains this substring. */
+  match?: string;
+}
+
+/**
  * The surface every w6w-io component may call. Grows as we add components;
  * new members are added at the end so consumer implementations only need to
  * grow when they want to use the new component.
@@ -145,12 +166,21 @@ export interface W6WApi {
    * `apiCalls` carries the outbound HTTP calls the action made (redacted); a
    * failed invoke rejects with an `ApiError` whose `body ?? raw` holds the same
    * field (ui's own class carries it on `body`, `@w6w/sdk`'s on `raw`).
+   *
+   * Pass `overrides` — a {@link RequestOverrides} — to reach a vendor field the
+   * action's own params don't declare. It rides on the invocation envelope,
+   * never merged into `params`; an absent or empty envelope is a no-op.
    */
   invokeAction(
     appId: string,
     actionKey: string,
     params: Record<string, unknown>,
-    opts?: { connectionId?: string; project?: string; state?: StepStartState },
+    opts?: {
+      connectionId?: string;
+      project?: string;
+      state?: StepStartState;
+      overrides?: RequestOverrides;
+    },
   ): Promise<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>;
 
   /** List the saved action-test inputs stored against a connection. */
