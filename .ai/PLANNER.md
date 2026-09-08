@@ -66,9 +66,10 @@ small and authoritative for two specific surfaces — see the routing table belo
    ```
    "test": "node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts"
    ```
-   Both roots are real and both matter: `src/__tests__/*.test.ts` (**31** files, unchanged by
-   `26-09-03-00-changes` — see the *Gate baselines* section's closing paragraph for the prior
-   history) and `src/components/__tests__/*.test.ts` (**11** files: `Copyable`, `CopyableText`,
+   Both roots are real and both matter: `src/__tests__/*.test.ts` (**32** files — `26-08-20-01-param-
+   groups-and-extra-fields`'s T1.1.1 added `params-form-groups.test.ts`, `31` → `32`; see the *Gate
+   baselines* section's closing paragraph for the prior history) and `src/components/__tests__/*.test.ts`
+   (**11** files: `Copyable`, `CopyableText`,
    `DeleteButton`, `EditButton`, `HistoryTimeline`, `IconButton`, `UptimeStrip`, `expression-dom`,
    `expression-template`, `resolved-clip`, plus `RepoSyncIndicator` — added by
    `26-09-03-00-changes`'s T1.1.1).
@@ -112,9 +113,9 @@ framing (its TRAP 2 section).
 | gate | command | result |
 |---|---|---|
 | token-lint ratchet | `node scripts/lint-tokens.mjs` | `lint:tokens — 59 violations in 18 files (baseline: 59)`, **exit 0** — `26-09-03-00-changes`'s T1.1.1 briefly regressed this (a hard-coded `6px` in `_repo-sync-indicator.scss:30` instead of `--w6w-sp-1-5`), undetected by that task's own contract/eval since neither ran this gate; caught and fixed at that project's own closeout (`a0027cd`) — **this gate is not covered by `tsc`/`biome`/`npm test`/`check:css` at all; run it explicitly, don't assume the other four imply it** |
-| lint | `./node_modules/.bin/biome check .` | `Checked 105 files in ~35ms. No fixes applied.` — 0 errors, measured on `main` post-ship (`26-09-03-00-changes`'s T1.1.1 added `RepoSyncIndicator.tsx` + its test file, `103` → `105`) |
+| lint | `./node_modules/.bin/biome check .` | `Checked 106 files in ~35ms. No fixes applied.` — 0 errors, measured on `26-08-20-01-param-groups-and-extra-fields`'s T1.1.1 branch (`105` → `106`: this task added `params-form-groups.test.ts`) |
 | typecheck | `./node_modules/.bin/tsc -b --noEmit` | exit 0, no output |
-| unit suite | `node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts` | **410 pass, 0 fail** (TAP: `tests 410 · pass 410 · fail 0`), measured on `main` post-ship (`26-09-03-00-changes`'s T1.1.1 added `RepoSyncIndicator.test.ts`, `404` → `410`) |
+| unit suite | `node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts` | **426 pass, 0 fail** (TAP: `tests 426 · pass 426 · fail 0`). This row's prior `410` was already stale before this task touched anything — re-measured on `main` @ `752b31e` (this task's own fork point, clean tree) at **413**, not `410`: some project between `26-09-03-00-changes`'s ship and this one added 3 tests without correcting this table (not investigated further; out of this task's scope beyond fixing the stale number). This task's own T1.1.1 then added 13: 9 in the new `params-form-groups.test.ts` (`GroupField`/`RepeatField` rendering) and 4 new cases in the existing `StepBuilderModal.required-gate.test.ts` (`requiredParamsFilled`'s new `group` branch), landing at `413` → `426` |
 | `check:css` | `node scripts/build-css.mjs --check` | both `src/styles.css` and `src/code.css` up to date |
 | picker-layout (Docker/Chromium) | `bash test/picker-layout/run.sh` | **GREEN 22/22** (matching `EXPECTED_TESTS` in fact 4 above), confirmed by `26-08-26-01-studio-fixes`'s T1.1.3 gates — not re-run at `26-08-31-00-issues`'s closeout since none of its three nodes touched picker-layout-adjacent code |
 | copyable (Docker/Chromium) | `bash test/copyable/run.sh` | **GREEN 9/9**, confirmed by `26-08-26-01-studio-fixes`'s T1.1.3 gates (`.ai/projects/.work/26-08-26-01-studio-fixes/results/T1.1.3.result.md`) — **not re-run at `26-08-31-00-issues`'s closeout**: that project's own T1.1.3 (`copyable` prop on `JsonEditor`) could not run it either, for the same reason recorded in `FOLLOWUPS.md` — it hard-requires a sibling `packages/studio` checkout the harness workspace does not symlink in. `Copyable.tsx` itself is provably unchanged (byte-identical `Copyable.test.ts`/`CopyableText.test.ts`, verified by both T1.1.2 and T1.1.3's evaluators), so this row is stale on file identity, not on behavior — re-run from a full checkout if that changes |
@@ -280,3 +281,18 @@ undetected; the closeout Phase-3 gate sweep caught it (a real, currently-green, 
 ratchet this table has documented all along), fixed it (`var(--w6w-sp-1-5)`, exactly `6px`), and
 restored the ratchet to its unchanged baseline. **Gate baselines table above already reflects the
 fixed state** — the regression never reached a merged `main` commit uncorrected.
+
+**`26-08-20-01-param-groups-and-extra-fields`'s T1.1.1** (measured on its own task branch, forked
+from `main` @ `752b31e` — not yet merged, so no post-merge sha to cite here) found this doc's
+*Gate baselines* table already stale before it touched anything: `main` @ `752b31e` measured **413**
+pass, not the `410` this table recorded (the biome/partial/component-test-file counts were still
+correct). This task added `ParamsForm.tsx`'s `GroupField` (a `type: "group"` param with non-empty
+`children` renders as a nested form, writing a `Record` nested under the group's own key) and
+`RepeatField` (a `repeat: true` param — scalar or `group` — routes to the existing `ArrayField` with
+a synthesized `item`, never a second list component), extended `requiredParamsFilled`
+(`StepBuilderModal.tsx`) with a matching `group` branch, and declared `repeat?: boolean` on
+`types.ts`'s `ActionParam`. It added one new file, `params-form-groups.test.ts` (9 tests), plus 4 new
+cases in the existing `StepBuilderModal.required-gate.test.ts`, landing the gate baselines at
+**`426`/`106`/`29` partials / `32`/`11` `__tests__` files** (fact 3's file counts above bumped
+accordingly). `lint:tokens` is unmoved (`59 violations in 18 files`, baseline `59`) — no CSS
+touched.

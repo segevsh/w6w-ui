@@ -1457,20 +1457,52 @@ export function requiredParamsFilled(
   const effective = (key: string) =>
     values[key] !== undefined ? values[key] : flat.find((p) => p.key === key)?.default;
 
-  const check = (list: ActionParam[]): boolean =>
+  const check = (
+    list: ActionParam[],
+    vals: Record<string, unknown>,
+    eff: (key: string) => unknown,
+  ): boolean =>
     list.every((p) => {
       // A `section` is a layout-only container whose children write flat at this
       // level — recurse so a required child (e.g. a grouped Sender Email) still
       // gates. The section param itself carries no value.
-      if (p.type === "section") return check(p.children ?? []);
+      if (p.type === "section") return check(p.children ?? [], vals, eff);
+      // A `group` nests its children's values under its own key (or, for
+      // `repeat: true`, one nested slice per row) — mirrors `GroupField`'s
+      // rendering (`ParamsForm.tsx`) including its group-local-first `showIf`
+      // resolution (D-3): a child's `showIf` checks the group's OWN children
+      // first, falling back to `eff` (the enclosing scope) for any key the
+      // group doesn't declare.
+      if (p.type === "group") {
+        const children = p.children ?? [];
+        const flatChildren = flattenParams(children);
+        const scoped =
+          (groupVals: Record<string, unknown>) =>
+          (key: string): unknown => {
+            const local = flatChildren.find((c) => c.key === key);
+            if (!local) return eff(key);
+            return groupVals[key] !== undefined ? groupVals[key] : local.default;
+          };
+        if (p.repeat) {
+          const rows = Array.isArray(vals[p.key]) ? (vals[p.key] as unknown[]) : [];
+          // An empty list passes unless the group itself is required.
+          if (rows.length === 0) return !p.required;
+          return rows.every((row) => {
+            const rowVals = (row ?? {}) as Record<string, unknown>;
+            return check(children, rowVals, scoped(rowVals));
+          });
+        }
+        const groupVals = (vals[p.key] ?? {}) as Record<string, unknown>;
+        return check(children, groupVals, scoped(groupVals));
+      }
       if (!p.required) return true;
-      if (!isParamVisible(p, effective)) return true;
-      const v = values[p.key] ?? p.default;
+      if (!isParamVisible(p, eff)) return true;
+      const v = vals[p.key] ?? p.default;
       if (v === undefined || v === null) return false;
       if (typeof v === "string") return v.trim() !== "";
       return true;
     });
-  return check(params);
+  return check(params, values, effective);
 }
 
 /**
