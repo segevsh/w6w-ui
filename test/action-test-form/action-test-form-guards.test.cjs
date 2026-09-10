@@ -173,12 +173,29 @@ test("M-popout-scroll — ActionTestForm's -full pop-out shows all content via a
   await page.close();
 });
 
-// ── T2.1.1 defect 1 — the error box must NOT sit flush against the params
-//    region above it, in BOTH embedded variants (`.w6w-tester-embedded-main`,
-//    the rail case, AND `.w6w-tester-embedded-scroll`, the no-rail case). A
-//    fix on `.w6w-tester-embedded-main` alone passes the rail variant and
-//    leaves the no-rail one at a 0px gap — that near-miss is exactly why both
-//    variants are exercised in one test rather than one probe each. ────────
+// ── T2.1.1 defect 1 — the error box must NOT sit flush against whatever
+//    region sits directly above it, in BOTH embedded variants
+//    (`.w6w-tester-embedded-main`, the rail case, AND
+//    `.w6w-tester-embedded-scroll`, the no-rail case). A fix on
+//    `.w6w-tester-embedded-main` alone passes the rail variant and leaves the
+//    no-rail one at a 0px gap — that near-miss is exactly why both variants
+//    are exercised in one test rather than one probe each.
+//
+//    Updated for T2.1.1 round 2: this originally asserted the error box's
+//    *specific* previous sibling was `paramsRegion` itself (`w6w-stack`
+//    class, text starting "Parameters"). T2.1.1 round 1 added a new
+//    `overridesRegion` sibling (a `.w6w-section` `<details>`, always
+//    rendered, collapsed by default) between `paramsRegion` and the error
+//    box — a correct, evaluator-verified structural change — which makes
+//    `overridesRegion` the error box's actual previous sibling now, so that
+//    identity check failed even though the visual invariant this test
+//    guards (no flush/0px gap) still held: the `.w6w-stack` flex
+//    container's `gap` applies uniformly between ALL direct children
+//    regardless of how many there are or what they are, so measuring the
+//    gap against whichever element is ACTUALLY adjacent is exactly as
+//    strong a guard against a collapsed/removed gap as measuring against
+//    one named element — and, unlike the old assertion, does not need
+//    updating every time a new sibling is inserted into this stack. ───────
 test("T2.1.1 defect 1 — 12px gap between params and the error box, in both embedded variants", async () => {
   for (const variant of ["embedded-rail", "embedded-norail"]) {
     const page = await open(browser, variant);
@@ -211,21 +228,21 @@ test("T2.1.1 defect 1 — 12px gap between params and the error box, in both emb
       info.errHeight > 0,
       `[${variant}] .w6w-result.w6w-error has zero height (errH ${info.errHeight})`,
     );
+    // The error box's previous sibling is whichever region actually sits
+    // directly above it in `.w6w-stack` (today: the Overrides region added
+    // by T2.1.1; before that, `paramsRegion` itself) — deliberately NOT
+    // pinned to a specific class/text, since the flex `gap` this test
+    // guards applies uniformly to every direct child regardless of identity
+    // or count (see the updated comment above). `prevClass`/`prevText` are
+    // still captured for the failure message below, not asserted on.
     assert.ok(info.prevFound, `[${variant}] error box has no previous sibling to measure against`);
-    assert.ok(
-      info.prevClass && info.prevClass.includes("w6w-stack"),
-      `[${variant}] error box's previous sibling is "${info.prevClass}", expected the params region's "w6w-stack"`,
-    );
-    assert.ok(
-      info.prevText && info.prevText.startsWith("Parameters"),
-      `[${variant}] error box's previous sibling does not start with "Parameters" (got "${info.prevText}")`,
-    );
 
     // The literal 12, not a self-referential read of --w6w-sp-3 — a tree that
     // redefines the token to 0 must fail this, not pass it.
     assert.ok(
       info.gap >= 11 && info.gap <= 13,
-      `[${variant}] gap between params region and error box is ${info.gap}px, expected 12px ±1`,
+      `[${variant}] gap between the error box and its previous sibling ` +
+        `(class "${info.prevClass}", text "${info.prevText}") is ${info.gap}px, expected 12px ±1`,
     );
 
     await page.close();
