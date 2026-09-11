@@ -38,6 +38,9 @@ export type { JsonEditorProps } from "./JsonEditor.tsx";
 export { CodeEditor } from "./CodeEditor.tsx";
 export type { CodeEditorProps } from "./CodeEditor.tsx";
 
+export { YamlEditor } from "./YamlEditor.tsx";
+export type { YamlEditorProps } from "./YamlEditor.tsx";
+
 export { Modal } from "./components/Modal.tsx";
 export { Copyable } from "./components/Copyable.tsx";
 export type { CopyableProps } from "./components/Copyable.tsx";
