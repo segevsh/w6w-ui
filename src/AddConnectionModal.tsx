@@ -6,6 +6,7 @@ import { Modal } from "./components/Modal.tsx";
 import { startOAuthPopup } from "./oauth-popup.ts";
 import { useW6WApi } from "./provider.tsx";
 import type { AppSummary, AuthDef, AuthField, ThemeMode } from "./types.ts";
+import { useEnterSubmit } from "./use-enter-submit.ts";
 
 export interface AddConnectionModalProps {
   onClose: () => void;
@@ -172,6 +173,10 @@ function ConnectionConfig({
     !isOAuth &&
     !isZeroCred &&
     fields.some((f) => f.required && (credential[f.key] === undefined || credential[f.key] === ""));
+  // Hoisted once — shared by the primary button's `disabled` and the
+  // enter-to-submit hook's `enabled`, so Enter can never do something the
+  // button itself refuses to do.
+  const submitDisabled = !auth || (!isOAuth && !isZeroCred && requiredMissing) || pending;
 
   async function submit() {
     if (!auth) return;
@@ -200,6 +205,8 @@ function ConnectionConfig({
       setPending(false);
     }
   }
+
+  const enterSubmit = useEnterSubmit(submit, { enabled: !submitDisabled });
 
   return (
     <div className="w6w-stack">
@@ -251,6 +258,7 @@ function ConnectionConfig({
                 data-lpignore="true"
                 data-bwignore="true"
                 data-form-type="other"
+                {...enterSubmit}
               />
             </label>
           )}
@@ -261,7 +269,12 @@ function ConnectionConfig({
               this connection.
             </p>
           ) : (
-            <AuthFieldsForm fields={fields} values={credential} onChange={setCredential} />
+            <AuthFieldsForm
+              fields={fields}
+              values={credential}
+              onChange={setCredential}
+              enterSubmitProps={enterSubmit}
+            />
           )}
         </>
       )}
@@ -272,12 +285,7 @@ function ConnectionConfig({
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="w6w-btn"
-          disabled={!auth || (!isOAuth && !isZeroCred && requiredMissing) || pending}
-          onClick={submit}
-        >
+        <button type="button" className="w6w-btn" disabled={submitDisabled} onClick={submit}>
           {pending
             ? isZeroCred
               ? "Saving…"

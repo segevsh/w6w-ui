@@ -1,16 +1,24 @@
+import type { KeyboardEventHandler } from "react";
 import type { AuthField } from "../types.ts";
 
 interface Props {
   fields: AuthField[];
   values: Record<string, unknown>;
   onChange: (values: Record<string, unknown>) => void;
+  /**
+   * Spread onto every field's `<input>` — from the caller's own
+   * `useEnterSubmit(submit, { enabled })`, so Enter in a credential field
+   * submits the same way the form's primary button does. Optional so this
+   * component still works with no submit-on-Enter wiring at all.
+   */
+  enterSubmitProps?: { onKeyDown: KeyboardEventHandler<HTMLElement> };
 }
 
 /**
  * Renders the form for an Auth method's `fields` declaration. Field shape
  * comes from the app's manifest so no app-specific knowledge is needed here.
  */
-export function AuthFieldsForm({ fields, values, onChange }: Props) {
+export function AuthFieldsForm({ fields, values, onChange, enterSubmitProps }: Props) {
   const update = (key: string, value: unknown) => onChange({ ...values, [key]: value });
 
   return (
@@ -31,6 +39,7 @@ export function AuthFieldsForm({ fields, values, onChange }: Props) {
                   type="checkbox"
                   checked={Boolean(value)}
                   onChange={(e) => update(field.key, e.target.checked)}
+                  {...enterSubmitProps}
                 />
                 {field.label}
                 {field.required ? " *" : ""}
@@ -69,6 +78,7 @@ export function AuthFieldsForm({ fields, values, onChange }: Props) {
               data-lpignore="true"
               data-bwignore="true"
               data-form-type="other"
+              {...enterSubmitProps}
             />
             {field.hint && <span className="w6w-hint">{field.hint}</span>}
           </label>
