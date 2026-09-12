@@ -24,11 +24,15 @@ const NON_TEXT_INPUT_TYPES = new Set([
   "time",
 ]);
 
-function isSingleLineTextInput(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el || el.tagName !== "INPUT") return false;
-  const type = (el as HTMLInputElement).type || "text";
-  return !NON_TEXT_INPUT_TYPES.has(type);
+/**
+ * Whether `target` is (or sits inside) a `contenteditable` region — checked
+ * via the attribute chain rather than the `isContentEditable` DOM property,
+ * which some environments (including this package's own jsdom-based unit
+ * suite) never compute; the attribute is what both a real browser and jsdom
+ * actually see once React renders `contentEditable`.
+ */
+function isWithinContentEditable(target: HTMLElement): boolean {
+  return target.closest('[contenteditable]:not([contenteditable="false"])') !== null;
 }
 
 /**
@@ -60,8 +64,13 @@ export function useEnterSubmit(
       if (e.nativeEvent.isComposing) return;
       const target = e.target as HTMLElement;
       if (target.tagName === "TEXTAREA") return;
-      if (target.isContentEditable) return;
-      if (!isSingleLineTextInput(target)) return;
+      if (isWithinContentEditable(target)) return;
+      if (
+        target.tagName === "INPUT" &&
+        NON_TEXT_INPUT_TYPES.has((target as HTMLInputElement).type)
+      ) {
+        return;
+      }
       e.preventDefault();
       onSubmit();
     },
