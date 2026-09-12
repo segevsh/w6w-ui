@@ -48,6 +48,7 @@ export { cropText, CopyableText } from "./components/CopyableText.tsx";
 export type { CopyableTextProps } from "./components/CopyableText.tsx";
 export { ConfirmModal } from "./components/ConfirmModal.tsx";
 export type { ConfirmModalProps } from "./components/ConfirmModal.tsx";
+export { useEnterSubmit } from "./use-enter-submit.ts";
 export { AppIcon } from "./components/AppIcon.tsx";
 export { ListItem } from "./components/ListItem.tsx";
 export type { ListItemProps } from "./components/ListItem.tsx";
