@@ -8,10 +8,12 @@
 
 ## Where work happens
 
-Almost every change lands in `src/`, which splits three ways: **14** top-level `.tsx` files (large,
+Almost every change lands in `src/`, which splits three ways: **15** top-level `.tsx` files (large,
 often multi-export modules — e.g. `AppPicker.tsx`, and `StepBuilderModal.tsx`, which bundles
 `NodeList`, `CallableList`, `CallableRow` and `ReadyToUseFlow` as sibling functions in one file; see
-fact 1), **20** smaller components under `src/components/` (`.tsx` files only, excluding
+fact 1 — the prior `14` was correct until `26-09-11-00-fixes`'s T1.1.1 added `YamlEditor.tsx`,
+mirroring `JsonEditor.tsx`'s structure exactly, `find src/ -maxdepth 1 -type f -name '*.tsx' | wc
+-l`), **20** smaller components under `src/components/` (`.tsx` files only, excluding
 `*.stories.tsx` and the `__tests__/` subdir — `find src/components -maxdepth 1 -type f -name
 '*.tsx' ! -name '*.stories.tsx' | wc -l`; the prior `22` was already wrong before
 `26-09-03-00-changes` added `RepoSyncIndicator.tsx`, which is the only file this project added
@@ -113,9 +115,9 @@ framing (its TRAP 2 section).
 | gate | command | result |
 |---|---|---|
 | token-lint ratchet | `node scripts/lint-tokens.mjs` | `lint:tokens — 59 violations in 18 files (baseline: 59)`, **exit 0** — `26-09-03-00-changes`'s T1.1.1 briefly regressed this (a hard-coded `6px` in `_repo-sync-indicator.scss:30` instead of `--w6w-sp-1-5`), undetected by that task's own contract/eval since neither ran this gate; caught and fixed at that project's own closeout (`a0027cd`) — **this gate is not covered by `tsc`/`biome`/`npm test`/`check:css` at all; run it explicitly, don't assume the other four imply it** |
-| lint | `./node_modules/.bin/biome check .` | `Checked 107 files in ~35ms. No fixes applied.` — 0 errors, measured on `main` @ `e3c16a9` (this project's closeout merge). `105` → `106`: T1.1.1 added `params-form-groups.test.ts`. `106` → `107`: T2.1.1 added `ActionTestForm.overrides.test.ts` |
+| lint | `./node_modules/.bin/biome check .` | `Checked 109 files in 36ms. No fixes applied.` — 0 errors, measured on `main` @ `2d4f404` (`26-09-11-00-fixes`'s closeout merge). `107` → `109`: T1.1.1 added `YamlEditor.tsx` + `src/__tests__/YamlEditor.test.ts` (mirroring `JsonEditor.tsx`/`JsonEditor.copy.test.ts`, minus the lint/validity path — D-T0.0-4). Prior row: `105` → `106`: T1.1.1 (of `26-09-03-00-changes`, a different, same-named-item project) added `params-form-groups.test.ts`. `106` → `107`: T2.1.1 added `ActionTestForm.overrides.test.ts` |
 | typecheck | `./node_modules/.bin/tsc -b --noEmit` | exit 0, no output |
-| unit suite | `node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts` | **431 pass, 0 fail** (TAP: `tests 431 · pass 431 · fail 0`), measured on `main` @ `e3c16a9` (this project's own closeout merge). This row's prior `410` was already stale before this task touched anything — re-measured on `main` @ `752b31e` (this task's own fork point, clean tree) at **413**, not `410`: some project between `26-09-03-00-changes`'s ship and this one added 3 tests without correcting this table (not investigated further; out of this task's scope beyond fixing the stale number). T1.1.1 then added 13: 9 in the new `params-form-groups.test.ts` (`GroupField`/`RepeatField` rendering) and 4 new cases in the existing `StepBuilderModal.required-gate.test.ts` (`requiredParamsFilled`'s new `group` branch), landing at `413` → `426`. **T2.1.1 then added 5 more** in the new `ActionTestForm.overrides.test.ts` (the Overrides region's mutation battery), landing at `426` → `431` |
+| unit suite | `node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts` | **437 pass, 0 fail** (TAP: `tests 437 · pass 437 · fail 0`), measured on `main` @ `2d4f404` (`26-09-11-00-fixes`'s closeout merge). `431` → `437`: T1.1.1 added `src/__tests__/YamlEditor.test.ts` (6 cases covering the mutation table's M1–M5 rows plus 2 copy-button smoke tests), mirroring `JsonEditor.copy.test.ts`'s rig. This row's prior `410` was already stale before an earlier task touched anything — re-measured on `main` @ `752b31e` (that task's own fork point, clean tree) at **413**, not `410`: some project between `26-09-03-00-changes`'s ship and that one added 3 tests without correcting this table (not investigated further). That task's own T1.1.1 then added 13: 9 in the new `params-form-groups.test.ts` (`GroupField`/`RepeatField` rendering) and 4 new cases in the existing `StepBuilderModal.required-gate.test.ts` (`requiredParamsFilled`'s new `group` branch), landing at `413` → `426`. **T2.1.1 then added 5 more** in the new `ActionTestForm.overrides.test.ts` (the Overrides region's mutation battery), landing at `426` → `431` |
 | `check:css` | `node scripts/build-css.mjs --check` | both `src/styles.css` and `src/code.css` up to date |
 | picker-layout (Docker/Chromium) | `bash test/picker-layout/run.sh` | **GREEN 22/22** (matching `EXPECTED_TESTS` in fact 4 above), confirmed by `26-08-26-01-studio-fixes`'s T1.1.3 gates — not re-run at `26-08-31-00-issues`'s closeout since none of its three nodes touched picker-layout-adjacent code |
 | copyable (Docker/Chromium) | `bash test/copyable/run.sh` | **GREEN 9/9**, confirmed by `26-08-26-01-studio-fixes`'s T1.1.3 gates (`.ai/projects/.work/26-08-26-01-studio-fixes/results/T1.1.3.result.md`) — **not re-run at `26-08-31-00-issues`'s closeout**: that project's own T1.1.3 (`copyable` prop on `JsonEditor`) could not run it either, for the same reason recorded in `FOLLOWUPS.md` — it hard-requires a sibling `packages/studio` checkout the harness workspace does not symlink in. `Copyable.tsx` itself is provably unchanged (byte-identical `Copyable.test.ts`/`CopyableText.test.ts`, verified by both T1.1.2 and T1.1.3's evaluators), so this row is stale on file identity, not on behavior — re-run from a full checkout if that changes |
@@ -155,7 +157,7 @@ So:
   `git diff <base>..<verified-sha> --stat` over `packages/ui` is one command and tells you exactly
   which of the facts above are ahead of you.
 
-verified: 2026-09-03 · against `main` @ `a0027cd` (project 26-09-03-00-changes closeout, post-merge)
+verified: 2026-09-11 · against `main` @ `2d4f404` (project 26-09-11-00-fixes closeout, post-merge)
 
 **What this project changed here, at a glance** — this file did not exist before
 `26-08-22-02-ui-planner-and-token-debt`; `packages/ui/.ai/` had zero prior art, and this task
@@ -296,3 +298,17 @@ cases in the existing `StepBuilderModal.required-gate.test.ts`, landing the gate
 **`426`/`106`/`29` partials / `32`/`11` `__tests__` files** (fact 3's file counts above bumped
 accordingly). `lint:tokens` is unmoved (`59 violations in 18 files`, baseline `59`) — no CSS
 touched.
+
+**`26-09-11-00-fixes`'s T1.1.1** added `YamlEditor.tsx` (`src/`), a CodeMirror 6 YAML editor
+mirroring `JsonEditor.tsx`'s exact structure — theme block, `basicSetup`, the `readOnly`/`editable`
+a11y split, the `copyable` button reusing `Copyable.tsx`/`use-copy.ts` — minus the lint/validity path
+(`onValidChange`/`onValidityChange`/`lintGutter`/`jsonParseLinter`, deliberately: D-T0.0-4). This is
+the first CodeMirror-6 editor added to this package since `JsonEditor.tsx`/`CodeEditor.tsx`
+themselves; there is no third one and no precedent anywhere else in the workspace (grepped both
+`packages/ui/src` and `packages/studio/src` for `codemirror`/`lang-yaml` before building — zero
+hits). New dependency: `@codemirror/lang-yaml@^6.1.2` (resolved `6.1.3`), verified compatible with
+the `@codemirror/*` versions already pinned here. Barrel-exported from `src/index.ts` (never the
+`/code` subpath — that exists specifically so read-only consumers avoid the CodeMirror dependency
+graph, and both existing editors are already index-barrel-only). Fact 1's top-level `.tsx` count
+moved `14` → `15`; the *Gate baselines* table above reflects the new `109`/`437` totals. `lint:tokens`
+is unmoved (`59 violations in 18 files`, baseline `59`) — no CSS touched.
