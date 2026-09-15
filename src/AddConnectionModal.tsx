@@ -35,19 +35,42 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
   const [resolvingInitial, setResolvingInitial] = useState<boolean>(Boolean(props.initialAppId));
 
   // Opened for a specific app: resolve it to an AppSummary (for the header) and
-  // go straight to the connection fields, skipping the picker.
+  // go straight to the connection fields, skipping the picker. Prefers the
+  // bounded `listAppsByIds([id])` seam (A3) over a full-catalog `listApps()`
+  // scan; a bounded miss falls through to `listApps()` before giving up — the
+  // same fallback whether the id is genuinely missing or the optional method
+  // simply is not wired up on this host (mirrors AppPicker's own capability
+  // fallback), so a real 404 and an unsupported optional method both resolve
+  // to the SAME correct outcome instead of needing to be told apart.
   useEffect(() => {
-    if (!props.initialAppId) return;
+    const id = props.initialAppId;
+    if (!id) return;
     let canceled = false;
-    api
-      .listApps()
-      .then((apps) => {
-        if (!canceled) setSelectedApp(apps.find((a) => a.id === props.initialAppId) ?? null);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!canceled) setResolvingInitial(false);
-      });
+    const finish = (app: AppSummary | null) => {
+      if (canceled) return;
+      setSelectedApp(app);
+      setResolvingInitial(false);
+    };
+    const listAppsByIds = api.listAppsByIds;
+    const fallbackToFullList = () =>
+      api
+        .listApps()
+        .then((apps) => finish(apps.find((a) => a.id === id) ?? null))
+        .catch(() => finish(null));
+    if (listAppsByIds) {
+      listAppsByIds([id])
+        .then((apps) => {
+          const found = apps.find((a) => a.id === id);
+          if (found) {
+            finish(found);
+            return;
+          }
+          return fallbackToFullList();
+        })
+        .catch(() => finish(null));
+    } else {
+      fallbackToFullList();
+    }
     return () => {
       canceled = true;
     };
