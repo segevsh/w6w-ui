@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { CodeBlock } from "../CodeBlock.tsx";
 import { StepStatusPill } from "./StepStatusPill.tsx";
@@ -59,18 +60,49 @@ export function ExecutionLogPanel({ steps, emptyLabel }: ExecutionLogPanelProps)
   );
 }
 
+/**
+ * Collapsed-by-default disclosure per step (REVIEW.md R-1) — reuses
+ * `.w6w-section`'s bordered `<details>` idiom (`ApiCallsPanel.tsx`,
+ * `ParamsForm.tsx`'s `section: "collapsible"`), not a bespoke card. The
+ * `<summary>` is the one-line scan line (pill + label + timing, unchanged
+ * content from the old always-visible row header); Input/Output move inside
+ * the details body, and are only mounted into the DOM once opened — a
+ * closed run of N steps costs N compact rows, not N×2 rendered JSON blocks.
+ *
+ * A step with neither `input` nor `output` has nothing to disclose: it
+ * renders a plain, non-interactive row (still `.w6w-section`-styled for
+ * visual consistency with its siblings) rather than an empty `<details>` a
+ * user opens only to find "Not available." twice (A3).
+ */
 function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
+  const [open, setOpen] = useState(false);
+  const header = (
+    <div className="w6w-execution-log-row-header">
+      <StepStatusPill state={step.status} />
+      <span className="w6w-execution-log-row-label">{step.label ?? step.id}</span>
+      <StepTiming startedAt={step.startedAt} finishedAt={step.finishedAt} />
+    </div>
+  );
+
+  if (step.input === undefined && step.output === undefined) {
+    return (
+      <li className="w6w-execution-log-row">
+        <div className="w6w-section">{header}</div>
+      </li>
+    );
+  }
+
   return (
     <li className="w6w-execution-log-row">
-      <div className="w6w-execution-log-row-header">
-        <StepStatusPill state={step.status} />
-        <span className="w6w-execution-log-row-label">{step.label ?? step.id}</span>
-        <StepTiming startedAt={step.startedAt} finishedAt={step.finishedAt} />
-      </div>
-      <div className="w6w-execution-log-row-body w6w-stack">
-        <ExecutionLogJson title="Input" value={step.input} />
-        <ExecutionLogJson title="Output" value={step.output} />
-      </div>
+      <details className="w6w-section" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+        <summary className="w6w-section-summary">{header}</summary>
+        {open && (
+          <div className="w6w-execution-log-row-body w6w-section-body w6w-stack">
+            <ExecutionLogJson title="Input" value={step.input} />
+            <ExecutionLogJson title="Output" value={step.output} />
+          </div>
+        )}
+      </details>
     </li>
   );
 }

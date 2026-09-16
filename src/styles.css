@@ -3534,7 +3534,14 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
    This panel is a plain in-order list of a priori unbounded rows, closer in
    shape to `.w6w-resolved-table`'s row list — reused here as `.w6w-stack`
    (`_layout.scss`) for the two-block (input/output) stack inside a row,
-   rather than inventing a second vertical-list treatment. */
+   rather than inventing a second vertical-list treatment.
+
+   Each row's own box (border/background/border-radius/padding) comes from
+   `.w6w-section` (`_sections.scss`), reused rather than duplicated here —
+   `ApiCallsPanel.tsx`'s collapsed-by-default `<details>` idiom, applied to
+   this panel's rows (REVIEW.md R-1). This file only adds the row-specific
+   layout `.w6w-section` doesn't know about: the flex line for the summary's
+   pill/label/timing. */
 .w6w-execution-log {
   display: flex;
   flex-direction: column;
@@ -3554,13 +3561,6 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 }
 
 .w6w-execution-log-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--w6w-sp-2);
-  padding: var(--w6w-sp-3);
-  border: 1px solid var(--w6w-border);
-  border-radius: var(--w6w-radius);
-  background: var(--w6w-panel);
   min-width: 0;
 }
 
