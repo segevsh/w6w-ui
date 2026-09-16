@@ -1,10 +1,19 @@
-import { type ReactNode, forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import {
+  type ReactNode,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
+import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { AppIcon } from "./components/AppIcon.tsx";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
@@ -588,6 +597,11 @@ export function StepBuilderModal({
             <AppPicker
               onSelectApp={setSelectedApp}
               theme={theme}
+              // `category="ai"` reaches the server on the bounded paged path
+              // (A2); `filter` is the client-side backstop every mode still
+              // applies — the only path that needs it end-to-end is a legacy
+              // `listApps()`-only host, which never sees `category` at all.
+              category="ai"
               filter={(a) => (appsFilter?.(a) ?? true) && (a.categories?.includes("ai") ?? false)}
               searchPlaceholder="Search AI apps…"
               emptyMessage="No AI apps registered yet."
@@ -677,49 +691,77 @@ function TriggersFlow({
 }
 
 /**
- * "App triggers" section (T-0): lists apps that declare triggers
- * (`api.listTriggerApps`), then — once one is picked — that app's declared
- * triggers (`api.getAppTriggers`). Choosing a trigger calls
- * `api.createSubscription` on an explicit click only; no graph step is added
- * (plan.md D-3 — `onAdd` is never reached from this section).
+ * `AppSummary.triggerCount` is declared on the SDK/wire type
+ * (`@w6w/sdk/console`'s `AppSummary`) but not on this package's own
+ * `types.ts` (`ui/src/types.ts`, read-only reuse site per this task's
+ * contract) — accessed defensively rather than widening that shared type.
+ */
+function hasDeclaredTriggers(a: AppSummary): boolean {
+  return ((a as { triggerCount?: number }).triggerCount ?? 0) > 0;
+}
+
+/**
+ * "App triggers" section (T-0): apps that declare triggers, then — once one
+ * is picked — that app's declared triggers (`api.getAppTriggers`). Choosing a
+ * trigger calls `api.createSubscription` on an explicit click only; no graph
+ * step is added (plan.md D-3 — `onAdd` is never reached from this section).
+ *
+ * **Bounded when the host implements `listAppsPage`** (A2/C3): delegates
+ * straight to `AppPicker`'s own paged mode (no `apps` prop, so AppPicker runs
+ * its own bounded fetch/search/load-more/cancellation) with a client-side
+ * `triggerCount > 0` filter — there is no server-side trigger-only filter, so
+ * pages legitimately without SEE trigger apps stay reachable via search/load
+ * more rather than being auto-drained. Falls back to the legacy
+ * `api.listTriggerApps()` eager fetch, unchanged, for a host that has not
+ * (yet) implemented the bounded seam.
  */
 function AppTriggersSection({ workflowId, onClose }: { workflowId: string; onClose: () => void }) {
   const api = useW6WApi();
-  const [apps, setApps] = useState<AppSummary[] | null>(null);
-  const [appsError, setAppsError] = useState<string | null>(null);
+  const bounded = typeof api.listAppsPage === "function";
+  const [legacyApps, setLegacyApps] = useState<AppSummary[] | null>(null);
+  const [legacyError, setLegacyError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
 
   useEffect(() => {
+    if (bounded) return;
     const load = api.listTriggerApps;
     if (!load) return;
     let canceled = false;
     load()
-      .then((r) => !canceled && setApps(r))
-      .catch((e) => !canceled && setAppsError((e as Error).message));
+      .then((r) => !canceled && setLegacyApps(r))
+      .catch((e) => !canceled && setLegacyError((e as Error).message));
     return () => {
       canceled = true;
     };
-  }, [api]);
+  }, [api, bounded]);
 
-  if (!api.listTriggerApps) return null;
+  if (!bounded && !api.listTriggerApps) return null;
 
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
         <strong>App triggers</strong> — bind one of these apps' declared triggers to this workflow.
       </p>
-      {appsError ? (
-        <div className="w6w-result w6w-error">{appsError}</div>
-      ) : selectedApp ? (
+      {selectedApp ? (
         <AppTriggerPicker
           app={selectedApp}
           workflowId={workflowId}
           onBack={() => setSelectedApp(null)}
           onClose={onClose}
         />
+      ) : bounded ? (
+        <AppPicker
+          onSelectApp={setSelectedApp}
+          filter={hasDeclaredTriggers}
+          search
+          searchPlaceholder="Search apps with triggers…"
+          emptyMessage="No apps declare triggers yet."
+        />
+      ) : legacyError ? (
+        <div className="w6w-result w6w-error">{legacyError}</div>
       ) : (
         <AppPicker
-          apps={apps}
+          apps={legacyApps}
           onSelectApp={setSelectedApp}
           search={false}
           emptyMessage="No apps declare triggers yet."
@@ -1728,32 +1770,75 @@ interface ReadyToUse {
   apps: AppSummary[];
   fns: FunctionSummary[];
   wfs: WorkflowSummary[];
+  /** More connected-app ids remain unresolved — draw an explicit "load more" affordance. */
+  moreApps: boolean;
+  /** Resolve the next bounded batch of connected-app ids. No-op off the bounded path or with nothing left. */
+  loadMoreApps: () => void;
 }
 
+/** Bounded batch size for {@link W6WApi.listAppsByIds} resolution — a handful
+ * per request, never the whole connected-id list at once (A3). */
+const READY_TO_USE_ID_BATCH = 12;
+
+/** A stable, always-empty `Set` — the first batch's "nothing requested yet". */
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
+
+/**
+ * "Ready to use"'s data: distinct connected app ids (A3) resolved in bounded
+ * batches via the optional `listAppsByIds`, plus Functions/Workflows.
+ *
+ * `/connections` already includes a synthetic zero-credential row per
+ * zero-credential-flagged app the caller's tenant can use with no connection
+ * step (`admin/connections.ts`) — so the DISTINCT connection app ids alone are
+ * the full "ready" membership; unlike the old full-catalog scan, no separate
+ * `AppSummary.zeroCredential` check is needed on this path.
+ *
+ * `listAppsByIds` is optional (older/imported providers implement only
+ * `listApps`): capability is `typeof api.listAppsByIds === "function"`
+ * ALONE — never inferred from a runtime result. A first batch that resolves
+ * to an empty array is a LEGITIMATE answer from a fully-working
+ * `listAppsByIds` (every connected app was since deleted from the catalog,
+ * an ordinary case) and must be shown as such, not treated as evidence the
+ * optional method "isn't really implemented" (T2.1.1 ROUND 2 — that
+ * conflation previously made a correct, well-typed empty result permanently
+ * fall back to the unbounded `listApps()` for the rest of the component's
+ * lifetime, the exact "one request per entire catalog at open" A3 forbids).
+ * When the method is genuinely absent, this hook falls back to the ORIGINAL
+ * full-catalog scan (`listApps()` + the zero-credential check), unchanged.
+ */
 function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
   appsFilter?: (app: AppSummary) => boolean,
 ): ReadyToUse {
   const api = useW6WApi();
-  const [connectedIds, setConnectedIds] = useState<Set<string> | null>(null);
+  const [connectedIds, setConnectedIds] = useState<string[] | null>(null);
   const [allApps, setAllApps] = useState<AppSummary[] | null>(null);
   const [fns, setFns] = useState<FunctionSummary[] | null>(null);
   const [wfs, setWfs] = useState<WorkflowSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resolved, setResolved] = useState<Map<string, AppSummary>>(() => new Map());
+  const [requestedIds, setRequestedIds] = useState<Set<string>>(() => new Set());
 
   const wantFns = callables.includes("function");
   const wantWfs = callables.includes("workflow");
+  const bounded = typeof api.listAppsByIds === "function";
 
   useEffect(() => {
     let canceled = false;
     const fail = (e: unknown) => !canceled && setError((e as Error).message);
     api
       .listConnections()
-      .then((conns) => !canceled && setConnectedIds(new Set(conns.map((c) => c.appId))))
-      .catch(fail);
-    api
-      .listApps()
-      .then((r) => !canceled && setAllApps(r))
+      .then((conns) => {
+        if (canceled) return;
+        const ids: string[] = [];
+        const seen = new Set<string>();
+        for (const c of conns) {
+          if (isInternalApp(c.appId) || seen.has(c.appId)) continue;
+          seen.add(c.appId);
+          ids.push(c.appId);
+        }
+        setConnectedIds(ids);
+      })
       .catch(fail);
     // A family this picker does not offer is never fetched, and resolves to an
     // empty list so the readiness check below still completes.
@@ -1774,9 +1859,92 @@ function useReadyToUse(
     };
   }, [api, wantFns, wantWfs]);
 
-  if (error) return { state: "error", error, apps: [], fns: [], wfs: [] };
-  if (connectedIds === null || allApps === null || fns === null || wfs === null) {
-    return { state: "loading", apps: [], fns: [], wfs: [] };
+  // Legacy full-catalog fallback — fetched only when there is no bounded id
+  // lookup to use instead, never alongside it.
+  useEffect(() => {
+    if (bounded) return;
+    let canceled = false;
+    api
+      .listApps()
+      .then((r) => !canceled && setAllApps(r))
+      .catch((e) => !canceled && setError((e as Error).message));
+    return () => {
+      canceled = true;
+    };
+  }, [api, bounded]);
+
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+
+  const resolveBatch = useCallback(
+    (batch: string[]) => {
+      const listAppsByIds = api.listAppsByIds;
+      if (!listAppsByIds || batch.length === 0) return;
+      listAppsByIds(batch)
+        .then((apps) => {
+          if (!mountedRef.current) return;
+          // An empty result (every requested id was a 404) is a legitimate
+          // answer, not evidence the optional method "isn't really
+          // implemented" — see this hook's own doc-comment above. It is
+          // recorded as resolved (nothing to show for this batch) exactly
+          // like a batch with some, but not all, ids found.
+          setResolved((prev) => {
+            const next = new Map(prev);
+            for (const a of apps) next.set(a.id, a);
+            return next;
+          });
+          setRequestedIds((prev) => new Set([...prev, ...batch]));
+        })
+        .catch((e) => mountedRef.current && setError((e as Error).message));
+    },
+    [api],
+  );
+
+  // Exactly ONE automatic batch, the moment connected ids first arrive —
+  // every subsequent batch is explicit, via `loadMoreApps` (A3: "never one
+  // request per entire catalog at open"). Guarded by a ref (not `requestedIds`
+  // itself) so a re-render before the first batch resolves can never start a
+  // second, duplicate first-batch request.
+  const firstBatchStartedRef = useRef(false);
+  useEffect(() => {
+    if (!bounded || connectedIds === null || firstBatchStartedRef.current) return;
+    const batch = nextIdBatch(connectedIds, EMPTY_ID_SET, READY_TO_USE_ID_BATCH);
+    if (batch.length === 0) return;
+    firstBatchStartedRef.current = true;
+    resolveBatch(batch);
+  }, [bounded, connectedIds, resolveBatch]);
+
+  const loadMoreApps = () => {
+    if (!bounded || connectedIds === null) return;
+    resolveBatch(nextIdBatch(connectedIds, requestedIds, READY_TO_USE_ID_BATCH));
+  };
+
+  if (error)
+    return { state: "error", error, apps: [], fns: [], wfs: [], moreApps: false, loadMoreApps };
+  if (fns === null || wfs === null) {
+    return { state: "loading", apps: [], fns: [], wfs: [], moreApps: false, loadMoreApps };
+  }
+
+  if (bounded) {
+    if (connectedIds === null) {
+      return { state: "loading", apps: [], fns, wfs, moreApps: false, loadMoreApps };
+    }
+    if (connectedIds.length > 0 && requestedIds.size === 0) {
+      return { state: "loading", apps: [], fns, wfs, moreApps: false, loadMoreApps };
+    }
+    const apps = mergeResolvedApps(connectedIds, resolved).filter((a) => appsFilter?.(a) ?? true);
+    const moreApps = nextIdBatch(connectedIds, requestedIds, 1).length > 0;
+    const empty = apps.length === 0 && fns.length === 0 && wfs.length === 0 && !moreApps;
+    return { state: empty ? "empty" : "ready", apps, fns, wfs, moreApps, loadMoreApps };
+  }
+
+  if (allApps === null) {
+    return { state: "loading", apps: [], fns, wfs, moreApps: false, loadMoreApps };
   }
   // Reserved `@w6w/*` pseudo-apps are never connectable — they are added from
   // the Controls/Utilities tabs, exactly as `AppPicker` excludes them.
@@ -1784,16 +1952,20 @@ function useReadyToUse(
   // "Ready to use" means EITHER an actual Connection exists OR the app needs
   // none at all — a zero-credential-flagged app's whole point is that its
   // tenant's users get the declared tenantAuth/jit path with no connection
-  // step, so requiring `connectedIds.has(a.id)` alone hid it from the one tab
-  // it is MOST meant to appear in.
+  // step, so requiring membership in `connectedIds` alone hid it from the one
+  // tab it is MOST meant to appear in. This full-catalog fallback path is the
+  // ONLY place that check still needs `AppSummary.zeroCredential` directly —
+  // the bounded path above gets zero-credential membership from `/connections`'
+  // own synthetic rows instead (see this function's doc comment).
+  const connectedSet = new Set(connectedIds ?? []);
   const apps = allApps.filter(
     (a) =>
       !isInternalApp(a.id) &&
       (appsFilter?.(a) ?? true) &&
-      (connectedIds.has(a.id) || a.zeroCredential === true),
+      (connectedSet.has(a.id) || a.zeroCredential === true),
   );
   const empty = apps.length === 0 && fns.length === 0 && wfs.length === 0;
-  return { state: empty ? "empty" : "ready", apps, fns, wfs };
+  return { state: empty ? "empty" : "ready", apps, fns, wfs, moreApps: false, loadMoreApps };
 }
 
 /** Sort helper — by display label, case-insensitively. */
@@ -1902,31 +2074,43 @@ function ReadyToUseFlow({
       </section>
     );
 
-  const left = column(
-    "Connected apps",
-    apps.map((a) => (
+  const leftRows: ReactNode[] = apps.map((a) => (
+    <button
+      key={a.id}
+      type="button"
+      className="w6w-stepbuilder-item"
+      data-kind="app"
+      onClick={() => onSelectApp(a)}
+    >
+      <AppIcon
+        src={a.iconSvg}
+        srcDark={a.iconSvgDark}
+        brandColor={a.brandColor}
+        name={a.displayName}
+        theme={theme}
+        size={24}
+      />
+      <span className="w6w-stepbuilder-item-main">
+        <strong>{a.displayName}</strong>
+        <code className="w6w-muted w6w-small">{a.id}</code>
+      </span>
+    </button>
+  ));
+  // A3: further connected-app ids remain unresolved — an explicit affordance,
+  // never an automatic drain of the rest of the connected-id list.
+  if (data.moreApps) {
+    leftRows.push(
       <button
-        key={a.id}
+        key="__load_more_apps"
         type="button"
-        className="w6w-stepbuilder-item"
-        data-kind="app"
-        onClick={() => onSelectApp(a)}
+        className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+        onClick={data.loadMoreApps}
       >
-        <AppIcon
-          src={a.iconSvg}
-          srcDark={a.iconSvgDark}
-          brandColor={a.brandColor}
-          name={a.displayName}
-          theme={theme}
-          size={24}
-        />
-        <span className="w6w-stepbuilder-item-main">
-          <strong>{a.displayName}</strong>
-          <code className="w6w-muted w6w-small">{a.id}</code>
-        </span>
-      </button>
-    )),
-  );
+        Load more
+      </button>,
+    );
+  }
+  const left = column("Connected apps", leftRows);
 
   // Functions above Workflows — the order the intake draws them in.
   const right = [
