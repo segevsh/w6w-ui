@@ -106,19 +106,20 @@ export function AppPicker({
   // `undefined` means "not supplied" — a supplied `null` is a caller whose own
   // fetch has not resolved yet, which must NOT start a second one.
   const supplied = providedApps !== undefined;
-  // Flipped once, permanently, the first time `listAppsPage` answers with a
-  // response this component cannot use at all (not an array of apps) on a
-  // FIRST page (no cursor) — i.e. the optional method is present but does not
-  // actually behave like one. A capability check can only see `typeof ===
-  // "function"`; it cannot see through a catch-all stub that answers every
-  // unknown method name with a callable default (several test/browser
-  // harnesses in this package do exactly that for members they do not model).
-  // Falling back to the always-present `listApps()` in that specific case is
-  // materially different from "malformed page envelope" (A6): that clause is
-  // about a genuinely bounded host misbehaving mid-session, not about an
-  // optional member that was never really implemented in the first place.
-  const [pagedUnsupported, setPagedUnsupported] = useState(false);
-  const paged = !supplied && typeof api.listAppsPage === "function" && !pagedUnsupported;
+  // Capability detection is `typeof === "function"` ONLY — never inferred
+  // from a runtime response shape. A response this component cannot use (not
+  // an array of apps), on a first page or a load-more alike, is a retryable
+  // safe error (A6), never evidence that the optional method "isn't really
+  // implemented": that conflation previously let one transiently-malformed
+  // response permanently and silently revert a genuinely bounded host to the
+  // unbounded `listApps()` for the rest of the component's lifetime, tainting
+  // every tab sharing this mounted instance (T2.1.1 ROUND 2). A host that
+  // truly lacks `listAppsPage` must answer `undefined` for it, not a callable
+  // stub that returns the wrong shape — see the fixed test fixtures this
+  // package's own suites now use (`StepBuilderModal.connection-only/
+  // homepage-tabs/template-node.test.ts`) rather than working around a
+  // stub's shape in production semantics.
+  const paged = !supplied && typeof api.listAppsPage === "function";
 
   // ── Mode 3: legacy eager full-catalog fetch (unchanged, plus the fallback above) ──
   const [fetchedApps, setFetchedApps] = useState<AppSummary[] | null>(null);
@@ -168,18 +169,12 @@ export function AppPicker({
         .then((page) => {
           if (generationRef.current !== generation) return; // stale: a newer query/unmount won
           if (!page || !Array.isArray((page as { apps?: unknown }).apps)) {
-            if (cursor === undefined) {
-              // First page of this generation ever came back unusable — treat
-              // the optional method as effectively unimplemented rather than
-              // showing an error for what is, from the host's perspective, a
-              // perfectly working `listApps()`-only provider.
-              setPagedUnsupported(true);
-              return;
-            }
-            // A6: a malformed envelope on a "load more" — the host already
-            // proved it CAN answer correctly (the first page loaded) — is a
-            // safe, retryable error, never a crash and never silently treated
-            // as an empty terminal page. Already-shown apps are preserved.
+            // A6: a malformed envelope — first page or "load more" alike — is
+            // always a safe, retryable error, never a crash and never treated
+            // as proof the optional method "isn't really implemented" (that
+            // capability question is `typeof api.listAppsPage === "function"`
+            // alone, checked once above `paged`'s definition). Already-shown
+            // apps (if any) are preserved.
             dispatch({
               type: "page-failed",
               generation,

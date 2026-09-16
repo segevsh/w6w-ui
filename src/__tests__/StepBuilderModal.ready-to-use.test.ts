@@ -204,6 +204,55 @@ test("bounded: a missing/404 id is silently omitted, not shown as an error", asy
   await act(async () => root.unmount());
 });
 
+test("bounded: an all-404 FIRST batch is a legitimate empty result, never a fallback to listApps()", async () => {
+  // T2.1.1 ROUND 2: every connected app was since deleted from the catalog —
+  // an ordinary real-world case, not a stub artifact. A fully-implemented,
+  // well-typed `listAppsByIds` that correctly resolves every id to nothing
+  // must never be treated as evidence the optional method "isn't really
+  // implemented"; `bounded` is `typeof listAppsByIds === "function"` alone.
+  //
+  // An all-404 batch also makes "Ready to use" itself report `state ===
+  // "empty"` (nothing resolved, no Functions/Workflows either), which flips
+  // the modal's OWN default tab to Apps (existing, unrelated behavior) — so
+  // this fixture also declares a valid (empty) `listAppsPage` for the Apps
+  // tab's OWN bounded fetch, keeping `listApps()` genuinely unreachable from
+  // EITHER path, rather than a throwing stub that would also poison the
+  // Apps tab's legitimate, unrelated fetch.
+  let byIdsCalls = 0;
+  const api = {
+    listConnections: async () => [
+      { id: "c1", appId: "deleted-app-1" },
+      { id: "c2", appId: "deleted-app-2" },
+    ],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: async () => {
+      byIdsCalls += 1;
+      return [];
+    },
+    listAppsPage: async () => ({ apps: [], nextCursor: undefined }),
+    listApps: async () => {
+      throw new Error("listApps must not be called on the bounded path");
+    },
+  };
+  const { container, root } = mount(api);
+  await render({ container, root, api, props: {} });
+
+  assert.equal(
+    byIdsCalls,
+    1,
+    "exactly one bounded batch request on open, never a catalog fallback",
+  );
+  assert.deepEqual(readConnectedAppIds(container), []);
+  assert.equal(container.querySelector(".w6w-error"), null);
+  assert.equal(
+    findLoadMore(container),
+    undefined,
+    "nothing left unresolved ⇒ no Load more affordance",
+  );
+  await act(async () => root.unmount());
+});
+
 test("bounded: appsFilter narrows the resolved batch, exactly as the legacy full-catalog path did", async () => {
   const api = {
     listConnections: async () => [

@@ -168,6 +168,15 @@ const api: unknown = new Proxy(
   {
     get(t: Record<string, unknown>, k: string) {
       if (k in t) return t[k];
+      // T2.1.1 ROUND 2 (same fix as D-17's three StepBuilderModal fixtures):
+      // `listAppsPage`/`listAppsByIds` are optional NEW members — an absent
+      // optional method must answer `undefined` (a real capability check),
+      // never a callable stub returning the wrong shape, which the product
+      // now correctly treats as a retryable malformed-response ERROR rather
+      // than silent permanent legacy fallback. This fixture predates those
+      // members; every other unmodeled member keeps its original
+      // empty-array stub, unchanged.
+      if (k === "listAppsPage" || k === "listAppsByIds") return undefined;
       return () => Promise.resolve([]);
     },
   },

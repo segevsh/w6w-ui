@@ -272,20 +272,23 @@ test("a repeated/non-advancing cursor from the server does not loop or duplicate
   await act(async () => root.unmount());
 });
 
-test("a malformed FIRST page falls back to listApps() — the optional method is treated as unimplemented, not a crash or a picker-wide error", async () => {
-  // A host whose `listAppsPage` answers with the wrong shape on the very
-  // first page (no cursor) is indistinguishable, from this component's
-  // perspective, from a host that never really implemented the optional
-  // method — several harnesses in this package expose every unmodelled
-  // member as a callable default for exactly this reason. Never throw, and
-  // never show an error for what is, underneath, a working `listApps()`.
-  let legacyCalls = 0;
+test("a malformed FIRST page is a retryable safe error, never a permanent capability fallback — retry succeeds", async () => {
+  // T2.1.1 ROUND 2: capability is `typeof listAppsPage === "function"`
+  // ALONE — a wrong-shape response, first page or not, is always a visible,
+  // retryable error (A6), never silent permanent reversion to the unbounded
+  // `listApps()` (a host genuinely lacking the method must answer
+  // `undefined` for it — see the fixed D-17 fixtures).
+  let pageCalls = 0;
   const api = {
     listApps: async () => {
-      legacyCalls += 1;
-      return [{ id: "legacy", displayName: "Legacy" }];
+      throw new Error("listApps must never be called — listAppsPage exists and must be retried");
     },
-    listAppsPage: () => Promise.resolve([]) as unknown as Promise<{ apps: AppSummaryLike[] }>,
+    listAppsPage: () => {
+      pageCalls += 1;
+      if (pageCalls === 1)
+        return Promise.resolve([]) as unknown as Promise<{ apps: AppSummaryLike[] }>;
+      return Promise.resolve({ apps: [{ id: "recovered", displayName: "Recovered" }] });
+    },
   };
   const { container, root } = mount(React.createElement("div"));
   await act(async () => {
@@ -298,11 +301,80 @@ test("a malformed FIRST page falls back to listApps() — the optional method is
     );
   });
   await flush();
-  await flush(); // one extra tick for the fallback effect's own fetch to settle
 
-  assert.equal(legacyCalls, 1);
-  assert.deepEqual(cardIds(container), ["legacy"]);
+  assert.equal(pageCalls, 1);
+  assert.deepEqual(cardIds(container), []);
+  assert.ok(
+    container.querySelector(".w6w-error"),
+    "a malformed first page must show a visible, safe error state",
+  );
+  const retry = () =>
+    Array.from(container.querySelectorAll("button")).find(
+      (b) => (b.textContent || "").trim() === "Retry",
+    ) as HTMLElement | undefined;
+  assert.ok(retry(), "a Retry action must be offered, not a silent fallback");
+
+  await act(async () => {
+    retry()?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  assert.equal(pageCalls, 2);
+  assert.deepEqual(cardIds(container), ["recovered"]);
   assert.equal(container.querySelector(".w6w-error"), null);
+  await act(async () => root.unmount());
+});
+
+test("Apps→AI tab switch (the SAME mounted AppPicker instance) recovers cleanly from a malformed Apps response", async () => {
+  // StepBuilderModal renders Apps and AI into the same <AppPicker> JSX slot
+  // (same React instance across a tab switch) — a malformed response on one
+  // tab must never taint the other, since capability is checked once, not
+  // re-derived from whichever tab happened to respond first.
+  let listAppsCalls = 0;
+  let listTriggerAppsCalls = 0;
+  const api = {
+    listApps: async () => {
+      listAppsCalls += 1;
+      return [];
+    },
+    listTriggerApps: async () => {
+      listTriggerAppsCalls += 1;
+      return [];
+    },
+    listAppsPage: (options?: ListAppsPageOptionsLike) => {
+      if (options?.category === "ai") {
+        return Promise.resolve({ apps: [{ id: "ai-app", displayName: "AI App" }] });
+      }
+      return Promise.resolve([]) as unknown as Promise<{ apps: AppSummaryLike[] }>;
+    },
+  };
+  const { container, root } = mount(React.createElement("div"));
+  const renderWithCategory = (category: string | undefined) =>
+    act(async () => {
+      root.render(
+        React.createElement(
+          W6WUIProvider,
+          { api, children: null } as never,
+          React.createElement(AppPicker, {
+            onSelectApp: () => {},
+            pageLimit: 2,
+            category,
+          } as never),
+        ),
+      );
+    });
+
+  await renderWithCategory(undefined); // Apps tab: malformed response
+  await flush();
+  assert.ok(container.querySelector(".w6w-error"), "Apps tab shows the malformed-page error");
+
+  await renderWithCategory("ai"); // AI tab, same mounted instance
+  await flush();
+
+  assert.deepEqual(cardIds(container), ["ai-app"], "the AI tab must recover on the same instance");
+  assert.equal(container.querySelector(".w6w-error"), null);
+  assert.equal(listAppsCalls, 0, "the legacy full-catalog fetch must never fire");
+  assert.equal(listTriggerAppsCalls, 0, "the legacy trigger-catalog fetch must never fire");
   await act(async () => root.unmount());
 });
 

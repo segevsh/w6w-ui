@@ -80,6 +80,10 @@ function fakeApi() {
     {
       get(t, k: string) {
         if (k in t) return t[k];
+        // T2.1.1 D-17: see `StepBuilderModal.connection-only.test.ts`'s
+        // identical fix — `listAppsPage`/`listAppsByIds` must answer
+        // `undefined` (genuinely absent), not a wrong-shape callable stub.
+        if (k === "listAppsPage" || k === "listAppsByIds") return undefined;
         return () => Promise.resolve([]);
       },
     },

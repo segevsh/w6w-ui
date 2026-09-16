@@ -1794,11 +1794,17 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set();
  * `AppSummary.zeroCredential` check is needed on this path.
  *
  * `listAppsByIds` is optional (older/imported providers implement only
- * `listApps`): when absent, or when its first bounded batch resolves to
- * nothing at all for a non-empty id list — the same "an optional method
- * exists but is not really wired up" signal `AppPicker`'s paged mode treats
- * identically — this hook falls back to the ORIGINAL full-catalog scan
- * (`listApps()` + the zero-credential check), unchanged.
+ * `listApps`): capability is `typeof api.listAppsByIds === "function"`
+ * ALONE — never inferred from a runtime result. A first batch that resolves
+ * to an empty array is a LEGITIMATE answer from a fully-working
+ * `listAppsByIds` (every connected app was since deleted from the catalog,
+ * an ordinary case) and must be shown as such, not treated as evidence the
+ * optional method "isn't really implemented" (T2.1.1 ROUND 2 — that
+ * conflation previously made a correct, well-typed empty result permanently
+ * fall back to the unbounded `listApps()` for the rest of the component's
+ * lifetime, the exact "one request per entire catalog at open" A3 forbids).
+ * When the method is genuinely absent, this hook falls back to the ORIGINAL
+ * full-catalog scan (`listApps()` + the zero-credential check), unchanged.
  */
 function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
@@ -1812,11 +1818,10 @@ function useReadyToUse(
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Map<string, AppSummary>>(() => new Map());
   const [requestedIds, setRequestedIds] = useState<Set<string>>(() => new Set());
-  const [idsUnsupported, setIdsUnsupported] = useState(false);
 
   const wantFns = callables.includes("function");
   const wantWfs = callables.includes("workflow");
-  const bounded = typeof api.listAppsByIds === "function" && !idsUnsupported;
+  const bounded = typeof api.listAppsByIds === "function";
 
   useEffect(() => {
     let canceled = false;
@@ -1876,23 +1881,18 @@ function useReadyToUse(
     [],
   );
 
-  // `isFirstBatch` is passed explicitly (not read off `requestedIds` inside
-  // the closure) so this callback's identity can stay stable on `[api]` alone
-  // — reading `requestedIds` here would force every caller (including the
-  // mount effect below) to re-run on each batch, which is harmless but noisy.
   const resolveBatch = useCallback(
-    (batch: string[], isFirstBatch: boolean) => {
+    (batch: string[]) => {
       const listAppsByIds = api.listAppsByIds;
       if (!listAppsByIds || batch.length === 0) return;
       listAppsByIds(batch)
         .then((apps) => {
           if (!mountedRef.current) return;
-          if (apps.length === 0 && isFirstBatch) {
-            // The same "an optional method exists but is not really wired
-            // up" signal AppPicker's paged-mode detection uses.
-            setIdsUnsupported(true);
-            return;
-          }
+          // An empty result (every requested id was a 404) is a legitimate
+          // answer, not evidence the optional method "isn't really
+          // implemented" — see this hook's own doc-comment above. It is
+          // recorded as resolved (nothing to show for this batch) exactly
+          // like a batch with some, but not all, ids found.
           setResolved((prev) => {
             const next = new Map(prev);
             for (const a of apps) next.set(a.id, a);
@@ -1916,12 +1916,12 @@ function useReadyToUse(
     const batch = nextIdBatch(connectedIds, EMPTY_ID_SET, READY_TO_USE_ID_BATCH);
     if (batch.length === 0) return;
     firstBatchStartedRef.current = true;
-    resolveBatch(batch, true);
+    resolveBatch(batch);
   }, [bounded, connectedIds, resolveBatch]);
 
   const loadMoreApps = () => {
     if (!bounded || connectedIds === null) return;
-    resolveBatch(nextIdBatch(connectedIds, requestedIds, READY_TO_USE_ID_BATCH), false);
+    resolveBatch(nextIdBatch(connectedIds, requestedIds, READY_TO_USE_ID_BATCH));
   };
 
   if (error)
