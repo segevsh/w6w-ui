@@ -7,6 +7,7 @@
 // component's own doc comment) mounts no CodeMirror, only `<pre><code>` plus
 // `Copyable`'s plain DOM listeners.
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import type { ExecutionLogPanelProps, ExecutionLogStep } from "../ExecutionLogPanel.tsx";
@@ -85,6 +86,31 @@ async function renderPanel(props: ExecutionLogPanelProps) {
   return html;
 }
 
+/** Like `renderPanel`, but keeps the root mounted so a test can interact
+ *  with the live DOM (e.g. open a row's `<details>`) before reading html. */
+async function mountPanel(props: ExecutionLogPanelProps) {
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(React.createElement(ExecutionLogPanel, props));
+  });
+  return { container, root };
+}
+
+/** Clicks the Nth row's `<summary>` — the real user gesture that opens a
+ *  `.w6w-section` disclosure — and waits out the native `toggle` event,
+ *  which jsdom (like real browsers) dispatches asynchronously rather than
+ *  synchronously with the click. */
+async function openDetailsAt(container: HTMLElement, index: number) {
+  const details = container.querySelectorAll("details")[index];
+  assert.ok(details, `expected a <details> element at index ${index}`);
+  const summary = details.querySelector("summary");
+  assert.ok(summary, "expected a <summary> inside the details element");
+  await act(async () => {
+    summary.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 const ALL_STATES: StepStatus[] = ["pending", "running", "succeeded", "failed", "skipped"];
 const DEFAULT_LABELS: Record<StepStatus, string> = {
   pending: "Pending",
@@ -148,7 +174,7 @@ test("A2 — empty list renders without throwing, and shows an empty state, not 
   assert.doesNotMatch(html, /w6w-execution-log-row/);
 });
 
-test("A2 — a run with zero finished steps (pending, no timing/input/output) renders without throwing", async () => {
+test("A2/A3 — a run with zero finished steps (pending, no timing/input/output) renders without throwing, and neither row gets an expand affordance", async () => {
   const steps: ExecutionLogStep[] = [
     { id: "s1", status: "pending" },
     { id: "s2", status: "pending" },
@@ -160,10 +186,29 @@ test("A2 — a run with zero finished steps (pending, no timing/input/output) re
     2,
     "both rows must show the pending pill",
   );
-  assert.equal(
-    html.split("Not available.").length - 1,
-    4,
-    "two rows × (input + output) each unavailable",
+  assert.doesNotMatch(
+    html,
+    /<details/,
+    "neither row has input or output — no <details> disclosure to render at all",
+  );
+  assert.doesNotMatch(
+    html,
+    /Not available\./,
+    "no empty disclosure body should render 'Not available.' — the row itself renders nothing to disclose",
+  );
+});
+
+test("A3/M4 — a step with neither input nor output has no expand affordance at all", async () => {
+  const html = await renderPanel({ steps: [{ id: "s", status: "succeeded" }] });
+  assert.doesNotMatch(
+    html,
+    /<details/,
+    "expected no <details> element for a step with no input/output",
+  );
+  assert.doesNotMatch(
+    html,
+    /<summary/,
+    "expected no summary/toggle for a step with no input/output",
   );
 });
 
@@ -193,8 +238,35 @@ test("A2 — timing: both timestamps + elapsed when known, 'Started …' with on
   assert.match(htmlNeither, /class="w6w-execution-log-timing">—</);
 });
 
-test("A3 — input/output render through CodeBlock's structured idiom, never a bare w6w-result <pre> dump", async () => {
+test("A2/M3 — the closed row's always-visible summary shows the label AND the timing, not either dropped", async () => {
   const html = await renderPanel({ steps: [RUN_LONGER] });
+  assert.match(html, /Z step/, "expected the step label to be visible while collapsed");
+  assert.match(html, /1\.2s/, "expected the elapsed timing to be visible while collapsed");
+  assert.doesNotMatch(
+    html,
+    /class="w6w-execution-log-timing">—</,
+    "must not fall back to the dash timing when timing is actually known",
+  );
+});
+
+test("A1/M1 — a step with input/output starts with no `open` attribute on its <details> (collapsed by default)", async () => {
+  const html = await renderPanel({ steps: [RUN_LONGER] });
+  const detailsTag = html.match(/<details[^>]*>/);
+  assert.ok(detailsTag, "expected a <details> element for a step with input/output");
+  assert.doesNotMatch(
+    detailsTag[0],
+    /\bopen\b/,
+    `expected no "open" attribute on a freshly rendered row, got: ${detailsTag[0]}`,
+  );
+});
+
+test("A3 — input/output render through CodeBlock's structured idiom once opened, never a bare w6w-result <pre> dump", async () => {
+  const { container, root } = await mountPanel({ steps: [RUN_LONGER] });
+  await openDetailsAt(container, 0);
+  const html = container.innerHTML;
+  await act(async () => {
+    root.unmount();
+  });
   assert.match(html, /w6w-code-block/, "expected CodeBlock's own className to appear");
   assert.doesNotMatch(
     html,
@@ -205,7 +277,62 @@ test("A3 — input/output render through CodeBlock's structured idiom, never a b
   assert.match(html, /abc123/, "the output value must actually be rendered");
 });
 
+test("A5/M2 — a collapsed row renders no CodeBlock/JSON content in the DOM at all until opened", async () => {
+  const { container, root } = await mountPanel({ steps: [RUN_LONGER] });
+
+  const closedHtml = container.innerHTML;
+  assert.doesNotMatch(closedHtml, /w6w-code-block/, "no CodeBlock should mount while collapsed");
+  assert.doesNotMatch(
+    closedHtml,
+    /a@example\.com/,
+    "the input value must not be present in the DOM while collapsed",
+  );
+  assert.doesNotMatch(
+    closedHtml,
+    /abc123/,
+    "the output value must not be present in the DOM while collapsed",
+  );
+
+  await openDetailsAt(container, 0);
+  const openHtml = container.innerHTML;
+  await act(async () => {
+    root.unmount();
+  });
+
+  assert.match(openHtml, /w6w-code-block/, "CodeBlock must mount once the row is opened");
+  assert.match(openHtml, /a@example\.com/, "the input value must appear once opened");
+  assert.match(openHtml, /abc123/, "the output value must appear once opened");
+});
+
 test("A4 — no inline colour/position:fixed literal reaches the markup", async () => {
   const html = await renderPanel({ steps: [RUN_LONGER] });
   assert.doesNotMatch(html, /position:\s*fixed/);
+});
+
+test("A4/M5 — _execution-log.scss does not redefine .w6w-section's border/background/border-radius/padding on the row selector", async () => {
+  const scssUrl = new URL("../../styles/_execution-log.scss", import.meta.url);
+  const scss = await readFile(scssUrl, "utf8");
+  const rowRule = scss.match(/\.w6w-execution-log-row\s*\{([^}]*)\}/);
+  assert.ok(rowRule, "expected a `.w6w-execution-log-row { ... }` rule in _execution-log.scss");
+  const body = rowRule[1];
+  assert.doesNotMatch(
+    body,
+    /\bborder\s*:/,
+    "border must come from .w6w-section, not be redefined here",
+  );
+  assert.doesNotMatch(
+    body,
+    /\bbackground\s*:/,
+    "background must come from .w6w-section, not be redefined here",
+  );
+  assert.doesNotMatch(
+    body,
+    /\bborder-radius\s*:/,
+    "border-radius must come from .w6w-section, not be redefined here",
+  );
+  assert.doesNotMatch(
+    body,
+    /\bpadding\s*:/,
+    "padding must come from .w6w-section, not be redefined here",
+  );
 });
