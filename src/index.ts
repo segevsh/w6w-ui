@@ -6,7 +6,14 @@
  */
 
 export { W6WUIProvider, useW6WApi } from "./provider.tsx";
-export type { StepTest, TestRunSummary, W6WApi, W6WUIProviderProps } from "./provider.tsx";
+export type {
+  AppsPageResult,
+  ListAppsPageOptions,
+  StepTest,
+  TestRunSummary,
+  W6WApi,
+  W6WUIProviderProps,
+} from "./provider.tsx";
 
 export { createW6WApi, ApiError } from "./createW6WApi.ts";
 export type { CreateW6WApiOptions } from "./createW6WApi.ts";

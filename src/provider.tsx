@@ -116,9 +116,58 @@ export interface RequestOverrides {
  * new members are added at the end so consumer implementations only need to
  * grow when they want to use the new component.
  */
+/**
+ * Options for {@link W6WApi.listAppsPage} — one bounded, server-paged
+ * request. Every member is optional; an omitted member is a host-defined
+ * default (usually "no filter"/"first page"), never a client-side guess.
+ */
+export interface ListAppsPageOptions {
+  /** Full-text search term, forwarded to the server verbatim. */
+  q?: string;
+  /** Server-side category filter (e.g. `"ai"`). */
+  category?: string;
+  /** Opaque pagination cursor from a prior {@link AppsPageResult.nextCursor}. */
+  cursor?: string;
+  /** Page size; a host may clamp this to its own bounds. */
+  limit?: number;
+  /** Ask the host for a bounded picker-summary projection (heavy fields like inline icons may be trimmed). */
+  compact?: boolean;
+  /** Abort this request. Local request control only; never a wire field. */
+  signal?: AbortSignal;
+}
+
+/** One page of apps, as returned by {@link W6WApi.listAppsPage}. */
+export interface AppsPageResult {
+  apps: AppSummary[];
+  /** Present unless this is the last page. */
+  nextCursor?: string;
+}
+
 export interface W6WApi {
   /** List registered apps to pick from in the connection modal. */
   listApps(): Promise<AppSummary[]>;
+
+  /**
+   * Fetch ONE bounded, server-paged slice of the app catalog — the seam every
+   * bounded picker UI (`AppPicker`'s paged mode, `StepBuilderModal`'s
+   * Apps/AI/Triggers tabs) prefers over {@link listApps} when a host
+   * implements it. OPTIONAL and ADDITIVE: an older/imported provider that
+   * only implements `listApps` still typechecks and simply keeps the
+   * eager-list behavior everywhere this member is absent.
+   */
+  listAppsPage?(options?: ListAppsPageOptions): Promise<AppsPageResult>;
+
+  /**
+   * Resolve a bounded, explicit set of app ids to their summaries — the seam
+   * behind the "Ready to use" tab's connected-app batching and
+   * `AddConnectionModal`'s `initialAppId` resolution: a caller that already
+   * knows exactly which ids it needs never has to fetch (or filter) the whole
+   * catalog to find them. OPTIONAL, like {@link listAppsPage}: absent, a
+   * caller falls back to its pre-existing `listApps`-based resolution.
+   * Missing/404 ids are simply omitted from the result, never an error for
+   * the whole batch.
+   */
+  listAppsByIds?(ids: readonly string[], options?: { signal?: AbortSignal }): Promise<AppSummary[]>;
 
   /** Load auth methods declared by an app's manifest, with availability flags. */
   getAppAuth(appId: string): Promise<AuthDef[]>;

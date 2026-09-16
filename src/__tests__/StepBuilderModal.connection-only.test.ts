@@ -96,6 +96,14 @@ function makeApi(f: WholeFixture = {}) {
     {
       get(t, k: string) {
         if (k in t) return t[k];
+        // T2.1.1 D-17: `listAppsPage`/`listAppsByIds` are optional — an
+        // absent optional method must answer `undefined` (a real capability
+        // check the product code performs via `typeof === "function"`),
+        // never a callable stub returning the wrong shape, which would look
+        // like a present-but-broken implementation rather than a genuinely
+        // legacy provider. Every OTHER unmodeled member keeps the original
+        // empty-array stub this fixture's non-picker assertions rely on.
+        if (k === "listAppsPage" || k === "listAppsByIds") return undefined;
         return () => Promise.resolve([]);
       },
     },
