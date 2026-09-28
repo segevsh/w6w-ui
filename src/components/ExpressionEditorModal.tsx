@@ -698,72 +698,75 @@ function AddValueModal({ kind, onCreate, onClose }: AddValueModalProps) {
 
   return (
     <Modal title={`Add ${noun}`} onClose={onClose}>
-      <div className="w6w-stack">
-        <label className="w6w-field">
-          <span>Name</span>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={kind === "var" ? "e.g. api_base_url" : "e.g. openai_api_key"}
-            autoComplete="off"
-            data-testid="expr-add-value-name"
-            // biome-ignore lint/a11y/noAutofocus: nested dialog opened on demand — showModal() already moved focus in, this just picks the first field.
-            autoFocus
-          />
-          <span className="w6w-muted w6w-small">
-            Lowercase letters, digits, and underscores. Must start with a letter or underscore.
-          </span>
-        </label>
-
-        <label className="w6w-field">
-          <span>Value</span>
-          <input
-            type={kind === "secret" ? "password" : "text"}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            autoComplete="off"
-            data-testid="expr-add-value-value"
-          />
-          {kind === "secret" && (
+      {/* Body + pinned footer (D-3): `.w6w-stack` stays intact INSIDE the body so
+          the fields keep their own spacing; only the action row moved out. */}
+      <div className="w6w-modal-body">
+        <div className="w6w-stack">
+          <label className="w6w-field">
+            <span>Name</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={kind === "var" ? "e.g. api_base_url" : "e.g. openai_api_key"}
+              autoComplete="off"
+              data-testid="expr-add-value-name"
+              // biome-ignore lint/a11y/noAutofocus: nested dialog opened on demand — showModal() already moved focus in, this just picks the first field.
+              autoFocus
+            />
             <span className="w6w-muted w6w-small">
-              Stored encrypted at rest. Once saved, it is not readable through the UI.
+              Lowercase letters, digits, and underscores. Must start with a letter or underscore.
             </span>
-          )}
-        </label>
+          </label>
 
-        <label className="w6w-field">
-          <span>Description</span>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Optional"
-            autoComplete="off"
-          />
-        </label>
+          <label className="w6w-field">
+            <span>Value</span>
+            <input
+              type={kind === "secret" ? "password" : "text"}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoComplete="off"
+              data-testid="expr-add-value-value"
+            />
+            {kind === "secret" && (
+              <span className="w6w-muted w6w-small">
+                Stored encrypted at rest. Once saved, it is not readable through the UI.
+              </span>
+            )}
+          </label>
 
-        {error && <div className="w6w-result w6w-error">{error}</div>}
+          <label className="w6w-field">
+            <span>Description</span>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional"
+              autoComplete="off"
+            />
+          </label>
 
-        <div className="w6w-modal-actions">
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-ghost"
-            data-testid="expr-add-value-cancel"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="w6w-btn"
-            data-testid="expr-add-value-save"
-            disabled={!name || !value || pending}
-            onClick={submit}
-          >
-            {pending ? "Saving…" : "Save"}
-          </button>
+          {error && <div className="w6w-result w6w-error">{error}</div>}
         </div>
+      </div>
+      <div className="w6w-modal-actions">
+        <button
+          type="button"
+          className="w6w-btn w6w-btn-ghost"
+          data-testid="expr-add-value-cancel"
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="w6w-btn"
+          data-testid="expr-add-value-save"
+          disabled={!name || !value || pending}
+          onClick={submit}
+        >
+          {pending ? "Saving…" : "Save"}
+        </button>
       </div>
     </Modal>
   );
