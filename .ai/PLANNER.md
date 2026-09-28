@@ -331,3 +331,30 @@ the `@codemirror/*` versions already pinned here. Barrel-exported from `src/inde
 graph, and both existing editors are already index-barrel-only). Fact 1's top-level `.tsx` count
 moved `14` → `15`; the *Gate baselines* table above reflects the new `109`/`437` totals. `lint:tokens`
 is unmoved (`59 violations in 18 files`, baseline `59`) — no CSS touched.
+
+**`26-09-27-00-studio-fixes`'s T1.1.1** fixed every `@w6w/ui` dialog whose footer scrolled out of view
+under tall content (`Modal`'s `dialog.w6w-modal` is unconditionally `overflow:auto` with no dedicated
+body-scroll region). New CSS in `src/styles/_modal.scss`: `.w6w-modal-body { display:flex;
+flex-direction:column; gap:var(--w6w-sp-3); flex:1; min-height:0; overflow-y:auto }`, and
+`.w6w-modal-actions` swapped `margin-top:auto` for `flex-shrink:0`. Wrap-and-restructure only, no
+`Modal.tsx` prop/API change — 5 components touched (`ConfirmModal.tsx`,
+`ExpressionEditorModal.tsx`, `WorkflowFlowEditor.tsx`'s run/test modal + its `StepRunCollect` form,
+`AddConnectionModal.tsx`'s `ConnectionConfig`). `StepBuilderModal.tsx`'s 4 sites and
+`WorkflowFlowEditor.tsx`'s step-editor site were **already** in this shape (via the older,
+independent `.w6w-stepconfig-body/-footer` idiom in `_step-config.scss`/`_step-builder.scss`) and
+were left untouched — see fact-worthy callout: **this repo now has three still-un-consolidated
+copies of the same pinned-footer idea** (`.w6w-modal-body`/`.w6w-modal-actions` here,
+`.w6w-stepconfig-body/-footer`, and `_tester.scss`'s `.w6w-tester-*-scroll`/`-actions-footer`) — a
+future cleanup should fold all three onto the new generic pair rather than adding a fourth.
+`AddConnectionModal.tsx`'s `selectedApp` branch also lost its `.w6w-stepbuilder-content` wrapper
+(deliberately — its fixed `height:100%` left the frame's percentage height unresolved, pushing the
+footer off-screen at y≈2786 in an 800px viewport; the picker/loading branches keep it, unchanged).
+Gates: `./node_modules/.bin/tsc -b --noEmit` exit 0, biome **152 files, 0 errors — unmoved** (no new
+files, existing components only), unit **537/537 — unmoved**, `node scripts/build-css.mjs --check`
+up to date (the CSS lives in `_modal.scss`; `src/styles.css` is committed, regenerated build output —
+never hand-edit it), `lint:tokens` unmoved (`59/59`), `coverage:stories`/`build-storybook` clean. A
+real-Chromium layout probe (default/wide/xl sizes, the `.w6w-stepconfig` frame nested inside, a short
+`wide` dialog) and a built-Storybook render both confirmed the footer stays pinned and the body
+scrolls. `HITL-1` (whether this `ui`-side fix belonged in that project's scope at all, vs. staying
+`packages/studio`-only) was open at merge time, pinned-default-widen, independently verified correct
+by that project's evaluator, and confirmed by the human at closeout.
