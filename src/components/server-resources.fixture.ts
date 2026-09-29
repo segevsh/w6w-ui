@@ -7,9 +7,10 @@
  * would drift.
  *
  * DETERMINISTIC BY CONSTRUCTION: the series is a sum of sines over the sample
- * index and the timestamps step from a fixed epoch. No `Math.random`, no
- * `Date.now` — a story's rendering must not change between builds, and a test
- * that asserted a coordinate against it would be worthless if it could.
+ * index and the timestamps step from a fixed epoch. Nothing is drawn from a
+ * random source and nothing is read from the wall clock — a story's rendering
+ * must not change between builds, and a test that asserted a coordinate against
+ * it would be worthless if it could.
  */
 import type { ServerResourceSample } from "./server-resources-format.ts";
 
