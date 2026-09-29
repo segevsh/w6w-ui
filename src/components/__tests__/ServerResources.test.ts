@@ -166,7 +166,11 @@ test("S5 — small card: default title, both percentages and exactly one polylin
   assert.ok(html.includes("CPU"));
   assert.ok(html.includes("Memory"));
   assert.equal(count(html, "<polyline"), 1);
-  assert.ok(html.includes("%"));
+
+  // The pinned sample's two readings, through this variant too.
+  const pinned = markup(React.createElement(ServerResourcesCardSmall, { samples: [PINNED] }));
+  assert.ok(pinned.includes("25%"));
+  assert.ok(pinned.includes("75%"));
 });
 
 test("S6 — rail: CPU and MEM, exactly two polylines, no button without onExpand", () => {
@@ -175,6 +179,11 @@ test("S6 — rail: CPU and MEM, exactly two polylines, no button without onExpan
   assert.ok(html.includes("MEM"));
   assert.equal(count(html, "<polyline"), 2);
   assert.equal(count(html, "<button"), 0);
+
+  // Both readings, with the pinned sample's values.
+  const pinned = markup(React.createElement(ServerResourcesRail, { samples: [PINNED] }));
+  assert.ok(pinned.includes("25%"));
+  assert.ok(pinned.includes("75%"));
 });
 
 test("S7 — rail: onExpand renders one labelled button that calls back once", async () => {
