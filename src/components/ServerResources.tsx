@@ -248,7 +248,9 @@ export function ServerResourcesRail({ samples, onExpand }: ServerResourcesRailPr
           className="w6w-server-resources__expand"
           aria-label="Show server resources"
           onClick={onExpand}
-        />
+        >
+          Details
+        </button>
       )}
     </aside>
   );

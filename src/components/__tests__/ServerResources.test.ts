@@ -192,6 +192,9 @@ test("S7 — rail: onExpand renders one labelled button that calls back once", a
   assert.equal(button.getAttribute("type"), "button");
   assert.equal(button.getAttribute("aria-label"), "Show server resources");
   assert.equal(container.querySelectorAll("button").length, 1);
+  // Visibly labelled as well as aria-labelled — an unlabelled empty box is not
+  // a legible affordance.
+  assert.equal(button.textContent, "Details");
   await act(async () => {
     button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   });
