@@ -94,13 +94,27 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 .w6w-modal-subtitle code {
   font-size: inherit;
 }
+/* The one scrolling region of a dialog (D-3): the body takes the leftover height
+   and scrolls, so the header/footer around it stay put. The dialog's own
+   `gap: var(--w6w-sp-3)` column is reproduced here so content-spacing is
+   unchanged now that body children are flex items of THIS box, not the dialog's. */
+.w6w-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-3);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Pinned below the scrolling `.w6w-modal-body`, never shrunk away by it (D-3).
+   Sits at the dialog's bottom for free: the body above it already absorbs the
+   free space, so no `margin-top: auto` is needed (or wanted — it would shrink
+   this row instead). */
 .w6w-modal-actions {
   display: flex;
   gap: var(--w6w-sp-2);
   justify-content: flex-end;
-  /* Pin the action row to the modal's bottom rather than letting it float right
-     under short content — the dialog is a flex column, so `auto` pushes it down. */
-  margin-top: auto;
+  flex-shrink: 0;
 }
 
 /* Icon-button view toggle (e.g. Form ⇄ JSON), inline with a modal header. */

@@ -45,8 +45,12 @@ export function ConfirmModal({
 }: ConfirmModalProps) {
   return (
     <Modal title={title} onClose={onClose}>
-      <p className="w6w-muted w6w-small">{message}</p>
-      {children}
+      {/* One body wrapper + a pinned footer (D-3): long consequence copy scrolls
+          inside `.w6w-modal-body`, the buttons never leave the dialog's bottom. */}
+      <div className="w6w-modal-body">
+        <p className="w6w-muted w6w-small">{message}</p>
+        {children}
+      </div>
       <div className="w6w-modal-actions">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           {cancelLabel}

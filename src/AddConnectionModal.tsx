@@ -111,9 +111,7 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
           )
         }
       >
-        <div className="w6w-stepbuilder-content">
-          <ConnectionConfig app={selectedApp} onCreated={props.onCreated} onClose={props.onClose} />
-        </div>
+        <ConnectionConfig app={selectedApp} onCreated={props.onCreated} onClose={props.onClose} />
       </Modal>
     );
   }
@@ -232,78 +230,84 @@ function ConnectionConfig({
   const enterSubmit = useEnterSubmit(submit, { enabled: !submitDisabled });
 
   return (
-    <div className="w6w-stack">
-      {auths === null && <p className="w6w-muted w6w-small">Loading auth methods…</p>}
+    // `.w6w-stepconfig` frame + body + pinned footer (D-3) — the same shape the
+    // step builder's own config pane uses, so only the form scrolls and
+    // Cancel/Save never leave the dialog's bottom.
+    <div className="w6w-stepconfig">
+      <div className="w6w-modal-body">
+        <div className="w6w-stack">
+          {auths === null && <p className="w6w-muted w6w-small">Loading auth methods…</p>}
 
-      {auths !== null && available.length === 0 && (
-        <p className="w6w-muted w6w-small">
-          This app has no available auth methods. If it uses OAuth, its client credentials may not
-          be configured on the server yet.
-        </p>
-      )}
+          {auths !== null && available.length === 0 && (
+            <p className="w6w-muted w6w-small">
+              This app has no available auth methods. If it uses OAuth, its client credentials may
+              not be configured on the server yet.
+            </p>
+          )}
 
-      {available.length > 1 && (
-        <label className="w6w-field">
-          <span>Auth method</span>
-          <select
-            value={auth?.key ?? ""}
-            onChange={(e) => {
-              setAuthKey(e.target.value);
-              setCredential({});
-              setError(null);
-            }}
-          >
-            {available.map((a) => (
-              <option key={a.key} value={a.key}>
-                {a.displayName ?? a.key} ({a.type})
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      {auth && (
-        <>
-          {!isZeroCred && (
+          {available.length > 1 && (
             <label className="w6w-field">
-              <span>Display name</span>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g. Production API key"
-                maxLength={80}
-                // A plain text field above a credential field gets treated as the
-                // "username" of a login form and prefilled — opt it out.
-                name="w6w-connection-label"
-                autoComplete="off"
-                data-1p-ignore="true"
-                data-lpignore="true"
-                data-bwignore="true"
-                data-form-type="other"
-                {...enterSubmit}
-              />
+              <span>Auth method</span>
+              <select
+                value={auth?.key ?? ""}
+                onChange={(e) => {
+                  setAuthKey(e.target.value);
+                  setCredential({});
+                  setError(null);
+                }}
+              >
+                {available.map((a) => (
+                  <option key={a.key} value={a.key}>
+                    {a.displayName ?? a.key} ({a.type})
+                  </option>
+                ))}
+              </select>
             </label>
           )}
-          {auth.description && <p className="w6w-muted w6w-small">{auth.description}</p>}
-          {isZeroCred ? null : isOAuth ? (
-            <p className="w6w-muted w6w-small">
-              You'll be redirected to <strong>{auth.displayName ?? auth.key}</strong> to authorize
-              this connection.
-            </p>
-          ) : (
-            <AuthFieldsForm
-              fields={fields}
-              values={credential}
-              onChange={setCredential}
-              enterSubmitProps={enterSubmit}
-            />
+
+          {auth && (
+            <>
+              {!isZeroCred && (
+                <label className="w6w-field">
+                  <span>Display name</span>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="e.g. Production API key"
+                    maxLength={80}
+                    // A plain text field above a credential field gets treated as the
+                    // "username" of a login form and prefilled — opt it out.
+                    name="w6w-connection-label"
+                    autoComplete="off"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
+                    data-form-type="other"
+                    {...enterSubmit}
+                  />
+                </label>
+              )}
+              {auth.description && <p className="w6w-muted w6w-small">{auth.description}</p>}
+              {isZeroCred ? null : isOAuth ? (
+                <p className="w6w-muted w6w-small">
+                  You'll be redirected to <strong>{auth.displayName ?? auth.key}</strong> to
+                  authorize this connection.
+                </p>
+              ) : (
+                <AuthFieldsForm
+                  fields={fields}
+                  values={credential}
+                  onChange={setCredential}
+                  enterSubmitProps={enterSubmit}
+                />
+              )}
+            </>
           )}
-        </>
-      )}
 
-      {error && <div className="w6w-result w6w-error">{error}</div>}
-
+          {error && <div className="w6w-result w6w-error">{error}</div>}
+        </div>
+      </div>
       <div className="w6w-modal-actions">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
           Cancel

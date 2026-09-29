@@ -1363,63 +1363,72 @@ function Inner({
                       onRun={(values, state) => performRunStep(runResult.stepId, values, state)}
                     />
                   )}
-                  {runResult.status === "running" && (
-                    <p className="w6w-muted w6w-small">Running…</p>
-                  )}
-                  {runResult.status === "error" && (
-                    <div className="w6w-result w6w-error">
-                      {runResult.errorCode && (
-                        <div className="w6w-small" style={{ opacity: 0.75, marginBottom: 4 }}>
-                          <code>{runResult.errorCode}</code>
-                        </div>
-                      )}
-                      {runResult.error || "The step failed with no error message."}
-                    </div>
-                  )}
-                  {runResult.status === "done" && (
-                    <div>
-                      <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-                        Result
-                      </div>
-                      <pre
-                        className="w6w-result"
-                        style={{
-                          whiteSpace: "pre-wrap",
-                          maxHeight: 360,
-                          overflow: "auto",
-                          margin: 0,
-                        }}
-                      >
-                        {JSON.stringify(runResult.value, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                  {runResult.logs && runResult.logs.length > 0 && (
-                    <div>
-                      <div className="w6w-muted w6w-small" style={{ margin: "10px 0 6px" }}>
-                        Console output
-                      </div>
-                      <pre
-                        className="w6w-result"
-                        style={{
-                          whiteSpace: "pre-wrap",
-                          maxHeight: 200,
-                          overflow: "auto",
-                          margin: 0,
-                        }}
-                      >
-                        {runResult.logs.join("\n")}
-                      </pre>
-                    </div>
-                  )}
                   {/* The collect phase renders its own actions (Run + Cancel),
-                      gated on the required fields being filled. */}
+                      gated on the required fields being filled. The status/result/log
+                      blocks scroll inside the body; Close stays pinned below it. */}
                   {!collecting && (
-                    <div className="w6w-modal-actions">
-                      <button type="button" className="w6w-btn" onClick={() => setRunResult(null)}>
-                        Close
-                      </button>
-                    </div>
+                    <>
+                      <div className="w6w-modal-body">
+                        {runResult.status === "running" && (
+                          <p className="w6w-muted w6w-small">Running…</p>
+                        )}
+                        {runResult.status === "error" && (
+                          <div className="w6w-result w6w-error">
+                            {runResult.errorCode && (
+                              <div className="w6w-small" style={{ opacity: 0.75, marginBottom: 4 }}>
+                                <code>{runResult.errorCode}</code>
+                              </div>
+                            )}
+                            {runResult.error || "The step failed with no error message."}
+                          </div>
+                        )}
+                        {runResult.status === "done" && (
+                          <div>
+                            <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+                              Result
+                            </div>
+                            <pre
+                              className="w6w-result"
+                              style={{
+                                whiteSpace: "pre-wrap",
+                                maxHeight: 360,
+                                overflow: "auto",
+                                margin: 0,
+                              }}
+                            >
+                              {JSON.stringify(runResult.value, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        {runResult.logs && runResult.logs.length > 0 && (
+                          <div>
+                            <div className="w6w-muted w6w-small" style={{ margin: "10px 0 6px" }}>
+                              Console output
+                            </div>
+                            <pre
+                              className="w6w-result"
+                              style={{
+                                whiteSpace: "pre-wrap",
+                                maxHeight: 200,
+                                overflow: "auto",
+                                margin: 0,
+                              }}
+                            >
+                              {runResult.logs.join("\n")}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                      <div className="w6w-modal-actions">
+                        <button
+                          type="button"
+                          className="w6w-btn"
+                          onClick={() => setRunResult(null)}
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </>
                   )}
                 </Modal>
               )}
@@ -1711,35 +1720,43 @@ function StepRunCollect({
   const canRun = !!params && seeded && validDraft && requiredParamsFilled(params, effective);
 
   return (
-    <div className="w6w-stack">
-      {params === null || !seeded ? (
-        <p className="w6w-muted w6w-small">
-          {params === null ? "Loading parameters…" : "Loading saved values…"}
-        </p>
-      ) : isTrigger ? (
-        <>
-          <PropertyEntryForm
-            params={params}
-            values={values}
-            onChange={setValues}
-            onValidityChange={setDraftValid}
-          />
-          {params.length === 0 && (
-            <span className="w6w-hint">
-              This trigger declares no fields — provide a sample payload to run with. It becomes the
-              trigger's output state (<code>input</code>).
-            </span>
+    // `.w6w-stepconfig` frame + body + pinned footer (D-3): this component is a
+    // direct <Modal> child, so the frame's `height:100%` resolves against the
+    // dialog and only the form scrolls. The `.w6w-stack` keeps its own spacing.
+    <div className="w6w-stepconfig">
+      <div className="w6w-modal-body">
+        <div className="w6w-stack">
+          {params === null || !seeded ? (
+            <p className="w6w-muted w6w-small">
+              {params === null ? "Loading parameters…" : "Loading saved values…"}
+            </p>
+          ) : isTrigger ? (
+            <>
+              <PropertyEntryForm
+                params={params}
+                values={values}
+                onChange={setValues}
+                onValidityChange={setDraftValid}
+              />
+              {params.length === 0 && (
+                <span className="w6w-hint">
+                  This trigger declares no fields — provide a sample payload to run with. It becomes
+                  the trigger's output state (<code>input</code>).
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="w6w-muted w6w-small">
+                Runs <code>{step.uses.action}</code> with the configuration saved on this step —
+                only the incoming state changes per run. Edit the step to change how it is
+                configured.
+              </p>
+              <IncomingStateField text={stateText} onChange={setStateText} seeds={seeds} />
+            </>
           )}
-        </>
-      ) : (
-        <>
-          <p className="w6w-muted w6w-small">
-            Runs <code>{step.uses.action}</code> with the configuration saved on this step — only
-            the incoming state changes per run. Edit the step to change how it is configured.
-          </p>
-          <IncomingStateField text={stateText} onChange={setStateText} seeds={seeds} />
-        </>
-      )}
+        </div>
+      </div>
       <div className="w6w-modal-actions">
         <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onCancel}>
           Cancel
