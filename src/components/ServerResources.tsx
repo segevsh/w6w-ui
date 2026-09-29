@@ -5,8 +5,9 @@
  *
  * There is no data layer here, on purpose (plan.md §Pinned decisions: "no
  * transport in ui"): every variant is handed `samples` and renders the LAST
- * one, plus a sparkline drawn from the whole array. No fetch, no context, no
- * `useW6WApi()` — the caller owns the stream and the operator gate.
+ * one, plus a sparkline drawn from the whole array. Nothing in this file reads
+ * a network, a context or a host API — the caller owns the stream and the
+ * operator gate.
  *
  * The sparkline is hand-rolled inline SVG rather than a chart dependency: a
  * polyline over ~60 points is a dozen lines of arithmetic (see
