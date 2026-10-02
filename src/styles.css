@@ -3619,3 +3619,162 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 .w6w-execution-log-json {
   min-width: 0;
 }
+
+/*
+ * Server resources — the four presentational variants from
+ * `src/components/ServerResources.tsx` (card, small card, rail, badge).
+ *
+ * Spacing and type come from the `--w6w-sp-*` / `--w6w-fs-*` ramps only, so a
+ * host that re-tunes the scale re-tunes these too; box geometry (heights,
+ * track widths, radii) is deliberately literal, as everywhere else in this
+ * package. The only colour that is not a themed token reference is the
+ * sparkline stroke, which is `--w6w-accent` in both modes.
+ *
+ * The rail variant is the size-sensitive one: it lands in a ~200 px sidebar
+ * column, so every part of it is `min-width: 0`-safe and the sparkline is
+ * scaled by `preserveAspectRatio="none"` rather than given an intrinsic width.
+ */
+.w6w-server-resources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+  min-width: 0;
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  line-height: var(--w6w-lh-normal);
+}
+
+.w6w-server-resources__title {
+  margin: 0;
+  font-size: var(--w6w-fs-base);
+  font-weight: var(--w6w-fw-semibold);
+  line-height: var(--w6w-lh-tight);
+}
+
+.w6w-server-resources__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.w6w-server-resources__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--w6w-sp-1) var(--w6w-sp-2);
+}
+
+.w6w-server-resources__label {
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.w6w-server-resources__value {
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The line itself. `stroke` is repeated as a property (not only as the
+   polyline's presentation attribute) so a host stylesheet can re-colour it
+   without reaching into the SVG. */
+.w6w-server-resources__spark {
+  grid-column: 1/-1;
+  display: block;
+  width: 100%;
+  height: 28px;
+  stroke: var(--w6w-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  overflow: visible;
+}
+
+.w6w-server-resources__meta {
+  margin: 0;
+  color: var(--w6w-muted);
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-xs);
+}
+
+/* --- card ---------------------------------------------------------------- */
+.w6w-server-resources--card {
+  gap: var(--w6w-sp-3);
+  padding: var(--w6w-sp-4);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel);
+}
+
+/* --- small card ---------------------------------------------------------- */
+.w6w-server-resources--small {
+  gap: var(--w6w-sp-1-5);
+  padding: var(--w6w-sp-3);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel);
+}
+
+.w6w-server-resources--small .w6w-server-resources__title {
+  font-size: var(--w6w-fs-sm);
+}
+
+/* --- rail ---------------------------------------------------------------- */
+.w6w-server-resources--rail {
+  gap: var(--w6w-sp-1);
+  padding: var(--w6w-sp-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel);
+}
+
+.w6w-server-resources__rail-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 var(--w6w-sp-2);
+}
+
+.w6w-server-resources__rail-row .w6w-server-resources__value {
+  text-align: right;
+}
+
+.w6w-server-resources__rail-row .w6w-server-resources__spark {
+  height: 20px;
+}
+
+.w6w-server-resources__expand {
+  width: 100%;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel-2);
+  color: var(--w6w-muted);
+  font-family: inherit;
+  font-size: var(--w6w-fs-xs);
+  cursor: pointer;
+}
+
+.w6w-server-resources__expand:hover {
+  color: var(--w6w-text);
+  border-color: var(--w6w-accent);
+}
+
+/* --- badge --------------------------------------------------------------- */
+.w6w-server-resources--badge {
+  flex-direction: row;
+  gap: var(--w6w-sp-2);
+  align-items: center;
+  padding: 0 var(--w6w-sp-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 999px;
+  background: var(--w6w-panel-2);
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-xs);
+  white-space: nowrap;
+}

@@ -66,6 +66,18 @@ export { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 export type { ApiCallsPanelProps } from "./components/ApiCallsPanel.tsx";
 export { UptimeStrip } from "./components/UptimeStrip.tsx";
 export type { UptimeCellState, UptimeDay, UptimeStripProps } from "./components/UptimeStrip.tsx";
+export {
+  ServerResourcesBadge,
+  ServerResourcesCard,
+  ServerResourcesCardSmall,
+  ServerResourcesRail,
+} from "./components/ServerResources.tsx";
+export type {
+  ServerResourcesCardProps,
+  ServerResourcesProps,
+  ServerResourcesRailProps,
+} from "./components/ServerResources.tsx";
+export type { ServerResourceSample } from "./components/server-resources-format.ts";
 
 export { HistoryTimeline } from "./components/HistoryTimeline.tsx";
 export type {
