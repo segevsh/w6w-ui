@@ -6,8 +6,8 @@ export type NodeConfig = Pick<FlowStep, "retry" | "onError" | "notes">;
 
 /**
  * A stable reference over a Function or a Workflow (core rfcs/endpoint.md ·
- * Callable). Declared **locally** — structurally identical to
- * `@w6w/workflow-types`'s `Callable` — because `@w6w/ui` has no dependency edge
+ * CallableRef). Declared **locally** — structurally identical to
+ * `@w6w/workflow-types`'s `CallableRef` — because `@w6w/ui` has no dependency edge
  * to that package and must not gain one (D-10).
  */
 export type CallableRef =
