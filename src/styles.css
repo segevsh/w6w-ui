@@ -3528,6 +3528,23 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   border-style: dashed;
 }
 
+/* The two RUN states (`ExecutionStatus`), both deliberately in the same muted
+   family as `pending`/`skipped` above: neither is a verdict on the work —
+   `queued` hasn't started and `canceled` stopped before reaching one — so
+   neither earns `--w6w-success`/`--w6w-danger`/`--w6w-accent`, and this file
+   keeps its stated scope (the base palette only, never a new global token).
+   `canceled` takes `skipped`'s dashed border for the same reason that one
+   does; the two never co-occur in one list (one is a step state, the other a
+   run state), and the label carries the meaning regardless. */
+.w6w-step-pill-queued {
+  --w6w-step-color: var(--w6w-muted);
+}
+
+.w6w-step-pill-canceled {
+  --w6w-step-color: var(--w6w-muted);
+  border-style: dashed;
+}
+
 .w6w-step-pill-dot {
   flex-shrink: 0;
   width: 8px;
@@ -3618,6 +3635,67 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 
 .w6w-execution-log-json {
   min-width: 0;
+}
+
+/* --- ExecutionList ------------------------------------------------------- */
+/* Rows of past executions: a click-to-select list plus a prev/next pager.
+   Closer in shape to `.w6w-execution-log` (`_execution-log.scss`) than to
+   `.w6w-history-*`: that family lays out a time-proportional strip against a
+   shared axis, while this is a plain in-order list of one row per run. The row
+   itself is `ListItem` (`.w6w-list-item`, `_lists.scss`) — reused whole, box,
+   hover, focus ring, `active` highlight and all — so this partial only owns
+   the LIST around the rows: the `ul` reset and the pager strip.
+
+   Spacing/type come from the scale tokens only (the `lint:tokens` ratchet has
+   no baseline entry for this file, so anything literal here would be a new
+   violation); colour stays on `_execution-log.scss`'s pill and the shared
+   `.w6w-btn` classes. */
+.w6w-execution-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-3);
+  width: 100%;
+  min-width: 0;
+}
+
+/* A `<ul>`, reset to a bare vertical stack — the marker/indent are the only
+   things `_layout.scss`'s `.w6w-stack` doesn't already strip, and rows are
+   `<li>` so the list is announced as a list, not a run of cards. */
+.w6w-execution-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.w6w-execution-list-rows > li {
+  min-width: 0;
+}
+
+/* Both non-list branches (the loading and the empty `<p>`) hang straight off
+   the root, so one direct-child rule covers them and neither needs a class the
+   pinned markup doesn't have. Same dashed box `.w6w-execution-log-empty`
+   uses — one treatment for "nothing here yet" across the run-log family. */
+.w6w-execution-list > p {
+  width: 100%;
+  margin: 0;
+  padding: var(--w6w-sp-4);
+  border: 1px dashed var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-sm);
+  text-align: center;
+}
+
+.w6w-execution-list-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--w6w-sp-2);
 }
 
 /*

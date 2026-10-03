@@ -10,21 +10,40 @@ import type { ReactNode } from "react";
  */
 export type StepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 
+/**
+ * The five states a whole EXECUTION (an invocation, an endpoint call, a
+ * workflow run) can be in — the run-level sibling of `StepStatus`, and again a
+ * thin LOCAL literal rather than an import of any spec/wire type. The two
+ * unions differ exactly where runs and steps differ: a run can be `queued`
+ * before it starts and `canceled` after it started, while a step inside a run
+ * can be `pending` or `skipped` (a run is never either). They are deliberately
+ * NOT merged into one five/six-member union — `ExecutionList` and the step
+ * panel must each accept only their own vocabulary.
+ */
+export type ExecutionStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
+
 export interface StepStatusPillProps {
-  /** Which step state to render — drives the colour + default label. */
-  state: StepStatus;
+  /**
+   * Which state to render — drives the colour + default label. Accepts both
+   * vocabularies: a workflow step's `StepStatus` and a whole run's
+   * `ExecutionStatus` (the pill is only a coloured label, so it does not care
+   * which of the two a host is describing).
+   */
+  state: StepStatus | ExecutionStatus;
   /** Override the visible text (defaults to a humanised form of `state`). */
   label?: ReactNode;
   /** Accessible label for the pill (falls back to the visible text). */
   ariaLabel?: string;
 }
 
-const DEFAULT_LABELS: Record<StepStatus, string> = {
+const DEFAULT_LABELS: Record<StepStatus | ExecutionStatus, string> = {
   pending: "Pending",
   running: "Running",
   succeeded: "Succeeded",
   failed: "Failed",
   skipped: "Skipped",
+  queued: "Queued",
+  canceled: "Canceled",
 };
 
 /**
@@ -37,6 +56,11 @@ const DEFAULT_LABELS: Record<StepStatus, string> = {
  * never the only signal — the text label carries the same meaning for
  * accessibility. Five states rather than `HealthStatusPill`'s four, so this
  * is a mirror of that shape, not a shared implementation.
+ *
+ * Renders BOTH vocabularies through the one prop: `StepStatus` (a step inside
+ * a run) and `ExecutionStatus` (a whole run). The union is widened at the
+ * PROP only — `StepStatus` itself is unchanged, so the step panel's own type
+ * cannot silently grow run-only states.
  */
 export function StepStatusPill({ state, label, ariaLabel }: StepStatusPillProps) {
   const text = label ?? DEFAULT_LABELS[state];

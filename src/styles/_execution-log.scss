@@ -36,6 +36,21 @@
   --w6w-step-color: var(--w6w-muted);
   border-style: dashed;
 }
+/* The two RUN states (`ExecutionStatus`), both deliberately in the same muted
+   family as `pending`/`skipped` above: neither is a verdict on the work —
+   `queued` hasn't started and `canceled` stopped before reaching one — so
+   neither earns `--w6w-success`/`--w6w-danger`/`--w6w-accent`, and this file
+   keeps its stated scope (the base palette only, never a new global token).
+   `canceled` takes `skipped`'s dashed border for the same reason that one
+   does; the two never co-occur in one list (one is a step state, the other a
+   run state), and the label carries the meaning regardless. */
+.w6w-step-pill-queued {
+  --w6w-step-color: var(--w6w-muted);
+}
+.w6w-step-pill-canceled {
+  --w6w-step-color: var(--w6w-muted);
+  border-style: dashed;
+}
 .w6w-step-pill-dot {
   flex-shrink: 0;
   width: 8px;
