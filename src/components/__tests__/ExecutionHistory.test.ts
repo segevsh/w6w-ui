@@ -89,6 +89,20 @@ function maybeByTestId(container: HTMLElement, testid: string): Element | null {
   return container.querySelector(`[data-testid="${testid}"]`);
 }
 
+/**
+ * Absence is asserted on a BOOLEAN, never on the element itself: `assert.equal`
+ * on a jsdom node builds a failure message by deeply inspecting it, and that
+ * becomes a multi-minute traversal of jsdom's object graph the moment the
+ * assertion fails — which is exactly when a mutation-testing run needs the
+ * failure to be fast and readable.
+ */
+function assertAbsent(container: HTMLElement, testid: string, message?: string) {
+  assert.ok(
+    maybeByTestId(container, testid) === null,
+    message ?? `expected no [data-testid="${testid}"]`,
+  );
+}
+
 function text(el: Element | null | undefined): string {
   assert.ok(el, "expected element");
   return (el.textContent ?? "").trim();
@@ -171,7 +185,7 @@ test("A1 — the kind select is absent unless showKind, and the search placehold
     React.createElement(ExecutionFilters, { value: EMPTY_FILTERS, onChange: () => {} }),
   );
   try {
-    assert.equal(without.container.querySelector('[data-testid="execution-filter-kind"]'), null);
+    assertAbsent(without.container, "execution-filter-kind");
     assert.equal(
       byTestId(without.container, "execution-filter-q").getAttribute("placeholder"),
       "Search by id or name",
@@ -321,7 +335,7 @@ test("A1 — Clear renders iff some field is set, and reports the fully-cleared 
     React.createElement(ExecutionFilters, { value: EMPTY_FILTERS, onChange: () => {} }),
   );
   try {
-    assert.equal(maybeByTestId(untouched.container, "execution-filter-clear"), null);
+    assertAbsent(untouched.container, "execution-filter-clear");
   } finally {
     await act(async () => untouched.root.unmount());
   }
@@ -410,10 +424,10 @@ test("A2 — stats null renders — for every card, and no in-flight card", asyn
     for (const testid of ALWAYS_ON) {
       assert.equal(statValue(container, testid), "—");
     }
-    assert.equal(
-      maybeByTestId(container, "execution-stat-in-flight"),
-      null,
-      "an unknown in-flight count must not render a card",
+    assertAbsent(
+      container,
+      "execution-stat-in-flight",
+      "an unknown in-flight count renders no card",
     );
     assert.deepEqual(cardParts(container, "execution-stat-total"), ["—", "Executions"]);
   } finally {
@@ -515,7 +529,10 @@ test("A2 — label renders above the cards; omitted ⇒ no node", async () => {
 
   const bare = await render(React.createElement(ExecutionStats, { stats: STATS }));
   try {
-    assert.equal(bare.container.querySelector(".w6w-execution-stats-label"), null);
+    assert.ok(
+      bare.container.querySelector(".w6w-execution-stats-label") === null,
+      "an omitted label renders no node",
+    );
   } finally {
     await act(async () => bare.root.unmount());
   }
@@ -559,7 +576,7 @@ test("A3 — no execution + loading renders the loading branch; no execution and
 
   const idle = await render(React.createElement(ExecutionDetail, { execution: null }));
   try {
-    assert.equal(maybeByTestId(idle.container, "execution-detail-loading"), null);
+    assertAbsent(idle.container, "execution-detail-loading");
   } finally {
     await act(async () => idle.root.unmount());
   }
@@ -663,7 +680,7 @@ test("A3 — input/output sections are gated on `undefined`, never on truthiness
         assert.ok(maybeByTestId(container, testid), `${label}: ${testid} must render`);
       }
       for (const testid of absent) {
-        assert.equal(maybeByTestId(container, testid), null, `${label}: ${testid} must not render`);
+        assertAbsent(container, testid, `${label}: ${testid} must not render`);
       }
     } finally {
       await act(async () => root.unmount());
@@ -749,7 +766,7 @@ test("A3 — steps render through ExecutionLogPanel, gated on `undefined`", asyn
     React.createElement(ExecutionDetail, { execution: { ...SUCCEEDED, steps: undefined } }),
   );
   try {
-    assert.equal(maybeByTestId(without.container, "execution-detail-steps"), null);
+    assertAbsent(without.container, "execution-detail-steps");
   } finally {
     await act(async () => without.root.unmount());
   }
@@ -782,8 +799,8 @@ test("A3 — steps render through ExecutionLogPanel, gated on `undefined`", asyn
 test("A3 — the two controls render iff their callback is given, and call it once", async () => {
   const bare = await render(React.createElement(ExecutionDetail, { execution: SUCCEEDED }));
   try {
-    assert.equal(maybeByTestId(bare.container, "execution-detail-open-editor"), null);
-    assert.equal(maybeByTestId(bare.container, "execution-detail-close"), null);
+    assertAbsent(bare.container, "execution-detail-open-editor");
+    assertAbsent(bare.container, "execution-detail-close");
   } finally {
     await act(async () => bare.root.unmount());
   }
@@ -854,7 +871,7 @@ test("A3 — errorMessage renders as an alert, in every branch", async () => {
 
   const without = await render(React.createElement(ExecutionDetail, { execution: SUCCEEDED }));
   try {
-    assert.equal(maybeByTestId(without.container, "execution-detail-error-message"), null);
+    assertAbsent(without.container, "execution-detail-error-message");
   } finally {
     await act(async () => without.root.unmount());
   }
