@@ -7,7 +7,7 @@ const meta = {
   argTypes: {
     state: {
       control: "select",
-      options: ["pending", "running", "succeeded", "failed", "skipped"],
+      options: ["pending", "running", "succeeded", "failed", "skipped", "queued", "canceled"],
     },
   },
   args: { state: "pending" },
@@ -35,4 +35,15 @@ export const Failed: Story = {
 
 export const Skipped: Story = {
   args: { state: "skipped" },
+};
+
+/** A run state (`ExecutionStatus`), not a step state — the pill renders both
+ * vocabularies through the one prop. */
+export const Queued: Story = {
+  args: { state: "queued" },
+};
+
+/** The other run-only state: stopped before it reached a verdict. */
+export const Canceled: Story = {
+  args: { state: "canceled" },
 };
