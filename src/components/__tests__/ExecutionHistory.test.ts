@@ -805,6 +805,29 @@ test("A3 — the two controls render iff their callback is given, and call it on
     await act(async () => bare.root.unmount());
   }
 
+  // Each control is gated on ITS OWN callback, not on the presence of the
+  // control row: a host that only offers "Close" must not get an editor button
+  // it never wired up (and vice versa).
+  const closeOnly = await render(
+    React.createElement(ExecutionDetail, { execution: SUCCEEDED, onClose: () => {} }),
+  );
+  try {
+    assertAbsent(closeOnly.container, "execution-detail-open-editor");
+    assert.ok(maybeByTestId(closeOnly.container, "execution-detail-close"));
+  } finally {
+    await act(async () => closeOnly.root.unmount());
+  }
+
+  const editorOnly = await render(
+    React.createElement(ExecutionDetail, { execution: SUCCEEDED, onOpenInEditor: () => {} }),
+  );
+  try {
+    assertAbsent(editorOnly.container, "execution-detail-close");
+    assert.ok(maybeByTestId(editorOnly.container, "execution-detail-open-editor"));
+  } finally {
+    await act(async () => editorOnly.root.unmount());
+  }
+
   let opened = 0;
   let closed = 0;
   const { container, root } = await render(
