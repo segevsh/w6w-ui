@@ -247,7 +247,7 @@ export const SCHEDULER_APP = "@w6w/scheduler";
 export const RESPOND_APP = "@w6w/respond";
 /**
  * Sub-workflow / Function caller (core rfcs/node-types.md · F-3). The host runs
- * this node itself: it resolves `with.target` to a project-scoped `Callable` (a
+ * this node itself: it resolves `with.target` to a project-scoped `CallableRef` (a
  * Function or a Workflow) and invokes it through `ctx.invokeCallable`, honoring
  * the per-node `with.wait` flag. The engine never loads the target.
  */
@@ -914,7 +914,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     displayName: "Call",
     group: "compute",
     icon: ICON_CALL,
-    // Internal host node: invokes a project-scoped Callable (a Function or a
+    // Internal host node: invokes a project-scoped CallableRef (a Function or a
     // Workflow) via `ctx.invokeCallable` (core rfcs/node-types.md · F-3). One
     // inbound, one outbound — the sub-run is a single downstream continuation.
     ports: { in: 1, out: 1 },
