@@ -65,7 +65,7 @@ export const ProjectWide: Story = {
  * title is the start time and the subtitle is the run id. The second row is
  * selected (`selectedId`), which is what makes it `aria-pressed`. */
 export const PerCallable: Story = {
-  args: { selectedId: "run_01J8Z3K5" },
+  args: { selectedId: "run_01J8Z3K5", onSelect: () => {} },
 };
 
 export const Empty: Story = {
@@ -84,6 +84,7 @@ export const WithPager: Story = {
     items: ITEMS,
     showCallable: true,
     selectedId: "run_01J8Z3K6",
+    onSelect: () => {},
     hasPrev: false,
     hasNext: true,
     onPrev: () => {},
