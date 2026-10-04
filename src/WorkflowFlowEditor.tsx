@@ -244,6 +244,23 @@ export interface WorkflowFlowEditorProps {
    * completion to report at all, and the click is the one moment both share.
    */
   onTestRun?: () => void;
+  /**
+   * Re-frames the canvas when the host changes the space around it. When this
+   * value changes after mount (compared with `Object.is`), the editor calls
+   * `fitView({ duration: 300 })` once. It never fires on mount, and omitting it
+   * or passing the same value again adds no fit.
+   *
+   * For a host whose page layout resizes the canvas without the graph changing,
+   * e.g. a side panel docking beside it (pass the panel's open state). React Flow
+   * keeps its pan/zoom transform when its pane narrows, so nodes near the edge
+   * would otherwise end up behind the panel. The editor does not watch its own
+   * size, so the host decides which layout changes deserve a re-frame.
+   *
+   * A fit replaces whatever camera is showing, including a saved viewport the
+   * editor restored on open. The fit is not user-initiated, so it never emits
+   * `onChange` and never overwrites the stored viewport.
+   */
+  fitViewKey?: string | number | boolean;
 }
 
 /**
@@ -316,6 +333,7 @@ function Inner({
   project,
   runState,
   onTestRun,
+  fitViewKey,
 }: WorkflowFlowEditorProps) {
   const api = useW6WApi();
   const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
@@ -600,6 +618,16 @@ function Inner({
     relayoutPendingFitRef.current = false;
     void fitView({ duration: 300 });
   }, [nodes, fitView]);
+
+  // `fitViewKey`: one fit per change of the host's key, never on mount. The ref
+  // starts at the mount value, so the first run (and StrictMode's re-run) sees
+  // no change; a new `fitView` identity alone fails the same check.
+  const lastFitViewKeyRef = useRef(fitViewKey);
+  useEffect(() => {
+    if (Object.is(lastFitViewKeyRef.current, fitViewKey)) return;
+    lastFitViewKeyRef.current = fitViewKey;
+    void fitView({ duration: 300 });
+  }, [fitViewKey, fitView]);
 
   // ── The edge-level lane control (`Run on: Success / Error`) ─────────────────
   // Reuses the selection state that already exists; nothing new is tracked but the

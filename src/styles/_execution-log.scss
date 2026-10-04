@@ -105,7 +105,11 @@
   width: 100%;
 }
 
+/* `width: 100%` plus padding and a border overflows the parent under the
+   default content-box sizing; this package has no global box-sizing reset, so
+   it opts in per element (as `_chips.scss` and `_step-config.scss` do). */
 .w6w-execution-log-empty {
+  box-sizing: border-box;
   width: 100%;
   padding: var(--w6w-sp-4);
   border: 1px dashed var(--w6w-border);
@@ -133,8 +137,13 @@
   white-space: nowrap;
 }
 
+/* Shrinkable, so a narrow row (the 360px docked panel) wraps the
+   "<ts> → <ts> (elapsed)" text inside the row's box. With `flex-shrink: 0` it
+   kept its max-content width, wrapped onto its own flex line, and ran past the
+   row's border. */
 .w6w-execution-log-timing {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--w6w-muted);
   font-size: var(--w6w-fs-xs);
 }
