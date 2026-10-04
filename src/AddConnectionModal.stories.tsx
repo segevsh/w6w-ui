@@ -10,7 +10,7 @@ import { W6WUIProvider } from "./provider.tsx";
  * via `AddConnectionModal.tsx`'s own `setError((e as Error).message)`.
  */
 const meta = {
-  title: "Components/AddConnectionModal",
+  title: "Modals/AddConnectionModal",
   component: AddConnectionModal,
   parameters: { layout: "fullscreen" },
   decorators: [

@@ -46,7 +46,7 @@ const ITEMS: ExecutionListItem[] = [
 ];
 
 const meta = {
-  title: "Components/ExecutionList",
+  title: "Executions/ExecutionList",
   component: ExecutionList,
   args: { items: ITEMS },
 } satisfies Meta<typeof ExecutionList>;

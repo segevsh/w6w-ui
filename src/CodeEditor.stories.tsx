@@ -5,7 +5,7 @@ const JS_SNIPPET = "function greet(name) {\n  return `Hello, ${name}!`;\n}";
 const PY_SNIPPET = 'def greet(name):\n    return f"Hello, {name}!"';
 
 const meta = {
-  title: "Components/CodeEditor",
+  title: "Editors/CodeEditor",
   component: CodeEditor,
   argTypes: {
     language: { control: "select", options: ["javascript", "python"] },

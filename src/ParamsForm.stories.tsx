@@ -28,7 +28,7 @@ const VALUES: Record<string, unknown> = {
 };
 
 const meta = {
-  title: "Components/ParamsForm",
+  title: "Forms/ParamsForm",
   component: ParamsForm,
   argTypes: {
     readOnly: { control: "boolean" },

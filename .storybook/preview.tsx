@@ -57,6 +57,27 @@ const preview: Preview = {
     },
   },
   parameters: {
+    options: {
+      /**
+       * Sidebar order: the generic building blocks first, then the
+       * domain-specific panels that compose them. Every story's `title` is
+       * `<Category>/<Component>` and the category MUST be one of these — a new
+       * one goes here too, or it sorts alphabetically after the listed ones.
+       */
+      storySort: {
+        order: [
+          "Buttons",
+          "Forms",
+          "Editors",
+          "Modals",
+          "Data Display",
+          "Status & Health",
+          "Executions",
+          "Server Resources",
+          "Providers",
+        ],
+      },
+    },
     controls: { matchers: { color: /(background|color)$/i } },
     // The wrapper decorator paints `--w6w-bg`; Storybook's own backgrounds
     // addon would sit behind it and only ever show at the padding, reading as

@@ -5,7 +5,7 @@ import { demoServerResourceSamples } from "./server-resources.fixture.ts";
 const SAMPLES = demoServerResourceSamples(60);
 
 const meta = {
-  title: "Components/ServerResourcesRail",
+  title: "Server Resources/ServerResourcesRail",
   component: ServerResourcesRail,
   args: { samples: SAMPLES },
   /**

@@ -24,7 +24,7 @@ function FiltersDemo(props: Parameters<typeof ExecutionFilters>[0]) {
 }
 
 const meta = {
-  title: "Components/ExecutionFilters",
+  title: "Executions/ExecutionFilters",
   component: ExecutionFilters,
   args: { value: EMPTY, onChange: () => {} },
   render: (args) => <FiltersDemo {...args} />,

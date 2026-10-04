@@ -13,7 +13,7 @@ const STATS: ExecutionStatsValue = {
 };
 
 const meta = {
-  title: "Components/ExecutionStats",
+  title: "Executions/ExecutionStats",
   component: ExecutionStats,
   args: { stats: STATS },
 } satisfies Meta<typeof ExecutionStats>;

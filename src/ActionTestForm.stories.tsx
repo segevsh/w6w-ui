@@ -9,7 +9,7 @@ import { ActionTestForm } from "./ActionTestForm.tsx";
 import { W6WUIProvider } from "./provider.tsx";
 
 const meta = {
-  title: "Components/ActionTestForm",
+  title: "Forms/ActionTestForm",
   component: ActionTestForm,
   parameters: { layout: "fullscreen" },
   decorators: [

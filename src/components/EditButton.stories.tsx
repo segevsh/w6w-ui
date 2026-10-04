@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { EditButton } from "./EditButton.tsx";
 
 const meta = {
-  title: "Components/EditButton",
+  title: "Buttons/EditButton",
   component: EditButton,
   argTypes: {
     label: { control: "text" },

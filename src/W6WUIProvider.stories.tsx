@@ -10,7 +10,7 @@ import { W6WUIProvider } from "./provider.tsx";
  * actually exercises.
  */
 const meta = {
-  title: "Components/W6WUIProvider",
+  title: "Providers/W6WUIProvider",
   component: W6WUIProvider,
   args: {
     api: fakeApi(),

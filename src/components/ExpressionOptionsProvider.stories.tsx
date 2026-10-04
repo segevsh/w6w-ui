@@ -9,7 +9,7 @@ import { ExpressionOptionsProvider } from "./ExpressionOptions.tsx";
  * the story proves the scope actually reaches it (open the insert menu).
  */
 const meta = {
-  title: "Components/ExpressionOptionsProvider",
+  title: "Providers/ExpressionOptionsProvider",
   component: ExpressionOptionsProvider,
   args: {
     value: {

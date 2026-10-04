@@ -20,7 +20,7 @@ if (dialogProto && typeof dialogProto.showModal !== "function") {
 }
 
 const meta = {
-  title: "Components/ConfirmModal",
+  title: "Modals/ConfirmModal",
   component: ConfirmModal,
   argTypes: {
     destructive: { control: "boolean" },

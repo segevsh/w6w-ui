@@ -49,7 +49,7 @@ const LONG_LINE =
   `connection: "conn_01H8QK3M9V2R", params: { to, subject, body }, timeoutMs: 30_000 });`;
 
 const meta = {
-  title: "Components/CodeBlock",
+  title: "Editors/CodeBlock",
   component: CodeBlock,
   // `fullscreen`: the preview decorator already paints `--w6w-bg` and pads the
   // canvas, and Storybook's own `padded` layout would add a second inset that

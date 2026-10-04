@@ -4,7 +4,7 @@ import { YamlEditor } from "./YamlEditor.tsx";
 const SAMPLE = "services:\n  api:\n    image: denoland/deno:2.1.4 # pinned\n    ports: [8000]";
 
 const meta = {
-  title: "Components/YamlEditor",
+  title: "Editors/YamlEditor",
   component: YamlEditor,
   argTypes: {
     theme: { control: "select", options: ["light", "dark"] },

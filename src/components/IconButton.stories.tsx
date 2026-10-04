@@ -22,7 +22,7 @@ function PencilGlyph() {
 }
 
 const meta = {
-  title: "Components/IconButton",
+  title: "Buttons/IconButton",
   component: IconButton,
   argTypes: {
     label: { control: "text" },

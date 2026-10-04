@@ -11,7 +11,7 @@ const SAMPLE = JSON.stringify(
 const INVALID = '{\n  "id": "fn_01H8"\n  "enabled": true\n}';
 
 const meta = {
-  title: "Components/JsonEditor",
+  title: "Editors/JsonEditor",
   component: JsonEditor,
   argTypes: {
     theme: { control: "select", options: ["light", "dark"] },

@@ -18,7 +18,7 @@ const SECRET_VALUE: SecretValue = {
 };
 
 const meta = {
-  title: "Components/ExpressionInput",
+  title: "Forms/ExpressionInput",
   component: ExpressionInput,
   args: { value: "Hello, world", onChange: () => {} },
 } satisfies Meta<typeof ExpressionInput>;

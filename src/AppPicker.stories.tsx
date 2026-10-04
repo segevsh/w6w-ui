@@ -4,7 +4,7 @@ import { AppPicker } from "./AppPicker.tsx";
 import { W6WUIProvider } from "./provider.tsx";
 
 const meta = {
-  title: "Components/AppPicker",
+  title: "Forms/AppPicker",
   component: AppPicker,
   decorators: [
     (Story) => (

@@ -4,7 +4,7 @@ import { CopyableText } from "./CopyableText.tsx";
 const VALUE = "wf_01H8QK3M9V2R7T5N6PABCDXYZ";
 
 const meta = {
-  title: "Components/CopyableText",
+  title: "Data Display/CopyableText",
   component: CopyableText,
   args: { value: VALUE, chars: 12 },
 } satisfies Meta<typeof CopyableText>;

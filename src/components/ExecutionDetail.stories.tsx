@@ -71,7 +71,7 @@ const WORKFLOW: ExecutionDetailValue = {
 };
 
 const meta = {
-  title: "Components/ExecutionDetail",
+  title: "Executions/ExecutionDetail",
   component: ExecutionDetail,
   args: { execution: SUCCEEDED },
 } satisfies Meta<typeof ExecutionDetail>;

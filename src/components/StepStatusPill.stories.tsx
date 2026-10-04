@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { StepStatusPill } from "./StepStatusPill.tsx";
 
 const meta = {
-  title: "Components/StepStatusPill",
+  title: "Status & Health/StepStatusPill",
   component: StepStatusPill,
   argTypes: {
     state: {

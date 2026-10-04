@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DeleteButton } from "./DeleteButton.tsx";
 
 const meta = {
-  title: "Components/DeleteButton",
+  title: "Buttons/DeleteButton",
   component: DeleteButton,
   argTypes: {
     label: { control: "text" },

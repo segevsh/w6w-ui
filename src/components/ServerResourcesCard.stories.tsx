@@ -5,7 +5,7 @@ import { demoServerResourceSamples } from "./server-resources.fixture.ts";
 const SAMPLES = demoServerResourceSamples(60);
 
 const meta = {
-  title: "Components/ServerResourcesCard",
+  title: "Server Resources/ServerResourcesCard",
   component: ServerResourcesCard,
   args: { samples: SAMPLES, title: "Server resources", intervalMs: 5000 },
 } satisfies Meta<typeof ServerResourcesCard>;
