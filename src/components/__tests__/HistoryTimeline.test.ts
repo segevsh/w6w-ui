@@ -9,10 +9,11 @@
 //      difference from that harness: `HistoryTimeline.tsx` has a real relative
 //      import (`./history-scale.ts`), so the emitted import specifier is
 //      rewritten to an absolute `file:` URL before the scratch module is
-//      written — and this test uses its OWN scratch directory
-//      (`.w6w-jsx-test-history`, not `UptimeStrip.test.ts`'s `.w6w-jsx-test`)
-//      so the two files' `after()` cleanups can never race each other when
-//      `node --test` runs them as concurrent processes.
+//      written — and the scratch directory is unique PER RUN and PER PROCESS
+//      (`.w6w-jsx-test-history-<pid>-<time>-<rand>`, not a fixed path), because
+//      `node_modules/` is a symlink shared by every worktree and `node --test`
+//      runs files (and whole suites) concurrently: a fixed path lets one run
+//      `rmSync` another run's module mid-import.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -109,7 +110,11 @@ test("geometry: an entry with neither startedAt nor updatedAt has nothing to pla
 // ─── 2. Render ──────────────────────────────────────────────────────────────
 
 const here = dirname(fileURLToPath(import.meta.url));
-const outDir = join(here, "..", "..", "..", "node_modules", ".w6w-jsx-test-history");
+// One scratch directory per run: pid + clock + random keeps concurrent runs
+// (other worktrees, or two copies of this suite) from importing/removing the
+// same `.mjs`.
+const runToken = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const outDir = join(here, "..", "..", "..", "node_modules", `.w6w-jsx-test-history-${runToken}`);
 const outFile = join(outDir, "HistoryTimeline.mjs");
 
 mkdirSync(outDir, { recursive: true });
@@ -124,11 +129,16 @@ const transpiled = ts
   })
   .outputText.replace('from "./history-scale.ts"', `from "${scaleModuleUrl}"`);
 writeFileSync(outFile, transpiled);
-after(() => rmSync(outDir, { recursive: true, force: true }));
 
+// Clean up only after the module is loaded. `node:test` starts running tests
+// (and `after()` hooks) as soon as they are registered, concurrently with this
+// file's own top-level `await`; a cleanup hook armed before the import would
+// `rmSync` the scratch file while it is still being read (ENOENT — "a resource
+// generated asynchronous activity after the test ended").
 const { HistoryTimeline } = (await import(pathToFileURL(outFile).href)) as {
   HistoryTimeline: (props: HistoryTimelineProps) => ReturnType<typeof createElement>;
 };
+after(() => rmSync(outDir, { recursive: true, force: true }));
 
 const render = (props: HistoryTimelineProps) =>
   renderToStaticMarkup(createElement(HistoryTimeline, props));

@@ -17,8 +17,12 @@ import type { UptimeDay, UptimeStripProps } from "../UptimeStrip.tsx";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Inside node_modules so the emitted `react/jsx-runtime` import resolves, and so
-// the scratch file is invisible to git / tsc / biome.
-const outDir = join(here, "..", "..", "..", "node_modules", ".w6w-jsx-test");
+// the scratch file is invisible to git / tsc / biome. The name is unique per
+// run (pid + clock + random): `node_modules/` is a symlink shared by every
+// worktree and `node --test` runs files (and whole suites) concurrently, so a
+// fixed path lets one run `rmSync` another run's module mid-import.
+const runToken = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const outDir = join(here, "..", "..", "..", "node_modules", `.w6w-jsx-test-${runToken}`);
 const outFile = join(outDir, "UptimeStrip.mjs");
 
 mkdirSync(outDir, { recursive: true });
@@ -32,11 +36,16 @@ writeFileSync(
     },
   }).outputText,
 );
-after(() => rmSync(outDir, { recursive: true, force: true }));
 
+// Clean up only after the module is loaded. `node:test` starts running tests
+// (and `after()` hooks) as soon as they are registered, concurrently with this
+// file's own top-level `await`; a cleanup hook armed before the import would
+// `rmSync` the scratch file while it is still being read (ENOENT — "a resource
+// generated asynchronous activity after the test ended").
 const { UptimeStrip } = (await import(pathToFileURL(outFile).href)) as {
   UptimeStrip: (props: UptimeStripProps) => ReturnType<typeof createElement>;
 };
+after(() => rmSync(outDir, { recursive: true, force: true }));
 
 const render = (props: UptimeStripProps) => renderToStaticMarkup(createElement(UptimeStrip, props));
 
