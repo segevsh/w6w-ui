@@ -3,7 +3,7 @@ import { Icon } from "./Icon.tsx";
 import { iconNames } from "./icons.tsx";
 
 const meta = {
-  title: "Icons/Icon",
+  title: "Buttons/Icon",
   component: Icon,
   argTypes: {
     name: { control: "select", options: [...iconNames] },
