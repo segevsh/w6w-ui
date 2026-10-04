@@ -1,46 +1,20 @@
 import { type ReactNode, useCallback, useEffect, useRef } from "react";
+import { Icon } from "./Icon.tsx";
 import { COPIED_MS, useCopyToClipboard } from "./use-copy.ts";
 
-/** Copy glyph, colocated per this file — no shared `Icon` component exists in
- *  `@w6w/ui` (deliberate, 21+ sites elsewhere use this same idiom, e.g.
- *  `CallFromCodeButton.tsx:44-63`). `currentColor` so `.is-copied`'s colour
- *  applies with no extra prop. Exported so `JsonEditor` can reuse it rather
- *  than redraw it. */
+/** The copy glyph, now from the shared set (`icons.tsx`'s `copy`) rather than
+ *  colocated: the set exists precisely so this glyph (drawn inline at 21+ sites
+ *  elsewhere, e.g. `CallFromCodeButton.tsx:44-63`) has one definition. Still
+ *  exported, and still 14px, because `JsonEditor` and `YamlEditor` reuse it
+ *  rather than redraw it; `Icon`'s `currentColor` paint is what keeps
+ *  `.is-copied`'s colour applying with no extra prop. */
 export function CopyGlyph() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
+  return <Icon name="copy" size={14} />;
 }
 
+/** The copied-state checkmark, same deal (`icons.tsx`'s `check`). */
 export function CheckGlyph() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
+  return <Icon name="check" size={14} />;
 }
 
 export interface CopyableProps {

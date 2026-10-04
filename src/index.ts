@@ -125,6 +125,10 @@ export { isExprValue, isSecretValue } from "./types.ts";
 
 export { IconButton } from "./components/IconButton.tsx";
 export type { IconButtonProps } from "./components/IconButton.tsx";
+export { Icon } from "./components/Icon.tsx";
+export type { IconProps } from "./components/Icon.tsx";
+export { iconNames } from "./components/icons.tsx";
+export type { IconName } from "./components/icons.tsx";
 export { EditButton } from "./components/EditButton.tsx";
 export type { EditButtonProps } from "./components/EditButton.tsx";
 export { DeleteButton } from "./components/DeleteButton.tsx";

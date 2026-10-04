@@ -62,6 +62,7 @@ import {
   type ExpressionStepSource,
   useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
+import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ResolvedParams } from "./components/ResolvedParams.tsx";
@@ -174,25 +175,6 @@ function clashInvolvedIds(
 ): (string | null | undefined)[] {
   const sitting = edges.find((e) => e.id === conflictId);
   return [source, target, sitting?.source, sitting?.target];
-}
-
-/**
- * The auto-layout glyph — a three-box hierarchy (one parent over two children),
- * matching the layering the button applies. Module-local inline SVG, 16×16 on a
- * `0 0 24 24` box, per convention C6 (there is no shared icons module).
- *
- * **Filled subpaths with no `fill` attribute**, so it inherits `currentColor` —
- * which is what makes it themed for free. The library styles a control button's svg
- * as `svg { width: 100%; max-width: 12px; max-height: 12px; fill: currentColor }`
- * (`@xyflow/react/dist/style.css`), so a `fill="none" stroke="currentColor"` icon —
- * the house style for the *node cards* — renders as nothing at all in here.
- */
-function AutoLayoutIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 3h6v6H9zM11 9h2v2h-2zM4 11h16v2H4zM4 13h2v2H4zM18 13h2v2h-2zM2 15h6v6H2zM16 15h6v6h-6z" />
-    </svg>
-  );
 }
 
 export interface WorkflowFlowEditorProps {
@@ -1259,7 +1241,13 @@ function Inner({
                       title="Auto-layout — re-flow the graph into columns"
                       aria-label="Auto-layout the graph"
                     >
-                      <AutoLayoutIcon />
+                      {/* `icons.tsx`'s `layout` — the three-box hierarchy. It must NOT be a
+                          `fill="none" stroke=…` glyph: the library styles a control button's
+                          svg as `svg { width: 100%; max-width: 12px; max-height: 12px;
+                          fill: currentColor }` (`@xyflow/react/dist/style.css`), so a stroked
+                          root would render as nothing at all in here — hence `layout`'s bare
+                          root (see its entry). */}
+                      <Icon name="layout" />
                     </ControlButton>
                   )}
                 </Controls>
@@ -1840,25 +1828,6 @@ function PortHandle({
   );
 }
 
-/** A 24×24 stroked glyph for the node toolbar. */
-function ToolbarIcon({ children }: { children: ReactNode }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  );
-}
-
 function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
   const ctrl = useContext(StepControlsCtx);
   if (!ctrl || ctrl.readOnly) return null;
@@ -1872,9 +1841,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
           aria-label="Test-run this step"
           onClick={() => ctrl.onRun(id)}
         >
-          <ToolbarIcon>
-            <polygon points="6 4 20 12 6 20 6 4" />
-          </ToolbarIcon>
+          <Icon name="run" size={15} />
         </button>
       )}
       <button
@@ -1884,10 +1851,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         aria-label="Edit step"
         onClick={() => ctrl.onEdit(id)}
       >
-        <ToolbarIcon>
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-        </ToolbarIcon>
+        <Icon name="edit" size={15} />
       </button>
       <button
         type="button"
@@ -1896,10 +1860,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         aria-label="Duplicate step"
         onClick={() => ctrl.onDuplicate(id)}
       >
-        <ToolbarIcon>
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-        </ToolbarIcon>
+        <Icon name="copy" size={15} />
       </button>
       <button
         type="button"
@@ -1908,10 +1869,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         aria-label="Delete step"
         onClick={() => ctrl.onDelete(id)}
       >
-        <ToolbarIcon>
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-        </ToolbarIcon>
+        <Icon name="trash" size={15} />
       </button>
     </NodeToolbar>
   );
@@ -2324,10 +2282,7 @@ export function StepEditModal({
                     setRenaming(true);
                   }}
                 >
-                  <ToolbarIcon>
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-                  </ToolbarIcon>
+                  <Icon name="edit" size={15} />
                 </button>
               )}
             </>

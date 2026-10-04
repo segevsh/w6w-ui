@@ -16,8 +16,10 @@ import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { AppIcon } from "./components/AppIcon.tsx";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
+import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import type { IconName } from "./components/icons.tsx";
 import {
   CALL_APP,
   DATA_APP,
@@ -198,68 +200,16 @@ type StepConfigTab = "setup" | "configure" | "test";
  * params-only JSON, node settings. */
 export type ConfigView = "props" | "code" | "params-code" | "config";
 
-/** A 15×15 stroked glyph on a 24×24 viewBox (matches the editor's toolbar icons). */
-function Glyph({ children }: { children: ReactNode }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  );
-}
-
-/** The glyph + accessible label each view is drawn with. */
-const CONFIG_VIEW_GLYPHS: Record<ConfigView, { label: string; glyph: ReactNode }> = {
-  props: {
-    label: "Form",
-    glyph: (
-      <>
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <line x1="7" y1="8" x2="17" y2="8" />
-        <line x1="7" y1="12" x2="17" y2="12" />
-        <line x1="7" y1="16" x2="13" y2="16" />
-      </>
-    ),
-  },
-  code: {
-    label: "JSON",
-    glyph: (
-      <>
-        <polyline points="16 18 22 12 16 6" />
-        <polyline points="8 6 2 12 8 18" />
-      </>
-    ),
-  },
-  // Hand-drawn — no icon library in `packages/ui`, no new npm dependency. Braces,
-  // not chevrons: `code` reads as "the step, as code"; this reads as "the
-  // params, as a value" — distinct at a glance from the `<>` pair above it.
-  "params-code": {
-    label: "Params JSON",
-    glyph: (
-      <>
-        <polyline points="9 4 7 4 7 10 5 12 7 14 7 20 9 20" />
-        <polyline points="15 4 17 4 17 10 19 12 17 14 17 20 15 20" />
-      </>
-    ),
-  },
-  config: {
-    label: "Node settings",
-    glyph: (
-      <>
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </>
-    ),
-  },
+/** The glyph + accessible label each view is drawn with. Every glyph is a named
+ *  entry of the shared set (`components/icons.tsx`), drawn at 15px like the
+ *  editor's toolbar glyphs. `props`/`code` read as "the step, as a form" vs "the
+ *  step, as code"; `braces` (square braces, NOT `code`'s chevrons) reads as "the
+ *  params, as a value" — distinct at a glance from the pair above it. */
+const CONFIG_VIEW_GLYPHS: Record<ConfigView, { label: string; icon: IconName }> = {
+  props: { label: "Form", icon: "form" },
+  code: { label: "JSON", icon: "code" },
+  "params-code": { label: "Params JSON", icon: "braces" },
+  config: { label: "Node settings", icon: "settings-2" },
 };
 
 /** Every view, in the order the editor's tabs bar has always shown them. */
@@ -298,7 +248,7 @@ export function ConfigViewToggle({
       className={`w6w-icon-btn${view === v && !disabled ? " active" : ""}`}
       onClick={() => onChange(v)}
     >
-      <Glyph>{CONFIG_VIEW_GLYPHS[v].glyph}</Glyph>
+      <Icon name={CONFIG_VIEW_GLYPHS[v].icon} size={15} />
     </button>
   );
   return <div className="w6w-view-toggle">{views.map(btn)}</div>;

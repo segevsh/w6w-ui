@@ -1,0 +1,15 @@
+/* The shared `Icon` (`src/components/Icon.tsx`).
+ *
+ * Only geometry invariants live here. The PAINT is per-entry in
+ * `src/components/icons.tsx` (the set mixes filled Material-style glyphs with
+ * stroked Feather ones, and the language marks paint their own elements), and
+ * the SIZE comes from the `size` prop — so there is nothing about colour or
+ * scale for this class to say. */
+.w6w-icon {
+  /* Never squashed by a flex parent: a rail glyph squeezed to 9px is unreadable,
+     and the sources draw at 14–20px inside rows that can be tight. */
+  flex-shrink: 0;
+  /* A glyph dropped into a line of text sits on the baseline by default, which
+     reads as a foot below the words. */
+  vertical-align: middle;
+}
