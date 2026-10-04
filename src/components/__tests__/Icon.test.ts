@@ -182,3 +182,22 @@ test("I7 — paint matches the entry's variant (fill vs stroke vs mixed)", async
     });
   }
 });
+
+test("I8 — `close` is the two-diagonal Feather x, stroked", async () => {
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(React.createElement(Icon, { name: "close" }));
+  });
+  const svg = container.querySelector("svg");
+  assert.ok(svg);
+  assert.equal(svg.getAttribute("stroke"), "currentColor");
+  const lines = [...svg.querySelectorAll("line")].map((l) =>
+    [l.getAttribute("x1"), l.getAttribute("y1"), l.getAttribute("x2"), l.getAttribute("y2")].join(
+      " ",
+    ),
+  );
+  assert.deepEqual(lines, ["18 6 6 18", "6 6 18 18"]);
+  await act(async () => {
+    root.unmount();
+  });
+});
