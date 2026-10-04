@@ -67,6 +67,12 @@
    accessibly (`aria-label`) instead — a visible label per control would triple
    the bar's height. Tokens only, for the same reason as the rules above. */
 
+/* The row is width-driven: a wrapped line is formed from each control's
+   *hypothetical* size, so six controls plus their gaps sit on one line for as
+   long as they fit, and the row breaks by itself once they don't. That is the
+   behaviour this bar needs — it renders full width in the studio History page
+   and ~500px wide inside the detail modal — so the break follows THIS box
+   rather than the viewport, and nothing here may key off a media query. */
 .w6w-execution-filters {
   display: flex;
   flex-wrap: wrap;
@@ -76,6 +82,16 @@
   min-width: 0;
 }
 
+/* These are bare form elements, so a host's own global `input`/`select` chrome
+   lands on them too — and in the studio it is decisive: `studio/src/styles.css`
+   gives `input[type="search"]`/`input[type="date"]` a `width: 100%` and a
+   `margin-top`. A `width: 100%` on a flex item whose `flex-basis` is `auto` IS
+   that item's basis, so each date picker asked for the whole bar and the row
+   broke into one control per line, while the margin lifted the two inputs off
+   the selects' line. Both are pinned back here; at (0,2,1) this selector beats
+   a host's bare `input[type=…]` (0,1,1) and `input` (0,0,1) rules without
+   needing `!important`, and a host that leaves the controls alone is unaffected
+   because `width: auto`/`margin: 0` are what these controls want anyway. */
 .w6w-execution-filters input[type="search"],
 .w6w-execution-filters input[type="date"],
 .w6w-execution-filters select {
@@ -83,6 +99,8 @@
   border: 1px solid var(--w6w-border);
   border-radius: var(--w6w-radius);
   padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  margin: 0;
+  width: auto;
   color: var(--w6w-text);
   font-size: var(--w6w-fs-sm);
   font-family: inherit;
@@ -95,15 +113,27 @@
   outline-offset: 1px;
 }
 
-/* The search box is the only control that should absorb spare width; the
-   selects and date pickers size to their own content. */
-.w6w-execution-filters-search {
-  flex: 1 1 200px;
-  min-width: 0;
+/* The dropdowns and the two date pickers show one short, fixed label, so they
+   keep their intrinsic width and neither grow nor shrink: the row's spare width
+   is the search box's alone. */
+.w6w-execution-filters select,
+.w6w-execution-filters input[type="date"] {
+  flex: 0 0 auto;
 }
 
+/* The search box is the only control that flexes — it takes the spare width and
+   gives it back down to a 160px floor, and that floor is what sets the row's
+   breakpoint: 160px of search + the five intrinsic controls + five 8px gaps
+   ≈ 757px, so the bar is one row from the 760px the layout promises, and wraps
+   below it. */
+.w6w-execution-filters-search {
+  flex: 1 1 160px;
+  min-width: 160px;
+}
+
+/* Clear is a fixed-size control and stays at the end of the row. */
 .w6w-execution-filters-clear {
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 /* --- ExecutionStats ----------------------------------------------------- */
