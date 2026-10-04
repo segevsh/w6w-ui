@@ -142,6 +142,8 @@ export type { RepoSyncIndicatorProps } from "./components/RepoSyncIndicator.tsx"
 // `src/flow.ts` both 0 hits).
 export { NodeConfigForm } from "./NodeConfigForm.tsx";
 export type { NodeConfig } from "./NodeConfigForm.tsx";
+export { RetryPolicyFields } from "./RetryPolicyFields.tsx";
+export type { RetryPolicyValue, RetryTarget } from "./RetryPolicyFields.tsx";
 
 export { StepStatusPill } from "./components/StepStatusPill.tsx";
 export type {

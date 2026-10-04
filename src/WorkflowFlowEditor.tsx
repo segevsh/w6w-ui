@@ -78,6 +78,7 @@ import {
   setEdgeWhen,
 } from "./flow-connect.ts";
 import {
+  CALL_APP,
   ERROR_SOURCE_HANDLE,
   type FlowStep,
   type FlowWorkflow,
@@ -2436,6 +2437,9 @@ export function StepEditModal({
                     // A trigger has no failure of its own to retry or police —
                     // same reason its card renders no error exit port.
                     failureHandling={!isTrigger}
+                    // A `@w6w/call`/`@w6w/control` step runs no retry loop of
+                    // its own (core rfcs/workflow.md "Retries come first"; D-3).
+                    retryControls={!isControlApp(step.uses.app) && step.uses.app !== CALL_APP}
                   />
                   {SHOW_STEP_PORTS && (
                     <StepPortsControl step={step} readOnly={readOnly} onChange={commit} />

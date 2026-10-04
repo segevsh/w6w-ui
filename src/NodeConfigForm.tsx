@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { RetryPolicyFields } from "./RetryPolicyFields.tsx";
 import type { FlowStep } from "./flow-types.ts";
 
 /** The base, always-available node settings — independent of the action's params. */
@@ -32,6 +33,7 @@ export function NodeConfigForm({
   readOnly,
   hasGraph = true,
   failureHandling = true,
+  retryControls = true,
   reroute,
 }: {
   config: NodeConfig;
@@ -55,6 +57,13 @@ export function NodeConfigForm({
    */
   failureHandling?: boolean;
   /**
+   * `false` omits only the "Retry on failure" block — "On error" and Notes are
+   * unaffected. Used by a host whose step can never retry on its own (a
+   * `@w6w/call`/`@w6w/control` step; core rfcs/workflow.md "Retries come
+   * first"). Default `true` reproduces today's markup byte-identically.
+   */
+  retryControls?: boolean;
+  /**
    * Failure re-dispatch — a `CallableRef`, rendered only when supplied. `value`/
    * `onChange` are the host's own state (so it can offer a "clear" affordance);
    * `picker` is a slot the host renders its own selection control into — this
@@ -67,78 +76,18 @@ export function NodeConfigForm({
     picker: ReactNode;
   };
 }) {
-  const retryOn = !!config.retry;
-  const attempts = config.retry?.maxAttempts ?? 3;
-  const delayMs = config.retry?.delayMs ?? 1000;
-  const backoff = config.retry?.backoff ?? "fixed";
   const onError = config.onError ?? "fail";
-
-  const setRetry = (patch: Partial<NonNullable<NodeConfig["retry"]>>) =>
-    onChange({
-      ...config,
-      retry: { maxAttempts: attempts, delayMs, backoff, ...config.retry, ...patch },
-    });
 
   return (
     <div className="w6w-stack">
       {failureHandling && (
         <>
-          {/* Retry on fail */}
-          <label className="w6w-field">
-            <span>
-              <input
-                type="checkbox"
-                checked={retryOn}
-                disabled={readOnly}
-                onChange={(e) =>
-                  onChange({
-                    ...config,
-                    retry: e.target.checked
-                      ? { maxAttempts: attempts, delayMs, backoff }
-                      : undefined,
-                  })
-                }
-              />{" "}
-              Retry on failure
-            </span>
-            <span className="w6w-hint">Re-run this step if it fails, up to N attempts.</span>
-          </label>
-          {retryOn && (
-            <div className="w6w-field-row">
-              <label className="w6w-field">
-                <span>Attempts</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={attempts}
-                  readOnly={readOnly}
-                  onChange={(e) =>
-                    setRetry({ maxAttempts: Math.max(1, Number(e.target.value) || 1) })
-                  }
-                />
-              </label>
-              <label className="w6w-field">
-                <span>Delay (ms)</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={delayMs}
-                  readOnly={readOnly}
-                  onChange={(e) => setRetry({ delayMs: Math.max(0, Number(e.target.value) || 0) })}
-                />
-              </label>
-              <label className="w6w-field">
-                <span>Backoff</span>
-                <select
-                  value={backoff}
-                  disabled={readOnly}
-                  onChange={(e) => setRetry({ backoff: e.target.value as "fixed" | "exponential" })}
-                >
-                  <option value="fixed">Fixed</option>
-                  <option value="exponential">Exponential</option>
-                </select>
-              </label>
-            </div>
+          {retryControls && (
+            <RetryPolicyFields
+              value={config.retry}
+              onChange={(retry) => onChange({ ...config, retry })}
+              readOnly={readOnly}
+            />
           )}
 
           {/* Error handling */}

@@ -996,6 +996,9 @@ export function ControlStepConfig({
               // A trigger has no failure of its own to retry or police — same
               // reason its canvas card renders no error exit port.
               failureHandling={!isTriggerApp(node.app)}
+              // A `@w6w/call`/`@w6w/control` step runs no retry loop of its
+              // own (core rfcs/workflow.md "Retries come first"; D-3).
+              retryControls={!isControlApp(node.app) && node.app !== CALL_APP}
             />
           ))}
         {tab === "test" &&
