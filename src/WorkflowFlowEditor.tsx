@@ -177,17 +177,6 @@ function clashInvolvedIds(
   return [source, target, sitting?.source, sitting?.target];
 }
 
-/**
- * The auto-layout glyph is `components/icons.tsx`'s `layout` — the three-box
- * hierarchy (one parent over two children) this button applies to the graph.
- *
- * Its entry is deliberately NOT a `fill="none" stroke="currentColor"` glyph: the
- * library styles a control button's svg as `svg { width: 100%; max-width: 12px;
- * max-height: 12px; fill: currentColor }` (`@xyflow/react/dist/style.css`), so a
- * `fill="none" stroke=…` root renders as nothing at all in here — which is why
- * `layout` keeps the bare root its source `<svg>` had (see its entry).
- */
-
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
   value: FlowWorkflow;
@@ -1252,6 +1241,12 @@ function Inner({
                       title="Auto-layout — re-flow the graph into columns"
                       aria-label="Auto-layout the graph"
                     >
+                      {/* `icons.tsx`'s `layout` — the three-box hierarchy. It must NOT be a
+                          `fill="none" stroke=…` glyph: the library styles a control button's
+                          svg as `svg { width: 100%; max-width: 12px; max-height: 12px;
+                          fill: currentColor }` (`@xyflow/react/dist/style.css`), so a stroked
+                          root would render as nothing at all in here — hence `layout`'s bare
+                          root (see its entry). */}
                       <Icon name="layout" />
                     </ControlButton>
                   )}
