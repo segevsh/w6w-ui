@@ -9,6 +9,11 @@
  * sites; two different glyphs for one meaning keep two distinguishable names
  * (`edit` vs `edit-2`, `history` vs `clock`, `file` vs `file-text`).
  *
+ * The ONE exception is the theme toggle's three glyphs (`sun`/`moon`/
+ * `circle-half`): their source draws text characters (`◐`/`☀︎`/`☾`), which have
+ * no path data to copy, so those three are drawn here in the same Feather idiom
+ * the rest of the set's outlines follow. They say so in their own comment too.
+ *
  * Colour is always `currentColor` — the glyph inherits it from its context, and
  * the entry decides only WHICH paint it is drawn with (see `IconVariant`).
  */
@@ -61,7 +66,10 @@ export type IconName =
   | "lang-node"
   | "terminal"
   | "lang-python"
-  | "lang-curl";
+  | "lang-curl"
+  | "sun"
+  | "moon"
+  | "circle-half";
 
 /**
  * Which attributes the shared `<svg>` root carries — i.e. how the glyph is
@@ -720,6 +728,51 @@ export const icons: Record<IconName, IconDef> = {
           strokeLinecap="round"
           strokeDasharray="0.1 3.6"
         />
+      </>
+    ),
+  },
+  /**
+   * studio/src/components/Layout.tsx's theme toggle — the three glyphs that
+   * button draws for its three states. It used to draw the text characters
+   * `◐`/`☀︎`/`☾`, which no shared set can hold: a text glyph is not a drawn
+   * shape, and `IconButton` names its glyph instead. Feather-style outline
+   * (`strokeWidth` 2, like the rest of the Feather-derived entries) so all
+   * three read as one family at 16px. `circle-half`'s filled half is the
+   * "system" state — half light, half dark.
+   */
+  sun: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    body: (
+      <>
+        <circle cx="12" cy="12" r="5" />
+        <line x1="12" y1="1" x2="12" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="23" />
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+        <line x1="1" y1="12" x2="3" y2="12" />
+        <line x1="21" y1="12" x2="23" y2="12" />
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+      </>
+    ),
+  },
+  moon: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    body: (
+      <>
+        <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79Z" />
+      </>
+    ),
+  },
+  "circle-half": {
+    viewBox: "0 0 24 24",
+    variant: "mixed",
+    body: (
+      <>
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M12 3a9 9 0 0 1 0 18V3Z" fill="currentColor" />
       </>
     ),
   },
