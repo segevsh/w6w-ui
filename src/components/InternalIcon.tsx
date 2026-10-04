@@ -5,6 +5,13 @@
  * picker, edit modal). The glyph markup comes from the node def
  * (`InternalNodeDef.icon` / `internalNodeIcon`) — static, in-repo SVG (no user
  * input). It strokes with the accent color and tracks the active theme.
+ *
+ * Deliberately NOT the shared `Icon` (`./Icon.tsx`), despite owning an `<svg>`:
+ * this is a DATA-DRIVEN per-app identity mark — its content is a markup string
+ * off the node def, one glyph per internal app, not a fixed UI glyph with a name
+ * in the set (`./icons.tsx`). Unifying them would mean changing
+ * `InternalNodeDef` to carry a name instead of its markup, which is a data-model
+ * change, not an icon migration.
  */
 export function InternalIcon({ icon, size = 28 }: { icon: string; size?: number }) {
   return (

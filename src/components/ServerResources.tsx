@@ -59,6 +59,10 @@ const UNKNOWN = "—";
 const SPARK_WIDTH = 100;
 const SPARK_HEIGHT = 24;
 
+/** The sparkline. Deliberately NOT the shared `Icon` (`../components/Icon.tsx`):
+ *  nothing here is a fixed glyph — `points` is computed from the data, the
+ *  viewBox is this chart's own 100 × 24 units (scaled by CSS) rather than a
+ *  24 × 24 icon box, and the stroke is the accent token, not `currentColor`. */
 function Sparkline({
   values,
   max,
