@@ -37,11 +37,15 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
   // Opened for a specific app: resolve it to an AppSummary (for the header) and
   // go straight to the connection fields, skipping the picker. Prefers the
   // bounded `listAppsByIds([id])` seam (A3) over a full-catalog `listApps()`
-  // scan; a bounded miss falls through to `listApps()` before giving up — the
-  // same fallback whether the id is genuinely missing or the optional method
-  // simply is not wired up on this host (mirrors AppPicker's own capability
-  // fallback), so a real 404 and an unsupported optional method both resolve
-  // to the SAME correct outcome instead of needing to be told apart.
+  // scan. When `listAppsByIds` exists, its result is final — found resolves to
+  // that app, a miss (empty result or rejection) resolves to not-found —
+  // `listApps` is NEVER called alongside it: a bounded host's "no such id" is
+  // a real answer, not evidence the seam "isn't really implemented" (mirrors
+  // AppPicker/useReadyToUse's own no-silent-downgrade rule, T2.1.1 ROUND 2).
+  // Only when `listAppsByIds` is itself absent does this fall back to
+  // `listApps`-based full-list resolution (today's pre-existing behavior);
+  // with neither seam present, it resolves to not-found without ever calling
+  // an undefined function.
   useEffect(() => {
     const id = props.initialAppId;
     if (!id) return;
@@ -52,24 +56,21 @@ export function AddConnectionModal(props: AddConnectionModalProps) {
       setResolvingInitial(false);
     };
     const listAppsByIds = api.listAppsByIds;
-    const fallbackToFullList = () =>
-      api
-        .listApps()
-        .then((apps) => finish(apps.find((a) => a.id === id) ?? null))
-        .catch(() => finish(null));
     if (listAppsByIds) {
       listAppsByIds([id])
-        .then((apps) => {
-          const found = apps.find((a) => a.id === id);
-          if (found) {
-            finish(found);
-            return;
-          }
-          return fallbackToFullList();
-        })
+        .then((apps) => finish(apps.find((a) => a.id === id) ?? null))
+        .catch(() => finish(null));
+      return () => {
+        canceled = true;
+      };
+    }
+    const listApps = api.listApps;
+    if (typeof listApps === "function") {
+      listApps()
+        .then((apps) => finish(apps.find((a) => a.id === id) ?? null))
         .catch(() => finish(null));
     } else {
-      fallbackToFullList();
+      finish(null);
     }
     return () => {
       canceled = true;

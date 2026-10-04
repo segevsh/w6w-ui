@@ -144,8 +144,18 @@ export interface AppsPageResult {
 }
 
 export interface W6WApi {
-  /** List registered apps to pick from in the connection modal. */
-  listApps(): Promise<AppSummary[]>;
+  /**
+   * List registered apps to pick from in the connection modal.
+   *
+   * OPTIONAL: the legacy, full-catalog counterpart to {@link listAppsPage}
+   * and {@link listAppsByIds} — `createW6WApi.ts`'s own implementation still
+   * provides it, and every bounded seam above is preferred wherever a host
+   * implements it. Callers MUST guard on `typeof api.listApps === "function"`
+   * before invoking it: a host with neither this nor a bounded seam settles
+   * into that call site's own existing empty state instead of making a
+   * request, never a crash.
+   */
+  listApps?(): Promise<AppSummary[]>;
 
   /**
    * Fetch ONE bounded, server-paged slice of the app catalog — the seam every
@@ -153,7 +163,9 @@ export interface W6WApi {
    * Apps/AI/Triggers tabs) prefers over {@link listApps} when a host
    * implements it. OPTIONAL and ADDITIVE: an older/imported provider that
    * only implements `listApps` still typechecks and simply keeps the
-   * eager-list behavior everywhere this member is absent.
+   * eager-list behavior everywhere this member is absent — and a host with
+   * neither this nor `listApps` settles into each caller's own existing empty
+   * state instead of ever requesting a catalog.
    */
   listAppsPage?(options?: ListAppsPageOptions): Promise<AppsPageResult>;
 
@@ -163,7 +175,9 @@ export interface W6WApi {
    * `AddConnectionModal`'s `initialAppId` resolution: a caller that already
    * knows exactly which ids it needs never has to fetch (or filter) the whole
    * catalog to find them. OPTIONAL, like {@link listAppsPage}: absent, a
-   * caller falls back to its pre-existing `listApps`-based resolution.
+   * caller falls back to its pre-existing `listApps`-based resolution; absent
+   * too, that caller settles into its own not-found/empty outcome instead of
+   * ever calling an undefined function.
    * Missing/404 ids are simply omitted from the result, never an error for
    * the whole batch.
    */
