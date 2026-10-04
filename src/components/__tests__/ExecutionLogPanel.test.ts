@@ -541,3 +541,54 @@ test("E6 — no error anywhere ⇒ no w6w-error in the markup, in either branch"
   assert.doesNotMatch(empty, /w6w-error/, `empty branch grew an error: ${empty}`);
   assert.doesNotMatch(empty, /w6w-execution-log-errors/, "empty stepErrors adds no wrapper node");
 });
+
+// ─── R-1 follow-ups (26-10-04-01-fixes T3.1.1): E-1, E-2 ─────────────────────
+// Structural pins for two placements the E-tests above only cover by text:
+// where a step's error sits relative to its `<details>`, and where the run
+// error sits relative to the dismiss head.
+
+test("E7 — a collapsed failed step's error is a direct child of its row, never inside <details>", async () => {
+  const { container, root } = await mountPanel({ steps: [FAILED_WITH_INPUT] });
+  const details = container.querySelectorAll("details");
+  const insideDetails = container.querySelectorAll("details .w6w-error").length;
+  const rowChildren = container.querySelectorAll("li.w6w-execution-log-row > .w6w-error");
+  const rowChildText = rowChildren[0]?.textContent ?? "";
+  const html = container.innerHTML;
+  await act(async () => {
+    root.unmount();
+  });
+
+  assert.equal(details.length, 1, `the step keeps its one <details>: ${html}`);
+  assert.equal(details[0].hasAttribute("open"), false, "the row is still collapsed");
+  assert.equal(insideDetails, 0, `no error may render inside the <details>: ${html}`);
+  assert.equal(rowChildren.length, 1, `exactly one error as the row's own child: ${html}`);
+  assert.match(rowChildText, /boom-one/, "that child is the step's own error");
+});
+
+test("E8 — with onDismiss and runError, the dismiss control precedes the run error in BOTH branches", async () => {
+  const runError = { code: "rc_eight", message: "run-eight-msg" };
+  for (const steps of [[], [RUN_SHORTER]] as ExecutionLogStep[][]) {
+    const branch = steps.length === 0 ? "empty" : "populated";
+    const { container, root } = await mountPanel({ steps, runError, onDismiss: () => {} });
+    const dismiss = container.querySelector('[data-testid="execution-log-dismiss"]');
+    const errorBlock = [...container.querySelectorAll(".w6w-result.w6w-error")].find((el) =>
+      el.textContent?.includes("run-eight-msg"),
+    );
+    const order = dismiss && errorBlock ? dismiss.compareDocumentPosition(errorBlock) : 0;
+    const html = container.innerHTML;
+    await act(async () => {
+      root.unmount();
+    });
+
+    assert.ok(dismiss, `${branch} branch: the dismiss control must render: ${html}`);
+    assert.ok(errorBlock, `${branch} branch: the run error must render: ${html}`);
+    assert.ok(
+      order & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+      `${branch} branch: the run error must come AFTER the dismiss control: ${html}`,
+    );
+    assert.ok(
+      at(html, "execution-log-dismiss") < at(html, "run-eight-msg"),
+      `${branch} branch: markup order agrees: ${html}`,
+    );
+  }
+});
