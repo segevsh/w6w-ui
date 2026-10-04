@@ -69,7 +69,14 @@ export type IconName =
   | "lang-curl"
   | "sun"
   | "moon"
-  | "circle-half";
+  | "circle-half"
+  | "layout"
+  | "run"
+  | "trash"
+  | "maximize"
+  | "form"
+  | "braces"
+  | "settings-2";
 
 /**
  * Which attributes the shared `<svg>` root carries — i.e. how the glyph is
@@ -82,7 +89,9 @@ export type IconName =
  *   - `mixed`  — the glyph paints each element itself (the language marks: a
  *                stroked outline next to filled dots, and `lang-python`'s mask),
  *                so the root carries NO paint attribute at all, exactly as its
- *                source did. Adding a root stroke here would fatten every dot.
+ *                source did. Adding a root stroke here would fatten every dot;
+ *                `layout`'s single path paints nothing either, its colour coming
+ *                from the surrounding control button — again as its source did.
  */
 export type IconVariant = "fill" | "stroke" | "mixed";
 
@@ -773,6 +782,127 @@ export const icons: Record<IconName, IconDef> = {
       <>
         <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
         <path d="M12 3a9 9 0 0 1 0 18V3Z" fill="currentColor" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/WorkflowFlowEditor.tsx's `AutoLayoutIcon` — the auto-layout control's
+   * three-box hierarchy (one parent over two children), on a `0 0 24 24` box.
+   *
+   * `mixed` — rooted in the "the root adds NO paint" half of that variant, which
+   * this glyph needs literally: its source `<svg>` carried no paint attribute at
+   * all, and neither does its path, so a `fill="currentColor"` on the root would
+   * NOT be the source's markup and a `fill="none" stroke=…` root would render
+   * NOTHING at all here. The colour comes from the context — the path sits inside
+   * a `@xyflow/react` control button whose `svg { fill: currentColor }` paints it
+   * (`@xyflow/react/dist/style.css`), exactly as it does today.
+   */
+  layout: {
+    viewBox: "0 0 24 24",
+    variant: "mixed",
+    body: (
+      <>
+        <path d="M9 3h6v6H9zM11 9h2v2h-2zM4 11h16v2H4zM4 13h2v2H4zM18 13h2v2h-2zM2 15h6v6H2zM16 15h6v6h-6z" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/WorkflowFlowEditor.tsx's node-toolbar "Test-run this step" button — a
+   * play triangle, but NOT `play` above: its points are its own (14 wide × 16
+   * tall against `play`'s 14 × 18), so it keeps its own entry rather than being
+   * redrawn to match.
+   */
+  run: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <polygon points="6 4 20 12 6 20 6 4" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/WorkflowFlowEditor.tsx's node-toolbar delete button — Feather `trash`
+   * (lid + body, no inner lines); distinct from `delete` above, which is the
+   * fuller 4-shape `trash-2`.
+   */
+  trash: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <polyline points="3 6 5 6 21 6" />
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/ParamsForm.tsx's JSON field — "Open in full view": Feather
+   * `maximize-2`, the two diagonal expand arrows.
+   */
+  maximize: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <polyline points="15 3 21 3 21 9" />
+        <polyline points="9 21 3 21 3 15" />
+        <line x1="21" y1="3" x2="14" y2="10" />
+        <line x1="3" y1="21" x2="10" y2="14" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/StepBuilderModal.tsx's `CONFIG_VIEW_GLYPHS.props` — a bordered panel
+   * with three text lines: the step's field form. Distinct from `file-text`,
+   * which is a document with a folded corner.
+   */
+  form: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <line x1="7" y1="8" x2="17" y2="8" />
+        <line x1="7" y1="12" x2="17" y2="12" />
+        <line x1="7" y1="16" x2="13" y2="16" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/StepBuilderModal.tsx's `CONFIG_VIEW_GLYPHS["params-code"]` — square
+   * braces, the params as a VALUE. A second glyph for the braces meaning beside
+   * `json` (whose curved `<path>` braces it does not share); its own name rather
+   * than a redraw, so the two views stay tellable apart at 15px.
+   */
+  braces: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <polyline points="9 4 7 4 7 10 5 12 7 14 7 20 9 20" />
+        <polyline points="15 4 17 4 17 10 19 12 17 14 17 20 15 20" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/StepBuilderModal.tsx's `CONFIG_VIEW_GLYPHS.config` — Feather
+   * `settings`, the node-settings gear. Distinct from `settings` above (the
+   * filled Material gear Layout.tsx draws): this one is the stroked outline.
+   */
+  "settings-2": {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
       </>
     ),
   },
