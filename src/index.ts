@@ -157,7 +157,12 @@ export type {
 } from "./components/ExecutionList.tsx";
 export { formatDurationMs, formatExecutionTime } from "./components/execution-format.ts";
 export { ExecutionLogPanel } from "./components/ExecutionLogPanel.tsx";
-export type { ExecutionLogPanelProps, ExecutionLogStep } from "./components/ExecutionLogPanel.tsx";
+export type {
+  ExecutionLogError,
+  ExecutionLogPanelProps,
+  ExecutionLogRecordedError,
+  ExecutionLogStep,
+} from "./components/ExecutionLogPanel.tsx";
 export { ExecutionFilters } from "./components/ExecutionFilters.tsx";
 export type {
   ExecutionFiltersProps,

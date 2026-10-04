@@ -6,6 +6,37 @@ import { StepStatusPill } from "./StepStatusPill.tsx";
 import type { StepStatus } from "./StepStatusPill.tsx";
 
 /**
+ * A step's or run's failure, already normalised by the HOST from the workflow
+ * spec's `StepError` (`code`/`message`/`phase`/`retryable`). The panel never
+ * parses an `unknown` error itself — same "host owns the data" split as the
+ * rest of this file. Rendered in `TriggerFillForm`'s error visual: a
+ * `.w6w-result.w6w-error` box, an optional `<code>` badge line, then the message.
+ */
+export interface ExecutionLogError {
+  /** `StepError.code`. Optional: the host may normalise an error that carries no code. */
+  code?: string;
+  /** The human-readable reason. Never empty when the host supplies it. */
+  message: string;
+  /** `StepError.phase`, when known. Carried for the host; not rendered. */
+  phase?: string;
+  /** `StepError.retryable`, when known. Carried for the host; not rendered. */
+  retryable?: boolean;
+}
+
+/**
+ * One entry of `RunState.stepErrors` — a step failure the run recorded and
+ * moved past (`onError: "continue-record"`, or a failure an error edge
+ * handled), so the run itself may still have succeeded.
+ */
+export interface ExecutionLogRecordedError {
+  /** The step the error belongs to. */
+  stepId: string;
+  /** Human-readable step name. Falls back to `stepId` when rendered. */
+  label?: string;
+  error: ExecutionLogError;
+}
+
+/**
  * One step's display row — an already-mapped, already-resolved slice of a
  * `RunState`/`StepExecution` (workflow spec). The HOST maps its own run
  * state into this shape (same "host owns the data, the panel is
@@ -26,6 +57,12 @@ export interface ExecutionLogStep {
   input?: unknown;
   /** The step's output, once it has one. */
   output?: unknown;
+  /**
+   * Why the step failed (`StepExecution.error`, "present on failed"). Rendered
+   * below the row's box and outside its lazy `<details>` body, so the reason
+   * reads without expanding the row.
+   */
+  error?: ExecutionLogError;
 }
 
 export interface ExecutionLogPanelProps {
@@ -40,6 +77,17 @@ export interface ExecutionLogPanelProps {
    * click; the host decides what dismissing means.
    */
   onDismiss?: () => void;
+  /**
+   * The run's own failure (`RunState.error`). Rendered below the dismiss head
+   * and above the steps — in the empty branch too, since a run that failed
+   * before any step ran has nothing else to say why.
+   */
+  runError?: ExecutionLogError;
+  /**
+   * Step failures the run recorded and moved past (`RunState.stepErrors`),
+   * one error block each, in the order given, after `runError`.
+   */
+  stepErrors?: ExecutionLogRecordedError[];
 }
 
 /**
@@ -50,7 +98,13 @@ export interface ExecutionLogPanelProps {
  * queries (the host docks the panel; see `_scale.scss`'s breakpoint
  * docstring). Fills whatever box its host gives it.
  */
-export function ExecutionLogPanel({ steps, emptyLabel, onDismiss }: ExecutionLogPanelProps) {
+export function ExecutionLogPanel({
+  steps,
+  emptyLabel,
+  onDismiss,
+  runError,
+  stepErrors,
+}: ExecutionLogPanelProps) {
   // Rendered by BOTH branches below, deliberately: the reported repro (T-1) is
   // a canvas whose log panel shows "No steps have run yet." — a header mounted
   // only above the `<ol>` would be invisible in exactly that state, and that is
@@ -63,10 +117,29 @@ export function ExecutionLogPanel({ steps, emptyLabel, onDismiss }: ExecutionLog
     </div>
   ) : null;
 
+  // Same both-branches rule as `head`: a run that failed before its first step
+  // is exactly the empty branch. Nothing to report ⇒ no wrapper node at all.
+  const recorded = stepErrors ?? [];
+  const errors =
+    runError || recorded.length > 0 ? (
+      <div className="w6w-execution-log-errors w6w-stack">
+        {runError && <ExecutionLogErrorBlock error={runError} />}
+        {recorded.map((entry, index) => (
+          <ExecutionLogErrorBlock
+            // `stepId` alone may repeat (a step retried into the record twice).
+            key={`${entry.stepId}:${index}`}
+            label={entry.label ?? entry.stepId}
+            error={entry.error}
+          />
+        ))}
+      </div>
+    ) : null;
+
   if (steps.length === 0) {
     return (
       <>
         {head}
+        {errors}
         <div className="w6w-execution-log-empty">
           <p className="w6w-muted w6w-small">{emptyLabel ?? "No steps have run yet."}</p>
         </div>
@@ -77,6 +150,7 @@ export function ExecutionLogPanel({ steps, emptyLabel, onDismiss }: ExecutionLog
   return (
     <>
       {head}
+      {errors}
       <ol className="w6w-execution-log">
         {steps.map((step) => (
           <ExecutionLogRow key={step.id} step={step} />
@@ -98,7 +172,12 @@ export function ExecutionLogPanel({ steps, emptyLabel, onDismiss }: ExecutionLog
  * A step with neither `input` nor `output` has nothing to disclose: it
  * renders a plain, non-interactive row (still `.w6w-section`-styled for
  * visual consistency with its siblings) rather than an empty `<details>` a
- * user opens only to find "Not available." twice (A3).
+ * user opens only to find "Not available." twice (A3). An `error` alone is
+ * not something to disclose either: it renders on every row as a sibling
+ * AFTER the row's box — outside the lazily mounted `<details>` body (so it
+ * reads while collapsed and never mounts twice once opened) and outside the
+ * `<summary>` (whose phrasing-content model and click-to-toggle make it the
+ * wrong home for a selectable block of text).
  */
 function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
   const [open, setOpen] = useState(false);
@@ -110,10 +189,13 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
     </div>
   );
 
+  const error = step.error ? <ExecutionLogErrorBlock error={step.error} /> : null;
+
   if (step.input === undefined && step.output === undefined) {
     return (
       <li className="w6w-execution-log-row">
         <div className="w6w-section">{header}</div>
+        {error}
       </li>
     );
   }
@@ -129,7 +211,29 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
           </div>
         )}
       </details>
+      {error}
     </li>
+  );
+}
+
+/**
+ * `TriggerFillForm`'s StepError visual, reused rather than re-invented: the
+ * `.w6w-result.w6w-error` box, an optional muted `<code>` line, then the
+ * message. `label` (recorded step errors only) names the step on a line above.
+ * The code line's spacing lives in `_execution-log.scss` as tokens instead of
+ * `TriggerFillForm`'s inline style — same values (`0.75` opacity, a 4px gap).
+ */
+function ExecutionLogErrorBlock({ error, label }: { error: ExecutionLogError; label?: string }) {
+  return (
+    <div className="w6w-result w6w-error">
+      {label !== undefined && <strong className="w6w-execution-log-error-label">{label}</strong>}
+      {error.code && (
+        <div className="w6w-small w6w-execution-log-error-code">
+          <code>{error.code}</code>
+        </div>
+      )}
+      {error.message}
+    </div>
   );
 }
 
