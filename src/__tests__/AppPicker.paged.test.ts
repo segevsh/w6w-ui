@@ -44,11 +44,26 @@ g.MutationObserver =
 (dom.window as unknown as Record<string, unknown>).MutationObserver = g.MutationObserver;
 g.IS_REACT_ACT_ENVIRONMENT = true;
 
+// jsdom implements <dialog> as an element but not its imperative API — `Modal`
+// (StepBuilderModal's wrapper, mounted by the no-listApps StepBuilderModal
+// case below) calls `showModal()` in a mount effect.
+const dialogProto = dom.window.HTMLDialogElement?.prototype as unknown as Record<string, unknown>;
+if (dialogProto && typeof dialogProto.showModal !== "function") {
+  dialogProto.showModal = function showModal(this: HTMLElement) {
+    this.setAttribute("open", "");
+  };
+  dialogProto.close = function close(this: HTMLElement) {
+    this.removeAttribute("open");
+  };
+}
+
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { AppPicker } = await import("../AppPicker.tsx");
+const { StepBuilderModal } = await import("../StepBuilderModal.tsx");
 const { W6WUIProvider } = await import("../provider.tsx");
+type W6WApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6WApi>>;
 type AppSummaryLike = { id: string; displayName: string };
 type ListAppsPageOptionsLike = {
   q?: string;
@@ -568,6 +583,109 @@ test("legacy provider (listApps only, no listAppsPage) keeps the unchanged eager
       (b) => (b.textContent || "").trim() === "Load more",
     ),
     false,
+  );
+  await act(async () => root.unmount());
+});
+
+// ── T2.1.1: `listApps` is now optional too — a host with NEITHER bounded seam
+// NOR the legacy `listApps` must settle into the existing empty state, never
+// a permanent "Loading apps…" and never a crash. `noListAppsHost` genuinely
+// OMITS `listApps`/`listAppsPage`/`listAppsByIds` (not a Proxy-style
+// answer-everything stub, nor set to `undefined` — see the same distinction
+// drawn in `StepBuilderModal.app-triggers.test.ts`'s `fakeApi`), and is
+// declared `: W6WApi` with no `as`/`unknown` cast so reverting `listApps?`
+// back to required fails THIS fixture at typecheck, not just at runtime.
+function noListAppsHost(): W6WApi {
+  return {
+    getAppAuth: async () => [],
+    createConnection: async () => {
+      throw new Error("not used in this test");
+    },
+    startAppOAuthFlow: async () => {
+      throw new Error("not used in this test");
+    },
+    getAppActions: async () => [],
+    listConnectionsForApp: async () => [],
+    listConnections: async () => [],
+    invokeAction: async () => {
+      throw new Error("not used in this test");
+    },
+    listSavedTests: async () => [],
+    createSavedTest: async () => {
+      throw new Error("not used in this test");
+    },
+    updateSavedTest: async () => {
+      throw new Error("not used in this test");
+    },
+    deleteSavedTest: async () => {},
+    recordTestRun: async () => {},
+    saveStepTest: async () => {
+      throw new Error("not used in this test");
+    },
+    recordStepTestRun: async () => {},
+    listStepTests: async () => [],
+    listFunctions: async () => [],
+    getFunction: async () => {
+      throw new Error("not used in this test");
+    },
+    invokeFunction: async () => undefined,
+    listWorkflows: async () => [],
+    getWorkflow: async () => {
+      throw new Error("not used in this test");
+    },
+    runWorkflow: async () => {
+      throw new Error("not used in this test");
+    },
+  };
+}
+
+test("a host with no apps prop, no listAppsPage, and no listApps settles into the picker's existing empty state — no request, no throw, no permanent Loading", async () => {
+  const api = noListAppsHost();
+  const { container, root } = mount(React.createElement("div"));
+  await act(async () => {
+    root.render(
+      React.createElement(
+        W6WUIProvider,
+        { api, children: null } as never,
+        React.createElement(AppPicker, { onSelectApp: () => {} } as never),
+      ),
+    );
+  });
+  await flush();
+  assert.ok(
+    container.textContent?.includes("No apps registered yet"),
+    "must settle into the pre-existing empty state",
+  );
+  assert.equal(container.textContent?.includes("Loading apps"), false);
+  await act(async () => root.unmount());
+});
+
+test("StepBuilderModal: a host with no listAppsByIds and no listApps renders without throwing — home tab absent, Apps tab settles empty", async () => {
+  const api = noListAppsHost();
+  const { container, root } = mount(React.createElement("div"));
+  await act(async () => {
+    root.render(
+      React.createElement(
+        W6WUIProvider,
+        { api, children: null } as never,
+        React.createElement(StepBuilderModal, {
+          onClose: () => {},
+          onAdd: () => "step_1",
+        } as never),
+      ),
+    );
+  });
+  await flush();
+  assert.equal(
+    Array.from(container.querySelectorAll("button")).some(
+      (b) => (b.textContent || "").trim() === "Ready to use",
+    ),
+    false,
+    "the home tab must not render with nothing connected and nothing built",
+  );
+  assert.ok(
+    container.textContent?.includes("No apps registered yet"),
+    "falls to the Apps tab, which settles into AppPicker's own empty state",
   );
   await act(async () => root.unmount());
 });
