@@ -176,6 +176,12 @@ Stories live **beside their component** (`src/CodeBlock.stories.tsx`), never in 
 `../src/**/*.stories.tsx` and nothing else. There are deliberately no scaffolded Button/Header/Page
 examples — every entry in the sidebar is a real component of this library.
 
+The sidebar is grouped by category: each story's `title` is `<Category>/<Component>`
+(`"Forms/ParamsForm"`), and the category is one of the list in `.storybook/preview.tsx`'s
+`storySort.order` — Buttons, Forms, Editors, Modals, Data Display, Status & Health, Executions,
+Server Resources, Providers. A new category is added to that list too, so the sidebar order stays
+deliberate.
+
 Every component exported from the root entrypoint and from both subpaths (`@w6w/ui/flow`,
 `@w6w/ui/code`) has a co-located story. `pnpm coverage:stories` enforces this: it reads every
 component out of `package.json`'s `exports` map and fails, listing each one by name, if any has no

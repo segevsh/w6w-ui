@@ -20,7 +20,7 @@ if (dialogProto && typeof dialogProto.showModal !== "function") {
 }
 
 const meta = {
-  title: "Components/Modal",
+  title: "Modals/Modal",
   component: Modal,
   argTypes: {
     size: {

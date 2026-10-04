@@ -15,7 +15,7 @@ const VALUES: Record<string, unknown> = {
 };
 
 const meta = {
-  title: "Components/AuthFieldsForm",
+  title: "Forms/AuthFieldsForm",
   component: AuthFieldsForm,
   args: { fields: FIELDS, values: VALUES, onChange: () => {} },
 } satisfies Meta<typeof AuthFieldsForm>;

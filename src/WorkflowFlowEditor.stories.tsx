@@ -56,7 +56,7 @@ function FlowDemo(
 }
 
 const meta = {
-  title: "Components/WorkflowFlowEditor",
+  title: "Editors/WorkflowFlowEditor",
   component: WorkflowFlowEditor,
   parameters: { layout: "fullscreen" },
   decorators: [

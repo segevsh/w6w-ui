@@ -4,7 +4,7 @@ import { Copyable } from "./Copyable.tsx";
 const VALUE = "w6w_sk_live_4f2c9a1e8b7d3c6a";
 
 const meta = {
-  title: "Components/Copyable",
+  title: "Data Display/Copyable",
   component: Copyable,
   args: {
     value: VALUE,

@@ -37,7 +37,7 @@ const INCIDENTS: VendorIncidentBar[] = [
 const NOW_MS = Date.parse("2026-09-22T23:59:59Z");
 
 const meta = {
-  title: "Components/HistoryTimeline",
+  title: "Status & Health/HistoryTimeline",
   component: HistoryTimeline,
   args: { window: WINDOW, days: DAYS, nowMs: NOW_MS },
 } satisfies Meta<typeof HistoryTimeline>;

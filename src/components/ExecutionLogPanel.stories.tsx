@@ -39,7 +39,7 @@ const STEPS: ExecutionLogStep[] = [
 ];
 
 const meta = {
-  title: "Components/ExecutionLogPanel",
+  title: "Executions/ExecutionLogPanel",
   component: ExecutionLogPanel,
   args: { steps: STEPS },
 } satisfies Meta<typeof ExecutionLogPanel>;

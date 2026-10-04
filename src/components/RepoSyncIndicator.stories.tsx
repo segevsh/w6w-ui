@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RepoSyncIndicator } from "./RepoSyncIndicator.tsx";
 
 const meta = {
-  title: "Components/RepoSyncIndicator",
+  title: "Status & Health/RepoSyncIndicator",
   component: RepoSyncIndicator,
   args: {
     branch: "main",

@@ -13,7 +13,7 @@ const DAYS: UptimeDay[] = [
 ];
 
 const meta = {
-  title: "Components/UptimeStrip",
+  title: "Status & Health/UptimeStrip",
   component: UptimeStrip,
   args: { days: DAYS },
 } satisfies Meta<typeof UptimeStrip>;

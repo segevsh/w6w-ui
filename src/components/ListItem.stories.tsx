@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ListItem } from "./ListItem.tsx";
 
 const meta = {
-  title: "Components/ListItem",
+  title: "Data Display/ListItem",
   component: ListItem,
   args: {
     title: "sendgrid",

@@ -1,0 +1,282 @@
+/* --- ExecutionList ------------------------------------------------------- */
+/* Rows of past executions: a click-to-select list plus a prev/next pager.
+   Closer in shape to `.w6w-execution-log` (`_execution-log.scss`) than to
+   `.w6w-history-*`: that family lays out a time-proportional strip against a
+   shared axis, while this is a plain in-order list of one row per run. The row
+   itself is `ListItem` (`.w6w-list-item`, `_lists.scss`) — reused whole, box,
+   hover, focus ring, `active` highlight and all — so this partial only owns
+   the LIST around the rows: the `ul` reset and the pager strip.
+
+   Spacing/type come from the scale tokens only (the `lint:tokens` ratchet has
+   no baseline entry for this file, so anything literal here would be a new
+   violation); colour stays on `_execution-log.scss`'s pill and the shared
+   `.w6w-btn` classes. */
+
+.w6w-execution-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-3);
+  width: 100%;
+  min-width: 0;
+}
+
+/* A `<ul>`, reset to a bare vertical stack — the marker/indent are the only
+   things `_layout.scss`'s `.w6w-stack` doesn't already strip, and rows are
+   `<li>` so the list is announced as a list, not a run of cards. */
+.w6w-execution-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.w6w-execution-list-rows > li {
+  min-width: 0;
+}
+
+/* Both non-list branches (the loading and the empty `<p>`) hang straight off
+   the root, so one direct-child rule covers them and neither needs a class the
+   pinned markup doesn't have. Same dashed box `.w6w-execution-log-empty`
+   uses — one treatment for "nothing here yet" across the run-log family. */
+.w6w-execution-list > p {
+  width: 100%;
+  margin: 0;
+  padding: var(--w6w-sp-4);
+  border: 1px dashed var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-sm);
+  text-align: center;
+}
+
+.w6w-execution-list-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--w6w-sp-2);
+}
+
+/* --- ExecutionFilters --------------------------------------------------- */
+/* One dense row of heterogeneous controls. The control chrome cannot come from
+   `_fields.scss`: those rules are anchored on `.w6w-field` (a labelled,
+   stacked field with a visible `<span>`), and these controls are labelled
+   accessibly (`aria-label`) instead — a visible label per control would triple
+   the bar's height. Tokens only, for the same reason as the rules above. */
+
+/* The row is width-driven: a wrapped line is formed from each control's
+   *hypothetical* size, so six controls plus their gaps sit on one line for as
+   long as they fit, and the row breaks by itself once they don't. That is the
+   behaviour this bar needs — it renders full width in the studio History page
+   and ~500px wide inside the detail modal — so the break follows THIS box
+   rather than the viewport, and nothing here may key off a media query. */
+.w6w-execution-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  width: 100%;
+  min-width: 0;
+}
+
+/* These are bare form elements, so a host's own global `input`/`select` chrome
+   lands on them too — and in the studio it is decisive: `studio/src/styles.css`
+   gives `input[type="search"]`/`input[type="date"]` a `width: 100%` and a
+   `margin-top`. A `width: 100%` on a flex item whose `flex-basis` is `auto` IS
+   that item's basis, so each date picker asked for the whole bar and the row
+   broke into one control per line, while the margin lifted the two inputs off
+   the selects' line. Both are pinned back here; at (0,2,1) this selector beats
+   a host's bare `input[type=…]` (0,1,1) and `input` (0,0,1) rules without
+   needing `!important`, and a host that leaves the controls alone is unaffected
+   because `width: auto`/`margin: 0` are what these controls want anyway. */
+.w6w-execution-filters input[type="search"],
+.w6w-execution-filters input[type="date"],
+.w6w-execution-filters select {
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  margin: 0;
+  width: auto;
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  font-family: inherit;
+}
+
+.w6w-execution-filters input[type="search"]:focus-visible,
+.w6w-execution-filters input[type="date"]:focus-visible,
+.w6w-execution-filters select:focus-visible {
+  outline: 2px solid var(--w6w-accent);
+  outline-offset: 1px;
+}
+
+/* The dropdowns and the two date pickers show one short, fixed label, so they
+   keep their intrinsic width and neither grow nor shrink: the row's spare width
+   is the search box's alone. */
+.w6w-execution-filters select,
+.w6w-execution-filters input[type="date"] {
+  flex: 0 0 auto;
+}
+
+/* The search box is the only control that flexes — it takes the spare width and
+   gives it back down to a 160px floor, and that floor is what sets the row's
+   breakpoint: 160px of search + the five intrinsic controls + five 8px gaps
+   ≈ 757px, so the bar is one row from the 760px the layout promises, and wraps
+   below it. */
+.w6w-execution-filters-search {
+  flex: 1 1 160px;
+  min-width: 160px;
+}
+
+/* Clear is a fixed-size control and stays at the end of the row. */
+.w6w-execution-filters-clear {
+  flex: 0 0 auto;
+}
+
+/* --- ExecutionStats ----------------------------------------------------- */
+/* The `DashboardPage.tsx` `StatCard` shape (big value, muted label) promoted
+   out of the page and onto tokens — that page had the value's type ramp and
+   weight inline, which is exactly what a shared component must not leave to
+   its host. */
+
+.w6w-execution-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.w6w-execution-stats-label {
+  margin: 0;
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-sm);
+}
+
+.w6w-execution-stats-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--w6w-sp-3);
+}
+
+.w6w-execution-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: var(--w6w-sp-3);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel-2);
+}
+
+.w6w-execution-stat-value {
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-3xl);
+  font-weight: var(--w6w-fw-semibold);
+  line-height: var(--w6w-lh-tight);
+}
+
+.w6w-execution-stat-label {
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-sm);
+}
+
+/* --- ExecutionDetail ---------------------------------------------------- */
+
+.w6w-execution-detail {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Title block left, controls right; the actions keep their width, the name
+   wraps or ellipses into whatever is left. */
+.w6w-execution-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--w6w-sp-3);
+}
+
+.w6w-execution-detail-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  min-width: 0;
+}
+
+.w6w-execution-detail-name {
+  margin: 0;
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-lg);
+  font-weight: var(--w6w-fw-semibold);
+  overflow-wrap: anywhere;
+}
+
+.w6w-execution-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+}
+
+.w6w-execution-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  flex-shrink: 0;
+}
+
+.w6w-execution-detail-id-line {
+  margin: 0;
+}
+
+.w6w-execution-detail-id {
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-sm);
+  color: var(--w6w-muted);
+  overflow-wrap: anywhere;
+}
+
+/* A `<dl>` whose pairs are `<div>`s, so the three facts row up side by side
+   instead of stacking as three label/value paragraphs. */
+.w6w-execution-detail-timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--w6w-sp-5);
+  margin: 0;
+}
+
+.w6w-execution-detail-timing-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  min-width: 0;
+}
+
+.w6w-execution-detail-timing-item dt {
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+}
+
+.w6w-execution-detail-timing-item dd {
+  margin: 0;
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+}
+
+/* The view-level failure notice: the same danger token `.w6w-btn-danger` and
+   the health pills use, tinted rather than filled so it reads as a notice and
+   not as a button. */
+.w6w-execution-detail-error-message {
+  margin: 0;
+  padding: var(--w6w-sp-2) var(--w6w-sp-3);
+  border: 1px solid var(--w6w-danger);
+  border-radius: var(--w6w-radius);
+  background: color-mix(in srgb, var(--w6w-danger) 10%, transparent);
+  color: var(--w6w-danger);
+  font-size: var(--w6w-fs-sm);
+}

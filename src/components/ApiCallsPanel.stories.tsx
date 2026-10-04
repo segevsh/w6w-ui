@@ -25,7 +25,7 @@ const CALLS: ApiCallRecord[] = [
 ];
 
 const meta = {
-  title: "Components/ApiCallsPanel",
+  title: "Executions/ApiCallsPanel",
   component: ApiCallsPanel,
   args: { calls: CALLS },
 } satisfies Meta<typeof ApiCallsPanel>;

@@ -10,7 +10,7 @@ const PARAMS: ActionParam[] = [
 const VALUES: Record<string, unknown> = { to: "ada@example.com", subject: "Welcome" };
 
 const meta = {
-  title: "Components/PropertyEntryForm",
+  title: "Forms/PropertyEntryForm",
   component: PropertyEntryForm,
   args: {
     params: PARAMS,

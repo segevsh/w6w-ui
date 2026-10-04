@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HealthStatusPill } from "./HealthStatusPill.tsx";
 
 const meta = {
-  title: "Components/HealthStatusPill",
+  title: "Status & Health/HealthStatusPill",
   component: HealthStatusPill,
   argTypes: {
     state: { control: "select", options: ["ok", "degraded", "down", "unknown"] },

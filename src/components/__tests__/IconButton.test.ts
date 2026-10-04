@@ -160,3 +160,134 @@ test("K5 — caller className is merged alongside w6w-icon-button", async () => 
     root.unmount();
   });
 });
+
+test("K6 — icon renders one decorative Icon svg, at iconSize", async () => {
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(
+      React.createElement(IconButton, {
+        label: "Execution history",
+        onClick: () => {},
+        icon: "history",
+      }),
+    );
+  });
+  const svg = container.querySelector("button > svg");
+  assert.ok(svg);
+  assert.ok(svg.classList.contains("w6w-icon"));
+  assert.equal(svg.getAttribute("width"), "16");
+  assert.equal(svg.getAttribute("aria-hidden"), "true");
+  await act(async () => {
+    root.unmount();
+  });
+
+  const sized = mountRoot();
+  await act(async () => {
+    sized.root.render(
+      React.createElement(IconButton, {
+        label: "Execution history",
+        onClick: () => {},
+        icon: "history",
+        iconSize: 20,
+      }),
+    );
+  });
+  const bigger = sized.container.querySelector("button > svg");
+  assert.ok(bigger);
+  assert.equal(bigger.getAttribute("width"), "20");
+  assert.equal(bigger.getAttribute("height"), "20");
+  await act(async () => {
+    sized.root.unmount();
+  });
+});
+
+test("K7 — children win over icon when both are given", async () => {
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(
+      React.createElement(IconButton, {
+        label: "Frob",
+        onClick: () => {},
+        icon: "history",
+        children: React.createElement("span", { "data-testid": "own-glyph" }, "*"),
+      }),
+    );
+  });
+  assert.ok(container.querySelector('[data-testid="own-glyph"]'));
+  assert.equal(container.querySelector("svg"), null);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("K8 — title overrides the tooltip only; aria-label stays label", async () => {
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(
+      React.createElement(IconButton, {
+        label: "Execution history",
+        title: "No executions yet",
+        onClick: () => {},
+        icon: "history",
+      }),
+    );
+  });
+  const button = container.querySelector("button");
+  assert.ok(button);
+  assert.equal(button.getAttribute("title"), "No executions yet");
+  assert.equal(button.getAttribute("aria-label"), "Execution history");
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("K9 — ref reaches the HTMLButtonElement", async () => {
+  const { container, root } = mountRoot();
+  const ref = React.createRef<HTMLButtonElement>();
+  await act(async () => {
+    root.render(
+      React.createElement(IconButton, { label: "Frob", onClick: () => {}, ref, icon: "edit" }),
+    );
+  });
+  const button = container.querySelector("button");
+  assert.ok(button);
+  assert.ok(ref.current instanceof dom.window.HTMLButtonElement);
+  assert.equal(ref.current, button);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("K10 — aria-pressed / aria-expanded pass through, and are absent by default", async () => {
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(
+      React.createElement(IconButton, {
+        label: "Frob",
+        onClick: () => {},
+        icon: "json",
+        "aria-pressed": true,
+        "aria-expanded": false,
+      }),
+    );
+  });
+  const button = container.querySelector("button");
+  assert.ok(button);
+  assert.equal(button.getAttribute("aria-pressed"), "true");
+  assert.equal(button.getAttribute("aria-expanded"), "false");
+  await act(async () => {
+    root.unmount();
+  });
+
+  const plain = mountRoot();
+  await act(async () => {
+    plain.root.render(React.createElement(IconButton, { label: "Frob", onClick: () => {} }));
+  });
+  const bare = plain.container.querySelector("button");
+  assert.ok(bare);
+  assert.equal(bare.hasAttribute("aria-pressed"), false);
+  assert.equal(bare.hasAttribute("aria-expanded"), false);
+  await act(async () => {
+    plain.root.unmount();
+  });
+});

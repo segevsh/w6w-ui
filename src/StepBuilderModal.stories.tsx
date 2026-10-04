@@ -11,7 +11,7 @@ import { W6WUIProvider } from "./provider.tsx";
  * default (non-empty) `fakeApi()`.
  */
 const meta = {
-  title: "Components/StepBuilderModal",
+  title: "Modals/StepBuilderModal",
   component: StepBuilderModal,
   parameters: { layout: "fullscreen" },
   decorators: [

@@ -9,7 +9,7 @@ const WITH_RETRY: NodeConfig = {
 };
 
 const meta = {
-  title: "Components/NodeConfigForm",
+  title: "Forms/NodeConfigForm",
   component: NodeConfigForm,
   args: { config: BASE, onChange: () => {} },
 } satisfies Meta<typeof NodeConfigForm>;
