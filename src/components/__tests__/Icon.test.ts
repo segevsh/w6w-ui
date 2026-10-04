@@ -157,7 +157,7 @@ test("I7 — paint matches the entry's variant (fill vs stroke vs mixed)", async
     { name: "history", variant: "fill" },
     { name: "delete", variant: "stroke" },
     { name: "lang-curl", variant: "mixed" },
-  ];
+  ] as const;
   for (const { name, variant } of cases) {
     const { container, root } = mountRoot();
     await act(async () => {
