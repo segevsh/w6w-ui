@@ -22,28 +22,40 @@ export interface CreateW6WApiOptions {
   /** Absolute URL or path prefix — e.g. `"https://w6w.example.com"` or `"/api"`. */
   baseUrl: string;
   /**
-   * Bearer token to send. Accepts a string (static) or a function so a JWT
-   * that rotates on refresh is fetched fresh on every request.
+   * Bearer token to send. Accepts a string (static) or a supplier function so
+   * a JWT that rotates on refresh is fetched fresh on every request. The
+   * supplier may be sync or return a `Promise` — either way it is awaited
+   * once per request. It receives an optional `{ forceRefresh? }` ctx arg
+   * (unused by this client today, but part of the shape so a caller's
+   * supplier can share one implementation with `@w6w/sdk`'s `TokenProvider`).
    */
-  token?: string | (() => string | null | undefined);
+  token?:
+    | string
+    | ((ctx?: { forceRefresh?: boolean }) =>
+        | string
+        | null
+        | undefined
+        | Promise<string | null | undefined>);
   /** Optional fetch replacement — handy for tests. Defaults to `globalThis.fetch`. */
   fetch?: typeof fetch;
 }
 
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string,
-    /**
-     * The parsed error response body, when the server sent one. Carries the
-     * fields that ride alongside an error — e.g. an invoke's `logs` and
-     * `apiCalls` — which the message alone would drop.
-     */
-    public body?: unknown,
-  ) {
+  status: number;
+  code: string;
+  /**
+   * The parsed error response body, when the server sent one. Carries the
+   * fields that ride alongside an error — e.g. an invoke's `logs` and
+   * `apiCalls` — which the message alone would drop.
+   */
+  body?: unknown;
+
+  constructor(status: number, code: string, message: string, body?: unknown) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.body = body;
   }
 }
 
@@ -51,7 +63,7 @@ export class ApiError extends Error {
 export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
   const baseUrl = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetch ?? globalThis.fetch;
-  const getToken = () => (typeof opts.token === "function" ? opts.token() : opts.token);
+  const getToken = async () => (typeof opts.token === "function" ? await opts.token() : opts.token);
 
   // The shared fetch core: auth header, JSON parse, and the one error-shaping
   // idiom every member uses. Exposes the response's own status code (`req<T>`
@@ -62,7 +74,7 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
     init?: RequestInit,
   ): Promise<{ status: number; data: unknown }> {
     const headers = new Headers(init?.headers);
-    const token = getToken();
+    const token = await getToken();
     if (token) headers.set("authorization", `Bearer ${token}`);
     if (init?.body && !headers.has("content-type")) headers.set("content-type", "application/json");
 
