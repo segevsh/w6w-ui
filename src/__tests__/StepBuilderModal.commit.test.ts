@@ -243,3 +243,95 @@ test("ControlStepConfig commits on mount, then routes edits through onDraftChang
     root.unmount();
   });
 });
+
+test("C-D3a — ControlStepConfig on a @w6w/control node shows no Retry on failure (D-3)", async () => {
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+  const node = {
+    app: "@w6w/control",
+    action: "if",
+    label: "If",
+    displayName: "If",
+    icon: "if",
+    group: "control" as const,
+    ports: { in: 1, out: 1 },
+    params: [{ key: "cond", type: "string", required: true, label: "Condition" }],
+  };
+
+  await act(async () => {
+    root.render(
+      React.createElement(W6WUIProvider, {
+        api: fakeApi(),
+        children: React.createElement(ControlStepConfig, {
+          node,
+          onAdd: () => {},
+          onClose: () => {},
+        }),
+      }),
+    );
+  });
+
+  const nodeSettingsBtn = container.querySelector(
+    '.w6w-view-toggle button[aria-label="Node settings"]',
+  ) as HTMLButtonElement | null;
+  assert.ok(nodeSettingsBtn, "the Node settings view toggle button should be present");
+  await act(async () => {
+    nodeSettingsBtn.click();
+  });
+
+  assert.equal(
+    container.textContent?.includes("Retry on failure"),
+    false,
+    "a @w6w/control node runs no retry loop of its own (D-3)",
+  );
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("C-D3b — ControlStepConfig on a @w6w/http node still shows Retry on failure", async () => {
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+  const node = {
+    app: "@w6w/http",
+    action: "request",
+    label: "HTTP request",
+    displayName: "HTTP",
+    icon: "http" as const,
+    group: "request" as const,
+    params: [{ key: "method", type: "string", required: true, label: "Method" }],
+  };
+
+  await act(async () => {
+    root.render(
+      React.createElement(W6WUIProvider, {
+        api: fakeApi(),
+        children: React.createElement(ControlStepConfig, {
+          node,
+          onAdd: () => {},
+          onClose: () => {},
+        }),
+      }),
+    );
+  });
+
+  const nodeSettingsBtn = container.querySelector(
+    '.w6w-view-toggle button[aria-label="Node settings"]',
+  ) as HTMLButtonElement | null;
+  assert.ok(nodeSettingsBtn, "the Node settings view toggle button should be present");
+  await act(async () => {
+    nodeSettingsBtn.click();
+  });
+
+  assert.ok(
+    container.textContent?.includes("Retry on failure"),
+    "a @w6w/http node still offers a retry policy",
+  );
+
+  await act(async () => {
+    root.unmount();
+  });
+});

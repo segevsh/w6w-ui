@@ -37,11 +37,16 @@ type TestState =
  * form reads and writes the same fixture, so values entered on either surface
  * come back on the other.
  *
- * That persistence is **local to testing**. It does not by itself reach a
- * production workflow run: `POST /workflows/:id/run` does accept an `input`
- * body field, and a manual trigger's handler now sees it as `params.input`
- * (`run-workflow.ts:391`), but nothing wires this form's saved `step_tests`
- * fixture into that call — a caller has to pass `input` itself.
+ * That persistence is **local to testing** — `TriggerFillForm` itself never
+ * calls `POST /workflows/:id/run`. It does not by itself reach a production
+ * workflow run: that route does accept an `input` body field, and the server
+ * lands it as the entry trigger's output (`run-workflow.ts`,
+ * `EnqueueRunInput.input`), but a CALLER has to fetch the saved fixture and
+ * pass it in. Studio's header ▶ Run is that caller (`WorkflowsPage.tsx`'s
+ * `onRunClick` → `resolveHeaderRunInput`,
+ * `packages/studio/src/lib/workflow-live-run.ts`): it fetches the manual
+ * trigger's latest `step_tests` row and sends its `with` verbatim as `input`.
+ * This form is not in that path; it only writes the fixture that call reads.
  */
 export function TriggerFillForm({
   app,

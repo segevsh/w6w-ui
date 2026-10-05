@@ -87,7 +87,9 @@ export interface AppPickerProps {
  *    reaches once its host wires the optional method.
  * 3. `apps` omitted and the host has ONLY the legacy `W6WApi.listApps` —
  *    unchanged eager full-catalog fetch, preserved byte-for-byte for
- *    backward compatibility with an older/imported provider (C6).
+ *    backward compatibility with an older/imported provider (C6). A host
+ *    with neither `listAppsPage` nor `listApps` settles into this same
+ *    mode's existing empty state — no request, no throw.
  */
 export function AppPicker({
   onSelectApp,
@@ -127,9 +129,17 @@ export function AppPicker({
 
   useEffect(() => {
     if (supplied || paged) return;
+    const listApps = api.listApps;
+    // A host with neither `listAppsPage` (checked above, via `paged`) nor
+    // `listApps` settles here into the empty catalog — not a permanent
+    // "Loading apps…" and not a call to an undefined function — exactly the
+    // pre-existing empty-state branch below (`base.length === 0`).
+    if (typeof listApps !== "function") {
+      setFetchedApps([]);
+      return;
+    }
     let canceled = false;
-    api
-      .listApps()
+    listApps()
       .then((r) => !canceled && setFetchedApps(r))
       .catch((e) => !canceled && setLegacyError((e as Error).message));
     return () => {

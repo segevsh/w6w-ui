@@ -3615,7 +3615,11 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   width: 100%;
 }
 
+/* `width: 100%` plus padding and a border overflows the parent under the
+   default content-box sizing; this package has no global box-sizing reset, so
+   it opts in per element (as `_chips.scss` and `_step-config.scss` do). */
 .w6w-execution-log-empty {
+  box-sizing: border-box;
   width: 100%;
   padding: var(--w6w-sp-4);
   border: 1px dashed var(--w6w-border);
@@ -3643,14 +3647,44 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   white-space: nowrap;
 }
 
+/* Shrinkable, so a narrow row (the 360px docked panel) wraps the
+   "<ts> → <ts> (elapsed)" text inside the row's box. With `flex-shrink: 0` it
+   kept its max-content width, wrapped onto its own flex line, and ran past the
+   row's border. */
 .w6w-execution-log-timing {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--w6w-muted);
   font-size: var(--w6w-fs-xs);
 }
 
 .w6w-execution-log-json {
   min-width: 0;
+}
+
+/* Error blocks (step `error`, run `runError`/`stepErrors`). The box itself is
+   `.w6w-result.w6w-error` (`_tester.scss`) — TriggerFillForm's StepError
+   visual, reused, not restyled here; these rules only place it. */
+.w6w-execution-log-errors {
+  width: 100%;
+  margin-bottom: var(--w6w-sp-2);
+}
+
+/* A step's error sits after its `.w6w-section` box, inside the same `<li>` —
+   closer to its own row than the list's row gap, so it reads as that row's. */
+.w6w-execution-log-row > .w6w-error {
+  margin-top: var(--w6w-sp-1-5);
+}
+
+/* TriggerFillForm's inline `opacity: 0.75; marginBottom: 4` code line, as tokens. */
+.w6w-execution-log-error-code {
+  opacity: 0.75;
+  margin-bottom: var(--w6w-sp-1);
+}
+
+.w6w-execution-log-error-label {
+  display: block;
+  margin-bottom: var(--w6w-sp-1);
 }
 
 /* --- ExecutionList ------------------------------------------------------- */

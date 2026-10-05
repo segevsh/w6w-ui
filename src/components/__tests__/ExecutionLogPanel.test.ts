@@ -434,3 +434,161 @@ test("A4/M2 — with onDismiss omitted, no dismiss control and no header row exi
   );
   assert.match(populated, /w6w-execution-log-row-header/, "the rows themselves are unchanged");
 });
+
+// ─── Errors (26-10-04-01-fixes T1.1.1): step `error`, run `runError`/`stepErrors` ─
+// Each error renders in TriggerFillForm's StepError visual (`w6w-result
+// w6w-error`, optional `<code>` badge, message). Every fixture uses a distinct
+// literal per field, so a dropped field can't hide behind a sibling's text.
+
+/** Occurrences of `needle` in `html`. */
+function count(html: string, needle: string) {
+  return html.split(needle).length - 1;
+}
+
+test("E1 — a failed step with only `error` renders code + message in the error visual, and no <details>", async () => {
+  const html = await renderPanel({
+    steps: [
+      {
+        id: "mail_send_1",
+        status: "failed",
+        error: { code: "execute_error", message: "`toEmail` is required" },
+      },
+    ],
+  });
+  assert.match(html, /`toEmail` is required/, `the error message must render: ${html}`);
+  assert.match(html, /<code>execute_error<\/code>/, `the code badge must render: ${html}`);
+  assert.match(html, /class="w6w-result w6w-error"/, `the TriggerFillForm visual: ${html}`);
+  assert.doesNotMatch(html, /<details/, "an error alone is not something to disclose");
+});
+
+const FAILED_WITH_INPUT: ExecutionLogStep = {
+  id: "s",
+  status: "failed",
+  input: { to: "" },
+  error: { code: "c_one", message: "boom-one" },
+};
+
+test("E2 — a failed step with input keeps its <details>, and shows the error while still collapsed", async () => {
+  const html = await renderPanel({ steps: [FAILED_WITH_INPUT] });
+  assert.match(html, /<details/, "a step with input keeps its disclosure");
+  assert.match(html, /boom-one/, `the message must be in the DOM while collapsed: ${html}`);
+  assert.match(html, /<code>c_one<\/code>/, `the code must be in the DOM while collapsed: ${html}`);
+  assert.doesNotMatch(html, /w6w-code-block/, "Input stays lazy — no CodeBlock while collapsed");
+});
+
+test("E3 — opening that row mounts Input and does not duplicate the error", async () => {
+  const { container, root } = await mountPanel({ steps: [FAILED_WITH_INPUT] });
+  await openDetailsAt(container, 0);
+  const html = container.innerHTML;
+  await act(async () => {
+    root.unmount();
+  });
+  assert.match(html, /w6w-code-block/, "Input must render once opened");
+  assert.equal(count(html, "boom-one"), 1, `the error must appear exactly once: ${html}`);
+});
+
+test("E4 — runError renders in the EMPTY branch, alongside the empty state", async () => {
+  const html = await renderPanel({
+    steps: [],
+    runError: { code: "plan_invalid", message: "run-level-msg" },
+  });
+  assert.match(html, /run-level-msg/, `the run error message must render: ${html}`);
+  assert.match(html, /<code>plan_invalid<\/code>/, `the run error code must render: ${html}`);
+  assert.match(html, /No steps have run yet\./, "the empty state itself still renders");
+  assert.ok(
+    at(html, "run-level-msg") < at(html, "w6w-execution-log-empty"),
+    `the run error sits above the empty state: ${html}`,
+  );
+});
+
+test("E5 — runError and every stepErrors entry render, in order, above the step rows, label falling back to stepId", async () => {
+  const { container, root } = await mountPanel({
+    steps: [RUN_LONGER],
+    runError: { message: "rl-2" },
+    stepErrors: [
+      { stepId: "a", error: { message: "rec-a" } },
+      { stepId: "b", label: "Bee", error: { code: "cb", message: "rec-b" } },
+    ],
+  });
+  const html = container.innerHTML;
+  const blocks = [...container.querySelectorAll(".w6w-result.w6w-error")].map((b) => b.innerHTML);
+  await act(async () => {
+    root.unmount();
+  });
+
+  for (const literal of ["rl-2", "rec-a", "rec-b", "Bee", "<code>cb</code>"]) {
+    assert.ok(html.includes(literal), `expected ${literal} in: ${html}`);
+  }
+  assert.equal(blocks.length, 3, `one block per error (run + 2 recorded), got: ${blocks.length}`);
+  assert.match(blocks[0], /rl-2/, "the run-level block comes first");
+  assert.match(blocks[1], />a</, `the first entry falls back to its stepId label: ${blocks[1]}`);
+  assert.match(blocks[1], /rec-a/);
+  assert.match(blocks[2], />Bee</, `the second entry uses its label: ${blocks[2]}`);
+  assert.doesNotMatch(blocks[2], />b</, "a supplied label replaces the stepId");
+  assert.ok(at(html, "rec-a") < at(html, "rec-b"), "stepErrors keep the given order");
+  assert.ok(
+    at(html, "rl-2") < at(html, "w6w-execution-log-row"),
+    `the run-level block sits above the first step row: ${html}`,
+  );
+});
+
+test("E6 — no error anywhere ⇒ no w6w-error in the markup, in either branch", async () => {
+  const populated = await renderPanel({ steps: [RUN_LONGER] });
+  assert.doesNotMatch(populated, /w6w-error/, `populated branch grew an error: ${populated}`);
+  assert.doesNotMatch(populated, /w6w-execution-log-errors/, "no empty errors wrapper either");
+
+  const empty = await renderPanel({ steps: [], stepErrors: [] });
+  assert.doesNotMatch(empty, /w6w-error/, `empty branch grew an error: ${empty}`);
+  assert.doesNotMatch(empty, /w6w-execution-log-errors/, "empty stepErrors adds no wrapper node");
+});
+
+// ─── R-1 follow-ups (26-10-04-01-fixes T3.1.1): E-1, E-2 ─────────────────────
+// Structural pins for two placements the E-tests above only cover by text:
+// where a step's error sits relative to its `<details>`, and where the run
+// error sits relative to the dismiss head.
+
+test("E7 — a collapsed failed step's error is a direct child of its row, never inside <details>", async () => {
+  const { container, root } = await mountPanel({ steps: [FAILED_WITH_INPUT] });
+  const details = container.querySelectorAll("details");
+  const insideDetails = container.querySelectorAll("details .w6w-error").length;
+  const rowChildren = container.querySelectorAll("li.w6w-execution-log-row > .w6w-error");
+  const rowChildText = rowChildren[0]?.textContent ?? "";
+  const html = container.innerHTML;
+  await act(async () => {
+    root.unmount();
+  });
+
+  assert.equal(details.length, 1, `the step keeps its one <details>: ${html}`);
+  assert.equal(details[0].hasAttribute("open"), false, "the row is still collapsed");
+  assert.equal(insideDetails, 0, `no error may render inside the <details>: ${html}`);
+  assert.equal(rowChildren.length, 1, `exactly one error as the row's own child: ${html}`);
+  assert.match(rowChildText, /boom-one/, "that child is the step's own error");
+});
+
+test("E8 — with onDismiss and runError, the dismiss control precedes the run error in BOTH branches", async () => {
+  const runError = { code: "rc_eight", message: "run-eight-msg" };
+  for (const steps of [[], [RUN_SHORTER]] as ExecutionLogStep[][]) {
+    const branch = steps.length === 0 ? "empty" : "populated";
+    const { container, root } = await mountPanel({ steps, runError, onDismiss: () => {} });
+    const dismiss = container.querySelector('[data-testid="execution-log-dismiss"]');
+    const errorBlock = [...container.querySelectorAll(".w6w-result.w6w-error")].find((el) =>
+      el.textContent?.includes("run-eight-msg"),
+    );
+    const order = dismiss && errorBlock ? dismiss.compareDocumentPosition(errorBlock) : 0;
+    const html = container.innerHTML;
+    await act(async () => {
+      root.unmount();
+    });
+
+    assert.ok(dismiss, `${branch} branch: the dismiss control must render: ${html}`);
+    assert.ok(errorBlock, `${branch} branch: the run error must render: ${html}`);
+    assert.ok(
+      order & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+      `${branch} branch: the run error must come AFTER the dismiss control: ${html}`,
+    );
+    assert.ok(
+      at(html, "execution-log-dismiss") < at(html, "run-eight-msg"),
+      `${branch} branch: markup order agrees: ${html}`,
+    );
+  }
+});

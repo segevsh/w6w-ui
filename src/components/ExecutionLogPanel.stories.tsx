@@ -64,3 +64,53 @@ export const Populated: Story = {};
 export const Dismissible: Story = {
   args: { onDismiss: () => {} },
 };
+
+/** A failed step's `error` reads without expanding its row — with and without input. */
+export const FailedStep: Story = {
+  args: {
+    steps: [
+      STEPS[0],
+      {
+        id: "step-2",
+        label: "Send welcome email",
+        status: "failed",
+        startedAt: "2026-09-22T10:00:01Z",
+        finishedAt: "2026-09-22T10:00:02Z",
+        input: { to: "" },
+        error: { code: "execute_error", message: "`toEmail` is required" },
+      },
+      {
+        id: "step-3",
+        label: "Notify Slack",
+        status: "failed",
+        startedAt: "2026-09-22T10:00:02Z",
+        finishedAt: "2026-09-22T10:00:02Z",
+        error: { message: "Slack returned 403: channel_not_found" },
+      },
+    ],
+  },
+};
+
+/** `runError` with no steps — the run failed before any step ran. */
+export const RunFailedBeforeAnyStep: Story = {
+  args: {
+    steps: [],
+    runError: { code: "plan_invalid", message: "Step `notify` references unknown step `fetch`." },
+    onDismiss: () => {},
+  },
+};
+
+/** `stepErrors` — failures the run recorded and moved past, listed above the steps. */
+export const RecordedStepErrors: Story = {
+  args: {
+    steps: [STEPS[0], { ...STEPS[1], status: "skipped", input: undefined }],
+    stepErrors: [
+      {
+        stepId: "step-2",
+        label: "Send welcome email",
+        error: { code: "rate_limited", message: "Mail provider rate limit hit; continued." },
+      },
+      { stepId: "step-6", error: { message: "Webhook timed out after 30s; continued." } },
+    ],
+  },
+};

@@ -142,6 +142,8 @@ export type { RepoSyncIndicatorProps } from "./components/RepoSyncIndicator.tsx"
 // `src/flow.ts` both 0 hits).
 export { NodeConfigForm } from "./NodeConfigForm.tsx";
 export type { NodeConfig } from "./NodeConfigForm.tsx";
+export { RetryPolicyFields } from "./RetryPolicyFields.tsx";
+export type { RetryPolicyValue, RetryTarget } from "./RetryPolicyFields.tsx";
 
 export { StepStatusPill } from "./components/StepStatusPill.tsx";
 export type {
@@ -157,7 +159,12 @@ export type {
 } from "./components/ExecutionList.tsx";
 export { formatDurationMs, formatExecutionTime } from "./components/execution-format.ts";
 export { ExecutionLogPanel } from "./components/ExecutionLogPanel.tsx";
-export type { ExecutionLogPanelProps, ExecutionLogStep } from "./components/ExecutionLogPanel.tsx";
+export type {
+  ExecutionLogError,
+  ExecutionLogPanelProps,
+  ExecutionLogRecordedError,
+  ExecutionLogStep,
+} from "./components/ExecutionLogPanel.tsx";
 export { ExecutionFilters } from "./components/ExecutionFilters.tsx";
 export type {
   ExecutionFiltersProps,

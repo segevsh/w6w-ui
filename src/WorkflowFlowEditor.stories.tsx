@@ -96,3 +96,43 @@ export const ReadOnly: Story = {
 export const WithRunState: Story = {
   args: { runState: SAMPLE_RUN_STATE },
 };
+
+/** A run panel docking beside the canvas, as studio's run log does: the toggle
+ *  narrows the editor's pane by 360px and changes `fitViewKey`, so the graph
+ *  re-frames into the narrower pane instead of sliding behind the panel. */
+function DockedRunPanelDemo(
+  props: Omit<WorkflowFlowEditorProps, "value" | "onChange" | "height" | "fitViewKey"> & {
+    value: FlowWorkflow;
+  },
+) {
+  const [value, setValue] = useState(props.value);
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((o) => !o)}>
+        Toggle run panel
+      </button>
+      <div style={{ display: "flex", width: 1000, height: 480 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <WorkflowFlowEditor
+            {...props}
+            value={value}
+            onChange={setValue}
+            height="100%"
+            fitViewKey={open}
+          />
+        </div>
+        {open && (
+          <aside style={{ width: 360, flexShrink: 0, borderLeft: "1px solid var(--w6w-border)" }}>
+            Run panel
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** `fitViewKey`: toggling the docked panel re-frames the graph into the narrowed pane. */
+export const DockedRunPanel: Story = {
+  render: ({ height: _height, ...args }) => <DockedRunPanelDemo {...args} />,
+};

@@ -641,3 +641,107 @@ test("U9 — the On error hint mentions retry, scoped to the hint element (not a
     root.unmount();
   });
 });
+
+test("U-D3a — a @w6w/control step shows no Retry on failure, still shows On error (D-3)", async () => {
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+  const step: FlowStep = {
+    id: "ctrl_1",
+    uses: { app: "@w6w/control", action: "if" },
+    with: { condition: true },
+  };
+
+  await act(async () => {
+    root.render(
+      React.createElement(W6WUIProvider, {
+        api: fakeApi(),
+        children: React.createElement(ExpressionOptionsProvider, {
+          value: { sampleValues: {} },
+          children: React.createElement(StepEditModal, {
+            workflowId: "wf_1",
+            step,
+            upstreamSteps: [],
+            onChange: () => {},
+            onClose: () => {},
+          }),
+        }),
+      }),
+    );
+  });
+  await flush();
+  const nodeSettingsBtn = container.querySelector(
+    '.w6w-view-toggle button[aria-label="Node settings"]',
+  ) as HTMLButtonElement | null;
+  assert.ok(nodeSettingsBtn, "the Node settings view toggle button should be present");
+  await act(async () => {
+    nodeSettingsBtn.click();
+  });
+  await flush();
+
+  assert.equal(
+    container.textContent?.includes("Retry on failure"),
+    false,
+    "a @w6w/control step runs no retry loop of its own (D-3)",
+  );
+  assert.ok(
+    container.textContent?.includes("On error"),
+    "NodeConfigForm's On error field still renders",
+  );
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("U-D3b — a @w6w/call step shows no Retry on failure, still shows On error (D-3)", async () => {
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+  const step: FlowStep = {
+    id: "call_1",
+    uses: { app: "@w6w/call", action: "call" },
+    with: {},
+  };
+
+  await act(async () => {
+    root.render(
+      React.createElement(W6WUIProvider, {
+        api: fakeApi(),
+        children: React.createElement(ExpressionOptionsProvider, {
+          value: { sampleValues: {} },
+          children: React.createElement(StepEditModal, {
+            workflowId: "wf_1",
+            step,
+            upstreamSteps: [],
+            onChange: () => {},
+            onClose: () => {},
+          }),
+        }),
+      }),
+    );
+  });
+  await flush();
+  const nodeSettingsBtn = container.querySelector(
+    '.w6w-view-toggle button[aria-label="Node settings"]',
+  ) as HTMLButtonElement | null;
+  assert.ok(nodeSettingsBtn, "the Node settings view toggle button should be present");
+  await act(async () => {
+    nodeSettingsBtn.click();
+  });
+  await flush();
+
+  assert.equal(
+    container.textContent?.includes("Retry on failure"),
+    false,
+    "a @w6w/call step runs no retry loop of its own (D-3)",
+  );
+  assert.ok(
+    container.textContent?.includes("On error"),
+    "NodeConfigForm's On error field still renders",
+  );
+
+  await act(async () => {
+    root.unmount();
+  });
+});

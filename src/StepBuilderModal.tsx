@@ -996,6 +996,9 @@ export function ControlStepConfig({
               // A trigger has no failure of its own to retry or police — same
               // reason its canvas card renders no error exit port.
               failureHandling={!isTriggerApp(node.app)}
+              // A `@w6w/call`/`@w6w/control` step runs no retry loop of its
+              // own (core rfcs/workflow.md "Retries come first"; D-3).
+              retryControls={!isControlApp(node.app) && node.app !== CALL_APP}
             />
           ))}
         {tab === "test" &&
@@ -1754,7 +1757,9 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set();
  * fall back to the unbounded `listApps()` for the rest of the component's
  * lifetime, the exact "one request per entire catalog at open" A3 forbids).
  * When the method is genuinely absent, this hook falls back to the ORIGINAL
- * full-catalog scan (`listApps()` + the zero-credential check), unchanged.
+ * full-catalog scan (`listApps()` + the zero-credential check), unchanged —
+ * and with `listApps` itself also absent (now optional, like this member),
+ * settles on the empty catalog instead of calling an undefined function.
  */
 function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
@@ -1813,9 +1818,17 @@ function useReadyToUse(
   // lookup to use instead, never alongside it.
   useEffect(() => {
     if (bounded) return;
+    const listApps = api.listApps;
+    // Neither `listAppsByIds` (checked above, via `bounded`) nor `listApps`:
+    // settle on the empty catalog below rather than calling an undefined
+    // function — the "ready to use" tab then shows just Functions/Workflows
+    // (or its own empty state), never a throw or a stuck loading state.
+    if (typeof listApps !== "function") {
+      setAllApps([]);
+      return;
+    }
     let canceled = false;
-    api
-      .listApps()
+    listApps()
       .then((r) => !canceled && setAllApps(r))
       .catch((e) => !canceled && setError((e as Error).message));
     return () => {
