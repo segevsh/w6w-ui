@@ -2,7 +2,7 @@
 id: null
 key: "components"
 title: "Components"
-section: "ui"
+section: "reference-packages"
 description: "Find the @w6w/ui component you need, which entrypoint exports it, and whether it needs the API provider."
 format: "markdown"
 shared: true
@@ -24,20 +24,20 @@ and a short example. Unless a page says otherwise, import from `@w6w/ui` and loa
 
 Most components are **props in, callbacks out**: they never fetch, so you can feed them from
 `@w6w/react`, your own client or fixtures. The five marked "provider" below read the API client
-from [`W6WUIProvider`](/ui/components/providers/) and call your W6W server themselves.
+from [`W6WUIProvider`](/reference-packages/components/providers/) and call your W6W server themselves.
 
 | Group | Components |
 | --- | --- |
-| [Providers and the API client](/ui/components/providers/) | `W6WUIProvider`, `createW6WApi`, `useW6WApi`, `ExpressionOptionsProvider` |
-| [Buttons and icons](/ui/components/buttons/) | `IconButton`, `Icon`, `EditButton`, `DeleteButton` |
-| [Data display](/ui/components/data-display/) | `AppIcon`, `ListItem`, `Copyable`, `CopyableText` |
-| [Forms](/ui/components/forms/) | `AppPicker` (provider), `ActionTestForm` (provider), `ParamsForm`, `PropertyEntryForm`, `AuthFieldsForm`, `ExpressionInput`, `NodeConfigForm`, `RetryPolicyFields` |
-| [Editors](/ui/components/editors/) | `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor` |
-| [Workflow canvas](/ui/components/flow-editor/) | `WorkflowFlowEditor` (provider, from `@w6w/ui/flow`) |
-| [Modals](/ui/components/modals/) | `Modal`, `ConfirmModal`, `AddConnectionModal` (provider), `StepBuilderModal` (provider) |
-| [Status and health](/ui/components/status/) | `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`, `RepoSyncIndicator` |
-| [Executions](/ui/components/executions/) | `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`, `ExecutionLogPanel`, `ApiCallsPanel` |
-| [Server resources](/ui/components/server-resources/) | `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`, `ServerResourcesBadge` |
+| [Providers and the API client](/reference-packages/components/providers/) | `W6WUIProvider`, `createW6WApi`, `useW6WApi`, `ExpressionOptionsProvider` |
+| [Buttons and icons](/reference-packages/components/buttons/) | `IconButton`, `Icon`, `EditButton`, `DeleteButton` |
+| [Data display](/reference-packages/components/data-display/) | `AppIcon`, `ListItem`, `Copyable`, `CopyableText` |
+| [Forms](/reference-packages/components/forms/) | `AppPicker` (provider), `ActionTestForm` (provider), `ParamsForm`, `PropertyEntryForm`, `AuthFieldsForm`, `ExpressionInput`, `NodeConfigForm`, `RetryPolicyFields` |
+| [Editors](/reference-packages/components/editors/) | `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor` |
+| [Workflow canvas](/reference-packages/components/flow-editor/) | `WorkflowFlowEditor` (provider, from `@w6w/ui/flow`) |
+| [Modals](/reference-packages/components/modals/) | `Modal`, `ConfirmModal`, `AddConnectionModal` (provider), `StepBuilderModal` (provider) |
+| [Status and health](/reference-packages/components/status/) | `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`, `RepoSyncIndicator` |
+| [Executions](/reference-packages/components/executions/) | `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`, `ExecutionLogPanel`, `ApiCallsPanel` |
+| [Server resources](/reference-packages/components/server-resources/) | `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`, `ServerResourcesBadge` |
 
 ## What you compose yourself
 
@@ -56,6 +56,6 @@ envelopes `ExprValue`, `ExprPart`, `ExprPartKind` and `SecretValue`, with the ty
 
 ## Where to next
 
-- **[Overview](/ui/overview/)**: install, stylesheet and provider setup.
-- **[Providers and the API client](/ui/components/providers/)**: start here before using a
+- **[Overview](/reference-packages/overview/)**: install, stylesheet and provider setup.
+- **[Providers and the API client](/reference-packages/components/providers/)**: start here before using a
   provider component.

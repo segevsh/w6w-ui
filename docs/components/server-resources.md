@@ -2,7 +2,7 @@
 id: null
 key: "components/server-resources"
 title: "Server resources"
-section: "ui"
+section: "reference-packages"
 description: "Show a w6w server's CPU, memory and process usage as a card, a rail strip or a header badge."
 format: "markdown"
 shared: true
@@ -74,5 +74,5 @@ To update live, read the stream instead and append each `sample` event to the ar
 
 ## Where to next
 
-- **[Status and health](/ui/components/status/)**: health pills and uptime for the APIs themselves.
-- **[Components](/ui/components/)**: every group.
+- **[Status and health](/reference-packages/components/status/)**: health pills and uptime for the APIs themselves.
+- **[Components](/reference-packages/components/)**: every group.
