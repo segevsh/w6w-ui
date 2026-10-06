@@ -128,7 +128,9 @@ test("A3/M3 — a document's unsafe field keys (a.b, {x}, leading space, empty) 
   const primaryBtn = subRows[0].querySelector(".w6w-exprmodal-source") as HTMLButtonElement;
   assert.ok(primaryBtn, "the surviving row must still carry its primary insert button");
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  await click(primaryBtn);
+  await click(
+    primaryBtn.parentElement?.querySelector('[data-testid="expr-copy-to-editor"]') as Element,
+  );
   const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
   assert.ok(chip, "clicking the primary button must insert a chip");
   assert.equal(
@@ -240,7 +242,8 @@ test("A2/M8 — every document keeps its bare documents.<key> entry regardless o
   );
 
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  for (const btn of bareSources) await click(btn);
+  for (const btn of bareSources)
+    await click(btn.parentElement?.querySelector('[data-testid="expr-copy-to-editor"]') as Element);
   const refs = Array.from(editor.querySelectorAll(".w6w-expr-chip"))
     .map((el) => el.getAttribute("data-ref"))
     .sort();
