@@ -86,6 +86,9 @@ export type {
   VendorIncidentBar,
 } from "./components/HistoryTimeline.tsx";
 
+export { Combobox, filterOptions, shouldUseCombobox } from "./components/Combobox.tsx";
+export type { ComboboxOption, ComboboxProps } from "./components/Combobox.tsx";
+
 export { ExpressionInput } from "./components/ExpressionInput.tsx";
 export type { ExpressionInputProps } from "./components/ExpressionInput.tsx";
 

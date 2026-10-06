@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
+import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
@@ -908,16 +909,18 @@ export function ActionTestForm({
         (actions.length === 0 ? (
           <p className="w6w-muted w6w-small">This app exposes no actions.</p>
         ) : (
+          // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
           <label className="w6w-field">
             <span>Action{selectedKey ? "" : " *"}</span>
-            <select value={pickedKey} onChange={(e) => setPickedKey(e.target.value)}>
-              <option value="">— pick an action —</option>
-              {sortedActions.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.title ?? a.key} ({a.key})
-                </option>
-              ))}
-            </select>
+            <Combobox
+              value={pickedKey}
+              placeholder="— pick an action —"
+              onChange={setPickedKey}
+              options={sortedActions.map((a) => ({
+                value: a.key,
+                label: `${a.title ?? a.key} (${a.key})`,
+              }))}
+            />
           </label>
         ))}
 

@@ -54,12 +54,14 @@ import {
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
+import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { Copyable } from "./components/Copyable.tsx";
 import {
   type ExpressionOptions,
   ExpressionOptionsProvider,
   type ExpressionStepSource,
+  excludeSelfStep,
   useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
@@ -1053,10 +1055,14 @@ function Inner({
     }),
     [actionDefs, stepTestOutputs],
   );
-  const upstreamState = useMemo(
-    () => upstreamStateSources(editingId, nodes, edges, stepShapes),
-    [editingId, nodes, edges, stepShapes],
-  );
+  // While the add-step builder is open `editingId` is null, which makes
+  // `upstreamStateSources` offer EVERY node — including the step being drafted
+  // (progressively committed as a node). Exclude it from its own rail sources.
+  const [draftStepId, setDraftStepId] = useState<string | null>(null);
+  const upstreamState = useMemo(() => {
+    const st = upstreamStateSources(editingId, nodes, edges, stepShapes);
+    return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
+  }, [editingId, draftStepId, nodes, edges, stepShapes]);
   // A stable identity for *which* steps are upstream. The memo above rebuilds on
   // every node drag and every field edit; this string changes only when the SET
   // does, so the fetch below doesn't re-run on each keystroke.
@@ -1362,8 +1368,13 @@ function Inner({
                   onClose={() => {
                     setBuilderOpen(false);
                     setPendingConnect(null);
+                    setDraftStepId(null);
                   }}
-                  onAdd={addBuiltStep}
+                  onAdd={(built) => {
+                    const id = addBuiltStep(built);
+                    if (id) setDraftStepId(id);
+                    return id;
+                  }}
                   // Progressive commit (T4.1.1): once `addBuiltStep` has minted
                   // the step's id, every subsequent field change updates that
                   // same node instead of waiting for a final "Add step" click.
@@ -2974,20 +2985,22 @@ function SetupTab({
           </div>
         </div>
       ) : (
+        // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
         <label className="w6w-field">
           <span>Action</span>
-          <select
+          {/* While the action manifest is still loading there is nothing to pick
+              from: the current action renders as the single option, so the field
+              keeps showing the step's action instead of going empty. */}
+          <Combobox
             value={step.uses.action}
             disabled={readOnly || actions === null}
-            onChange={(e) => onChangeAction(e.target.value)}
-          >
-            {actions === null && <option>{step.uses.action}</option>}
-            {(actions ?? []).map((a) => (
-              <option key={a.key} value={a.key}>
-                {a.title ?? a.key}
-              </option>
-            ))}
-          </select>
+            onChange={onChangeAction}
+            options={
+              actions === null
+                ? [{ value: step.uses.action, label: step.uses.action }]
+                : actions.map((a) => ({ value: a.key, label: a.title ?? a.key }))
+            }
+          />
         </label>
       )}
     </div>

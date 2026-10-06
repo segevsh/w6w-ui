@@ -155,7 +155,9 @@ test("a declared nested path field inserts steps.<id>.output.<path>", async () =
     null,
     "declared fields carry no test-run note",
   );
-  await click(subs[0]);
+  await click(
+    subs[0].parentElement?.querySelector('[data-testid="expr-copy-to-editor"]') as Element,
+  );
   const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
   assert.equal(chip.getAttribute("data-ref"), "steps.ev.output.start.utc");
 });
@@ -188,7 +190,9 @@ test("a step with no known shape tells the author to run a test, and still offer
   assert.equal(hint?.textContent, "Run a test of this step to see its fields");
   assert.equal(container.querySelectorAll('[data-testid="expr-toggle-fields"]').length, 0);
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  await click(group?.querySelector(".w6w-exprmodal-source") as Element);
+  await click(
+    group?.querySelector('.w6w-exprmodal-item [data-testid="expr-copy-to-editor"]') as Element,
+  );
   assert.equal(
     (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
     "steps.ev.output",
