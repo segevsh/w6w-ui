@@ -54,6 +54,7 @@ import {
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
+import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { Copyable } from "./components/Copyable.tsx";
 import {
@@ -2984,20 +2985,22 @@ function SetupTab({
           </div>
         </div>
       ) : (
+        // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
         <label className="w6w-field">
           <span>Action</span>
-          <select
+          {/* While the action manifest is still loading there is nothing to pick
+              from: the current action renders as the single option, so the field
+              keeps showing the step's action instead of going empty. */}
+          <Combobox
             value={step.uses.action}
             disabled={readOnly || actions === null}
-            onChange={(e) => onChangeAction(e.target.value)}
-          >
-            {actions === null && <option>{step.uses.action}</option>}
-            {(actions ?? []).map((a) => (
-              <option key={a.key} value={a.key}>
-                {a.title ?? a.key}
-              </option>
-            ))}
-          </select>
+            onChange={onChangeAction}
+            options={
+              actions === null
+                ? [{ value: step.uses.action, label: step.uses.action }]
+                : actions.map((a) => ({ value: a.key, label: a.title ?? a.key }))
+            }
+          />
         </label>
       )}
     </div>

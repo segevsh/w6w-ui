@@ -15,6 +15,7 @@ import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { AppIcon } from "./components/AppIcon.tsx";
+import { Combobox } from "./components/Combobox.tsx";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
@@ -2499,24 +2500,23 @@ export function AppStepConfig({
               (actions.length === 0 ? (
                 <p className="w6w-muted w6w-small">This app exposes no actions.</p>
               ) : (
+                // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
                 <label className="w6w-field">
                   <span>Action{actionKey ? "" : " *"}</span>
-                  <select
+                  <Combobox
                     value={actionKey}
-                    onChange={(e) => {
-                      setActionKey(e.target.value);
+                    placeholder="— pick an action —"
+                    onChange={(key) => {
+                      setActionKey(key);
                       setWithValues({});
                       // A new action hasn't been tested — re-arm the save-gate.
                       setTestPassed(false);
                     }}
-                  >
-                    <option value="">— pick an action —</option>
-                    {sortedActions.map((a) => (
-                      <option key={a.key} value={a.key}>
-                        {a.title ?? a.key} ({a.key})
-                      </option>
-                    ))}
-                  </select>
+                    options={sortedActions.map((a) => ({
+                      value: a.key,
+                      label: `${a.title ?? a.key} (${a.key})`,
+                    }))}
+                  />
                   {selectedAction?.description && (
                     <span className="w6w-hint">{selectedAction.description}</span>
                   )}
