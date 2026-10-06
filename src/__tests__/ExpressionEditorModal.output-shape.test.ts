@@ -103,6 +103,33 @@ test("isRefSafePath — each dot segment is checked on its own", () => {
   assert.equal(isRefSafePath(" a.b"), false);
 });
 
+test("a step row's ▸ caret expands its fields and inserts nothing", async () => {
+  const { container } = await mountModal({
+    options: {
+      steps: [{ id: "ev", outputs: [{ key: "name.text", path: true }], outputsFrom: "declared" }],
+    },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const group = groupFor(container, "Workflow state");
+  const caret = group?.querySelector('[data-testid="expr-caret-fields"]') as HTMLElement;
+  assert.equal(caret.textContent, "▸");
+  assert.equal(
+    group?.querySelector(".w6w-exprmodal-source .w6w-expr-chip-sigil"),
+    null,
+    "the chip no longer carries its own ▸ — the caret replaces it",
+  );
+  await click(caret);
+  assert.equal(caret.getAttribute("aria-expanded"), "true");
+  assert.equal(caret.textContent, "▾");
+  assert.equal(
+    group?.querySelectorAll(".w6w-exprmodal-subsources .w6w-exprmodal-source").length,
+    1,
+  );
+  assert.equal(editor.querySelectorAll(".w6w-expr-chip").length, 0, "the caret inserts nothing");
+  await click(caret);
+  assert.equal(group?.querySelectorAll(".w6w-exprmodal-subsources").length, 0);
+});
+
 test("a declared nested path field inserts steps.<id>.output.<path>", async () => {
   const { container } = await mountModal({
     options: {

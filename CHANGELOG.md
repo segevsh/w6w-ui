@@ -9,6 +9,10 @@ commits.
 
 ## [Unreleased]
 
+- The expression editor's rail toggle for a source's child fields (a step's output fields, a
+  document's keys) now reads "N fields ›" instead of a bare 20px chevron, which went unnoticed
+  beside the source chip. On a step with fields, the `▸` arrow moved out of the chip into its own
+  caret that expands the fields; it used to insert the whole output instead.
 - The expression editor's **Workflow state** rail now offers an upstream app step's output
   fields without a test run: the action's declared `output` (dot keys become nested paths such as
   `steps.<id>.output.start.utc`), else its `sample`, else the step's last test output. A step with
