@@ -2,7 +2,7 @@
 id: null
 key: "components/modals"
 title: "Modals"
-section: "ui"
+section: "reference-packages"
 description: "Open dialogs, confirm destructive actions, connect an app, and build a workflow step with @w6w/ui's modals."
 format: "markdown"
 shared: true
@@ -20,7 +20,7 @@ updatedAt: null
 
 Two general dialogs, `Modal` and `ConfirmModal`, and two complete flows built on them:
 `AddConnectionModal` and `StepBuilderModal`. The two flows call your server through
-[`W6WUIProvider`](/ui/components/providers/).
+[`W6WUIProvider`](/reference-packages/components/providers/).
 
 Every modal here is a native `<dialog>`, so focus stays inside it and Esc closes it. Render a modal
 when you want it open and stop rendering it to close it. There's no `open` prop.
@@ -90,7 +90,7 @@ import { ConfirmModal } from "@w6w/ui";
 )}
 ```
 
-There's another delete example on [Buttons and icons](/ui/components/buttons/).
+There's another delete example on [Buttons and icons](/reference-packages/components/buttons/).
 
 ## `AddConnectionModal` (provider)
 
@@ -129,7 +129,7 @@ fails with a message if the browser blocks it.
 Build one workflow step. The author picks what the step calls (a connected app's action, a
 Function, a Workflow, or a built-in node such as a trigger, an `if` or a `foreach`), chooses a connection,
 fills in the parameters, sets retry and error handling, and tests it. It's what
-[`WorkflowFlowEditor`](/ui/components/flow-editor/) opens to add a step, and you can open it
+[`WorkflowFlowEditor`](/reference-packages/components/flow-editor/) opens to add a step, and you can open it
 anywhere you need a step or a target.
 
 | Prop | Type | What it does |
@@ -173,5 +173,5 @@ required parameter has a value. Both are exported for your own forms.
 
 ## Where to next
 
-- **[Forms](/ui/components/forms/)**: the pieces the builder is made of, for building your own.
-- **[Workflow canvas](/ui/components/flow-editor/)**: where the builder usually opens from.
+- **[Forms](/reference-packages/components/forms/)**: the pieces the builder is made of, for building your own.
+- **[Workflow canvas](/reference-packages/components/flow-editor/)**: where the builder usually opens from.

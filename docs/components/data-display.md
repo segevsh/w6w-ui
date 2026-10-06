@@ -2,7 +2,7 @@
 id: null
 key: "components/data-display"
 title: "Data display"
-section: "ui"
+section: "reference-packages"
 description: "Show app icons, list rows and copyable values with @w6w/ui's display components."
 format: "markdown"
 shared: true
@@ -32,7 +32,7 @@ fails to load).
 | `name` | `string` | None | Display name; its initials fill the fallback tile. |
 | `brandColor` | `string` | `var(--w6w-accent)` | Background of the initials tile. |
 | `size` | `number` | `32` | Square size in px. |
-| `theme` | `"light" \| "dark"` | Inherited | Forces which variant shows. See [Theming](/ui/theming/). |
+| `theme` | `"light" \| "dark"` | Inherited | Forces which variant shows. See [Theming](/reference-packages/theming/). |
 
 An `AppSummary` from the server carries these as `iconSvg`, `iconSvgDark` and `brandColor`:
 
@@ -122,5 +122,5 @@ behavior.
 
 ## Where to next
 
-- **[Status and health](/ui/components/status/)**: pills and strips for the trailing slot.
-- **[Editors](/ui/components/editors/)**: `CodeBlock`, which uses `Copyable` for you.
+- **[Status and health](/reference-packages/components/status/)**: pills and strips for the trailing slot.
+- **[Editors](/reference-packages/components/editors/)**: `CodeBlock`, which uses `Copyable` for you.

@@ -2,7 +2,7 @@
 id: null
 key: "theming"
 title: "Theming"
-section: "ui"
+section: "reference-packages"
 description: "Make @w6w/ui follow your app's light/dark mode and recolor it with your own brand tokens."
 format: "markdown"
 shared: true
@@ -25,7 +25,7 @@ stylesheet.
 ## Before you start
 
 - `@w6w/ui/styles.css` (or `@w6w/ui/code.css`) is imported once in your app. See the
-  [overview](/ui/overview/).
+  [overview](/reference-packages/overview/).
 
 ## 1. Tell the components which mode your app is in
 
@@ -128,7 +128,7 @@ to your accent.
 | `--w6w-code-variable` | `#953800` | `#ffa657` |
 
 The defaults come from the W6W brand palette. Spacing, type sizes and fonts are tokens too; see
-[Design system](/ui/design-system/).
+[Design system](/reference-packages/design-system/).
 
 ## 3. Restyle a single component
 
@@ -154,5 +154,5 @@ override is the same in light and dark.
 
 ## Where to next
 
-- **[Design system](/ui/design-system/)**: the spacing and type scale.
-- **[Components](/ui/components/)**: what each component renders.
+- **[Design system](/reference-packages/design-system/)**: the spacing and type scale.
+- **[Components](/reference-packages/components/)**: what each component renders.

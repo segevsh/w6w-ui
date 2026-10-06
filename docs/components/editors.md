@@ -2,7 +2,7 @@
 id: null
 key: "components/editors"
 title: "Editors"
-section: "ui"
+section: "reference-packages"
 description: "Show highlighted code with CodeBlock, and edit JSON, YAML, JavaScript or Python with @w6w/ui's CodeMirror editors."
 format: "markdown"
 shared: true
@@ -19,7 +19,7 @@ updatedAt: null
 # Editors
 
 One read-only block and three editors. All four are props-only and follow the current
-[theme](/ui/theming/). `CodeBlock`'s syntax colors come from the `--w6w-code-*` tokens. The editors
+[theme](/reference-packages/theming/). `CodeBlock`'s syntax colors come from the `--w6w-code-*` tokens. The editors
 use the general surface tokens (`--w6w-panel-2`, `--w6w-text`, `--w6w-border`, `--w6w-accent`)
 with CodeMirror's light or dark highlighting.
 
@@ -107,5 +107,5 @@ import { CodeEditor } from "@w6w/ui";
 
 ## Where to next
 
-- **[Theming](/ui/theming/)**: the color tokens, including `--w6w-code-*`.
-- **[Forms](/ui/components/forms/)**: `PropertyEntryForm`, which pairs fields with a JSON view.
+- **[Theming](/reference-packages/theming/)**: the color tokens, including `--w6w-code-*`.
+- **[Forms](/reference-packages/components/forms/)**: `PropertyEntryForm`, which pairs fields with a JSON view.
