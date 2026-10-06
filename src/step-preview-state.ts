@@ -11,10 +11,27 @@
  */
 import type { Edge } from "@xyflow/react";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
-import { TRIGGER_APP, internalNodeDef } from "./flow-types.ts";
+import { TRIGGER_APP, internalNodeDef, isInternalApp } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
+import { type ActionShapeDef, inferOutputFields, resolveOutputShape } from "./output-shape.ts";
 import type { StepStartState, StepTest } from "./provider.tsx";
 import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
+
+/**
+ * What the editor knows about upstream steps' output SHAPES beyond the static
+ * `internalNodeDef(...).output` — both optional, so a caller without them gets
+ * exactly the old projection.
+ */
+export interface StepShapeContext {
+  /**
+   * An app step's action definition (its declared `output` / `sample`).
+   * `undefined` while that app's actions haven't loaded — the step then makes
+   * no "run a test" claim it might have to retract a moment later.
+   */
+  actionDef?: (app: string, action: string) => ActionShapeDef | undefined;
+  /** Each step's latest saved test-run output, by step id. */
+  testOutputs?: Record<string, unknown>;
+}
 
 /** A graph ancestor carrying a saved step-test, offered as a one-click seed. */
 export interface SeedSource {
@@ -67,6 +84,7 @@ function ancestorIds(rootId: string, edges: Edge[]): Set<string> {
 function projectStepSources(
   ids: Set<string>,
   nodes: StepNode[],
+  shapes: StepShapeContext = {},
 ): { steps: ExpressionStepSource[]; hasTrigger: boolean } {
   const steps: ExpressionStepSource[] = [];
   let hasTrigger = false;
@@ -106,7 +124,31 @@ function projectStepSources(
     // OMITTED (not `[]`) when nothing is declared, so a consumer can tell
     // "nothing declared" from "declared none". Keys are verbatim: each becomes
     // `steps.<id>.output.<key>`, and only that form resolves at run time.
-    steps.push(declared.length > 0 ? { ...source, outputs: declared } : source);
+    if (declared.length > 0) {
+      steps.push({ ...source, outputs: declared });
+      continue;
+    }
+    // A webhook/scheduler entry node's payload is `trigger.event`, never
+    // `steps.<id>.output` (see above), so no fallback shape applies to it.
+    if (isTrigger) {
+      steps.push(source);
+      continue;
+    }
+    const testOutput = shapes.testOutputs?.[step.id];
+    if (isInternalApp(step.uses.app)) {
+      // A built-in node with no static output (`@w6w/script`, a Function
+      // call, …): its last test run is the only shape there is.
+      const fields = inferOutputFields(testOutput);
+      steps.push(fields ? { ...source, outputs: fields, outputsFrom: "test" } : source);
+      continue;
+    }
+    // An app action: its declared `output`, else its `sample`, else the last
+    // test run (`output-shape.ts`). With none, the author has to run a test —
+    // but only say so once the action definition has actually loaded.
+    const action = shapes.actionDef?.(step.uses.app, step.uses.action);
+    const shape = resolveOutputShape(action, testOutput);
+    if (shape) steps.push({ ...source, outputs: shape.fields, outputsFrom: shape.from });
+    else steps.push(action ? { ...source, needsTest: true } : source);
   }
   return { steps, hasTrigger };
 }
@@ -156,9 +198,10 @@ export function upstreamStateSources(
   editingId: string | null,
   nodes: StepNode[],
   edges: Edge[],
+  shapes?: StepShapeContext,
 ): { steps: ExpressionStepSource[]; hasTrigger: boolean } {
   const ids = editingId ? ancestorIds(editingId, edges) : new Set(nodes.map((n) => n.id));
-  return projectStepSources(ids, nodes);
+  return projectStepSources(ids, nodes, shapes);
 }
 
 /**
@@ -181,11 +224,12 @@ export function stepBuilderUpstreamSteps(
   pendingConnect: PendingConnect | null,
   nodes: StepNode[],
   edges: Edge[],
+  shapes?: StepShapeContext,
 ): ExpressionStepSource[] {
   if (!pendingConnect || pendingConnect.handleType === "target") return [];
   const ids = ancestorIds(pendingConnect.nodeId, edges);
   ids.add(pendingConnect.nodeId);
-  return projectStepSources(ids, nodes).steps;
+  return projectStepSources(ids, nodes, shapes).steps;
 }
 
 /**

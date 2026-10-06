@@ -683,6 +683,14 @@
   border-left: 1px solid var(--w6w-border);
 }
 
+/* A muted line inside a step's subsources: where its fields came from, or
+   that it has none yet until a test runs. Not a source — not clickable. */
+.w6w-exprmodal-shape-note {
+  font-size: var(--w6w-fs-sm);
+  color: var(--w6w-muted);
+  font-style: italic;
+}
+
 /* One document-field row: the primary insert source (flex: 1, so it still
    truncates a long key the same way a bare `.w6w-exprmodal-source` does) plus
    the second, visible action (D-P1) that inserts the SAME ref as a `render`

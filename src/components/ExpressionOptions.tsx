@@ -55,8 +55,9 @@ export interface ExpressionStepSource {
   /** Human label (defaults to the id). */
   label?: string;
   /**
-   * The step's **declared** output field keys, when it declares any (today: a
-   * trigger's configured `fields`). Each entry feeds exactly one ref —
+   * The step's output field keys, when any are known (a manual trigger's
+   * configured `fields`, a built-in node's static output, or an app action's
+   * shape — see `outputsFrom`). Each entry feeds exactly one ref —
    * `steps.<id>.output.<key>` — which is the canonical form the engine resolves
    * (`RunScope.steps`; `core/rfcs/workflow.md` §"Expressions", `core/rfcs/node-types.md`
    * "Executing a trigger node yields the run's start payload … which downstream
@@ -69,7 +70,19 @@ export interface ExpressionStepSource {
    * **Omitted** (not `[]`) when the step declares no outputs, so a consumer can
    * tell "nothing declared" from "declared none" without a special case.
    */
-  outputs?: { key: string; label?: string }[];
+  outputs?: { key: string; label?: string; path?: boolean }[];
+  /**
+   * Where `outputs` came from, for an app-action step: the action's declared
+   * `output`, its `sample`, or the step's last test run (`output-shape.ts`).
+   * An entry with `path: true` is a dot path into nested output (`start.utc`),
+   * checked segment by segment; without it the key is one literal key.
+   */
+  outputsFrom?: "declared" | "sample" | "test";
+  /**
+   * `true` when the step is an app action that declares no output shape and has
+   * no test run yet — the picker tells the author to run a test to see fields.
+   */
+  needsTest?: boolean;
 }
 
 /**
