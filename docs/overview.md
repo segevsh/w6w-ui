@@ -2,7 +2,7 @@
 id: null
 key: "overview"
 title: "UI components overview"
-section: "ui"
+section: "reference-packages"
 description: "Get @w6w/ui into a React app and render your first component against a w6w server."
 format: "markdown"
 shared: true
@@ -95,7 +95,7 @@ export function Root({ children }: { children: React.ReactNode }) {
 ```
 
 Pass `theme` when your app has its own light/dark setting. Without it, the components follow the
-visitor's OS preference, which may not match your page. See [Theming](/ui/theming/).
+visitor's OS preference, which may not match your page. See [Theming](/reference-packages/theming/).
 
 ## 4. Render a component
 
@@ -153,9 +153,9 @@ If you build with Sass, you can `@use "@w6w/ui/styles.scss"` (or a single partia
 
 ## Where to next
 
-- **[Theming](/ui/theming/)**: match light/dark mode and your brand colors.
-- **[Components](/ui/components/)**: every component, what it's for and its key props.
-- **[Providers and the API client](/ui/components/providers/)**: what `W6WApi` must implement,
+- **[Theming](/reference-packages/theming/)**: match light/dark mode and your brand colors.
+- **[Components](/reference-packages/components/)**: every component, what it's for and its key props.
+- **[Providers and the API client](/reference-packages/components/providers/)**: what `W6WApi` must implement,
   and how to bridge from `@w6w/react` instead of `createW6WApi`.
-- **[Design system](/ui/design-system/)**: the spacing and type scale you can reuse in your own
+- **[Design system](/reference-packages/design-system/)**: the spacing and type scale you can reuse in your own
   layout.

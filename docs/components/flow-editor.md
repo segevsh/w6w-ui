@@ -2,7 +2,7 @@
 id: null
 key: "components/flow-editor"
 title: "Workflow canvas"
-section: "ui"
+section: "reference-packages"
 description: "Embed WorkflowFlowEditor, the visual workflow canvas from @w6w/ui/flow, and show a run's progress on it."
 format: "markdown"
 shared: true
@@ -20,11 +20,11 @@ updatedAt: null
 
 `WorkflowFlowEditor` is a drag-and-drop canvas for one workflow: steps as cards, edges between them,
 and editing, testing, duplicating and deleting a step from its card. New steps come from the
-[step builder](/ui/components/modals/#stepbuildermodal-provider).
+[step builder](/reference-packages/components/modals/#stepbuildermodal-provider).
 
 It lives in its own entrypoint, `@w6w/ui/flow`, so apps that don't use it don't bundle React Flow
 (`@xyflow/react`, installed with `@w6w/ui`). It calls your server through
-[`W6WUIProvider`](/ui/components/providers/) to list connections and run step tests.
+[`W6WUIProvider`](/reference-packages/components/providers/) to list connections and run step tests.
 
 ## Set it up
 
@@ -95,7 +95,7 @@ const workflow: FlowWorkflow = {
 
 - **`steps[]`**: `id`, `uses: { app, action, connection? }`, and optionally `with`, `retry`,
   `onError` and `notes`. The settings are the ones in
-  [`NodeConfigForm`](/ui/components/forms/#nodeconfigform).
+  [`NodeConfigForm`](/reference-packages/components/forms/#nodeconfigform).
 - **`edges[]`**: `{ from, to, when? }`, where `when` is `"success"` or `"error"`. Leave `edges` out
   and the steps run in order, one after another.
 
@@ -134,5 +134,5 @@ yourself:
 
 ## Where to next
 
-- **[Modals](/ui/components/modals/)**: the step builder the canvas opens.
-- **[Executions](/ui/components/executions/)**: list and inspect past runs beside the canvas.
+- **[Modals](/reference-packages/components/modals/)**: the step builder the canvas opens.
+- **[Executions](/reference-packages/components/executions/)**: list and inspect past runs beside the canvas.

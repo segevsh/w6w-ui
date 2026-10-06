@@ -2,7 +2,7 @@
 id: null
 key: "components/executions"
 title: "Executions"
-section: "ui"
+section: "reference-packages"
 description: "Build an execution history view (list, filters, totals, detail, step log and vendor API calls) from @w6w/ui's execution components."
 format: "markdown"
 shared: true
@@ -123,7 +123,7 @@ Leave `input` or `output` `undefined` to hide that section. Pass `null` to show 
 ## `ExecutionLogPanel`
 
 The step-by-step log of a workflow run. `ExecutionDetail` renders it for you; use it on its own
-beside the [workflow canvas](/ui/components/flow-editor/).
+beside the [workflow canvas](/reference-packages/components/flow-editor/).
 
 | Prop | Type | What it does |
 | --- | --- | --- |
@@ -182,5 +182,5 @@ Two helpers format values the way these components do:
 
 ## Where to next
 
-- **[Status and health](/ui/components/status/)**: `StepStatusPill`, the badge these components use.
-- **[Workflow canvas](/ui/components/flow-editor/)**: paint a run onto the workflow itself.
+- **[Status and health](/reference-packages/components/status/)**: `StepStatusPill`, the badge these components use.
+- **[Workflow canvas](/reference-packages/components/flow-editor/)**: paint a run onto the workflow itself.

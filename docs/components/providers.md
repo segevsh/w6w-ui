@@ -2,7 +2,7 @@
 id: null
 key: "components/providers"
 title: "Providers and the API client"
-section: "ui"
+section: "reference-packages"
 description: "Give @w6w/ui's connected components an API client, either the built-in createW6WApi or a bridge from @w6w/react, and supply expression scope."
 format: "markdown"
 shared: true
@@ -30,7 +30,7 @@ Wrap your app (or the part that uses the components) once.
 | Prop | Type | What it does |
 | --- | --- | --- |
 | `api` | `W6WApi` | Required. The client every connected component calls. |
-| `theme` | `"light" \| "dark"` | Optional. Forces the components' mode. See [Theming](/ui/theming/). |
+| `theme` | `"light" \| "dark"` | Optional. Forces the components' mode. See [Theming](/reference-packages/theming/). |
 | `children` | `ReactNode` | Required. |
 
 ```tsx
@@ -202,5 +202,5 @@ returns the merged scope at any point in the tree.
 
 ## Where to next
 
-- **[Forms](/ui/components/forms/)**: `AppPicker`, `ActionTestForm` and the field components.
-- **[Modals](/ui/components/modals/)**: the connection modal and the step builder.
+- **[Forms](/reference-packages/components/forms/)**: `AppPicker`, `ActionTestForm` and the field components.
+- **[Modals](/reference-packages/components/modals/)**: the connection modal and the step builder.

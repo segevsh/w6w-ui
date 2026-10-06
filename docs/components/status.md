@@ -2,7 +2,7 @@
 id: null
 key: "components/status"
 title: "Status and health"
-section: "ui"
+section: "reference-packages"
 description: "Show API health, run and step status, daily uptime, incident history and repository sync state with @w6w/ui's status components."
 format: "markdown"
 shared: true
@@ -20,7 +20,7 @@ updatedAt: null
 
 Small indicators for whether something works. All five are props-only and render a state you've
 already decided: none of them computes health or uptime. Every state shows a text label as well as
-a color. The health colors come from the `--w6w-health-*` [tokens](/ui/theming/); the step and run
+a color. The health colors come from the `--w6w-health-*` [tokens](/reference-packages/theming/); the step and run
 pill uses `--w6w-accent`, `--w6w-success`, `--w6w-danger` and `--w6w-muted`.
 
 ## `HealthStatusPill`
@@ -136,5 +136,5 @@ import { RepoSyncIndicator } from "@w6w/ui";
 
 ## Where to next
 
-- **[Executions](/ui/components/executions/)**: lists and details of past runs.
-- **[Data display](/ui/components/data-display/)**: `ListItem`, with a slot for a pill.
+- **[Executions](/reference-packages/components/executions/)**: lists and details of past runs.
+- **[Data display](/reference-packages/components/data-display/)**: `ListItem`, with a slot for a pill.
