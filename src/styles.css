@@ -736,17 +736,43 @@
   min-width: 0;
 }
 
-/* Same 20x20 icon-button chrome as `.w6w-exprmodal-render-btn` above — the
-   sizing precedent for a dense rail control — but a separate class: this
-   toggles the `.w6w-exprmodal-subsources` block below it, the render-btn
-   inserts a `render` part. */
-.w6w-exprmodal-toggle-btn {
+/* A step row's disclosure caret, sitting where the chip's `▸` sigil was —
+   that arrow reads as "expand", so on a row with fields it does exactly that
+   (the chip beside it still inserts the whole output). */
+.w6w-exprmodal-caret-btn {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--w6w-accent);
+  font-size: var(--w6w-fs-xs);
+  cursor: pointer;
+}
+
+.w6w-exprmodal-caret-btn:hover {
+  background: var(--w6w-panel);
+}
+
+/* Same 20px-high chrome as `.w6w-exprmodal-render-btn` above — the sizing
+   precedent for a dense rail control — but a separate class: this toggles
+   the `.w6w-exprmodal-subsources` block below it, the render-btn inserts a
+   `render` part. It carries a "N fields" label, not a bare chevron, so it is
+   auto-width (a lone 20px chevron went unnoticed beside the chip). */
+.w6w-exprmodal-toggle-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  white-space: nowrap;
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
   background: transparent;

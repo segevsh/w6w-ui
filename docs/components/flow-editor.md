@@ -1,0 +1,138 @@
+---
+id: null
+key: "components/flow-editor"
+title: "Workflow canvas"
+section: "ui"
+description: "Embed WorkflowFlowEditor, the visual workflow canvas from @w6w/ui/flow, and show a run's progress on it."
+format: "markdown"
+shared: true
+sourceRepo: null
+sourcePath: null
+sourceSha: null
+sourceRefSha: null
+sourceUrl: null
+syncedAt: null
+createdAt: null
+updatedAt: null
+---
+
+# Workflow canvas
+
+`WorkflowFlowEditor` is a drag-and-drop canvas for one workflow: steps as cards, edges between them,
+and editing, testing, duplicating and deleting a step from its card. New steps come from the
+[step builder](/ui/components/modals/#stepbuildermodal-provider).
+
+It lives in its own entrypoint, `@w6w/ui/flow`, so apps that don't use it don't bundle React Flow
+(`@xyflow/react`, installed with `@w6w/ui`). It calls your server through
+[`W6WUIProvider`](/ui/components/providers/) to list connections and run step tests.
+
+## Set it up
+
+```tsx
+import { W6WUIProvider, createW6WApi } from "@w6w/ui";
+import { WorkflowFlowEditor, type FlowWorkflow } from "@w6w/ui/flow";
+import "@w6w/ui/styles.css";
+import { useState } from "react";
+
+const api = createW6WApi({ baseUrl: "https://<your-host>", token: getToken });
+
+function Editor({ initial }: { initial: FlowWorkflow }) {
+  const [workflow, setWorkflow] = useState(initial);
+  return (
+    <W6WUIProvider api={api}>
+      <WorkflowFlowEditor value={workflow} onChange={setWorkflow} height="70vh" />
+    </W6WUIProvider>
+  );
+}
+```
+
+The editor imports React Flow's own stylesheet for you. You only load `@w6w/ui/styles.css`.
+
+It's controlled and never saves on its own: persist `workflow` yourself, through `@w6w/react` or
+your own client.
+
+## Props
+
+| Prop | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `value` | `FlowWorkflow` | Required | The workflow. A new object identity re-derives the layout. |
+| `onChange` | `(next: FlowWorkflow) => void` | Required | Every graph or step edit. |
+| `readOnly` | `boolean` | `false` | No edits. Pan and zoom still work. |
+| `height` | `string \| number` | `480px` | Viewport height. |
+| `apps` | `AppSummary[]` | None | Lets each card show its app's icon, name and version. Unknown apps get an initials tile. |
+| `exprOptions` | `ExpressionOptions` | None | Extra scope for the expression pickers, on top of any `ExpressionOptionsProvider` above. |
+| `project` | `string` | None | Project id for step tests, so `documents.*` references resolve against that project. |
+| `runState` | `{ status, steps }` | None | A run to paint on the canvas. See below. |
+| `onTestRun` | `() => void` | None | Fired as a step test starts, so you can clear a stale `runState`. |
+| `fitViewKey` | `string \| number \| boolean` | None | Change it to re-fit the view, for example when a side panel opens beside the canvas. |
+
+## The workflow shape
+
+`FlowWorkflow` is the subset of a W6W workflow the canvas edits. A workflow from the API fits it
+as-is.
+
+```ts
+const workflow: FlowWorkflow = {
+  manifestVersion: "2",
+  id: "wf_demo",
+  name: "onboarding",
+  displayName: "Onboarding email",
+  steps: [
+    { id: "trigger", uses: { app: "@w6w/webhook", action: "receive" } },
+    {
+      id: "send",
+      uses: { app: "sendgrid", action: "send-email", connection: "<connection-id>" },
+      with: { to: "ada@example.com" },
+    },
+    { id: "notify", uses: { app: "slack", action: "post-message" } },
+  ],
+  edges: [
+    { from: "trigger", to: "send" },
+    { from: "send", to: "notify" },
+  ],
+};
+```
+
+- **`steps[]`**: `id`, `uses: { app, action, connection? }`, and optionally `with`, `retry`,
+  `onError` and `notes`. The settings are the ones in
+  [`NodeConfigForm`](/ui/components/forms/#nodeconfigform).
+- **`edges[]`**: `{ from, to, when? }`, where `when` is `"success"` or `"error"`. Leave `edges` out
+  and the steps run in order, one after another.
+
+## Show a run on the canvas
+
+The canvas doesn't fetch runs. Poll the run yourself (`GET /runs/:id`) and pass each result as
+`runState`: each step's card shows its status, and the edges show which way the run went.
+
+```tsx
+<WorkflowFlowEditor
+  value={workflow}
+  onChange={setWorkflow}
+  runState={{ status: "failed", steps: { trigger: { status: "succeeded" }, send: { status: "failed" } } }}
+  onTestRun={() => setRunState(undefined)}
+/>
+```
+
+Run statuses are `queued`, `running`, `succeeded`, `failed` and `canceled`. Step statuses are
+`pending`, `running`, `succeeded`, `failed` and `skipped`. A step missing from `steps` hasn't been
+reached. `runState` is never written back into the workflow.
+
+## Helpers
+
+`@w6w/ui/flow` also exports what the canvas is built on, for when you render or inspect a workflow
+yourself:
+
+- **`workflowToFlow(workflow)`** and **`flowToWorkflow(original, nodes, edges)`**: convert between a
+  workflow and React Flow nodes and edges, with the canvas's automatic layout.
+- **Built-in app ids**: `TRIGGER_APP`, `WEBHOOK_APP`, `SCHEDULER_APP`, `CONTROL_APP`, `SCRIPT_APP`,
+  `DATA_APP` and `CALL_APP`, with `isInternalApp(app)`, `isTriggerApp(app)` and
+  `isControlApp(app)`.
+- **`INTERNAL_NODES`**: the built-in steps the builder offers (triggers, control flow, script,
+  data and so on), with `internalNodeLabel`, `internalNodeIcon`, `internalNodeParams` and
+  `internalNodeDefaults` to look one up by app and action.
+- **`ExpressionOptionsProvider`**: re-exported here for convenience.
+
+## Where to next
+
+- **[Modals](/ui/components/modals/)**: the step builder the canvas opens.
+- **[Executions](/ui/components/executions/)**: list and inspect past runs beside the canvas.

@@ -11,46 +11,80 @@
 # @w6w/ui
 
 React components for [W6W](https://w6w.io) — central API management: one front door, composition,
-visibility and plug & play for every API a product runs on. Ships the components used by the
-reference studio and available for any partner app that talks to a w6w server.
+visibility and plug & play for every API a product runs on. These are the components W6W's own
+studio is built from, packaged for any app that talks to a W6W server: the connect-an-app modal,
+the app picker, the step builder, the visual workflow canvas, execution history, health and status
+indicators, and the smaller pieces around them.
+
+## Documentation
+
+The user guide lives in [`docs/`](docs/) and is published at
+[docs.w6w.io](https://docs.w6w.io) under **UI**:
+
+- [Overview](docs/overview.md): install, stylesheet, provider, first component, bundler notes.
+- [Theming](docs/theming.md): light/dark mode and every color token.
+- [Design system](docs/design-system.md): the spacing, type and font tokens.
+- [Components](docs/components/index.md): every component, by group, with props and examples.
+
+This README covers the repository itself: what's in it and how it's built.
 
 ## Install / consume
 
-`@w6w/ui` is not published to npm. Pick one of two routes:
+`@w6w/ui` is not published to npm yet (the release workflow exists; no version has shipped). Two
+routes:
 
-- **Git dependency**: `"@w6w/ui": "github:w6w-io/w6w-ui#<commit-or-tag>"` in your `package.json` —
-  works today, the repo is public.
-- **Sibling checkout with `link:`**: vendor the repo alongside your own and depend on it as
-  `"@w6w/ui": "link:../w6w-ui"` — the same pattern this monorepo uses internally (`studio` links
-  `ui` this way).
+- **Git dependency**: `"@w6w/ui": "github:w6w-io/w6w-ui#<commit-sha>"` — the repo is public. Use
+  pnpm: `@w6w/expr` is itself a subdirectory git dependency
+  (`github:w6w-io/w6w-core#path:packages/expr`), and not every package manager resolves `#path:`.
+- **Sibling checkout with `link:`**: `"@w6w/ui": "link:../w6w-ui"` — the pattern this monorepo
+  uses (`studio` links `ui` this way).
 
-Either way, `main`/`module`/`types` and `exports` all point at `./src/index.ts` — raw `.tsx` source,
-not a pre-built `dist/` — so your bundler compiles it directly, the same as it would a sibling
-package in your own monorepo. Any modern React toolchain (Vite, Next.js, webpack +
-`ts-loader`/`babel`) handles this without extra configuration.
+`react` and `react-dom` (18 or later) are peer dependencies.
+
+`main`/`module`/`types` and `exports` all point at raw `.tsx` source under `./src`, not a pre-built
+`dist/` (`publishConfig` switches them to `dist/` for the npm tarball), so your bundler compiles the
+package like your own code. Vite needs nothing extra; a few setups do — see the
+[bundler notes](docs/overview.md#bundler-notes):
+
+- **Vite with a `link:` checkout**: studio sets `optimizeDeps.exclude: ["@w6w/ui"]` so edits are
+  picked up live.
+- **SSR builds**: the package must be bundled, not externalized — the frontend site's Astro build
+  sets `ssr.noExternal` for `@w6w/ui` and `prism-react-renderer` (a React-rendering dependency of a
+  source package needs its own entry). Next.js needs the equivalent, `transpilePackages`.
+- **A linked checkout**: dedupe React (`resolve.dedupe: ["react", "react-dom"]`), or two copies
+  break hooks.
 
 ## Usage
 
-The components are **pure presentation** — you pass in data and handlers, so you can wire them to whatever API client and state management you already use.
+Five components call your W6W server themselves — `AppPicker`, `AddConnectionModal`,
+`ActionTestForm`, `StepBuilderModal` and `WorkflowFlowEditor`. They read one API client from
+`W6WUIProvider`. Every other component is props in, callbacks out.
 
 ```tsx
-import { AddConnectionModal } from "@w6w/ui";
+import { AddConnectionModal, W6WUIProvider, createW6WApi } from "@w6w/ui";
 import "@w6w/ui/styles.css";
 
-<AddConnectionModal
-  apps={apps}
-  getAppAuth={(appId) => api.getAppAuth(appId)}
-  createConnection={(appId, body) => api.createConnection(appId, body)}
-  startOAuthFlow={(appId, authKey, body) => api.startAppOAuthFlow(appId, authKey, body)}
-  onClose={() => setModalOpen(false)}
-  onCreated={() => refetch()}
-/>
+const api = createW6WApi({ baseUrl: "https://<your-host>", token: () => getToken() });
+
+<W6WUIProvider api={api} theme="light">
+  {open && (
+    <AddConnectionModal
+      onClose={() => setOpen(false)}
+      onCreated={({ connectionId }) => {
+        setOpen(false);
+        refetch(connectionId);
+      }}
+    />
+  )}
+</W6WUIProvider>
 ```
 
-One component breaks the "pure presentation" rule above on purpose: `Copyable` performs a real
-browser side effect — it writes to `navigator.clipboard`. Decorate any value-displaying control
-(an `<input>`, a `<textarea>`, or a `<CodeBlock>`) with an in-box copy affordance; in read-only mode
-a click anywhere in the box copies too, not just the icon.
+`createW6WApi` implements every required `W6WApi` member plus `listApps` and `listTestRuns`. It does
+not implement the optional paged-catalog or app-trigger members, and its `invokeAction` does not
+forward `overrides` yet. `@w6w/react`'s `createW6WUiAdapter` is the other way to build the client.
+See [Providers and the API client](docs/components/providers.md).
+
+`Copyable` is the one props-only component with a side effect: it writes to `navigator.clipboard`.
 
 ```tsx
 import { CodeBlock, Copyable } from "@w6w/ui";
@@ -59,7 +93,7 @@ import { CodeBlock, Copyable } from "@w6w/ui";
   <input readOnly value={apiKey} />
 </Copyable>
 
-<CodeBlock code={curlSnippet} language="bash" copyable />
+<CodeBlock code={curlSnippet} language="bash" />
 ```
 
 ### Entrypoints
@@ -70,14 +104,16 @@ without those in its tree fails to *build*, not merely to slim down.
 
 | Import | Contains | Stylesheet |
 |--------|----------|------------|
-| `@w6w/ui` | everything except the flow editor | `@w6w/ui/styles.css` (69 KB) |
-| `@w6w/ui/flow` | `WorkflowFlowEditor` — pulls in `@xyflow/react` | `@w6w/ui/styles.css` |
-| `@w6w/ui/code` | `CodeBlock` + `Copyable` — needs only React and `prism-react-renderer` | `@w6w/ui/code.css` (13 KB) |
+| `@w6w/ui` | everything except the flow editor | `@w6w/ui/styles.css` (~121 KB) |
+| `@w6w/ui/flow` | `WorkflowFlowEditor` and its helpers — pulls in `@xyflow/react` | `@w6w/ui/styles.css` |
+| `@w6w/ui/code` | `CodeBlock` + `Copyable` — needs only React and `prism-react-renderer` | `@w6w/ui/code.css` (~19 KB) |
 
 `code.css` is a strict subset of `styles.css`, so importing both is harmless — the rules are
 byte-identical. Reach for `@w6w/ui/code` when you want the highlighter in something that is not a
-full w6w console; the marketing site (`packages/frontend`) renders its homepage snippets that way,
+full W6W console; the marketing site (`packages/frontend`) renders its homepage snippets that way,
 at build time, shipping no React at all.
+
+`WorkflowFlowEditor` imports React Flow's stylesheet (`@xyflow/react/dist/style.css`) itself.
 
 ```tsx
 import { CodeBlock } from "@w6w/ui/code";
@@ -86,35 +122,27 @@ import "@w6w/ui/code.css";
 
 ## Theming
 
-`styles.css` defines defaults for CSS custom properties under the `--w6w-*` namespace (`--w6w-panel`, `--w6w-border`, `--w6w-text`, `--w6w-muted`, `--w6w-accent`, `--w6w-danger`, `--w6w-radius`). Override them at `:root` (or any parent) to theme the components.
+`styles.css` defines every color as a `--w6w-*` custom property, in a light and a dark variant:
+surfaces and text (`--w6w-bg`, `--w6w-panel`, `--w6w-panel-2`, `--w6w-border`, `--w6w-text`,
+`--w6w-muted`), roles (`--w6w-accent`, `--w6w-danger`, `--w6w-success`), health
+(`--w6w-health-*`), code (`--w6w-code-*`), plus `--w6w-radius` and `--w6w-icon-swatch`. Defaults are
+declared with zero specificity (`:where(...)`), so a plain `:root` rule overrides them.
 
 ```css
 :root {
-  --w6w-panel: #ffffff;
   --w6w-accent: #6b46c1;
 }
 ```
 
-The same `--w6w-*` namespace also carries a spacing and typography scale — the `--w6w-sp-*` / `--w6w-fs-*` / `--w6w-font-*` families (plus `--w6w-fw-*` weights and `--w6w-lh-*` line-heights), overridable the same way. See [`docs/design-system.md`](docs/design-system.md) for the full ramp, the half-step rule, and how to run the `lint:tokens` gate that keeps new code on it.
+The mode resolves in this order: a component's own `theme` prop, then `<W6WUIProvider theme>`,
+then a `data-theme` attribute on `<html>` (or any ancestor, for the CSS), then the OS
+`prefers-color-scheme`. An embedder whose app has its own theme should pass it to the provider, or
+the components may render in a different mode than the page around them. Full tables and the
+troubleshooting list: [`docs/theming.md`](docs/theming.md).
 
-### Light/dark mode
-
-Every color token above ships in both a light and a dark variant; without any
-override, `@w6w/ui` picks between them by following the visitor's OS
-`prefers-color-scheme` — which is **independent of whatever theme your own
-app is using**. If you're embedding these components inside a host app that
-has its own theme, pass it explicitly:
-
-```tsx
-<W6WUIProvider api={api} theme="light">
-  <YourApp />
-</W6WUIProvider>
-```
-
-Omit it and `@w6w/ui` may render in a different mode than the page around
-it. See [`docs/theming.md`](docs/theming.md) for the full resolution order
-and why this trips up embedders specifically (not studio, which manages
-`data-theme` itself).
+The same namespace carries the spacing and type scale (`--w6w-sp-*`, `--w6w-fs-*`, `--w6w-fw-*`,
+`--w6w-lh-*`, `--w6w-font-*`): [`docs/design-system.md`](docs/design-system.md). The `lint:tokens`
+gate that keeps new code on that scale is described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Where the styles come from
 
@@ -147,21 +175,27 @@ not pulled in automatically.
 
 ## Components
 
-All 32 exported components, grouped by the entrypoint that exports them (see Entrypoints above):
+42 exported components (the count `pnpm coverage:stories` checks), grouped as in the docs:
 
-**`@w6w/ui`** — everything except the flow editor:
-`W6WUIProvider`, `AddConnectionModal`, `AppPicker`, `StepBuilderModal`, `ParamsForm`,
-`PropertyEntryForm`, `ActionTestForm`, `CodeBlock`, `JsonEditor`, `CodeEditor`, `YamlEditor`,
-`Modal`, `Copyable`, `CopyableText`, `ConfirmModal`, `AppIcon`, `ListItem`, `HealthStatusPill`,
-`AuthFieldsForm`, `ApiCallsPanel`, `UptimeStrip`, `HistoryTimeline`, `ExpressionInput`,
-`ExpressionOptionsProvider`, `IconButton`, `EditButton`, `DeleteButton`, `RepoSyncIndicator`,
-`NodeConfigForm`, `StepStatusPill`, `ExecutionLogPanel`.
+- **Providers**: `W6WUIProvider`, `ExpressionOptionsProvider` (plus `createW6WApi`, `useW6WApi`,
+  `useExpressionOptions`, `startOAuthPopup`, `useEnterSubmit`).
+- **Buttons and icons**: `IconButton`, `Icon`, `EditButton`, `DeleteButton`.
+- **Data display**: `AppIcon`, `ListItem`, `Copyable`, `CopyableText`.
+- **Forms**: `AppPicker`, `ActionTestForm`, `ParamsForm`, `PropertyEntryForm`, `AuthFieldsForm`,
+  `ExpressionInput`, `NodeConfigForm`, `RetryPolicyFields`.
+- **Editors**: `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor`.
+- **Workflow canvas**: `WorkflowFlowEditor` (from `@w6w/ui/flow`).
+- **Modals**: `Modal`, `ConfirmModal`, `AddConnectionModal`, `StepBuilderModal`.
+- **Status and health**: `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`,
+  `RepoSyncIndicator`.
+- **Executions**: `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`,
+  `ExecutionLogPanel`, `ApiCallsPanel`.
+- **Server resources**: `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`,
+  `ServerResourcesBadge`.
 
-**`@w6w/ui/flow`** — the visual workflow editor:
-`WorkflowFlowEditor` (plus `ExpressionOptionsProvider`, re-exported from the base entrypoint above).
-
-**`@w6w/ui/code`** — the highlighter in isolation:
-`CodeBlock`, `Copyable` (both also reachable from the base entrypoint above).
+Everything is exported from `@w6w/ui` except `WorkflowFlowEditor`, which is only in `@w6w/ui/flow`
+(alongside a re-export of `ExpressionOptionsProvider`). `@w6w/ui/code` re-exports `CodeBlock` and
+`Copyable`.
 
 ## Storybook
 
@@ -205,8 +239,8 @@ new exported component ships with its story.
 Maintained by **W6W** — `w6w, Inc, a Delaware corporation`.
 [w6w.io](https://w6w.io) · [docs.w6w.io](https://docs.w6w.io)
 
-The `DeleteButton`/`EditButton` glyphs are hand-authored from [Feather](https://feathericons.com)
-(MIT, © Cole Bemis).
+The `Icon` set (`src/components/icons.tsx`) is copied from the studio's inline SVGs, most of them
+in the [Feather](https://feathericons.com) idiom (MIT, © Cole Bemis); each entry names its source.
 
 Built with [`@xyflow/react`](https://reactflow.dev), CodeMirror (via
 [`@uiw/react-codemirror`](https://uiw-react-codemirror.vercel.app)), and
@@ -214,13 +248,8 @@ Built with [`@xyflow/react`](https://reactflow.dev), CodeMirror (via
 
 ## License
 
-**FSL-1.1-ALv2** — the [Functional Source License](LICENSE), which converts to Apache 2.0 two years
-after each version is released.
+**MIT** — see [LICENSE](LICENSE). (Relicensed from FSL-1.1-ALv2 on 2026-09-23; the studio stays
+FSL.)
 
-In plain terms: build whatever you like on these components — plugins, apps, integrations, internal
-tools, client work, commercial products. The one carve-out is **Competing Use**: you may not use them
-to offer a product or service that substitutes for w6w or for something we build with them.
-
-`@w6w/expr`, which this package depends on, stays **MIT** — as does `@w6w/types`, the shared model
-these components' wire types mirror (`@w6w/ui` keeps its own local copy rather than depending on it).
-Both are deliberately permissive so anything can read and write w6w's formats.
+`@w6w/expr`, which this package depends on, is MIT too, as is `@w6w/types`, the shared model these
+components' wire types mirror (`@w6w/ui` keeps its own local copy rather than depending on it).

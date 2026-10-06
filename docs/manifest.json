@@ -1,16 +1,18 @@
 {
   "docs": [
-    {
-      "path": "design-system.md",
-      "slug": "design-system",
-      "section": "guides",
-      "title": "The spacing / typography scale"
-    },
-    {
-      "path": "theming.md",
-      "slug": "theming",
-      "section": "guides",
-      "title": "Light/dark mode — the embedding contract"
-    }
+    { "path": "overview.md", "slug": "overview", "section": "ui", "title": "UI components overview", "order": 0 },
+    { "path": "theming.md", "slug": "theming", "section": "ui", "title": "Theming", "order": 10 },
+    { "path": "design-system.md", "slug": "design-system", "section": "ui", "title": "Design system", "order": 20 },
+    { "path": "components/index.md", "slug": "components", "section": "ui", "title": "Components", "order": 30 },
+    { "path": "components/providers.md", "slug": "components/providers", "section": "ui", "title": "Providers and the API client", "order": 0 },
+    { "path": "components/buttons.md", "slug": "components/buttons", "section": "ui", "title": "Buttons and icons", "order": 10 },
+    { "path": "components/data-display.md", "slug": "components/data-display", "section": "ui", "title": "Data display", "order": 20 },
+    { "path": "components/forms.md", "slug": "components/forms", "section": "ui", "title": "Forms", "order": 30 },
+    { "path": "components/editors.md", "slug": "components/editors", "section": "ui", "title": "Editors", "order": 40 },
+    { "path": "components/flow-editor.md", "slug": "components/flow-editor", "section": "ui", "title": "Workflow canvas", "order": 50 },
+    { "path": "components/modals.md", "slug": "components/modals", "section": "ui", "title": "Modals", "order": 60 },
+    { "path": "components/status.md", "slug": "components/status", "section": "ui", "title": "Status and health", "order": 70 },
+    { "path": "components/executions.md", "slug": "components/executions", "section": "ui", "title": "Executions", "order": 80 },
+    { "path": "components/server-resources.md", "slug": "components/server-resources", "section": "ui", "title": "Server resources", "order": 90 }
   ]
 }

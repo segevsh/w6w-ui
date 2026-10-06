@@ -1,98 +1,158 @@
 ---
-title: "Light/dark mode — the embedding contract"
-section: "guides"
+id: null
+key: "theming"
+title: "Theming"
+section: "ui"
+description: "Make @w6w/ui follow your app's light/dark mode and recolor it with your own brand tokens."
+format: "markdown"
+shared: true
+sourceRepo: null
+sourcePath: null
+sourceSha: null
+sourceRefSha: null
+sourceUrl: null
+syncedAt: null
+createdAt: null
+updatedAt: null
 ---
 
-# Light/dark mode — the embedding contract
+# Theming
 
-Color tokens (`--w6w-panel`, `--w6w-accent`, etc.) are covered in the
-[README](../README.md#theming); the spacing/type scale is
-[`design-system.md`](design-system.md). This doc is specifically about
-**which mode** (light vs dark) those tokens resolve to, and how a host
-embedding `@w6w/ui` inside its own app controls that — added 2026-08-24
-after a real embedding bug (see "The trap" below).
+`@w6w/ui` ships a complete light and dark theme as CSS custom properties. This page shows how to
+make the components follow your app's own mode, and how to recolor them without forking the
+stylesheet.
 
-## The default, standalone
+## Before you start
 
-`styles.css` ships a complete light AND dark palette. With nothing else set,
-it resolves like this, in order:
+- `@w6w/ui/styles.css` (or `@w6w/ui/code.css`) is imported once in your app. See the
+  [overview](/ui/overview/).
 
-1. `data-theme="light"` or `data-theme="dark"` on **any ancestor** element —
-   `styles.css`'s rules for this are written with `:where(...)` (zero
-   specificity), so this always wins over the OS default below without
-   needing `!important`.
-2. Otherwise, the visitor's OS `prefers-color-scheme`.
+## 1. Tell the components which mode your app is in
 
-This is the right default for `@w6w/ui`'s own app (studio) — it manages
-`data-theme` on `<html>` itself (a `ThemeToggle` control, `ThemeContext.tsx`),
-so it's always in the "ancestor set it" branch above, on purpose.
-
-The same two-step order is also what the **JS-side** theme-aware components
-(`AppIcon`, `CodeEditor`, `JsonEditor`, `WorkflowFlowEditor` — via
-`useEffectiveTheme` in `src/theme.ts`) resolve, so a component's rendered
-markup and its own internal light/dark branches (e.g. `AppIcon`'s
-`src`/`srcDark` choice) never disagree with each other.
-
-## The trap
-
-A host that embeds `@w6w/ui` components inside its **own** page — not
-studio, a different app entirely — very likely has its own theme system
-already, and very likely does **not** set `data-theme` anywhere (why would
-it? nothing told it to). In that case `@w6w/ui` falls straight through to
-step 2 above: the visitor's OS preference, **independent of whatever theme
-the host's own page is using**.
-
-Concretely: a visitor with a dark-mode OS setting, on an otherwise
-light-themed host page, gets `@w6w/ui` components — icon swatches, modals,
-buttons — rendered in `@w6w/ui`'s own dark palette, sitting inside the
-host's light page. This is exactly the bug that prompted this doc (cohost's
-dashboard, 2026-08-24): a screenshot showed black icon-swatch backgrounds
-against an otherwise light page, and the root cause was precisely this — no
-`data-theme` anywhere in cohost's tree, an OS dark preference, and `@w6w/ui`
-quietly doing what its own default says to do.
-
-## The fix: `<W6WUIProvider theme>`
-
-`W6WUIProvider` (`src/provider.tsx`) — the provider every host wraps its
-`@w6w/ui`-consuming subtree in anyway, to supply the `W6WApi` client — now
-takes an optional `theme` prop:
+Pass your app's resolved mode to `W6WUIProvider`:
 
 ```tsx
 import { W6WUIProvider } from "@w6w/ui";
 
-<W6WUIProvider api={api} theme={hostThemeMode /* "light" | "dark" */}>
+<W6WUIProvider api={api} theme={isDark ? "dark" : "light"}>
   <YourApp />
 </W6WUIProvider>
 ```
 
-Passing it does two things at once, so the CSS and the JS-side components
-can never drift from each other:
+Re-render with the new value when the user toggles, and every component switches without a
+remount.
 
-- Wraps `children` in a `data-theme={theme}` DOM node (`display: contents`,
-  invisible to layout) — every `styles.css` rule picks this up via ordinary
-  CSS custom-property inheritance, no matter how deep the actual component
-  renders.
-- Provides the same value through a `ProvidedThemeCtx` (`src/theme.ts`) that
-  `useEffectiveTheme` now checks **before** falling back to `data-theme` on
-  `<html>` / OS preference — so `AppIcon` and friends read it too, not just
-  the stylesheet.
+You'll know it worked when a visitor whose OS is set to dark mode sees the components in your
+page's light theme (and vice versa). Open DevTools: the provider renders a
+`<div data-theme="light" style="display: contents">` around your tree. `display: contents` keeps
+that wrapper out of your layout, so flex and grid gaps behave as if it weren't there.
 
-Full resolution order, most to least specific:
+> **Good to know:** without `theme`, the components follow the visitor's **OS** setting, not your
+> page. A dark-mode visitor on a light page gets dark modals and dark icon swatches inside it.
+> If your app has any theme of its own, pass it.
 
-1. An explicit `theme` prop on the individual component itself (`AppIcon
-   theme="dark"`, etc.) — unchanged, still wins over everything.
-2. `<W6WUIProvider theme>` — **new**.
-3. `data-theme` on `<html>` (or any ancestor, for the CSS half).
-4. The OS `prefers-color-scheme`.
+### How the mode is chosen
 
-Omitting `theme` on `W6WUIProvider` keeps the exact old behavior (steps 3–4
-only) — this is additive, not a breaking change. Studio itself does not pass
-it, since it already owns `data-theme` on `<html>` directly.
+Most specific wins:
 
-## Recommendation for embedders
+1. A `theme` prop on the component itself (`AppIcon`, `CodeEditor`, `JsonEditor`, `YamlEditor`,
+   and the components that pass it to their icons: `AppPicker`, `AddConnectionModal`,
+   `StepBuilderModal`).
+2. `<W6WUIProvider theme>`.
+3. `data-theme="light"` or `data-theme="dark"` on `<html>`. For the CSS, any ancestor element
+   works.
+4. The visitor's `prefers-color-scheme`.
 
-If your app has its own resolved theme (light-only, dark-only, or a toggle),
-pass it to `<W6WUIProvider theme={...}>`. Don't rely on your host page
-happening to also set `data-theme` on `<html>` — that works, but it's an
-implicit coupling to `@w6w/ui`'s internals your own app has no reason to know
-about; the explicit prop is the supported contract.
+The CSS and the components that branch in JavaScript (app icons picking a dark variant, the code
+editors picking a dark highlight theme, the workflow canvas) follow the same order, so they never
+disagree.
+
+If your app already sets `data-theme="light|dark"` on `<html>`, that works too, but the provider
+prop is the supported contract: it doesn't depend on your page happening to use the same attribute.
+
+## 2. Recolor with your own tokens
+
+Every default is declared with `:where(...)`, which has zero specificity. Any rule you write, even
+a plain `:root { }`, wins without `!important`:
+
+```css
+/* One token, both modes */
+:root {
+  --w6w-accent: #0f766e;
+  --w6w-radius: 6px;
+}
+
+/* A mode-specific override */
+[data-theme="dark"] {
+  --w6w-panel: #101418;
+}
+```
+
+Load your overrides after `@w6w/ui/styles.css`, or anywhere: specificity already favors yours.
+
+You'll know it worked when primary buttons (`.w6w-btn`) and the border of a focused input switch
+to your accent.
+
+### Color tokens
+
+| Token | Light | Dark | Used for |
+| --- | --- | --- | --- |
+| `--w6w-bg` | `#f7f8fa` | `#0f1115` | Page background behind panels |
+| `--w6w-panel` | `#ffffff` | `#181b22` | Cards, modals, inputs |
+| `--w6w-panel-2` | `#f0f2f6` | `#1f232c` | Secondary surfaces, code blocks |
+| `--w6w-border` | `#d9dee5` | `#2a2f3a` | Borders and dividers |
+| `--w6w-text` | `#1a1d24` | `#e6e8ee` | Body text |
+| `--w6w-muted` | `#5f6875` | `#9aa3b2` | Secondary text, hints |
+| `--w6w-accent` | `#3355e6` | `#5b8cff` | Primary actions, links, focus |
+| `--w6w-danger` | `#c1362f` | `#ff6b6b` | Destructive actions, errors |
+| `--w6w-success` | `#2e9e5b` | `#3fbf77` | Success states |
+| `--w6w-health-ok` | `var(--w6w-success)` | `var(--w6w-success)` | Health "Operational" |
+| `--w6w-health-degraded` | `#c77700` | `#f0a020` | Health "Degraded" |
+| `--w6w-health-down` | `var(--w6w-danger)` | `var(--w6w-danger)` | Health "Down" |
+| `--w6w-health-unknown` | `#5f6875` | `#9aa3b2` | Health "Unknown" |
+| `--w6w-icon-swatch` | `#f0f2f6` | `#1f232c` | Tile behind app icons |
+| `--w6w-radius` | `10px` | `10px` | Corner radius of panels and controls |
+
+### Code highlighting tokens
+
+`CodeBlock` colors its tokens from these, so a recolor reaches code too:
+
+| Token | Light | Dark |
+| --- | --- | --- |
+| `--w6w-code-comment` | `#6b7280` | `#7d8797` |
+| `--w6w-code-keyword` | `#8250df` | `#d2a8ff` |
+| `--w6w-code-string` | `#0a7b34` | `#7ee787` |
+| `--w6w-code-number` | `#b3541e` | `#ffab70` |
+| `--w6w-code-function` | `#1f6feb` | `#79c0ff` |
+| `--w6w-code-punctuation` | `#5f6875` | `#9aa3b2` |
+| `--w6w-code-variable` | `#953800` | `#ffa657` |
+
+The defaults come from the W6W brand palette. Spacing, type sizes and fonts are tokens too; see
+[Design system](/ui/design-system/).
+
+## 3. Restyle a single component
+
+Every component renders stable, global `.w6w-*` class names (the stylesheet deliberately doesn't use
+CSS Modules, so they never get hashed). Target them from your own CSS when a token isn't enough:
+
+```css
+.w6w-modal {
+  box-shadow: 0 24px 48px rgb(0 0 0 / 0.25);
+}
+```
+
+Prefer tokens where one exists: they follow the mode for you, while a hard-coded color in a class
+override is the same in light and dark.
+
+## Troubleshooting
+
+| Symptom | Cause | What to do |
+| --- | --- | --- |
+| Components are dark on your light page (or the reverse) | No `theme` on the provider, and no `data-theme` on an ancestor, so the OS preference wins. | Pass `theme` to `W6WUIProvider`. |
+| App icons or the code editor stay in the old mode after a toggle, while the CSS switched | You set `data-theme` on an element other than `<html>`. The CSS follows any ancestor, but the JavaScript side only watches `<html>` and the provider. | Pass `theme` to `W6WUIProvider` instead. |
+| Your `--w6w-*` override does nothing | It's set on an element that isn't an ancestor of the component, such as a sibling. | Set it on `:root` or on a wrapper around the components. |
+
+## Where to next
+
+- **[Design system](/ui/design-system/)**: the spacing and type scale.
+- **[Components](/ui/components/)**: what each component renders.

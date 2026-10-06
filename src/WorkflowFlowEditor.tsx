@@ -108,6 +108,11 @@ import {
   withViewport,
   workflowToFlow,
 } from "./flow-utils.ts";
+// One implementation of the incoming-state pipeline, shared by every surface
+// that offers upstream seed chips (this file's step editor + ▶ Run collect
+// form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
+// header comment for why this lives outside WorkflowFlowEditor.tsx.
+import { valueAtPath } from "./output-shape.ts";
 import {
   type StepStartState,
   type StepTest,
@@ -119,12 +124,9 @@ import {
 // pixels: a live-run repaint effect (in `Inner`) feeds the results into
 // `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
 import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./run-visuals.ts";
-// One implementation of the incoming-state pipeline, shared by every surface
-// that offers upstream seed chips (this file's step editor + ▶ Run collect
-// form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
-// header comment for why this lives outside WorkflowFlowEditor.tsx.
 import {
   type SeedSource,
+  type StepShapeContext,
   startStateFromSeeds,
   stepBuilderUpstreamSteps,
   upstreamStateSources,
@@ -138,6 +140,7 @@ import type {
   ConnectionSummary,
   SubscriptionSummary,
 } from "./types.ts";
+import { useAppActionDefs } from "./use-app-action-defs.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
 
 /**
@@ -1036,9 +1039,23 @@ function Inner({
 
   // The workflow state in scope for the step being edited: its upstream steps'
   // outputs (`steps.<id>.output`) and, if a trigger precedes it, `trigger.event`.
+  //
+  // Each upstream step also carries its pickable output FIELDS when a shape is
+  // known (`output-shape.ts`): an app action's declared `output`, else its
+  // `sample`, else that step's last test run — so a later step can reference
+  // `steps.<id>.output.<field>` without running anything first.
+  const [stepTestOutputs, setStepTestOutputs] = useState<Record<string, unknown>>({});
+  const actionDefs = useAppActionDefs(api, nodes);
+  const stepShapes = useMemo<StepShapeContext>(
+    () => ({
+      actionDef: (app, action) => actionDefs[app]?.find((a) => a.key === action),
+      testOutputs: stepTestOutputs,
+    }),
+    [actionDefs, stepTestOutputs],
+  );
   const upstreamState = useMemo(
-    () => upstreamStateSources(editingId, nodes, edges),
-    [editingId, nodes, edges],
+    () => upstreamStateSources(editingId, nodes, edges, stepShapes),
+    [editingId, nodes, edges, stepShapes],
   );
   // A stable identity for *which* steps are upstream. The memo above rebuilds on
   // every node drag and every field edit; this string changes only when the SET
@@ -1053,11 +1070,10 @@ function Inner({
   // ⚠️ EDITOR-SIDE ONLY, like `upstreamStateSources` above: this is a PREVIEW of
   // values a past test produced. It is not what a full run resolves — nothing here
   // is sent to the engine.
-  const [stepSampleValues, setStepSampleValues] = useState<Record<string, unknown>>({});
   useEffect(() => {
     const ids = JSON.parse(upstreamIdsKey) as string[];
     if (!editingId || ids.length === 0) {
-      setStepSampleValues({});
+      setStepTestOutputs({});
       return;
     }
     let canceled = false;
@@ -1085,22 +1101,38 @@ function Inner({
       const next: Record<string, unknown> = {};
       for (const r of res) {
         if (!r || r.output === undefined || r.output === null) continue;
-        // The whole output is a ref on its own…
-        next[`steps.${r.id}.output`] = r.output;
-        // …and so is each own key of a plain object. Values pass through
-        // unstringified — the modal's `effectiveSamples` stringifies non-strings.
-        if (typeof r.output === "object" && !Array.isArray(r.output)) {
-          for (const [k, v] of Object.entries(r.output as Record<string, unknown>)) {
-            next[`steps.${r.id}.output.${k}`] = v;
-          }
-        }
+        next[r.id] = r.output;
       }
-      setStepSampleValues(next);
+      setStepTestOutputs(next);
     });
     return () => {
       canceled = true;
     };
   }, [api, value.id, editingId, upstreamIdsKey]);
+  // The last test output, flattened onto the very refs the picker inserts: the
+  // whole output, and each offered field path (nested ones included). Values
+  // pass through unstringified — the modal's `effectiveSamples` stringifies.
+  const stepSampleValues = useMemo(() => {
+    const next: Record<string, unknown> = {};
+    for (const st of upstreamState.steps) {
+      const output = stepTestOutputs[st.id];
+      if (output === undefined) continue;
+      next[`steps.${st.id}.output`] = output;
+      // Every own key of a plain object, as before…
+      if (typeof output === "object" && output !== null && !Array.isArray(output)) {
+        for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
+          next[`steps.${st.id}.output.${k}`] = v;
+        }
+      }
+      // …plus each offered nested field path.
+      for (const o of st.outputs ?? []) {
+        if (!o.path || !o.key.includes(".")) continue;
+        const v = valueAtPath(output, o.key);
+        if (v !== undefined) next[`steps.${st.id}.output.${o.key}`] = v;
+      }
+    }
+    return next;
+  }, [upstreamState.steps, stepTestOutputs]);
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
   // editor's left panel shows every source at once.

@@ -111,6 +111,17 @@ export function isRefSafeKey(key: string): boolean {
 }
 
 /**
+ * Whether a declared output PATH (`start.utc` — an app action's `OutputField`
+ * key, where `.` means nesting, not a literal character) can become a ref the
+ * engine resolves: the same `getVar` split that makes a literal `a.b` key
+ * unreachable is what walks a path, so each SEGMENT must pass
+ * {@link isRefSafeKey} on its own.
+ */
+export function isRefSafePath(path: string): boolean {
+  return path.split(".").every(isRefSafeKey);
+}
+
+/**
  * Build the non-editable inline chip (tag) DOM node for a part.
  *
  * `renderToggle` is opt-in and defaults OFF: `makeChip` is shared through

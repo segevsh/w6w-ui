@@ -204,7 +204,14 @@ export interface ActionDef {
   title?: string;
   description?: string;
   params?: ActionParam[];
+  /**
+   * The declared output shape — `OutputField[]` (`{ key, type, label }`, a dot
+   * key for a nested path) or a `DynamicOutput` (`{ source }`) the editor does
+   * not resolve. Read by `output-shape.ts`, so a later step can pick fields.
+   */
   output?: unknown;
+  /** An example output value; used for the field shape when `output` is absent. */
+  sample?: unknown;
 }
 
 /**

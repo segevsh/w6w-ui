@@ -8,6 +8,7 @@ import {
   ensureFillerBreak,
   insertNodeAtCaret,
   isRefSafeKey,
+  isRefSafePath,
   makeChip,
   paintParts,
   placeCaretAtEnd,
@@ -211,7 +212,9 @@ export function ExpressionEditorModal({
     }
   }, [parts, effectiveSamples, template]);
 
-  const source = (label: string, part: ExprPart, cls: string, sigil: string) => (
+  // `sigil: null` drops the glyph — a step row with fields renders its own
+  // disclosure caret in that spot instead (see the Workflow state loop).
+  const source = (label: string, part: ExprPart, cls: string, sigil: string | null) => (
     <button
       key={`${part.kind}:${part.ref ?? label}`}
       type="button"
@@ -219,7 +222,7 @@ export function ExpressionEditorModal({
       title={`Insert ${label}`}
       onClick={() => insertPart(part)}
     >
-      <span className="w6w-expr-chip-sigil">{sigil}</span>
+      {sigil !== null && <span className="w6w-expr-chip-sigil">{sigil}</span>}
       <span className="w6w-exprmodal-source-label">{label}</span>
     </button>
   );
@@ -286,37 +289,58 @@ export function ExpressionEditorModal({
                 // offered. The guard lives here, at the one place a ref is
                 // built, so it holds for any host that supplies `steps` —
                 // not only for the flow editor's own projection.
-                const fields = (st.outputs ?? []).filter((o) => isRefSafeKey(o.key));
+                const fields = (st.outputs ?? []).filter((o) =>
+                  o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
+                );
                 const stepKey = `step:${st.id}`;
                 const isOpen = expanded.has(stepKey);
                 // The whole output — still a real, useful ref on its own, and
                 // the author's route to a key the guard dropped. Its class,
                 // label, sigil and inserted ref are unchanged from before.
+                //
+                // With fields, the `▸` is pulled OUT of the chip into its own
+                // disclosure caret: authors read that arrow as "expand", and
+                // inside the chip it inserted the whole output instead.
                 const wholeBtn = source(
                   st.label ?? st.id,
                   { kind: "var", ref: `steps.${st.id}.output` },
                   "w6w-expr-chip-var",
-                  "▸",
+                  fields.length > 0 ? null : "▸",
                 );
                 return (
                   <Fragment key={st.id}>
                     {fields.length > 0 ? (
                       <div className="w6w-exprmodal-source-row">
-                        {wholeBtn}
                         <button
                           type="button"
-                          className="w6w-exprmodal-toggle-btn"
-                          data-testid="expr-toggle-fields"
+                          className="w6w-exprmodal-caret-btn"
+                          data-testid="expr-caret-fields"
                           aria-expanded={isOpen}
-                          aria-label="Toggle fields"
-                          title="Toggle fields"
+                          aria-label={isOpen ? "Hide fields" : "Show fields"}
+                          title={isOpen ? "Hide fields" : "Show fields"}
                           onClick={() => toggleExpanded(stepKey)}
                         >
-                          {isOpen ? "⌄" : "›"}
+                          {isOpen ? "▾" : "▸"}
                         </button>
+                        {wholeBtn}
+                        <FieldsToggle
+                          count={fields.length}
+                          open={isOpen}
+                          onToggle={() => toggleExpanded(stepKey)}
+                        />
                       </div>
                     ) : (
                       wholeBtn
+                    )}
+                    {/* An app action that declares no output shape and has
+                        never been tested: nothing to offer but the whole
+                        output, so say how to get its fields. */}
+                    {st.needsTest && (
+                      <div className="w6w-exprmodal-subsources">
+                        <span className="w6w-exprmodal-shape-note" data-testid="expr-needs-test">
+                          Run a test of this step to see its fields
+                        </span>
+                      </div>
                     )}
                     {/* …and one source per DECLARED output field, nested under
                         it, collapsed until the toggle above is expanded. Each
@@ -327,6 +351,14 @@ export function ExpressionEditorModal({
                         substituted into a ref. */}
                     {fields.length > 0 && isOpen && (
                       <div className="w6w-exprmodal-subsources">
+                        {st.outputsFrom === "test" && (
+                          <span
+                            className="w6w-exprmodal-shape-note"
+                            data-testid="expr-fields-from-test"
+                          >
+                            Fields from the last test run
+                          </span>
+                        )}
                         {fields.map((o) => {
                           const ref = `steps.${st.id}.output.${o.key}`;
                           return source(
@@ -398,17 +430,11 @@ export function ExpressionEditorModal({
                   {fields.length > 0 ? (
                     <div className="w6w-exprmodal-source-row">
                       {wholeBtn}
-                      <button
-                        type="button"
-                        className="w6w-exprmodal-toggle-btn"
-                        data-testid="expr-toggle-fields"
-                        aria-expanded={isOpen}
-                        aria-label="Toggle fields"
-                        title="Toggle fields"
-                        onClick={() => toggleExpanded(docKey)}
-                      >
-                        {isOpen ? "⌄" : "›"}
-                      </button>
+                      <FieldsToggle
+                        count={fields.length}
+                        open={isOpen}
+                        onToggle={() => toggleExpanded(docKey)}
+                      />
                     </div>
                   ) : (
                     wholeBtn
@@ -655,6 +681,32 @@ export function ExpressionEditorModal({
         <AddValueModal kind="secret" onCreate={options.createSecret} onClose={closeAdding} />
       )}
     </Modal>
+  );
+}
+
+/**
+ * The disclosure beside a rail source that has child field rows (a step's
+ * output fields, a document's top-level keys). It names what it reveals —
+ * "11 fields" — because the source chip's own `▸`/`▦` sigil reads as an
+ * expander but INSERTS the whole value; a bare 20px chevron next to it went
+ * unnoticed, leaving authors no visible way to reach `get_event_1.name`.
+ */
+function FieldsToggle({
+  count,
+  open,
+  onToggle,
+}: { count: number; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className="w6w-exprmodal-toggle-btn"
+      data-testid="expr-toggle-fields"
+      aria-expanded={open}
+      title={open ? "Hide fields" : "Show fields"}
+      onClick={onToggle}
+    >
+      {count} {count === 1 ? "field" : "fields"} {open ? "⌄" : "›"}
+    </button>
   );
 }
 
