@@ -187,3 +187,91 @@ test("upstreamStateSources — a manual trigger with no with.fields declares NO 
     "a manual trigger with no declared fields must not fall through to a static declaration",
   );
 });
+
+// ── App-action output shapes (declared → sample → last test run) ────────────
+
+const EVENTBRITE = "io.w6w.eventbrite";
+const getEventDef = {
+  output: [
+    { key: "id", type: "string", label: "Event ID" },
+    { key: "start.utc", type: "string", label: "Start (UTC)" },
+  ],
+};
+
+test("upstreamStateSources — an app action's declared output projects as path fields", () => {
+  const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
+    actionDef: (app, action) =>
+      app === EVENTBRITE && action === "get-event" ? getEventDef : undefined,
+    testOutputs: { ev: { ignored: true } },
+  });
+  assert.deepEqual(steps, [
+    {
+      id: "ev",
+      label: "ev",
+      outputs: [
+        { key: "id", label: "Event ID", path: true },
+        { key: "start.utc", label: "Start (UTC)", path: true },
+      ],
+      outputsFrom: "declared",
+    },
+  ]);
+});
+
+test("upstreamStateSources — no declared shape: the last test run's fields are offered", () => {
+  const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
+    actionDef: () => ({}),
+    testOutputs: { ev: { id: "1", name: { text: "Gala" } } },
+  });
+  assert.equal(steps[0].outputsFrom, "test");
+  assert.deepEqual(
+    steps[0].outputs?.map((o) => o.key),
+    ["id", "name", "name.text"],
+  );
+  assert.equal(steps[0].needsTest, undefined);
+});
+
+test("upstreamStateSources — no shape and no test run: the step needs a test", () => {
+  const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
+    actionDef: () => ({}),
+  });
+  assert.deepEqual(steps, [{ id: "ev", label: "ev", needsTest: true }]);
+});
+
+test("upstreamStateSources — action definition not loaded yet: no needs-test claim", () => {
+  const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
+    actionDef: () => undefined,
+  });
+  assert.deepEqual(steps, [{ id: "ev", label: "ev" }]);
+});
+
+test("upstreamStateSources — a built-in node with no static output falls back to its test run, never needs-test", () => {
+  const nodes = [node("code"), node("next")];
+  const withTest = upstreamStateSources("next", nodes, [edge("code", "next")], {
+    actionDef: () => ({}),
+    testOutputs: { code: { total: 3 } },
+  });
+  assert.deepEqual(withTest.steps[0].outputs, [{ key: "total", path: true }]);
+  assert.equal(withTest.steps[0].outputsFrom, "test");
+  const without = upstreamStateSources("next", nodes, [edge("code", "next")], {
+    actionDef: () => ({}),
+  });
+  assert.deepEqual(without.steps, [{ id: "code", label: "code" }]);
+});
+
+test("upstreamStateSources — a webhook entry node takes no fallback shape from its test run", () => {
+  const nodes = [node("hook", WEBHOOK_APP, "webhook"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("hook", "next")], {
+    testOutputs: { hook: { body: {} } },
+  });
+  assert.deepEqual(steps, [{ id: "hook", label: "hook" }]);
+});
+
+test("upstreamStateSources — without a shape context the projection is unchanged", () => {
+  const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")]);
+  assert.deepEqual(steps, [{ id: "ev", label: "ev" }]);
+});

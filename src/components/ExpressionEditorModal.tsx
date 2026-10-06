@@ -8,6 +8,7 @@ import {
   ensureFillerBreak,
   insertNodeAtCaret,
   isRefSafeKey,
+  isRefSafePath,
   makeChip,
   paintParts,
   placeCaretAtEnd,
@@ -286,7 +287,9 @@ export function ExpressionEditorModal({
                 // offered. The guard lives here, at the one place a ref is
                 // built, so it holds for any host that supplies `steps` —
                 // not only for the flow editor's own projection.
-                const fields = (st.outputs ?? []).filter((o) => isRefSafeKey(o.key));
+                const fields = (st.outputs ?? []).filter((o) =>
+                  o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
+                );
                 const stepKey = `step:${st.id}`;
                 const isOpen = expanded.has(stepKey);
                 // The whole output — still a real, useful ref on its own, and
@@ -318,6 +321,16 @@ export function ExpressionEditorModal({
                     ) : (
                       wholeBtn
                     )}
+                    {/* An app action that declares no output shape and has
+                        never been tested: nothing to offer but the whole
+                        output, so say how to get its fields. */}
+                    {st.needsTest && (
+                      <div className="w6w-exprmodal-subsources">
+                        <span className="w6w-exprmodal-shape-note" data-testid="expr-needs-test">
+                          Run a test of this step to see its fields
+                        </span>
+                      </div>
+                    )}
                     {/* …and one source per DECLARED output field, nested under
                         it, collapsed until the toggle above is expanded. Each
                         SAVES the canonical `steps.<id>.output.<key>` (the only
@@ -327,6 +340,14 @@ export function ExpressionEditorModal({
                         substituted into a ref. */}
                     {fields.length > 0 && isOpen && (
                       <div className="w6w-exprmodal-subsources">
+                        {st.outputsFrom === "test" && (
+                          <span
+                            className="w6w-exprmodal-shape-note"
+                            data-testid="expr-fields-from-test"
+                          >
+                            Fields from the last test run
+                          </span>
+                        )}
                         {fields.map((o) => {
                           const ref = `steps.${st.id}.output.${o.key}`;
                           return source(
