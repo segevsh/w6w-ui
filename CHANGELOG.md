@@ -9,6 +9,10 @@ commits.
 
 ## [Unreleased]
 
+- Rewrote the user guide in `docs/` for docs.w6w.io (section `ui`): an overview, theming, the
+  design system, and a components reference with one page per group. Corrected `README.md`: MIT
+  license, provider-based usage, all 42 components, current stylesheet sizes and bundler notes.
+  Moved the token-gate rules for contributors into `CONTRIBUTING.md`.
 - Added a branded `.storybook/manager.ts` theme.
 - Added `*.stories.tsx` coverage for every exported component, and a `pnpm coverage:stories` check
   that keeps it that way.
