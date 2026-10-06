@@ -60,6 +60,7 @@ import {
   type ExpressionOptions,
   ExpressionOptionsProvider,
   type ExpressionStepSource,
+  excludeSelfStep,
   useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
@@ -1053,10 +1054,14 @@ function Inner({
     }),
     [actionDefs, stepTestOutputs],
   );
-  const upstreamState = useMemo(
-    () => upstreamStateSources(editingId, nodes, edges, stepShapes),
-    [editingId, nodes, edges, stepShapes],
-  );
+  // While the add-step builder is open `editingId` is null, which makes
+  // `upstreamStateSources` offer EVERY node — including the step being drafted
+  // (progressively committed as a node). Exclude it from its own rail sources.
+  const [draftStepId, setDraftStepId] = useState<string | null>(null);
+  const upstreamState = useMemo(() => {
+    const st = upstreamStateSources(editingId, nodes, edges, stepShapes);
+    return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
+  }, [editingId, draftStepId, nodes, edges, stepShapes]);
   // A stable identity for *which* steps are upstream. The memo above rebuilds on
   // every node drag and every field edit; this string changes only when the SET
   // does, so the fetch below doesn't re-run on each keystroke.
@@ -1362,8 +1367,13 @@ function Inner({
                   onClose={() => {
                     setBuilderOpen(false);
                     setPendingConnect(null);
+                    setDraftStepId(null);
                   }}
-                  onAdd={addBuiltStep}
+                  onAdd={(built) => {
+                    const id = addBuiltStep(built);
+                    if (id) setDraftStepId(id);
+                    return id;
+                  }}
                   // Progressive commit (T4.1.1): once `addBuiltStep` has minted
                   // the step's id, every subsequent field change updates that
                   // same node instead of waiting for a final "Add step" click.
