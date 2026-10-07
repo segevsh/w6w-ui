@@ -418,7 +418,13 @@ export interface W6WApi {
   createSubscription?(
     appId: string,
     triggerKey: string,
-    input: { workflowId: string; connectionId?: string | null; params?: Record<string, unknown> },
+    input: {
+      workflowId: string;
+      connectionId?: string | null;
+      params?: Record<string, unknown>;
+      /** Poll triggers only, in milliseconds. */
+      intervalMs?: number;
+    },
   ): Promise<SubscriptionSummary>;
 }
 

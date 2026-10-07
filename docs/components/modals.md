@@ -148,6 +148,11 @@ anywhere you need a step or a target.
 | `upstreamSteps` | `{ id, label? }[]` | Earlier steps, so `steps.<id>.output` references resolve in a test. |
 | `theme` | `"light" \| "dark"` | |
 
+With a `workflowId`, the Triggers tab also lists app triggers. A webhook trigger is added with one
+click. A poll trigger first asks "Check every … minutes" (default 5, or the trigger's
+`minIntervalMs` if higher) and creates the subscription with that interval sent as `intervalMs`, in
+milliseconds. The host enforces its own minimum and the picker shows its refusal as-is.
+
 `BuiltStep` is a step without its id: `{ uses: { app, action, connection? }, with?, retry?,
 onError?, notes? }`.
 
