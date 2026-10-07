@@ -98,6 +98,56 @@ const workflow: FlowWorkflow = {
   [`NodeConfigForm`](/reference-packages/components/forms/#nodeconfigform).
 - **`edges[]`**: `{ from, to, when? }`, where `when` is `"success"` or `"error"`. Leave `edges` out
   and the steps run in order, one after another.
+- **`ports`** (optional, on a step): `{ in?, out? }`, how many edges may enter and leave the step.
+  A count is a number, or `"many"` for no limit.
+- **`fanOut`** (optional, on a step): `"parallel"` runs a step's next steps at the same time. Leave it
+  out and they run one after another. Only `"parallel"` is ever written; `"sequential"` is the
+  absence of the key.
+
+## How many edges a step can have
+
+The canvas works out each step's `in` and `out` one field at a time. For each field it takes the
+first value declared, in this order:
+
+1. the step's own `ports`;
+2. the action's `ports` in the app catalog (an app's defaults are already folded into its actions);
+3. the built-in definition for the control and trigger nodes;
+4. the default: `in: 1`, `out: "many"`.
+
+So a step with `ports: { in: 0 }` on an action that declares `{ out: 2 }` gets `in: 0` and `out: 2`.
+`"many"` at any level means no limit. Catalog ports are only read to draw the canvas; they are
+never copied onto the step, so a saved workflow has a `ports` key only where you wrote one.
+
+A step with `out` above 1 draws a tall, multi-connection handle. Drawing an edge from a step that
+already has as many as its finite `out` allows in that lane (`success` and `error` are counted
+separately) is refused: no existing edge is removed, and the editor shows a message naming the cap.
+Switching an edge to the other lane is refused the same way. A step with `"many"` never refuses.
+
+## Merge several branches into one step
+
+The **Merge** control node (`@w6w/control`, action `merge`) joins parallel branches. Its built-in
+definition declares `in: "many"`, so any number of edges may enter it, and `out: 1`. Its params are:
+
+- **`mode`**: `array` or `object`, the shape of the merged result.
+- **`entries`**: a list of `{ key, value }` rows. `key` is a plain string; `value` is a field with
+  the expression (ƒx) toggle, so it can reference the output of any upstream step. A merge with
+  inbound edges from A and B offers both A and B in the ƒx step list.
+
+The builder's control list shows **Merge**. The older **Aggregate** node is hidden from the palette
+(`hidden: true` on its definition in `INTERNAL_NODES`) but is not removed: a workflow that already
+uses it still renders and edits, and `internalNodeDef("@w6w/control", "aggregate")` still resolves.
+
+## Run next steps in parallel
+
+When a step has two or more edges leaving it in one lane, its settings show a **Run next steps**
+control: **In sequence** (the default) or **In parallel**. Below two edges the control is disabled
+and says why. Choosing **In parallel** writes `fanOut: "parallel"` on the step; choosing **In
+sequence** removes the key.
+
+The same step's card carries a small badge, in edit and read-only mode alike, once it has two or
+more edges in a lane. The glyph shows the mode (`⇉` parallel, `→` sequence), followed by the count.
+Its label reads `Runs these N steps in parallel` or `Runs these N steps in sequence`, where N is
+the largest number of edges leaving the step in either lane.
 
 ## Show a run on the canvas
 

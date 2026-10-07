@@ -212,6 +212,8 @@ export interface ActionDef {
   output?: unknown;
   /** An example output value; used for the field shape when `output` is absent. */
   sample?: unknown;
+  /** Declared connection ports; `"many"` is unbounded. Absent fields fall through to defaults. */
+  ports?: { in?: number | "many"; out?: number | "many" };
 }
 
 /**
