@@ -92,6 +92,26 @@ export const ReadOnly: Story = {
   args: { readOnly: true },
 };
 
+/** One step fanning out to two: the badge shows on the card, and "Run next steps" is enabled. */
+export const ParallelFanOut: Story = {
+  args: {
+    value: {
+      ...SAMPLE_WORKFLOW,
+      steps: [
+        SAMPLE_WORKFLOW.steps[0],
+        { ...SAMPLE_WORKFLOW.steps[1], fanOut: "parallel" },
+        SAMPLE_WORKFLOW.steps[2],
+        { id: "log", uses: { app: "slack", action: "post-message" } },
+      ],
+      edges: [
+        { from: "trigger", to: "send" },
+        { from: "send", to: "notify" },
+        { from: "send", to: "log" },
+      ],
+    },
+  },
+};
+
 /** A live run's per-step state, including a failed step. */
 export const WithRunState: Story = {
   args: { runState: SAMPLE_RUN_STATE },

@@ -35,6 +35,12 @@ export interface FlowStep {
   /** Free-form author notes for this step. Not executed. */
   notes?: string;
   /**
+   * How this step's outgoing edges in one lane run when there are two or more:
+   * `parallel` runs them concurrently; omitted (never written as `"sequential"`)
+   * runs them one after another.
+   */
+  fanOut?: "sequential" | "parallel";
+  /**
    * Authoring-time canvas coordinate for this step, in this editor's own
    * coordinate space (core `rfcs/workflow.md` · "Amendment — 2026-07-29:
    * authoring presentation (`Step.position`, `Workflow.settings`)" — the spec
