@@ -1,3 +1,4 @@
+import { WaitEditor } from "./WaitEditor.tsx";
 import {
   type ReactNode,
   forwardRef,
@@ -962,7 +963,7 @@ export function ControlStepConfig({
       <div className="w6w-stepconfig-body">
         {tab === "configure" &&
           (configView === "props" ? (
-            <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
+            node.action === "wait" && isControlApp(node.app) ? <WaitEditor values={withValues} onChange={setWithValues} /> : <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
           ) : configView === "code" ? (
             // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
             // shared with the two other code-view hosts.

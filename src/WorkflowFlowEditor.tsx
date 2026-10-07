@@ -1,3 +1,4 @@
+import { WaitEditor } from "./WaitEditor.tsx";
 import {
   Background,
   type Connection,
@@ -2437,7 +2438,7 @@ export function StepEditModal({
               {params === null ? (
                 <p className="w6w-muted w6w-small">Loading parameters…</p>
               ) : configView === "props" ? (
-                <ParamsForm
+                step.uses.action === "wait" && isControlApp(step.uses.app) ? <WaitEditor values={step.with ?? {}} readOnly={readOnly} onChange={(w) => commit({ ...step, with: w })} /> : <ParamsForm
                   params={params}
                   values={step.with ?? {}}
                   readOnly={readOnly}
