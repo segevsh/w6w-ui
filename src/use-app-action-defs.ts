@@ -11,7 +11,7 @@
  * the picker.
  */
 import { useEffect, useRef, useState } from "react";
-import { isInternalApp } from "./flow-types.ts";
+import { isInternalApp, type PortsLookup } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
 import type { W6WApi } from "./provider.tsx";
 import type { ActionDef } from "./types.ts";
@@ -50,4 +50,9 @@ export function useAppActionDefs(api: W6WApi, nodes: StepNode[]): Record<string,
     });
   }, [api, appIdsKey]);
   return defs;
+}
+
+/** Build a `PortsLookup` over the fetched catalog defs (`useAppActionDefs`' result). */
+export function portsLookupFromDefs(defs: Record<string, ActionDef[]>): PortsLookup {
+  return (app, action) => defs[app]?.find((d) => d.key === action)?.ports;
 }

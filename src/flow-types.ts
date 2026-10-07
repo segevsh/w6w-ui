@@ -13,12 +13,12 @@ export interface FlowStep {
   uses: { app: string; action: string; connection?: string | null };
   /**
    * Declared connection-port cardinality for this step (see core
-   * `rfcs/node-types.md` · Ports & cardinality). Omitted ⇒ `{ in: 1, out: 1 }`.
+   * `rfcs/node-types.md` · Ports & cardinality). Omitted fields fall through field-wise to the catalog action, the internal def, then `{ in: 1, out: "many" }`.
    * A persisted value wins over the node's default — `in > 1` opts the step into
    * accepting multiple inbound edges (e.g. a flow-control aggregator joining
    * several upstream branches).
    */
-  ports?: NodePorts;
+  ports?: PortsDecl;
   with?: Record<string, unknown>;
   retry?: {
     maxAttempts: number;
@@ -315,7 +315,7 @@ export interface InternalNodeDef {
    * when omitted; a trigger overrides to `{ in: 0, out: 1 }` (nothing flows into
    * the entry node). Fixed for now — not user-editable.
    */
-  ports?: NodePorts;
+  ports?: PortsDecl;
   /** Config schema (same `ActionParam[]` shape apps declare) rendered by ParamsForm. */
   params: ActionParam[];
   /**
@@ -330,36 +330,59 @@ export interface InternalNodeDef {
   output?: { key: string; label?: string }[];
 }
 
-/** Inbound (entry) and outbound (exit) connection-port counts for a node. */
+/** A declared port count: a number, or `"many"` (unbounded). */
+export type PortCount = number | "many";
+
+/** A (possibly partial) port declaration, as an author / catalog / def writes it. */
+export interface PortsDecl {
+  in?: PortCount;
+  out?: PortCount;
+}
+
+/** Resolved inbound (entry) and outbound (exit) connection-port counts; `"many"` is `Infinity`. */
 export interface NodePorts {
   in: number;
   out: number;
 }
 
-/** The default a node gets when it declares no explicit `ports`: 1 in, 1 out. */
-export const DEFAULT_NODE_PORTS: NodePorts = { in: 1, out: 1 };
+/** The default a node gets when nothing declares ports: 1 in, unbounded out. */
+export const DEFAULT_NODE_PORTS: NodePorts = { in: 1, out: Number.POSITIVE_INFINITY };
+
+function portCount(v: PortCount | undefined): number | undefined {
+  if (v === "many") return Number.POSITIVE_INFINITY;
+  return typeof v === "number" ? v : undefined;
+}
+
+/** Field-wise resolution: first declared value per field wins, else the default. */
+export function resolvePorts(...layers: (PortsDecl | undefined)[]): NodePorts {
+  let inn: number | undefined;
+  let out: number | undefined;
+  for (const l of layers) {
+    inn ??= portCount(l?.in);
+    out ??= portCount(l?.out);
+  }
+  return { in: inn ?? DEFAULT_NODE_PORTS.in, out: out ?? DEFAULT_NODE_PORTS.out };
+}
+
+/** Catalog lookup of an action's declared ports, passed as an argument (never stamped on a step). */
+export type PortsLookup = (app: string, action: string) => PortsDecl | undefined;
 
 /**
- * Resolve a node's connection ports. Internal nodes may declare `ports`
- * (triggers do, to drop the entry port); everything else — including every
- * external app step — gets the `{ in: 1, out: 1 }` default.
+ * Resolve a node's connection ports from its internal def only (triggers drop the
+ * entry port); everything else gets the default.
  */
 export function nodePorts(app: string, action: string): NodePorts {
-  return internalNodeDef(app, action)?.ports ?? DEFAULT_NODE_PORTS;
+  return resolvePorts(internalNodeDef(app, action)?.ports);
 }
 
 /**
- * Resolve a *step's* connection ports. A persisted `step.ports` wins — an author
- * may have opted the step into a non-default cardinality (e.g. a fan-in
- * aggregator that joins several upstream branches). Otherwise fall back to the
- * node's declared default via `nodePorts(app, action)` (internal nodes may drop
- * the entry port), and finally to `{ in: 1, out: 1 }` (`DEFAULT_NODE_PORTS`).
- *
- * This is the step-aware counterpart to `nodePorts`, which keys only off
- * `(app, action)` and so forces every external app step to the default.
+ * Resolve a *step's* ports field-wise: `step.ports` → catalog action (via `lookup`)
+ * → internal def → default `{ in: 1, out: Infinity }`. The catalog is read through
+ * the `lookup` argument and never written onto the step, so it never serializes.
  */
-export function nodePortsForStep(step: FlowStep): NodePorts {
-  return step.ports ?? nodePorts(step.uses.app, step.uses.action);
+export function nodePortsForStep(step: FlowStep, lookup?: PortsLookup): NodePorts {
+  const { app, action } = step.uses;
+  return resolvePorts(step.ports, lookup?.(app, action), internalNodeDef(app, action)?.ports);
 }
 
 // Feather-style 24×24 stroked glyphs (inner markup only; the card supplies the
