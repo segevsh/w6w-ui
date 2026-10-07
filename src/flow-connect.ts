@@ -14,7 +14,12 @@
  * from `index.ts` / `flow.ts`.
  */
 import { type Edge, addEdge } from "@xyflow/react";
-import { edgeVisuals, nodePortsForStep, sourceHandleForLane } from "./flow-types.ts";
+import {
+  type PortsLookup,
+  edgeVisuals,
+  nodePortsForStep,
+  sourceHandleForLane,
+} from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
 /**
@@ -27,6 +32,13 @@ import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 export function edgeLane(e: Edge): "success" | "error" {
   return (e.data as { when?: string } | undefined)?.when === "error" ? "error" : "success";
 }
+
+/**
+ * A refused connection: the source's exit port is full **in this lane** and the cap
+ * is finite. Drawing past a finite `out` cap is refused, never satisfied by evicting
+ * an existing edge (an unbounded `"many"` out never refuses).
+ */
+export type OutCapRefusal = { refused: "out_cap"; cap: number };
 
 /**
  * The id of the edge in `survivors` that `id` would duplicate, or `null` when it is
@@ -77,6 +89,7 @@ export function canConnect(
   target: string | null | undefined,
   nodes: StepNode[],
   edges: Edge[],
+  lookup?: PortsLookup,
 ): boolean {
   if (!source || !target || source === target) return false;
   if (edges.some((e) => e.source === source && e.target === target)) return false;
@@ -84,8 +97,8 @@ export function canConnect(
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return false;
   // Per-step ports (T2.3.1): a persisted `ports.in > 1` lets multiple edges land.
-  const srcPorts = nodePortsForStep(srcStep);
-  const tgtPorts = nodePortsForStep(tgtStep);
+  const srcPorts = nodePortsForStep(srcStep, lookup);
+  const tgtPorts = nodePortsForStep(tgtStep, lookup);
   return srcPorts.out >= 1 && tgtPorts.in >= 1;
 }
 
@@ -103,23 +116,22 @@ function planConnect(
   nodes: StepNode[],
   edges: Edge[],
   when: "success" | "error",
-): { next: Edge[]; conflict: string | null } | null {
-  if (!canConnect(source, target, nodes, edges) || !source || !target) return null;
+  lookup?: PortsLookup,
+): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | null } | null {
+  if (!canConnect(source, target, nodes, edges, lookup) || !source || !target) return null;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return null;
   // Per-step ports (T2.3.1): capacity honors a persisted `ports.in`/`ports.out`,
   // so a fan-in node with `ports.in > 1` keeps prior edges instead of dropping them.
-  const srcPorts = nodePortsForStep(srcStep);
-  const tgtPorts = nodePortsForStep(tgtStep);
+  const srcPorts = nodePortsForStep(srcStep, lookup);
+  const tgtPorts = nodePortsForStep(tgtStep, lookup);
   let next = edges;
-  // Free the source's exit port IN THIS LANE: drop the oldest same-source edges
-  // *of the same lane* so adding one more stays within out-capacity (for the
-  // current 1-out model, replaces it). The other lane is untouched.
+  // The source's exit port IN THIS LANE is full at a finite cap: REFUSE. Nothing is
+  // evicted — `next` stays the input edge set. The other lane is untouched.
   const fromSrc = next.filter((e) => e.source === source && edgeLane(e) === when);
   if (fromSrc.length >= srcPorts.out) {
-    const drop = new Set(fromSrc.slice(0, fromSrc.length - srcPorts.out + 1).map((e) => e.id));
-    next = next.filter((e) => !drop.has(e.id));
+    return { next: edges, conflict: null, refusal: { refused: "out_cap", cap: srcPorts.out } };
   }
   // Free the target's entry port likewise — lane-blind, see the docstring.
   const toTgt = next.filter((e) => e.target === target);
@@ -157,15 +169,17 @@ function planConnect(
       next,
     ),
     conflict: collidingEdgeId(next, id),
+    refusal: null,
   };
 }
 
 /**
- * Build the next edge set for a new `source → target` connection, **replacing**
- * whatever already occupied the source's exit or the target's entry so
- * single-slot ports stay at exactly one connection. Drops the oldest conflicting
- * edge(s) to make room, then appends the new one. Returns `null` when the
- * connection is disallowed by {@link canConnect} — **or when the minted id would
+ * Build the next edge set for a new `source → target` connection. **Additive at the
+ * source**: a source under its `out` cap (or unbounded) keeps every existing edge and
+ * gains one; at a finite cap the connection is **refused** (see {@link connectRefusal}),
+ * never satisfied by evicting. The target's entry port is still single-slot-replacing:
+ * the oldest inbound edge(s) are dropped to make room. Returns `null` when the
+ * connection is disallowed by {@link canConnect}, refused at the out cap — **or when the minted id would
  * duplicate a surviving edge's id**, the same refusal {@link setEdgeWhen} performs
  * through the same {@link collidingEdgeId} test.
  *
@@ -179,8 +193,8 @@ function planConnect(
  * see {@link connectConflict}.
  *
  * The source's exit capacity is **per lane** (T3.2.2): success edges compete only
- * with success edges, error edges only with error edges. So an ordinary `out: 1`
- * step keeps the deliberate "a second drag re-points the wire" UX *within* a lane,
+ * with success edges, error edges only with error edges. So a finite `out: 1`
+ * step refuses a second success edge *within* a lane,
  * while additionally being able to hold one error edge — which is what makes a
  * `send → (error) → fallback` shape authorable at all. No `ports.out` bump is
  * needed, so every persisted definition and palette entry stays valid.
@@ -197,9 +211,10 @@ export function applyConnect(
   nodes: StepNode[],
   edges: Edge[],
   when: "success" | "error" = "success",
+  lookup?: PortsLookup,
 ): Edge[] | null {
-  const plan = planConnect(source, target, nodes, edges, when);
-  if (!plan || plan.conflict) return null;
+  const plan = planConnect(source, target, nodes, edges, when, lookup);
+  if (!plan || plan.conflict || plan.refusal) return null;
   return plan.next;
 }
 
@@ -219,8 +234,25 @@ export function connectConflict(
   nodes: StepNode[],
   edges: Edge[],
   when: "success" | "error" = "success",
+  lookup?: PortsLookup,
 ): string | null {
-  return planConnect(source, target, nodes, edges, when)?.conflict ?? null;
+  return planConnect(source, target, nodes, edges, when, lookup)?.conflict ?? null;
+}
+
+/**
+ * The out-cap refusal for drawing `source → target`, or `null` when the source has
+ * room (or is unbounded). The editor renders `cap` in an inline message on the same
+ * channel as {@link connectConflict}; {@link applyConnect} returns `null` for it.
+ */
+export function connectRefusal(
+  source: string | null | undefined,
+  target: string | null | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+  when: "success" | "error" = "success",
+  lookup?: PortsLookup,
+): OutCapRefusal | null {
+  return planConnect(source, target, nodes, edges, when, lookup)?.refusal ?? null;
 }
 
 /**
@@ -239,7 +271,8 @@ function planRelane(
   edgeId: string,
   when: "success" | "error",
   nodes: StepNode[],
-): { next: Edge[]; conflict: string | null } | null {
+  lookup?: PortsLookup,
+): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | null } | null {
   // EXACTLY ONE edge must own `edgeId`. None ⇒ nothing to re-lane. Two or more ⇒ the
   // edge set is already corrupt (a step id containing `->` mints a duplicate id —
   // FOLLOWUPS.md), and both the lookup here and the replacement below match BY ID,
@@ -252,33 +285,26 @@ function planRelane(
   const me = matches[0];
   const srcStep = nodes.find((n) => n.id === me.source)?.data.step;
   if (!srcStep) return null;
-  const out = nodePortsForStep(srcStep).out;
-  // Free the DESTINATION lane at the source, by exactly the rule `applyConnect`
-  // applies on creation: drop the oldest same-source edges *of that lane* so this
-  // one fits within out-capacity. `me` is excluded — it is the edge moving in, so
-  // the others must leave room for one more. The other lane is untouched.
+  const out = nodePortsForStep(srcStep, lookup).out;
+  // The DESTINATION lane at the source is full at a finite cap: REFUSE, evicting
+  // nothing (exactly the rule `applyConnect` applies on creation). `me` is excluded —
+  // it is the edge moving in.
   //
   // ...but ONLY when the edge is actually MOVING. An edge already in `when`
-  // occupies that lane already, so there is nothing to free, and counting its
-  // siblings as competitors makes a no-op destructive: a definition loaded with
-  // two success edges out of one step is over the editor's capacity but perfectly
-  // valid, and clicking the already-active "Success" would then silently delete
-  // the other wire. (Observed in the browser probe before this guard existed.)
+  // occupies that lane already, so a no-op re-lane is never refused: a definition
+  // loaded with more edges out of one step than its cap is over capacity but valid.
   //
-  // `e.source === me.source` is a CORRECTNESS barrier, not a filter for tidiness:
-  // capacity belongs to one step's exit port, so without it the census counts other
-  // steps' edges and the eviction deletes one of them — with `[a→b error, x→y
-  // success]`, re-laning `x→y` would return `['x->y:error']` alone, an unrelated
-  // step's wire gone. Pinned by `flow-connect.test.ts` ("the lane census is
-  // per-SOURCE").
+  // `e.source === me.source` is a CORRECTNESS barrier: capacity belongs to one
+  // step's exit port, so other steps' edges must not be counted (pinned by
+  // `flow-connect.test.ts` "the lane census is per-SOURCE").
   const others = edges.filter((e) => e.id !== edgeId);
   const sameLane =
     edgeLane(me) === when
       ? []
       : others.filter((e) => e.source === me.source && edgeLane(e) === when);
-  const dropped = new Set<string>(
-    sameLane.length >= out ? sameLane.slice(0, sameLane.length - out + 1).map((e) => e.id) : [],
-  );
+  if (sameLane.length >= out) {
+    return { next: edges, conflict: null, refusal: { refused: "out_cap", cap: out } };
+  }
   // The lane rides on `data.when`, the visuals come from the shared
   // `edgeVisuals`, and the id is re-minted because it ENCODES the lane
   // (`flowEdgeId`). `className`/`label`/`sourceHandle` are assigned rather than
@@ -299,21 +325,19 @@ function planRelane(
     sourceHandle: sourceHandleForLane(when),
   };
   // The same id-uniqueness test the creation path runs, against the survivors only.
-  const conflict = collidingEdgeId(
-    others.filter((e) => !dropped.has(e.id)),
-    relaned.id,
-  );
+  const conflict = collidingEdgeId(others, relaned.id);
   return {
     // `edgeId` is single-owner (guarded above), so this replaces exactly one edge.
-    next: edges.filter((e) => !dropped.has(e.id)).map((e) => (e.id === edgeId ? relaned : e)),
+    next: edges.map((e) => (e.id === edgeId ? relaned : e)),
     conflict,
+    refusal: null,
   };
 }
 
 /**
  * Re-lane one edge. Updates its `data.when`, its visuals and its id, and frees
- * the destination lane by dropping the oldest other same-source edge in that lane
- * when it is over capacity — the same rule `applyConnect` applies on creation.
+ * nothing: when the destination lane is at a finite out cap the switch is refused
+ * (see {@link relaneRefusal}) — the same rule `applyConnect` applies on creation.
  *
  * Returns a **new** array and mutates nothing (React Flow's state handle compares
  * by identity), or **`null` when the switch must be refused** — the `applyConnect`
@@ -337,9 +361,10 @@ export function setEdgeWhen(
   edgeId: string,
   when: "success" | "error",
   nodes: StepNode[],
+  lookup?: PortsLookup,
 ): Edge[] | null {
-  const plan = planRelane(edges, edgeId, when, nodes);
-  if (!plan || plan.conflict) return null;
+  const plan = planRelane(edges, edgeId, when, nodes, lookup);
+  if (!plan || plan.conflict || plan.refusal) return null;
   return plan.next;
 }
 
@@ -354,8 +379,20 @@ export function edgeWhenConflict(
   edgeId: string,
   when: "success" | "error",
   nodes: StepNode[],
+  lookup?: PortsLookup,
 ): string | null {
-  return planRelane(edges, edgeId, when, nodes)?.conflict ?? null;
+  return planRelane(edges, edgeId, when, nodes, lookup)?.conflict ?? null;
+}
+
+/** The out-cap refusal for re-laning `edgeId`, or `null` — the re-lane twin of {@link connectRefusal}. */
+export function relaneRefusal(
+  edges: Edge[],
+  edgeId: string,
+  when: "success" | "error",
+  nodes: StepNode[],
+  lookup?: PortsLookup,
+): OutCapRefusal | null {
+  return planRelane(edges, edgeId, when, nodes, lookup)?.refusal ?? null;
 }
 
 /**

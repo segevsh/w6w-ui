@@ -14,8 +14,10 @@ import {
   applyConnect,
   canConnect,
   connectConflict,
+  connectRefusal,
   edgeLane,
   edgeWhenConflict,
+  relaneRefusal,
   setEdgeWhen,
 } from "../flow-connect.ts";
 import {
@@ -60,37 +62,56 @@ function pairs(edges: Edge[]): string[] {
 
 const ABCD = [node("a"), node("b"), node("c"), node("d")];
 
-test("success lane is still single-slot — a second success edge RE-POINTS the wire", () => {
-  // The deliberate `out: 1` UX, unchanged by this node. Asserted for BOTH
-  // spellings of a success edge: the explicit `data.when` stamp and a legacy
-  // `data`-less edge, which must read as success (omitted ⇒ success).
+/** Nodes whose every step caps its exit at ONE edge per lane. */
+const CAP1 = ["a", "b", "c", "d"].map((id) => node(id, { in: 1, out: 1 }));
+
+test("at a finite out cap a second success edge is REFUSED — edges unchanged, cap named", () => {
+  // Asserted for BOTH spellings of a success edge: the explicit `data.when` stamp
+  // and a legacy `data`-less edge, which must read as success (omitted ⇒ success).
   for (const existing of [rf("a", "c", "success"), legacy("a", "c")]) {
-    const next = applyConnect("a", "b", ABCD, [existing]);
-    assert.ok(next, "the connection must be allowed");
-    assert.deepEqual(pairs(next), ["a->b:success"]);
-    assert.equal(next.filter((e) => e.source === "a").length, 1);
+    const edges = [existing];
+    assert.equal(applyConnect("a", "b", CAP1, edges), null);
+    assert.deepEqual(connectRefusal("a", "b", CAP1, edges), { refused: "out_cap", cap: 1 });
+    assert.equal(connectConflict("a", "b", CAP1, edges), null);
+    assert.deepEqual(pairs(edges), ["a->c:success"], "input untouched");
   }
 });
 
+test("under the cap or unbounded the edge is ADDED and nothing is evicted", () => {
+  // Default ports: out is unbounded ("many" ⇒ Infinity).
+  const next = applyConnect("a", "b", ABCD, [rf("a", "c", "success")]);
+  assert.ok(next);
+  assert.deepEqual(pairs(next), ["a->c:success", "a->b:success"]);
+  assert.equal(connectRefusal("a", "b", ABCD, [rf("a", "c", "success")]), null);
+  // A finite cap of 2 admits a second edge, refuses a third.
+  const two = ["a", "b", "c", "d"].map((id) => node(id, { in: 1, out: 2 }));
+  const e2 = applyConnect("a", "b", two, [rf("a", "c", "success")]);
+  assert.ok(e2);
+  assert.deepEqual(connectRefusal("a", "d", two, e2), { refused: "out_cap", cap: 2 });
+});
+
 test("error lane does NOT compete with success — a step holds one of each", () => {
-  const next = applyConnect("a", "b", ABCD, [rf("a", "c", "success")], "error");
+  const next = applyConnect("a", "b", CAP1, [rf("a", "c", "success")], "error");
   assert.ok(next, "the connection must be allowed");
-  // This is the whole point of the node: a->c survives the error drag.
   assert.deepEqual(pairs(next), ["a->c:success", "a->b:error"]);
-  assert.equal(next.filter((e) => e.source === "a").length, 2);
   assert.equal(next.find((e) => e.target === "b")?.id, "a->b:error");
 });
 
-test("error lane is single-slot too — a second error edge re-points it, success untouched", () => {
-  const next = applyConnect(
-    "a",
-    "d",
-    ABCD,
-    [rf("a", "c", "success"), rf("a", "b", "error")],
-    "error",
-  );
-  assert.ok(next, "the connection must be allowed");
-  assert.deepEqual(pairs(next), ["a->c:success", "a->d:error"]);
+test("error lane is capped too — a second error edge is refused, success untouched", () => {
+  const edges = [rf("a", "c", "success"), rf("a", "b", "error")];
+  assert.equal(applyConnect("a", "d", CAP1, edges, "error"), null);
+  assert.deepEqual(connectRefusal("a", "d", CAP1, edges, "error"), { refused: "out_cap", cap: 1 });
+});
+
+test("a catalog lookup cap reaches connect without being written on the step", () => {
+  const lookup = () => ({ out: 1 as const });
+  const edges = [rf("a", "c", "success")];
+  assert.deepEqual(connectRefusal("a", "b", ABCD, edges, "success", lookup), {
+    refused: "out_cap",
+    cap: 1,
+  });
+  assert.equal(applyConnect("a", "b", ABCD, edges, "success", lookup), null);
+  assert.equal(ABCD[0].data.step.ports, undefined);
 });
 
 test("target entry capacity stays LANE-BLIND — a ports.in:1 step keeps one inbound", () => {
@@ -167,19 +188,24 @@ test("setEdgeWhen marks a success edge as 'error' — visuals follow, the siblin
   assert.deepEqual(pairs(same), ["a->b:success", "a->c:success"]);
 });
 
-test("setEdgeWhen into a FULL lane evicts — [a→b error, a→c success], a→c to error", () => {
+test("setEdgeWhen into a FULL lane is REFUSED — [a→b error, a→c success], a→c to error", () => {
+  const edges = [rf("a", "b", "error"), rf("a", "c", "success")];
+  assert.equal(setEdgeWhen(edges, "a->c", "error", CAP1), null);
+  assert.deepEqual(relaneRefusal(edges, "a->c", "error", CAP1), { refused: "out_cap", cap: 1 });
+  assert.deepEqual(pairs(edges), ["a->b:error", "a->c:success"], "input untouched");
+});
+
+test("setEdgeWhen into a lane with room (unbounded) keeps every edge", () => {
   const next = setEdgeWhen([rf("a", "b", "error"), rf("a", "c", "success")], "a->c", "error", ABCD);
   assert.ok(next, "the re-lane must be allowed");
-  assert.deepEqual(pairs(next), ["a->c:error"]);
-  assert.equal(next.filter((e) => e.source === "a" && edgeLane(e) === "error").length, 1);
+  assert.deepEqual(pairs(next), ["a->b:error", "a->c:error"]);
   assert.equal(
-    next.some((e) => e.target === "b"),
-    false,
-    "the previous error edge was evicted",
+    relaneRefusal([rf("a", "b", "error"), legacy("a", "c")], "a->c", "error", ABCD),
+    null,
   );
 });
 
-test("setEdgeWhen back to 'success' clears the visuals AND evicts the success incumbent", () => {
+test("setEdgeWhen back to 'success' clears the visuals when the lane has room", () => {
   const next = setEdgeWhen(
     [rf("a", "b", "success"), rf("a", "c", "error")],
     "a->c:error",
@@ -187,8 +213,8 @@ test("setEdgeWhen back to 'success' clears the visuals AND evicts the success in
     ABCD,
   );
   assert.ok(next, "the re-lane must be allowed");
-  assert.deepEqual(pairs(next), ["a->c:success"]);
-  const me = next[0];
+  assert.deepEqual(pairs(next), ["a->b:success", "a->c:success"]);
+  const me = next[1];
   assert.equal(me.id, "a->c");
   assert.equal(me.data?.when, "success");
   // A spread of `edgeVisuals("success")` (an empty object) would leave both of
@@ -226,14 +252,15 @@ test("a step id ending ':error' is REFUSED, not silently collapsed to one edge",
   // Refused means nothing was lost: the caller still holds two distinct edges.
   assert.equal(new Map(edges.map((e) => [e.id, e])).size, 2);
 
-  // ...and the guard is EVICTION-AWARE, not merely paranoid: the error half of a
-  // same-target pair re-lanes to success fine, because minting `a->b` is safe
-  // once the success incumbent it would clash with is evicted by the same call.
+  // Nothing is evicted any more, so re-laning the error half of a same-target pair
+  // to success would mint the id the success sibling still owns: refused, and the
+  // sibling is named. Moving the sibling out of the way first makes it free.
   const pair = [rf("a", "b", "success"), rf("a", "b", "error")];
-  assert.equal(edgeWhenConflict(pair, "a->b:error", "success", ABCD), null);
-  const relaned = setEdgeWhen(pair, "a->b:error", "success", ABCD);
-  assert.ok(relaned, "the same-target pair must still be re-lanable");
-  assert.deepEqual(pairs(relaned), ["a->b:success"]);
+  assert.equal(edgeWhenConflict(pair, "a->b:error", "success", ABCD), "a->b");
+  assert.equal(setEdgeWhen(pair, "a->b:error", "success", ABCD), null);
+  const lone = [rf("a", "b", "error")];
+  assert.equal(edgeWhenConflict(lone, "a->b:error", "success", ABCD), null);
+  assert.deepEqual(pairs(setEdgeWhen(lone, "a->b:error", "success", ABCD) ?? []), ["a->b:success"]);
 });
 
 // ── T3.2.4. The same collision arriving from the CREATION side, in the order the
