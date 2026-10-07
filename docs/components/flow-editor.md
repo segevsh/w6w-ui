@@ -120,6 +120,20 @@ already has as many as its finite `out` allows in that lane (`success` and `erro
 separately) is refused: no existing edge is removed, and the editor shows a message naming the cap.
 Switching an edge to the other lane is refused the same way. A step with `"many"` never refuses.
 
+## Merge several branches into one step
+
+The **Merge** control node (`@w6w/control`, action `merge`) joins parallel branches. Its built-in
+definition declares `in: "many"`, so any number of edges may enter it, and `out: 1`. Its params are:
+
+- **`mode`**: `array` or `object`, the shape of the merged result.
+- **`entries`**: a list of `{ key, value }` rows. `key` is a plain string; `value` is a field with
+  the expression (ƒx) toggle, so it can reference the output of any upstream step. A merge with
+  inbound edges from A and B offers both A and B in the ƒx step list.
+
+The builder's control list shows **Merge**. The older **Aggregate** node is hidden from the palette
+(`hidden: true` on its definition in `INTERNAL_NODES`) but is not removed: a workflow that already
+uses it still renders and edits, and `internalNodeDef("@w6w/control", "aggregate")` still resolves.
+
 ## Show a run on the canvas
 
 The canvas doesn't fetch runs. Poll the run yourself (`GET /runs/:id`) and pass each result as
