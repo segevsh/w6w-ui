@@ -449,3 +449,21 @@ pure logic lives in `src/flow-fanout.ts`, the editor shows a "Run next steps" se
 cards. The palette offers `@w6w/control` **Merge**; `aggregate` is hidden from it. Known gaps (that
 project's FOLLOWUPS): `ControlNodeCard` has no badge; the badge label and the palette's hidden filter
 have no direct unit test; `StepPortsControl` (hidden) would write `out:null` if re-enabled.
+
+**ui-icons (closed 2026-10-07; landed `main` @ `3babb57` / `78ce915`, 2026-10-04).** There is now
+a shared icon set: `src/components/icons.tsx` (`IconName`, `iconNames`, `icons`, one `IconVariant`
+per entry: fill / stroke / mixed) and `src/components/Icon.tsx` (`Icon({name,size=16,label,
+className})`: `currentColor`, decorative = `aria-hidden`, labelled = `role="img"`). Both are
+exported from the barrel. `IconButton` takes `icon=`/`iconSize=`/`title=`/`aria-pressed`/
+`aria-expanded` and forwards a ref; `children` still win over `icon`. **Add a new glyph as a set
+entry; never write an inline `<svg>` in a component.** The deliberate exceptions are
+`InternalIcon.tsx` (per-app markup from the node def) and `ServerResources.tsx`'s `Sparkline`
+(data-driven) — their docblocks say why. `.w6w-icon` lives in `src/styles/_icon.scss`.
+The `HistoryTimeline.test.ts` race described in the gate table is **fixed**
+(`fix/history-timeline-flaky` @ `9beb480`). Each JSX test file now has a per-run scratch dir,
+and its `after()` cleanup is armed only after the dynamic import resolves. Copy that pattern
+in a new JSX-render test. Fact 3's file counts are now 54 + 18
+(`ls src/__tests__/*.test.ts | wc -l` / `ls src/components/__tests__/*.test.ts | wc -l` on
+`main` @ `88b208b`). Unit suite 694/694 on `88b208b`. `biome check .` reports 7 errors there
+(`StepBuilderModal`/`WorkflowFlowEditor` format+imports, `WaitEditor`); none of them exist at
+this project's tip `cfaa9fe`, where biome is clean.
