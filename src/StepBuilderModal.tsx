@@ -746,6 +746,9 @@ function AppTriggerPicker({
   const [triggers, setTriggers] = useState<TriggerSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // A poll trigger waits here for its "Check every N minutes" before it is created.
+  const [pending, setPending] = useState<TriggerSummary | null>(null);
+  const [minutes, setMinutes] = useState(5);
 
   useEffect(() => {
     const load = api.getAppTriggers;
@@ -759,12 +762,26 @@ function AppTriggerPicker({
     };
   }, [api, app.id]);
 
-  const create = (triggerKey: string) => {
+  const minMinutes = (t: TriggerSummary) => Math.max(1, Math.ceil((t.minIntervalMs ?? 0) / 60000));
+
+  const pick = (t: TriggerSummary) => {
+    if (t.type !== "poll") return create(t.key);
+    setError(null);
+    setPending(t);
+    setMinutes(Math.max(5, Math.ceil((t.minIntervalMs ?? 0) / 60000)));
+  };
+
+  const create = (triggerKey: string, intervalMs?: number) => {
     const createSubscription = api.createSubscription;
     if (!createSubscription) return;
     setError(null);
     setCreating(true);
-    createSubscription(app.id, triggerKey, { workflowId, connectionId: null, params: {} })
+    createSubscription(app.id, triggerKey, {
+      workflowId,
+      connectionId: null,
+      params: {},
+      ...(intervalMs === undefined ? {} : { intervalMs }),
+    })
       .then(() => onClose())
       .catch((e) => {
         setCreating(false);
@@ -791,7 +808,7 @@ function AppTriggerPicker({
               type="button"
               className="w6w-stepbuilder-item"
               disabled={creating}
-              onClick={() => create(t.key)}
+              onClick={() => pick(t)}
             >
               <span className="w6w-stepbuilder-item-main">
                 <strong>{t.title}</strong>
@@ -800,6 +817,33 @@ function AppTriggerPicker({
               </span>
             </button>
           ))}
+        </div>
+      )}
+      {pending && (
+        <div className="w6w-stack">
+          <label className="w6w-field">
+            <span>Check every … minutes</span>
+            <input
+              type="number"
+              min={minMinutes(pending)}
+              step={1}
+              value={minutes}
+              disabled={creating}
+              onChange={(e) =>
+                setMinutes(
+                  Math.max(minMinutes(pending), Number(e.target.value) || minMinutes(pending)),
+                )
+              }
+            />
+          </label>
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-primary w6w-btn-sm"
+            disabled={creating}
+            onClick={() => create(pending.key, minutes * 60000)}
+          >
+            Add trigger
+          </button>
         </div>
       )}
     </div>

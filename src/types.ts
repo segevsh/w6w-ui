@@ -39,6 +39,10 @@ export interface TriggerSummary {
   title: string;
   description?: string;
   requiresAuth?: boolean;
+  /** `"poll"` triggers are fetched on an interval; absent or `"webhook"` receive pushes. */
+  type?: "webhook" | "poll";
+  /** Host floor for a poll trigger's interval, in milliseconds. */
+  minIntervalMs?: number;
 }
 
 /** A Subscription (rfcs/trigger.md) as returned by the console subscription routes. */
@@ -50,6 +54,11 @@ export interface SubscriptionSummary {
   connectionId: string | null;
   /** Present only for `appId === "@w6w/webhook"` — the server's own computed receive URL. */
   webhookUrl?: string;
+  type?: "webhook" | "poll";
+  status?: string;
+  /** Poll interval in milliseconds; null for webhook subscriptions. */
+  intervalMs?: number | null;
+  lastError?: { code: string; message: string } | null;
 }
 
 /** One field on an Auth method's connection form. Drives the input widgets. */
