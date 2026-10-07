@@ -98,6 +98,27 @@ const workflow: FlowWorkflow = {
   [`NodeConfigForm`](/reference-packages/components/forms/#nodeconfigform).
 - **`edges[]`**: `{ from, to, when? }`, where `when` is `"success"` or `"error"`. Leave `edges` out
   and the steps run in order, one after another.
+- **`ports`** (optional, on a step): `{ in?, out? }`, how many edges may enter and leave the step.
+  A count is a number, or `"many"` for no limit.
+
+## How many edges a step can have
+
+The canvas works out each step's `in` and `out` one field at a time. For each field it takes the
+first value declared, in this order:
+
+1. the step's own `ports`;
+2. the action's `ports` in the app catalog (an app's defaults are already folded into its actions);
+3. the built-in definition for the control and trigger nodes;
+4. the default: `in: 1`, `out: "many"`.
+
+So a step with `ports: { in: 0 }` on an action that declares `{ out: 2 }` gets `in: 0` and `out: 2`.
+`"many"` at any level means no limit. Catalog ports are only read to draw the canvas; they are
+never copied onto the step, so a saved workflow has a `ports` key only where you wrote one.
+
+A step with `out` above 1 draws a tall, multi-connection handle. Drawing an edge from a step that
+already has as many as its finite `out` allows in that lane (`success` and `error` are counted
+separately) is refused: no existing edge is removed, and the editor shows a message naming the cap.
+Switching an edge to the other lane is refused the same way. A step with `"many"` never refuses.
 
 ## Show a run on the canvas
 
