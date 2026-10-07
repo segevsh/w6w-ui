@@ -309,6 +309,11 @@ export interface InternalNodeDef {
    */
   icon: string;
   /**
+   * Hidden from every palette list but still resolvable by `internalNodeDef`, so
+   * a workflow already using the node keeps rendering and editing.
+   */
+  hidden?: boolean;
+  /**
    * Connection ports: how many inbound (entry) and outbound (exit) connections
    * this node accepts. A port is the ability to receive/emit a connection —
    * rendered as a React Flow Handle. Defaults to one of each (`{ in: 1, out: 1 }`)
@@ -912,6 +917,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     displayName: "Aggregate",
     group: "control",
     icon: ICON_AGGREGATE,
+    hidden: true,
     // Fan-in join: accepts several inbound branches and emits one combined
     // output. `in > 1` opts the node into multiple inbound edges (see core
     // rfcs/node-types.md · Ports & cardinality); `out: 1` is a single exit.
@@ -927,6 +933,44 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
           { value: "array", label: "Array" },
           { value: "object", label: "Object" },
         ],
+      },
+    ],
+  },
+  {
+    app: CONTROL_APP,
+    action: "merge",
+    label: "Merge",
+    displayName: "Merge",
+    group: "control",
+    icon: ICON_AGGREGATE,
+    // Fan-in join with named entries: any number of inbound branches, one output
+    // built from `entries` (key → expression), as an array or an object.
+    ports: { in: "many", out: 1 },
+    params: [
+      {
+        key: "mode",
+        label: "Mode",
+        type: "select",
+        default: "array",
+        hint: "Combine the entries into an array, or into an object keyed by each entry's key.",
+        options: [
+          { value: "array", label: "Array" },
+          { value: "object", label: "Object" },
+        ],
+      },
+      {
+        key: "entries",
+        label: "Entries",
+        type: "array",
+        default: [],
+        hint: "Each entry's value may be an expression (ƒx) over the inbound branches' outputs.",
+        item: {
+          type: "object",
+          fields: [
+            { key: "key", label: "Key", type: "string" },
+            { key: "value", label: "Value", type: "string" },
+          ],
+        },
       },
     ],
   },

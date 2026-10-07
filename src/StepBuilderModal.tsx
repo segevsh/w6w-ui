@@ -807,7 +807,7 @@ function AppTriggerPicker({
 
 /** Controls tab — engine-native flow control only (branch, loop, parallelize, wait). */
 function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.group === "control");
+  const nodes = INTERNAL_NODES.filter((n) => n.group === "control" && !n.hidden);
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
@@ -822,7 +822,7 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
  * node lives in its own **Data** tab, so exclude it here. */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
   const nodes = INTERNAL_NODES.filter(
-    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP,
+    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP && !n.hidden,
   );
   return (
     <div className="w6w-stack">
