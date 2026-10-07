@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { nodePortsForStep, resolvePorts } from "../flow-types.ts";
 import type { FlowStep } from "../flow-types.ts";
-import { portsLookupFromDefs } from "../use-app-action-defs.ts";
 import { flowToWorkflow } from "../flow-utils.ts";
+import { portsLookupFromDefs } from "../use-app-action-defs.ts";
 
 const step = (app: string, action: string, ports?: FlowStep["ports"]): FlowStep =>
   ({ id: "s", uses: { app, action }, ...(ports ? { ports } : {}) }) as FlowStep;
@@ -14,14 +14,14 @@ test("field-wise: step in + catalog out", () => {
 });
 
 test("no declarations => in 1, out Infinity", () => {
-  assert.deepEqual(nodePortsForStep(step("acme", "go")), { in: 1, out: Infinity });
+  assert.deepEqual(nodePortsForStep(step("acme", "go")), { in: 1, out: Number.POSITIVE_INFINITY });
 });
 
 test('"many" at any level is Infinity', () => {
-  assert.equal(resolvePorts({ out: "many" }).out, Infinity);
-  assert.equal(resolvePorts({ in: "many" }).in, Infinity);
+  assert.equal(resolvePorts({ out: "many" }).out, Number.POSITIVE_INFINITY);
+  assert.equal(resolvePorts({ in: "many" }).in, Number.POSITIVE_INFINITY);
   const lookup = portsLookupFromDefs({ acme: [{ key: "go", ports: { in: "many" } }] });
-  assert.equal(nodePortsForStep(step("acme", "go"), lookup).in, Infinity);
+  assert.equal(nodePortsForStep(step("acme", "go"), lookup).in, Number.POSITIVE_INFINITY);
 });
 
 test("step beats catalog beats default; absent field falls through", () => {

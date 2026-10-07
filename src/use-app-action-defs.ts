@@ -11,7 +11,7 @@
  * the picker.
  */
 import { useEffect, useRef, useState } from "react";
-import { isInternalApp, type PortsLookup } from "./flow-types.ts";
+import { type PortsLookup, isInternalApp } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
 import type { W6WApi } from "./provider.tsx";
 import type { ActionDef } from "./types.ts";
