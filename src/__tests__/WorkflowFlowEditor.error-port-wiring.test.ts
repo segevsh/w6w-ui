@@ -100,7 +100,11 @@ test("U6 — onConnect derives the lane via laneForSourceHandle and passes it to
 
   const applyConnectCalls = findCalls(onConnectBody, "applyConnect");
   assert.equal(applyConnectCalls.length, 1, "onConnect must call applyConnect exactly once");
-  assert.equal(applyConnectCalls[0].arguments.length, 5, "applyConnect must receive 5 arguments");
+  assert.equal(
+    applyConnectCalls[0].arguments.length,
+    6,
+    "applyConnect must receive 6 arguments (portsLookup last)",
+  );
   assert.match(
     applyConnectCalls[0].arguments[4].getText(sf),
     /laneForSourceHandle/,
@@ -153,9 +157,9 @@ test("U7 — onConnectEnd captures the lane on pendingConnect, and addBuiltStep 
   // auto-wiring, 2026-08-30) — those calls are plain (no explicit lane,
   // defaulting to "success") and are not this test's concern. Scope to the
   // ONE call that must carry the captured drag lane: the pendingConnect
-  // branch's own applyConnect(source, target, nextNodes, edges, <lane>).
+  // branch's own applyConnect(source, target, nextNodes, edges, <lane>, portsLookup).
   const laneThreadedCalls = applyConnectCalls.filter(
-    (c) => c.arguments.length === 5 && /pendingConnect/.test(c.arguments[4].getText(sf)),
+    (c) => c.arguments.length === 6 && /pendingConnect/.test(c.arguments[4].getText(sf)),
   );
   assert.equal(
     laneThreadedCalls.length,
