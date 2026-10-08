@@ -245,3 +245,140 @@ test("(d)+(e) choosing a trigger creates exactly one Subscription with the pinne
     root.unmount();
   });
 });
+
+/** Mount the picker on one app declaring `trigger`, open it, return handles. */
+async function openPicker(
+  trigger: Record<string, unknown>,
+  create: (...a: unknown[]) => Promise<unknown>,
+) {
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(
+      React.createElement(W6WUIProvider, {
+        api: fakeApi({
+          listTriggerApps: async () => [{ id: "slack", displayName: "Slack" }],
+          getAppTriggers: async () => [trigger],
+          createSubscription: create,
+        }),
+        children: React.createElement(StepBuilderModal, {
+          onClose: () => {},
+          onAdd: () => "step_1",
+          workflowId: "wf_1",
+        }),
+      }),
+    );
+  });
+  await openTriggersTab(container);
+  const flush = () =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  await flush();
+  const card = container.querySelector(".w6w-apppicker-card") as HTMLButtonElement;
+  await act(async () => {
+    card.click();
+  });
+  await flush();
+  const row = Array.from(container.querySelectorAll("button")).find((b) =>
+    b.textContent?.includes(trigger.title as string),
+  ) as HTMLButtonElement;
+  assert.ok(row);
+  await act(async () => {
+    row.click();
+  });
+  await flush();
+  const input = () => container.querySelector('input[type="number"]') as HTMLInputElement | null;
+  const addButton = () =>
+    Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Add trigger") as
+      | HTMLButtonElement
+      | undefined;
+  const setValue = async (el: HTMLInputElement, v: string) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      dom.window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    await act(async () => {
+      setter?.call(el, v);
+      el.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    });
+  };
+  return { container, root, input, addButton, setValue, flush };
+}
+
+test("(A1) webhook trigger click creates immediately, no intervalMs key", async () => {
+  const calls: unknown[][] = [];
+  const h = await openPicker({ key: "k", title: "Hook", type: "webhook" }, async (...a) => {
+    calls.push(a);
+    return { id: "s" };
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], [
+    "slack",
+    "k",
+    { workflowId: "wf_1", connectionId: null, params: {} },
+  ]);
+  assert.equal(h.input(), null);
+  await act(async () => h.root.unmount());
+});
+
+test("(A2) poll trigger click creates nothing, shows the minutes field with floor-aware default", async () => {
+  for (const [min, want] of [
+    [undefined, "5"],
+    [120000, "5"],
+    [600000, "10"],
+  ] as const) {
+    const calls: unknown[][] = [];
+    const h = await openPicker(
+      { key: "p", title: "Poller", type: "poll", ...(min ? { minIntervalMs: min } : {}) },
+      async (...a) => {
+        calls.push(a);
+        return { id: "s" };
+      },
+    );
+    assert.equal(calls.length, 0, "no create on the first click");
+    const input = h.input();
+    assert.ok(input, "the minutes field renders");
+    assert.ok(h.container.textContent?.includes("Check every … minutes"));
+    assert.equal(input.value, want);
+    assert.equal(input.min, min === 600000 ? "10" : min === 120000 ? "2" : "1");
+    await act(async () => h.root.unmount());
+  }
+});
+
+test("(A3) entering 7 sends intervalMs 420000 (milliseconds)", async () => {
+  const calls: unknown[][] = [];
+  const h = await openPicker({ key: "p", title: "Poller", type: "poll" }, async (...a) => {
+    calls.push(a);
+    return { id: "s" };
+  });
+  const input = h.input();
+  assert.ok(input);
+  await h.setValue(input, "7");
+  const add = h.addButton();
+  assert.ok(add);
+  await act(async () => add.click());
+  await h.flush();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], [
+    "slack",
+    "p",
+    { workflowId: "wf_1", connectionId: null, params: {}, intervalMs: 420000 },
+  ]);
+  await act(async () => h.root.unmount());
+});
+
+test("(A4) a rejected create shows its message and re-enables the picker", async () => {
+  const h = await openPicker({ key: "p", title: "Poller", type: "poll" }, async () => {
+    throw new Error("interval_below_minimum: 600000");
+  });
+  const add = h.addButton();
+  assert.ok(add);
+  await act(async () => add.click());
+  await h.flush();
+  assert.ok(
+    h.container.querySelector(".w6w-error")?.textContent?.includes("interval_below_minimum"),
+  );
+  assert.equal(h.addButton()?.disabled, false);
+  assert.equal(h.input()?.disabled, false);
+  await act(async () => h.root.unmount());
+});

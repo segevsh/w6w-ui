@@ -48,6 +48,17 @@
 import { type ReactNode, createContext, useContext, useMemo } from "react";
 import type { SecretValue } from "../types.ts";
 
+/**
+ * Drop the step being edited (or drafted, not yet persisted) from its own rail
+ * sources — a step cannot reference its own output.
+ */
+export function excludeSelfStep(
+  steps: ExpressionStepSource[],
+  selfId: string | null | undefined,
+): ExpressionStepSource[] {
+  return selfId ? steps.filter((s) => s.id !== selfId) : steps;
+}
+
 /** An upstream step whose output this field can reference (`steps.<id>.output`). */
 export interface ExpressionStepSource {
   /** Step id — the key under `steps` in the run scope. */

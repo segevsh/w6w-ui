@@ -2,7 +2,7 @@
 id: null
 key: "components/forms"
 title: "Forms"
-section: "ui"
+section: "reference-packages"
 description: "Pick apps, collect action parameters and credentials, bind expressions, and set retry and error handling with @w6w/ui's form components."
 format: "markdown"
 shared: true
@@ -19,7 +19,7 @@ updatedAt: null
 # Forms
 
 The pieces you use to collect input for an app, an action or a step. `AppPicker` and
-`ActionTestForm` call your server through [`W6WUIProvider`](/ui/components/providers/); the rest
+`ActionTestForm` call your server through [`W6WUIProvider`](/reference-packages/components/providers/); the rest
 are props-only and controlled: you hold the value, they call `onChange` with the next one.
 
 ## `AppPicker` (provider)
@@ -77,7 +77,7 @@ save the inputs as a named test. It calls `invokeAction` and the saved-test memb
 
 The form also has an **Overrides** region for vendor fields the action doesn't declare. Through
 `createW6WApi` those overrides aren't sent yet; see
-[Providers](/ui/components/providers/#option-a-createw6wapi).
+[Providers](/reference-packages/components/providers/#option-a-createw6wapi).
 
 ```tsx
 import { ActionTestForm } from "@w6w/ui";
@@ -108,7 +108,7 @@ const [values, setValues] = useState<Record<string, unknown>>({});
 ```
 
 Text fields accept expressions (`vars.region`, `steps.fetch.output.id` and so on), with a picker fed
-by [`ExpressionOptionsProvider`](/ui/components/providers/#expressionoptionsprovider).
+by [`ExpressionOptionsProvider`](/reference-packages/components/providers/#expressionoptionsprovider).
 
 ## `PropertyEntryForm`
 
@@ -230,5 +230,5 @@ import { RetryPolicyFields } from "@w6w/ui";
 
 ## Where to next
 
-- **[Modals](/ui/components/modals/)**: `StepBuilderModal`, which composes most of this page.
-- **[Editors](/ui/components/editors/)**: JSON, YAML and code fields.
+- **[Modals](/reference-packages/components/modals/)**: `StepBuilderModal`, which composes most of this page.
+- **[Editors](/reference-packages/components/editors/)**: JSON, YAML and code fields.

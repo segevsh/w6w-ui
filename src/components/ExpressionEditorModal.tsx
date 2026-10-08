@@ -2,6 +2,7 @@ import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import { Copyable } from "./Copyable.tsx";
 import type { ExpressionOptions } from "./ExpressionOptions.tsx";
+import { IconButton } from "./IconButton.tsx";
 import { Modal } from "./Modal.tsx";
 import {
   chipToText,
@@ -146,6 +147,13 @@ export function ExpressionEditorModal({
     onClose();
   };
 
+  // Save `part` alone as the field's value (what Save yields for an editor
+  // holding only that chip) and close.
+  const saveOnly = (part: ExprPart) => {
+    onSave(partsToValue([part]));
+    onClose();
+  };
+
   // Close the nested "+ Add" dialog and return focus + caret to the chips
   // editor. `Modal.tsx` never calls `el.close()` on unmount, so React would
   // otherwise leave a still-`open` `<dialog>` for the browser to tear down and
@@ -214,17 +222,41 @@ export function ExpressionEditorModal({
 
   // `sigil: null` drops the glyph — a step row with fields renders its own
   // disclosure caret in that spot instead (see the Workflow state loop).
-  const source = (label: string, part: ExprPart, cls: string, sigil: string | null) => (
-    <button
+  //
+  // A LEAF row's click saves that single ref as if it were the only thing in
+  // the editor and Save were pressed; a COMPOSITE row (it has a disclosure for
+  // child rows) keeps the old click = insert into the editor. Every row also
+  // carries a copy icon at its right that keeps the old insert-and-stay-open.
+  const source = (
+    label: string,
+    part: ExprPart,
+    cls: string,
+    sigil: string | null,
+    composite = false,
+  ) => (
+    <div
       key={`${part.kind}:${part.ref ?? label}`}
-      type="button"
-      className={`w6w-exprmodal-source ${cls}`}
-      title={`Insert ${label}`}
-      onClick={() => insertPart(part)}
+      className="w6w-exprmodal-item"
+      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
     >
-      {sigil !== null && <span className="w6w-expr-chip-sigil">{sigil}</span>}
-      <span className="w6w-exprmodal-source-label">{label}</span>
-    </button>
+      <button
+        type="button"
+        className={`w6w-exprmodal-source ${cls}`}
+        style={{ flex: 1, minWidth: 0 }}
+        title={composite ? `Insert ${label}` : `Use ${label}`}
+        onClick={() => (composite ? insertPart(part) : saveOnly(part))}
+      >
+        {sigil !== null && <span className="w6w-expr-chip-sigil">{sigil}</span>}
+        <span className="w6w-exprmodal-source-label">{label}</span>
+      </button>
+      <IconButton
+        icon="copy"
+        iconSize={14}
+        label="Copy to expression editor"
+        data-testid="expr-copy-to-editor"
+        onClick={() => insertPart(part)}
+      />
+    </div>
   );
 
   return (
@@ -306,6 +338,7 @@ export function ExpressionEditorModal({
                   { kind: "var", ref: `steps.${st.id}.output` },
                   "w6w-expr-chip-var",
                   fields.length > 0 ? null : "▸",
+                  fields.length > 0,
                 );
                 return (
                   <Fragment key={st.id}>
@@ -424,6 +457,7 @@ export function ExpressionEditorModal({
                 { kind: "var", ref: `documents.${d.key}` },
                 "w6w-expr-chip-var",
                 "▦",
+                fields.length > 0,
               );
               return (
                 <Fragment key={d.key}>

@@ -95,6 +95,11 @@ const click = async (el: Element) => {
   });
 };
 
+// A leaf row's own click now saves+closes; the icon beside it keeps the old
+// insert-into-editor behaviour (T-2).
+const copyOf = (srcBtn: Element) =>
+  srcBtn.parentElement?.querySelector('[data-testid="expr-copy-to-editor"]') as Element;
+
 // ── A1 — rail order ─────────────────────────────────────────────────────────
 
 test("A1 — order, workflow context: Workflow state occupies the first slot, then Variables, Documents, Secrets", async () => {
@@ -181,7 +186,7 @@ test("A3 — collapse, document: subsource rows are absent until the toggle is c
     ".w6w-exprmodal-subsource-row .w6w-exprmodal-source",
   ) as HTMLButtonElement;
   assert.ok(firstFieldBtn);
-  await click(firstFieldBtn);
+  await click(copyOf(firstFieldBtn));
   const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
   assert.ok(chip, "clicking a field button must insert a chip");
   assert.equal(chip.getAttribute("data-ref"), "documents.doc1.f1");
@@ -220,7 +225,7 @@ test("A3 — collapse, step: the SAME mechanism reaches the steps loop independe
   const outputBtn = group?.querySelector(".w6w-exprmodal-subsources .w6w-exprmodal-source");
   assert.ok(outputBtn, "expanded — the step's declared output now renders");
 
-  await click(outputBtn as Element);
+  await click(copyOf(outputBtn as Element));
   const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
   assert.ok(chip, "clicking a step output button must insert a chip");
   assert.equal(chip.getAttribute("data-ref"), "steps.st1.output.o1");
@@ -245,15 +250,68 @@ test("A3 — no toggle without children: a document with no fields and a step wi
   const docsGroup = groupFor(container, "Documents");
   const docBtn = docsGroup?.querySelector(".w6w-exprmodal-source") as HTMLButtonElement;
   assert.ok(docBtn);
-  await click(docBtn);
+  await click(copyOf(docBtn));
 
   const stateGroup = groupFor(container, "Workflow state");
   const stepBtn = stateGroup?.querySelector(".w6w-exprmodal-source") as HTMLButtonElement;
   assert.ok(stepBtn);
-  await click(stepBtn);
+  await click(copyOf(stepBtn));
 
   const refs = Array.from(editor.querySelectorAll(".w6w-expr-chip"))
     .map((el) => el.getAttribute("data-ref"))
     .sort();
   assert.deepEqual(refs, ["documents.doc1", "steps.st1.output"]);
+});
+
+// ── T-2 — leaf row click = save + close; icon = insert only ────────────────
+
+test("T-2 — a scalar row click saves that single ref (as Save would) and closes, without touching the editor", async () => {
+  const { container, onSaveCalls, onCloseCalls } = await mountModal({
+    options: { vars: ["v1"] },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const btn = groupFor(container, "Variables")?.querySelector(".w6w-exprmodal-source") as Element;
+  assert.ok(btn);
+  await click(btn);
+  assert.equal(onSaveCalls.length, 1);
+  assert.deepEqual(onSaveCalls[0], { type: "expr", parts: [{ kind: "var", ref: "vars.v1" }] });
+  assert.equal(onCloseCalls.length, 1);
+  assert.equal(editor.querySelectorAll(".w6w-expr-chip").length, 0);
+});
+
+test("T-2 — the 'Copy to expression editor' icon inserts a chip, stays open, and does not save", async () => {
+  const { container, onSaveCalls, onCloseCalls } = await mountModal({
+    options: { vars: ["v1"] },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const icon = groupFor(container, "Variables")?.querySelector(
+    '[data-testid="expr-copy-to-editor"]',
+  ) as HTMLElement;
+  assert.ok(icon);
+  assert.equal(icon.getAttribute("aria-label"), "Copy to expression editor");
+  assert.equal(icon.getAttribute("title"), "Copy to expression editor");
+  await click(icon);
+  assert.equal(
+    (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
+    "vars.v1",
+  );
+  assert.equal(onSaveCalls.length, 0);
+  assert.equal(onCloseCalls.length, 0);
+});
+
+test("T-2 — a composite row (step with fields) keeps click = insert, no save", async () => {
+  const { container, onSaveCalls, onCloseCalls } = await mountModal({
+    options: { steps: [{ id: "st1", outputs: [{ key: "o1" }] }] },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const whole = groupFor(container, "Workflow state")?.querySelector(
+    ".w6w-exprmodal-source",
+  ) as Element;
+  await click(whole);
+  assert.equal(
+    (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
+    "steps.st1.output",
+  );
+  assert.equal(onSaveCalls.length, 0);
+  assert.equal(onCloseCalls.length, 0);
 });

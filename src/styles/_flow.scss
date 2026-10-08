@@ -204,3 +204,14 @@
 /* `section` param — a layout-only container. `section: "collapsible"` renders as
    a titled, bordered disclosure; `section: "group"` reuses `.w6w-field-row` /
    `.w6w-stack` for its layout (no rules of its own needed). */
+
+/* Fan-out badge under a card: the glyph (⇉ parallel / → sequence), not colour, carries the mode. */
+.w6w-flow .w6w-fanout-badge {
+  display: inline-block;
+  margin-top: var(--w6w-sp-0-5);
+  padding: 0 var(--w6w-sp-1);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius-sm, 3px);
+  font-size: var(--w6w-fs-xs);
+  color: var(--w6w-muted, inherit);
+}

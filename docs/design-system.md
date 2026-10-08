@@ -2,7 +2,7 @@
 id: null
 key: "design-system"
 title: "Design system"
-section: "ui"
+section: "reference-packages"
 description: "Reuse @w6w/ui's spacing, type and font tokens so your own layout lines up with the components."
 format: "markdown"
 shared: true
@@ -21,7 +21,7 @@ updatedAt: null
 Besides colors, `@w6w/ui` exposes its spacing, type, weight, line-height and font choices as
 `--w6w-*` custom properties. Use them in the page around the components and your layout lines up
 with theirs. Override them and the components follow your scale instead. Colors and light/dark mode
-are on [Theming](/ui/theming/).
+are on [Theming](/reference-packages/theming/).
 
 These tokens don't change with the mode, so they're declared once, for both.
 
@@ -145,11 +145,11 @@ explicitly instead.
 
 Heights, widths, border widths and per-control radii are fixed inside the components. For example,
 expression fields, multiselects and copyable inputs share a `38px` minimum height so they line up
-in a row. Change those with a class override (see [Theming](/ui/theming/#3-restyle-a-single-component)),
+in a row. Change those with a class override (see [Theming](/reference-packages/theming/#3-restyle-a-single-component)),
 not by redefining a spacing token. `--w6w-radius` is the one shared radius, and it's listed with the
 color tokens.
 
 ## Where to next
 
-- **[Theming](/ui/theming/)**: colors and light/dark mode.
-- **[Components](/ui/components/)**: the components that use this scale.
+- **[Theming](/reference-packages/theming/)**: colors and light/dark mode.
+- **[Components](/reference-packages/components/)**: the components that use this scale.

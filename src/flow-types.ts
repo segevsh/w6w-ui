@@ -13,12 +13,12 @@ export interface FlowStep {
   uses: { app: string; action: string; connection?: string | null };
   /**
    * Declared connection-port cardinality for this step (see core
-   * `rfcs/node-types.md` · Ports & cardinality). Omitted ⇒ `{ in: 1, out: 1 }`.
+   * `rfcs/node-types.md` · Ports & cardinality). Omitted fields fall through field-wise to the catalog action, the internal def, then `{ in: 1, out: "many" }`.
    * A persisted value wins over the node's default — `in > 1` opts the step into
    * accepting multiple inbound edges (e.g. a flow-control aggregator joining
    * several upstream branches).
    */
-  ports?: NodePorts;
+  ports?: PortsDecl;
   with?: Record<string, unknown>;
   retry?: {
     maxAttempts: number;
@@ -34,6 +34,12 @@ export interface FlowStep {
   onError?: "fail" | "continue" | "continue-record";
   /** Free-form author notes for this step. Not executed. */
   notes?: string;
+  /**
+   * How this step's outgoing edges in one lane run when there are two or more:
+   * `parallel` runs them concurrently; omitted (never written as `"sequential"`)
+   * runs them one after another.
+   */
+  fanOut?: "sequential" | "parallel";
   /**
    * Authoring-time canvas coordinate for this step, in this editor's own
    * coordinate space (core `rfcs/workflow.md` · "Amendment — 2026-07-29:
@@ -309,13 +315,18 @@ export interface InternalNodeDef {
    */
   icon: string;
   /**
+   * Hidden from every palette list but still resolvable by `internalNodeDef`, so
+   * a workflow already using the node keeps rendering and editing.
+   */
+  hidden?: boolean;
+  /**
    * Connection ports: how many inbound (entry) and outbound (exit) connections
    * this node accepts. A port is the ability to receive/emit a connection —
    * rendered as a React Flow Handle. Defaults to one of each (`{ in: 1, out: 1 }`)
    * when omitted; a trigger overrides to `{ in: 0, out: 1 }` (nothing flows into
    * the entry node). Fixed for now — not user-editable.
    */
-  ports?: NodePorts;
+  ports?: PortsDecl;
   /** Config schema (same `ActionParam[]` shape apps declare) rendered by ParamsForm. */
   params: ActionParam[];
   /**
@@ -330,36 +341,59 @@ export interface InternalNodeDef {
   output?: { key: string; label?: string }[];
 }
 
-/** Inbound (entry) and outbound (exit) connection-port counts for a node. */
+/** A declared port count: a number, or `"many"` (unbounded). */
+export type PortCount = number | "many";
+
+/** A (possibly partial) port declaration, as an author / catalog / def writes it. */
+export interface PortsDecl {
+  in?: PortCount;
+  out?: PortCount;
+}
+
+/** Resolved inbound (entry) and outbound (exit) connection-port counts; `"many"` is `Infinity`. */
 export interface NodePorts {
   in: number;
   out: number;
 }
 
-/** The default a node gets when it declares no explicit `ports`: 1 in, 1 out. */
-export const DEFAULT_NODE_PORTS: NodePorts = { in: 1, out: 1 };
+/** The default a node gets when nothing declares ports: 1 in, unbounded out. */
+export const DEFAULT_NODE_PORTS: NodePorts = { in: 1, out: Number.POSITIVE_INFINITY };
+
+function portCount(v: PortCount | undefined): number | undefined {
+  if (v === "many") return Number.POSITIVE_INFINITY;
+  return typeof v === "number" ? v : undefined;
+}
+
+/** Field-wise resolution: first declared value per field wins, else the default. */
+export function resolvePorts(...layers: (PortsDecl | undefined)[]): NodePorts {
+  let inn: number | undefined;
+  let out: number | undefined;
+  for (const l of layers) {
+    inn ??= portCount(l?.in);
+    out ??= portCount(l?.out);
+  }
+  return { in: inn ?? DEFAULT_NODE_PORTS.in, out: out ?? DEFAULT_NODE_PORTS.out };
+}
+
+/** Catalog lookup of an action's declared ports, passed as an argument (never stamped on a step). */
+export type PortsLookup = (app: string, action: string) => PortsDecl | undefined;
 
 /**
- * Resolve a node's connection ports. Internal nodes may declare `ports`
- * (triggers do, to drop the entry port); everything else — including every
- * external app step — gets the `{ in: 1, out: 1 }` default.
+ * Resolve a node's connection ports from its internal def only (triggers drop the
+ * entry port); everything else gets the default.
  */
 export function nodePorts(app: string, action: string): NodePorts {
-  return internalNodeDef(app, action)?.ports ?? DEFAULT_NODE_PORTS;
+  return resolvePorts(internalNodeDef(app, action)?.ports);
 }
 
 /**
- * Resolve a *step's* connection ports. A persisted `step.ports` wins — an author
- * may have opted the step into a non-default cardinality (e.g. a fan-in
- * aggregator that joins several upstream branches). Otherwise fall back to the
- * node's declared default via `nodePorts(app, action)` (internal nodes may drop
- * the entry port), and finally to `{ in: 1, out: 1 }` (`DEFAULT_NODE_PORTS`).
- *
- * This is the step-aware counterpart to `nodePorts`, which keys only off
- * `(app, action)` and so forces every external app step to the default.
+ * Resolve a *step's* ports field-wise: `step.ports` → catalog action (via `lookup`)
+ * → internal def → default `{ in: 1, out: Infinity }`. The catalog is read through
+ * the `lookup` argument and never written onto the step, so it never serializes.
  */
-export function nodePortsForStep(step: FlowStep): NodePorts {
-  return step.ports ?? nodePorts(step.uses.app, step.uses.action);
+export function nodePortsForStep(step: FlowStep, lookup?: PortsLookup): NodePorts {
+  const { app, action } = step.uses;
+  return resolvePorts(step.ports, lookup?.(app, action), internalNodeDef(app, action)?.ports);
 }
 
 // Feather-style 24×24 stroked glyphs (inner markup only; the card supplies the
@@ -683,9 +717,8 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         key: "duration",
         type: "string",
         label: "Duration",
-        required: true,
-        default: "PT1S",
-        hint: "ISO-8601 duration, e.g. PT30S or PT5M. (Or set `until` to an ISO timestamp.)",
+        default: "1s",
+        hint: "Use 30s, 1h30m30s, or 3d30s. Units: w, d, h, m, s; uppercase also works.",
       },
     ],
   },
@@ -889,6 +922,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     displayName: "Aggregate",
     group: "control",
     icon: ICON_AGGREGATE,
+    hidden: true,
     // Fan-in join: accepts several inbound branches and emits one combined
     // output. `in > 1` opts the node into multiple inbound edges (see core
     // rfcs/node-types.md · Ports & cardinality); `out: 1` is a single exit.
@@ -904,6 +938,44 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
           { value: "array", label: "Array" },
           { value: "object", label: "Object" },
         ],
+      },
+    ],
+  },
+  {
+    app: CONTROL_APP,
+    action: "merge",
+    label: "Merge",
+    displayName: "Merge",
+    group: "control",
+    icon: ICON_AGGREGATE,
+    // Fan-in join with named entries: any number of inbound branches, one output
+    // built from `entries` (key → expression), as an array or an object.
+    ports: { in: "many", out: 1 },
+    params: [
+      {
+        key: "mode",
+        label: "Mode",
+        type: "select",
+        default: "array",
+        hint: "Combine the entries into an array, or into an object keyed by each entry's key.",
+        options: [
+          { value: "array", label: "Array" },
+          { value: "object", label: "Object" },
+        ],
+      },
+      {
+        key: "entries",
+        label: "Entries",
+        type: "array",
+        default: [],
+        hint: "Each entry's value may be an expression (ƒx) over the inbound branches' outputs.",
+        item: {
+          type: "object",
+          fields: [
+            { key: "key", label: "Key", type: "string" },
+            { key: "value", label: "Value", type: "string" },
+          ],
+        },
       },
     ],
   },

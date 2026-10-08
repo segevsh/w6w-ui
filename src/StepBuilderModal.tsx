@@ -13,8 +13,10 @@ import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
+import { WaitEditor } from "./WaitEditor.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { AppIcon } from "./components/AppIcon.tsx";
+import { Combobox } from "./components/Combobox.tsx";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
@@ -744,6 +746,9 @@ function AppTriggerPicker({
   const [triggers, setTriggers] = useState<TriggerSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // A poll trigger waits here for its "Check every N minutes" before it is created.
+  const [pending, setPending] = useState<TriggerSummary | null>(null);
+  const [minutes, setMinutes] = useState(5);
 
   useEffect(() => {
     const load = api.getAppTriggers;
@@ -757,12 +762,26 @@ function AppTriggerPicker({
     };
   }, [api, app.id]);
 
-  const create = (triggerKey: string) => {
+  const minMinutes = (t: TriggerSummary) => Math.max(1, Math.ceil((t.minIntervalMs ?? 0) / 60000));
+
+  const pick = (t: TriggerSummary) => {
+    if (t.type !== "poll") return create(t.key);
+    setError(null);
+    setPending(t);
+    setMinutes(Math.max(5, Math.ceil((t.minIntervalMs ?? 0) / 60000)));
+  };
+
+  const create = (triggerKey: string, intervalMs?: number) => {
     const createSubscription = api.createSubscription;
     if (!createSubscription) return;
     setError(null);
     setCreating(true);
-    createSubscription(app.id, triggerKey, { workflowId, connectionId: null, params: {} })
+    createSubscription(app.id, triggerKey, {
+      workflowId,
+      connectionId: null,
+      params: {},
+      ...(intervalMs === undefined ? {} : { intervalMs }),
+    })
       .then(() => onClose())
       .catch((e) => {
         setCreating(false);
@@ -789,7 +808,7 @@ function AppTriggerPicker({
               type="button"
               className="w6w-stepbuilder-item"
               disabled={creating}
-              onClick={() => create(t.key)}
+              onClick={() => pick(t)}
             >
               <span className="w6w-stepbuilder-item-main">
                 <strong>{t.title}</strong>
@@ -800,13 +819,40 @@ function AppTriggerPicker({
           ))}
         </div>
       )}
+      {pending && (
+        <div className="w6w-stack">
+          <label className="w6w-field">
+            <span>Check every … minutes</span>
+            <input
+              type="number"
+              min={minMinutes(pending)}
+              step={1}
+              value={minutes}
+              disabled={creating}
+              onChange={(e) =>
+                setMinutes(
+                  Math.max(minMinutes(pending), Number(e.target.value) || minMinutes(pending)),
+                )
+              }
+            />
+          </label>
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-primary w6w-btn-sm"
+            disabled={creating}
+            onClick={() => create(pending.key, minutes * 60000)}
+          >
+            Add trigger
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 /** Controls tab — engine-native flow control only (branch, loop, parallelize, wait). */
 function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.group === "control");
+  const nodes = INTERNAL_NODES.filter((n) => n.group === "control" && !n.hidden);
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
@@ -821,7 +867,7 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
  * node lives in its own **Data** tab, so exclude it here. */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
   const nodes = INTERNAL_NODES.filter(
-    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP,
+    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP && !n.hidden,
   );
   return (
     <div className="w6w-stack">
@@ -961,7 +1007,11 @@ export function ControlStepConfig({
       <div className="w6w-stepconfig-body">
         {tab === "configure" &&
           (configView === "props" ? (
-            <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
+            node.action === "wait" && isControlApp(node.app) ? (
+              <WaitEditor values={withValues} onChange={setWithValues} />
+            ) : (
+              <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
+            )
           ) : configView === "code" ? (
             // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
             // shared with the two other code-view hosts.
@@ -2499,24 +2549,23 @@ export function AppStepConfig({
               (actions.length === 0 ? (
                 <p className="w6w-muted w6w-small">This app exposes no actions.</p>
               ) : (
+                // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
                 <label className="w6w-field">
                   <span>Action{actionKey ? "" : " *"}</span>
-                  <select
+                  <Combobox
                     value={actionKey}
-                    onChange={(e) => {
-                      setActionKey(e.target.value);
+                    placeholder="— pick an action —"
+                    onChange={(key) => {
+                      setActionKey(key);
                       setWithValues({});
                       // A new action hasn't been tested — re-arm the save-gate.
                       setTestPassed(false);
                     }}
-                  >
-                    <option value="">— pick an action —</option>
-                    {sortedActions.map((a) => (
-                      <option key={a.key} value={a.key}>
-                        {a.title ?? a.key} ({a.key})
-                      </option>
-                    ))}
-                  </select>
+                    options={sortedActions.map((a) => ({
+                      value: a.key,
+                      label: `${a.title ?? a.key} (${a.key})`,
+                    }))}
+                  />
                   {selectedAction?.description && (
                     <span className="w6w-hint">{selectedAction.description}</span>
                   )}

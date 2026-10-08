@@ -2,7 +2,7 @@
 id: null
 key: "components/buttons"
 title: "Buttons and icons"
-section: "ui"
+section: "reference-packages"
 description: "Add accessible icon-only buttons and draw glyphs from @w6w/ui's shared icon set."
 format: "markdown"
 shared: true
@@ -83,7 +83,7 @@ Ready-made `IconButton`s: `EditButton` draws the pencil, `DeleteButton` draws th
 always danger-styled. Both take `label`, `onClick`, `disabled`, `className` and `data-testid`.
 
 `DeleteButton` doesn't ask for confirmation. Gate it yourself, for example with
-[`ConfirmModal`](/ui/components/modals/):
+[`ConfirmModal`](/reference-packages/components/modals/):
 
 ```tsx
 import { ConfirmModal, DeleteButton, EditButton } from "@w6w/ui";
@@ -106,5 +106,5 @@ import { ConfirmModal, DeleteButton, EditButton } from "@w6w/ui";
 
 ## Where to next
 
-- **[Data display](/ui/components/data-display/)**: app icons, list rows and copy-to-clipboard.
-- **[Modals](/ui/components/modals/)**: `ConfirmModal` and the other dialogs.
+- **[Data display](/reference-packages/components/data-display/)**: app icons, list rows and copy-to-clipboard.
+- **[Modals](/reference-packages/components/modals/)**: `ConfirmModal` and the other dialogs.
