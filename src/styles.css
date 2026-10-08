@@ -769,9 +769,9 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--w6w-sp-1);
   height: 20px;
-  padding: 0 6px;
+  padding: 0 6px; /* lint-tokens-allow: no 6px step on the spacing scale; between sp-1 and sp-2 keeps the 20px pill's label centred */
   white-space: nowrap;
   border: 1px solid var(--w6w-border);
   border-radius: 6px;
