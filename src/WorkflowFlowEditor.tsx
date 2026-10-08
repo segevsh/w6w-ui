@@ -1,4 +1,3 @@
-import { WaitEditor } from "./WaitEditor.tsx";
 import {
   Background,
   type Connection,
@@ -24,6 +23,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import type { FinalConnectionState } from "@xyflow/react";
+import { WaitEditor } from "./WaitEditor.tsx";
 import "@xyflow/react/dist/style.css";
 import { Handle } from "@xyflow/react";
 import {
@@ -2524,12 +2524,20 @@ export function StepEditModal({
               {params === null ? (
                 <p className="w6w-muted w6w-small">Loading parameters…</p>
               ) : configView === "props" ? (
-                step.uses.action === "wait" && isControlApp(step.uses.app) ? <WaitEditor values={step.with ?? {}} readOnly={readOnly} onChange={(w) => commit({ ...step, with: w })} /> : <ParamsForm
-                  params={params}
-                  values={step.with ?? {}}
-                  readOnly={readOnly}
-                  onChange={(w) => commit({ ...step, with: w })}
-                />
+                step.uses.action === "wait" && isControlApp(step.uses.app) ? (
+                  <WaitEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : (
+                  <ParamsForm
+                    params={params}
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                )
               ) : configView === "code" ? (
                 // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
                 // shared with the two other code-view hosts.

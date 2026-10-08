@@ -14,30 +14,30 @@ const { WaitEditor } = await import("../WaitEditor.tsx");
 
 test("wait editor switches units, preserves compound durations, and clears conflicting targets", async () => {
   let values: Record<string, unknown> = { duration: "30s" };
-  const root = createRoot(document.getElementById("root")!);
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
   const render = () =>
-    root.render(React.createElement(WaitEditor, {
-      values,
-      onChange: (next) => {
-        values = next;
-        render();
-      },
-    }));
+    root.render(
+      React.createElement(WaitEditor, {
+        values,
+        onChange: (next) => {
+          values = next;
+          render();
+        },
+      }),
+    );
   await React.act(render);
   const change = async (label: string, value: string) => {
     await React.act(() => {
-      const select = document.querySelector(
-        `select[aria-label="${label}"]`,
-      ) as HTMLSelectElement;
+      const select = document.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
       select.value = value;
       select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
     });
   };
   await change("Duration input", "value");
   assert.equal(
-    (document.querySelector(
-      'input[aria-label="Duration value"]',
-    ) as HTMLInputElement).value,
+    (document.querySelector('input[aria-label="Duration value"]') as HTMLInputElement).value,
     "30",
   );
   await change("Duration unit", "m");
@@ -46,8 +46,7 @@ test("wait editor switches units, preserves compound durations, and clears confl
   values = { duration: "1h30m30s" };
   await React.act(render);
   assert.equal(
-    (document.querySelector('option[value="value"]') as HTMLOptionElement)
-      .disabled,
+    (document.querySelector('option[value="value"]') as HTMLOptionElement).disabled,
     true,
   );
   assert.equal(values.duration, "1h30m30s");

@@ -1,4 +1,3 @@
-import { WaitEditor } from "./WaitEditor.tsx";
 import {
   type ReactNode,
   forwardRef,
@@ -14,6 +13,7 @@ import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
+import { WaitEditor } from "./WaitEditor.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
@@ -1007,7 +1007,11 @@ export function ControlStepConfig({
       <div className="w6w-stepconfig-body">
         {tab === "configure" &&
           (configView === "props" ? (
-            node.action === "wait" && isControlApp(node.app) ? <WaitEditor values={withValues} onChange={setWithValues} /> : <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
+            node.action === "wait" && isControlApp(node.app) ? (
+              <WaitEditor values={withValues} onChange={setWithValues} />
+            ) : (
+              <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
+            )
           ) : configView === "code" ? (
             // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
             // shared with the two other code-view hosts.
