@@ -362,6 +362,7 @@ export function ExpressionEditorModal({
                       className="w6w-exprmodal-toggle-btn"
                       data-testid="expr-meta-toggle"
                       aria-expanded={open}
+                      title={open ? "Hide metadata" : "Show metadata"}
                       onClick={() => toggleExpanded(`meta:${id}`)}
                     >
                       Metadata {open ? "⌄" : "›"}

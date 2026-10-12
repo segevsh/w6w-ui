@@ -18,7 +18,7 @@
 .w6w-exprmodal-group {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 3px; /* lint-tokens-allow: 3px sits between no two steps of the spacing scale; tight stack of two 20px pills */
 }
 .w6w-exprmodal-group-label {
   font-size: 0.72em;
@@ -135,11 +135,6 @@
 .w6w-exprmodal-caret-btn:hover {
   background: var(--w6w-panel);
 }
-/* Same 20px-high chrome as `.w6w-exprmodal-render-btn` above — the sizing
-   precedent for a dense rail control — but a separate class: this toggles
-   the `.w6w-exprmodal-subsources` block below it, the render-btn inserts a
-   `render` part. It carries a "N fields" label, not a bare chevron, so it is
-   auto-width (a lone 20px chevron went unnoticed beside the chip). */
 /* The "N fields" toggle with the Metadata toggle stacked under it, so both
    disclosures share one left edge on a step row. */
 .w6w-exprmodal-toggle-stack {
@@ -154,6 +149,11 @@
 .w6w-exprmodal-meta-row {
   margin-left: calc(10px + var(--w6w-sp-2)); /* lint-tokens-allow: 9px margin + 1px border of .w6w-exprmodal-subsources */
 }
+/* Same 20px-high chrome as `.w6w-exprmodal-render-btn` above — the sizing
+   precedent for a dense rail control — but a separate class: this toggles
+   the `.w6w-exprmodal-subsources` block below it, the render-btn inserts a
+   `render` part. It carries a "N fields" label, not a bare chevron, so it is
+   auto-width (a lone 20px chevron went unnoticed beside the chip). */
 .w6w-exprmodal-toggle-btn {
   display: inline-flex;
   flex: none;
