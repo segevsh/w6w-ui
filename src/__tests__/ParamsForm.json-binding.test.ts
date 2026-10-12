@@ -334,3 +334,35 @@ test("Acc5 - literal edit still pushes the parsed object; nested {$} stays liter
   assert.equal(fxButtons().length, 1);
   await unmount(nested.root);
 });
+
+test("C2 - a bound NESTED path resolves from the whole-output sample", async () => {
+  const { container, root } = await render([JSON_PARAM], { cfg: { $: "steps.a.output.id" } });
+  assert.equal(byText("Clear").length, 1, "rendered as bound");
+  assert.equal(
+    container.querySelector('[data-testid="json-binding-preview"]')?.textContent,
+    JSON.stringify("123"),
+    "steps.a.output.id walks the sample of steps.a.output",
+  );
+  await unmount(root);
+});
+
+test("C3 - a non-string `$` is a literal object, not a binding", async () => {
+  const { container, root } = await render([JSON_PARAM], { cfg: { $: 5 } });
+  assert.equal(hasEditor(container, "cfg"), true, "editor stays mounted");
+  assert.equal(byText("Clear").length, 0, "no bound row");
+  assert.equal(container.querySelector('[data-testid="json-binding-preview"]') === null, true);
+  await unmount(root);
+});
+
+test("C4 - a childless group binds, shows the bound row, and Clear returns to the literal editor", async () => {
+  const { container, root, box } = await render([GROUP_PARAM]);
+  await click(fxButtons()[0]);
+  await click(entireRows()[0]);
+  assert.deepEqual(box.current.grp, { $: "steps.a.output" });
+  assert.equal(byText("Clear").length, 1, "bound row renders");
+  assert.equal(hasEditor(container, "grp"), false);
+  await click(byText("Clear")[0]);
+  assert.equal(byText("Clear").length, 0, "back to literal");
+  assert.equal(hasEditor(container, "grp"), true, "editor remounted");
+  await unmount(root);
+});
