@@ -626,7 +626,7 @@
 .w6w-exprmodal-group {
   display: flex;
   flex-direction: column;
-  gap: 3px; /* lint-tokens-allow: 3px sits between no two steps of the spacing scale; tight stack of two 20px pills */
+  gap: 3px;
 }
 
 .w6w-exprmodal-group-label {
@@ -766,7 +766,7 @@
   flex: none;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
+  gap: 3px; /* lint-tokens-allow: 3px sits between no two steps of the spacing scale; tight stack of the fields and Metadata toggles */
 }
 
 /* A step with no fields: its Metadata toggle sits at the leaf indentation of
