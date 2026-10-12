@@ -10,11 +10,12 @@ import {
   WEBHOOK_APP,
 } from "../flow-types.ts";
 import type { StepNode } from "../flow-utils.ts";
-import type { StepTest } from "../provider.tsx";
+import type { StepMeta, StepTest } from "../provider.tsx";
 import {
   fetchSeedSources,
   startStateFromSeeds,
   stepBuilderUpstreamSteps,
+  stepMetaSampleValues,
   upstreamStateSources,
 } from "../step-preview-state.ts";
 
@@ -274,4 +275,70 @@ test("upstreamStateSources — without a shape context the projection is unchang
   const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")]);
   assert.deepEqual(steps, [{ id: "ev", label: "ev" }]);
+});
+
+// ── T3.2.2: step metadata ────────────────────────────────────────────────────
+const META: StepMeta = { app: "gate", version: "1.0.0", action: "check", connectionId: "c1" };
+function seedOf(patch: Partial<StepTest>) {
+  const test: StepTest = {
+    id: "st1",
+    workflowId: "wf",
+    stepId: "gate_1",
+    name: null,
+    input: {},
+    with: {},
+    createdAt: "",
+    updatedAt: "",
+    ...patch,
+  };
+  return [{ stepId: "gate_1", label: "gate_1", test }];
+}
+
+test("S1 — startStateFromSeeds: meta rides with the output", () => {
+  const r = startStateFromSeeds(
+    seedOf({ lastRunStatus: "succeeded", lastRunOutput: { a: 1 }, lastRunMeta: META }),
+  );
+  assert.deepEqual(r, { steps: { gate_1: { output: { a: 1 }, meta: META } } });
+});
+
+test("S2 — legacy fixture (meta undefined or null) has no meta key", () => {
+  for (const lastRunMeta of [undefined, null]) {
+    const r = startStateFromSeeds(seedOf({ lastRunOutput: { a: 1 }, lastRunMeta }));
+    assert.deepEqual(r, { steps: { gate_1: { output: { a: 1 } } } });
+    assert.equal(Object.hasOwn(r?.steps?.gate_1 ?? {}, "meta"), false);
+  }
+});
+
+test("S3 — a succeeded run with null output seeds { output: null }, with and without meta", () => {
+  const without = startStateFromSeeds(seedOf({ lastRunStatus: "succeeded", lastRunOutput: null }));
+  assert.deepEqual(without, { steps: { gate_1: { output: null } } });
+  assert.equal(Object.hasOwn(without?.steps?.gate_1 ?? {}, "output"), true);
+  assert.equal(Object.hasOwn(without?.steps?.gate_1 ?? {}, "meta"), false);
+  const withMeta = startStateFromSeeds(
+    seedOf({ lastRunStatus: "succeeded", lastRunOutput: null, lastRunMeta: META }),
+  );
+  assert.deepEqual(withMeta, { steps: { gate_1: { output: null, meta: META } } });
+  // never ran: no entry
+  assert.equal(startStateFromSeeds(seedOf({ lastRunOutput: null })), undefined);
+});
+
+test("S4 — a failed run is not seeded even when it carries meta", () => {
+  assert.equal(
+    startStateFromSeeds(
+      seedOf({ lastRunStatus: "failed", lastRunOutput: null, lastRunMeta: META }),
+    ),
+    undefined,
+  );
+});
+
+test("S5 — stepMetaSampleValues: {} when absent; exactly the 4 named keys otherwise", () => {
+  assert.deepEqual(stepMetaSampleValues("s", undefined), {});
+  assert.deepEqual(stepMetaSampleValues("s", null), {});
+  const withExtra = { ...META, connectionId: null, token: "secret" } as unknown as StepMeta;
+  assert.deepEqual(stepMetaSampleValues("s", withExtra), {
+    "steps.s.meta.app": "gate",
+    "steps.s.meta.version": "1.0.0",
+    "steps.s.meta.action": "check",
+    "steps.s.meta.connectionId": null,
+  });
 });

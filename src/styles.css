@@ -1059,9 +1059,12 @@
 /* The ƒx itself is a decoration inside whichever wrapper holds it: no chrome,
    colour only. This is where the UA button border/background is removed (the
    `.w6w-expr-fx` block below declares neither), so the inline wrapper has to be
-   listed here too or its ƒx comes back as a grey rounded button. */
+   listed here too or its ƒx comes back as a grey rounded button. The label row
+   (`json` / childless `group` params, which have no field box) is a third
+   placement and gets the same chrome-stripping. */
 .w6w-fx-wrap .w6w-expr-fx,
-.w6w-fx-inline .w6w-expr-fx {
+.w6w-fx-inline .w6w-expr-fx,
+.w6w-field-labelrow .w6w-expr-fx {
   border: none;
   background: transparent;
 }

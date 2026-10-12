@@ -4,7 +4,7 @@
  * and doesn't use this. Every method calls the w6w server directly and
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
-import type { StepTest, TestRunSummary, W6WApi } from "./provider.tsx";
+import type { StepMeta, StepTest, TestRunSummary, W6WApi } from "./provider.tsx";
 import type {
   ActionDef,
   ApiCallRecord,
@@ -168,7 +168,12 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
       req<{ connections: ConnectionSummary[] }>("/connections").then((r) => r.connections ?? []),
 
     invokeAction: (appId, actionKey, params, opts = {}) =>
-      req<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>(
+      req<{
+        value: unknown;
+        logs?: string[];
+        apiCalls?: ApiCallRecord[];
+        meta?: StepMeta;
+      }>(
         `/apps/${encodeURIComponent(appId)}/actions/${encodeURIComponent(actionKey)}/invoke`,
         // This body is built KEY BY KEY, not by spreading `opts` — so every new
         // option has to be named here or it is silently dropped before the wire
