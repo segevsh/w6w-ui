@@ -91,3 +91,48 @@ test("a static string token still works", async () => {
 
   assert.equal(captured[0].get("authorization"), "Bearer static-token");
 });
+
+// ── T3.2.2: step metadata through the facade ────────────────────────────────
+const SAMPLE_META = { app: "sendgrid", version: "1.2.3", action: "send", connectionId: "c9" };
+
+function jsonFetch(sent: { url: string; body: unknown }[], reply: unknown) {
+  return (async (url: string, init?: RequestInit) => {
+    sent.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    return new Response(JSON.stringify(reply), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+}
+
+test("C1 — invokeAction returns meta, and the request body keys are unchanged", async () => {
+  const sent: { url: string; body: unknown }[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: jsonFetch(sent, { value: 1, meta: SAMPLE_META }),
+  });
+  const r = await api.invokeAction("sendgrid", "send", { a: 1 }, { connectionId: "c9" });
+  assert.deepEqual(r.meta, SAMPLE_META);
+  assert.equal(r.meta?.connectionId, "c9");
+  assert.deepEqual(Object.keys(sent[0].body as object).sort(), ["connectionId", "params"]);
+});
+
+test("C2 — recordStepTestRun posts meta verbatim", async () => {
+  const sent: { url: string; body: unknown }[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: jsonFetch(sent, { run: {} }),
+  });
+  await api.recordStepTestRun("wf", "s1", { status: "succeeded", meta: SAMPLE_META });
+  assert.deepEqual((sent[0].body as { meta: unknown }).meta, SAMPLE_META);
+});
+
+test("C3 — listStepTests passes lastRunMeta through", async () => {
+  const sent: { url: string; body: unknown }[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: jsonFetch(sent, { stepTests: [{ id: "t", lastRunMeta: SAMPLE_META }] }),
+  });
+  const [t] = await api.listStepTests("wf", "s1");
+  assert.equal(t.lastRunMeta?.connectionId, "c9");
+});

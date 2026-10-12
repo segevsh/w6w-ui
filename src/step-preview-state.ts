@@ -14,7 +14,7 @@ import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { TRIGGER_APP, internalNodeDef, isInternalApp } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
 import { type ActionShapeDef, inferOutputFields, resolveOutputShape } from "./output-shape.ts";
-import type { StepStartState, StepTest } from "./provider.tsx";
+import type { StepMeta, StepStartState, StepTest } from "./provider.tsx";
 import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
 
 /**
@@ -285,13 +285,36 @@ export async function fetchSeedSources(
  * own scope and is not affected by this.
  */
 export function startStateFromSeeds(seeds: SeedSource[]): StepStartState | undefined {
-  const steps: Record<string, { output: unknown }> = {};
+  const steps: Record<string, { output?: unknown; meta?: StepMeta }> = {};
   for (const s of seeds) {
     const output = s.test.lastRunOutput;
-    // `undefined` = never captured, `null` = the row's empty marker
-    // (`repos/step-tests.ts` stores both as NULL). Neither is a value to seed.
-    if (output === undefined || output === null) continue;
-    steps[s.stepId] = { output };
+    const hasOutput = output !== undefined && output !== null;
+    // `lastRunOutput` is NULL for both "never ran" and "ran and returned null"
+    // (`rowToStepTest`), so only a succeeded status tells them apart. A failed
+    // run is never seeded, even when it carries meta (meta reaches scope for
+    // succeeded steps only).
+    if (!hasOutput && s.test.lastRunStatus !== "succeeded") continue;
+    const meta = s.test.lastRunMeta;
+    steps[s.stepId] = { output: hasOutput ? output : null, ...(meta ? { meta } : {}) };
   }
   return Object.keys(steps).length > 0 ? { steps } : undefined;
+}
+
+/**
+ * Sample values for a step's `steps.<id>.meta.*` refs, from a saved fixture's
+ * `lastRunMeta`. Reads the four named fields only; absent meta yields nothing
+ * (a version or connection is never derived from anywhere else).
+ */
+export function stepMetaSampleValues(
+  stepId: string,
+  meta: StepMeta | null | undefined,
+): Record<string, unknown> {
+  if (!meta) return {};
+  const p = `steps.${stepId}.meta`;
+  return {
+    [`${p}.app`]: meta.app,
+    [`${p}.version`]: meta.version,
+    [`${p}.action`]: meta.action,
+    [`${p}.connectionId`]: meta.connectionId,
+  };
 }
