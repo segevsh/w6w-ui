@@ -313,6 +313,21 @@ test("P2 — hasMeta is a missing key (not false) for triggers and every @w6w/* 
   }
 });
 
+test("P2b — a blank or whitespace-only uses.app gets no hasMeta key (any shape path)", () => {
+  for (const app of ["", "   "]) {
+    for (const opts of [
+      { actionDef: () => ({}), testOutputs: { ev: { id: "1" } } },
+      { actionDef: () => ({}) },
+      { actionDef: () => undefined },
+    ]) {
+      const nodes = [node("ev", app, "get-event"), node("next")];
+      const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], opts);
+      assert.equal(steps.length, 1);
+      assert.equal(Object.hasOwn(steps[0], "hasMeta"), false, `app ${JSON.stringify(app)}`);
+    }
+  }
+});
+
 test("P3 — a downstream or unrelated external app step is not projected", () => {
   const nodes = [
     node("ev", EVENTBRITE, "get-event"),
