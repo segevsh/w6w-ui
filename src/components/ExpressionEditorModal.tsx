@@ -351,6 +351,23 @@ export function ExpressionEditorModal({
                   "⚡",
                 )}
               {steps.map((st) => {
+                // The Metadata disclosure (external app steps only, R-7). It sits
+                // directly under the "N fields" toggle (same left edge, same
+                // glyph) when the step has fields, else on its own row.
+                const metaToggle = (id: string) => {
+                  const open = expanded.has(`meta:${id}`);
+                  return (
+                    <button
+                      type="button"
+                      className="w6w-exprmodal-toggle-btn"
+                      data-testid="expr-meta-toggle"
+                      aria-expanded={open}
+                      onClick={() => toggleExpanded(`meta:${id}`)}
+                    >
+                      Metadata {open ? "⌄" : "›"}
+                    </button>
+                  );
+                };
                 // Only keys that can become a ref the ENGINE resolves are
                 // offered. The guard lives here, at the one place a ref is
                 // built, so it holds for any host that supplies `steps` —
@@ -447,11 +464,14 @@ export function ExpressionEditorModal({
                           {isOpen ? "▾" : "▸"}
                         </button>
                         {wholeBtn}
-                        <FieldsToggle
-                          count={fields.length}
-                          open={isOpen}
-                          onToggle={() => toggleExpanded(stepKey)}
-                        />
+                        <div className="w6w-exprmodal-toggle-stack">
+                          <FieldsToggle
+                            count={fields.length}
+                            open={isOpen}
+                            onToggle={() => toggleExpanded(stepKey)}
+                          />
+                          {st.hasMeta === true && metaToggle(st.id)}
+                        </div>
                       </div>
                     ) : (
                       wholeBtn
@@ -499,17 +519,11 @@ export function ExpressionEditorModal({
                         time. Independent of the fields caret and of `needsTest`. */}
                     {st.hasMeta === true && (
                       <>
-                        <div className="w6w-exprmodal-source-row">
-                          <button
-                            type="button"
-                            className="w6w-exprmodal-toggle-btn"
-                            data-testid="expr-meta-toggle"
-                            aria-expanded={expanded.has(`meta:${st.id}`)}
-                            onClick={() => toggleExpanded(`meta:${st.id}`)}
-                          >
-                            Metadata
-                          </button>
-                        </div>
+                        {fields.length === 0 && (
+                          <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
+                            {metaToggle(st.id)}
+                          </div>
+                        )}
                         {expanded.has(`meta:${st.id}`) && (
                           <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
                             {META_LEAVES.map(([key, label]) =>

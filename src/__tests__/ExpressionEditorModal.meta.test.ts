@@ -193,6 +193,16 @@ test("M4 - the toggle follows hasMeta === true only, and is independent of the f
   assert.equal(q(container, '[data-testid="expr-meta-fields"]').length, 0);
 });
 
+test("M4b - the Metadata disclosure shows the closed/open glyph, switching with aria-expanded", async () => {
+  const { container } = await mountExt();
+  const t = toggles(container)[0];
+  assert.equal(t.getAttribute("aria-expanded"), "false");
+  assert.ok(t.textContent?.includes("›") && !t.textContent.includes("⌄"));
+  await click(t);
+  assert.equal(t.getAttribute("aria-expanded"), "true");
+  assert.ok(t.textContent?.includes("⌄") && !t.textContent.includes("›"));
+});
+
 test("M5 - exactly the four labels, and no value, ever", async () => {
   const { container } = await mountExt();
   await click(toggles(container)[0]);
@@ -246,6 +256,13 @@ test("M7 - json-binding mode: no Metadata group; Entire output still binds", asy
   assert.ok(entire);
   await click(entire as HTMLElement);
   assert.deepEqual(bound, [{ $: "steps.ev.output" }]);
+});
+
+test("V0 - varLabel meta labels are exact for an id sharing no letters with any key", () => {
+  assert.equal(varLabel("steps.zz.meta.app"), "zz meta · app");
+  assert.equal(varLabel("steps.zz.meta.version"), "zz meta · version");
+  assert.equal(varLabel("steps.zz.meta.action"), "zz meta · action");
+  assert.equal(varLabel("steps.zz.meta.connectionId"), "zz meta · connectionId");
 });
 
 test("V1-V5 - varLabel meta branch", () => {

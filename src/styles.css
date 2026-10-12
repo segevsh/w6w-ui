@@ -764,6 +764,22 @@
    the `.w6w-exprmodal-subsources` block below it, the render-btn inserts a
    `render` part. It carries a "N fields" label, not a bare chevron, so it is
    auto-width (a lone 20px chevron went unnoticed beside the chip). */
+/* The "N fields" toggle with the Metadata toggle stacked under it, so both
+   disclosures share one left edge on a step row. */
+.w6w-exprmodal-toggle-stack {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+/* A step with no fields: its Metadata toggle sits at the leaf indentation of
+   `.w6w-exprmodal-subsources` (margin 9px + 1px border + sp-2 padding). */
+.w6w-exprmodal-meta-row {
+  margin-left: calc(10px + var(--w6w-sp-2)); /* lint-tokens-allow: 9px margin + 1px border of .w6w-exprmodal-subsources */
+}
+
 .w6w-exprmodal-toggle-btn {
   display: inline-flex;
   flex: none;
