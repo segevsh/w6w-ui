@@ -184,7 +184,7 @@ function resolvePart(part: ExprPart, scope: ResolveScope): ResolvedSegment {
 }
 
 /** A hand-authored whole-value path marker: `{ "$": "<path>" }`, exactly one key. */
-function isDollarPath(v: unknown): v is { $: unknown } {
+export function isDollarPath(v: unknown): v is { $: unknown } {
   return (
     typeof v === "object" &&
     v !== null &&
@@ -195,7 +195,7 @@ function isDollarPath(v: unknown): v is { $: unknown } {
 }
 
 /** A hand-authored whole-value JSONLogic marker: `{ "$expr": <logic> }`, exactly one key. */
-function isDollarExpr(v: unknown): v is { $expr: unknown } {
+export function isDollarExpr(v: unknown): v is { $expr: unknown } {
   return (
     typeof v === "object" &&
     v !== null &&

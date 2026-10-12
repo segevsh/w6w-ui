@@ -50,6 +50,13 @@ import "@w6w/ui/code.css";
 `CodeBlock` is exported from the root `@w6w/ui` too, so you don't need a second import when you
 already load the full library.
 
+Every line and every token `CodeBlock` renders carries an explicit React key, including repeated,
+blank and whitespace-only lines, so the block raises no key warning. If your console shows a
+`Each child in a list should have a unique "key" prop` warning that names `Highlight`, it is not
+this component: it comes from a different renderer, either `Highlight` from `prism-react-renderer`
+used directly with the library's documented spread pattern, or an older copy of `CodeBlock`. Import
+`CodeBlock` from `@w6w/ui/code` and pin a current commit of `w6w-ui`.
+
 ## `JsonEditor`
 
 A JSON editor with parse errors marked inline.
