@@ -147,8 +147,14 @@ function projectStepSources(
     // but only say so once the action definition has actually loaded.
     const action = shapes.actionDef?.(step.uses.app, step.uses.action);
     const shape = resolveOutputShape(action, testOutput);
-    if (shape) steps.push({ ...source, outputs: shape.fields, outputsFrom: shape.from });
-    else steps.push(action ? { ...source, needsTest: true } : source);
+    // Only this branch is an external app action, so only it carries `hasMeta` (R-7).
+    if (shape) {
+      steps.push({ ...source, outputs: shape.fields, outputsFrom: shape.from, hasMeta: true });
+    } else {
+      steps.push(
+        action ? { ...source, needsTest: true, hasMeta: true } : { ...source, hasMeta: true },
+      );
+    }
   }
   return { steps, hasTrigger };
 }

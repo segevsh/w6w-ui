@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { CodeBlock } from "../CodeBlock.tsx";
+import type { StepMeta } from "../provider.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { StepStatusPill } from "./StepStatusPill.tsx";
 import type { StepStatus } from "./StepStatusPill.tsx";
@@ -57,6 +58,11 @@ export interface ExecutionLogStep {
   input?: unknown;
   /** The step's output, once it has one. */
   output?: unknown;
+  /**
+   * What ran (`StepExecution.meta`): app, version, action and connection id. Shown as a
+   * Metadata block after Output. Absent or `null` ⇒ no block at all (R-12: no filler).
+   */
+  meta?: StepMeta | null;
   /**
    * Why the step failed (`StepExecution.error`, "present on failed"). Rendered
    * below the row's box and outside its lazy `<details>` body, so the reason
@@ -191,7 +197,7 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
 
   const error = step.error ? <ExecutionLogErrorBlock error={step.error} /> : null;
 
-  if (step.input === undefined && step.output === undefined) {
+  if (step.input === undefined && step.output === undefined && !step.meta) {
     return (
       <li className="w6w-execution-log-row">
         <div className="w6w-section">{header}</div>
@@ -208,6 +214,12 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
           <div className="w6w-execution-log-row-body w6w-section-body w6w-stack">
             <ExecutionLogJson title="Input" value={step.input} />
             <ExecutionLogJson title="Output" value={step.output} />
+            {step.meta && (
+              <div className="w6w-execution-log-json w6w-stack">
+                <strong className="w6w-small">Metadata</strong>
+                <CodeBlock code={JSON.stringify(step.meta, null, 2)} language="json" />
+              </div>
+            )}
           </div>
         )}
       </details>

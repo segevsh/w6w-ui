@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  CALL_APP,
+  CONTROL_APP,
   DOCUMENT_APP,
   HTTP_APP,
   SCHEDULER_APP,
@@ -215,6 +217,7 @@ test("upstreamStateSources — an app action's declared output projects as path 
         { key: "start.utc", label: "Start (UTC)", path: true },
       ],
       outputsFrom: "declared",
+      hasMeta: true,
     },
   ]);
 });
@@ -238,7 +241,7 @@ test("upstreamStateSources — no shape and no test run: the step needs a test",
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
     actionDef: () => ({}),
   });
-  assert.deepEqual(steps, [{ id: "ev", label: "ev", needsTest: true }]);
+  assert.deepEqual(steps, [{ id: "ev", label: "ev", needsTest: true, hasMeta: true }]);
 });
 
 test("upstreamStateSources — action definition not loaded yet: no needs-test claim", () => {
@@ -246,7 +249,7 @@ test("upstreamStateSources — action definition not loaded yet: no needs-test c
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
     actionDef: () => undefined,
   });
-  assert.deepEqual(steps, [{ id: "ev", label: "ev" }]);
+  assert.deepEqual(steps, [{ id: "ev", label: "ev", hasMeta: true }]);
 });
 
 test("upstreamStateSources — a built-in node with no static output falls back to its test run, never needs-test", () => {
@@ -274,7 +277,71 @@ test("upstreamStateSources — a webhook entry node takes no fallback shape from
 test("upstreamStateSources — without a shape context the projection is unchanged", () => {
   const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")]);
-  assert.deepEqual(steps, [{ id: "ev", label: "ev" }]);
+  assert.deepEqual(steps, [{ id: "ev", label: "ev", hasMeta: true }]);
+});
+
+// ── T3.2.3: hasMeta (R-7) ────────────────────────────────────────────────────
+
+test("P1 — an external app ancestor with a test output carries hasMeta: true", () => {
+  const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
+    actionDef: () => ({}),
+    testOutputs: { ev: { id: "1" } },
+  });
+  assert.equal(steps[0].outputsFrom, "test");
+  assert.equal(steps[0].hasMeta, true);
+});
+
+test("P2 — hasMeta is a missing key (not false) for triggers and every @w6w/* node", () => {
+  const cases: [string, string, string][] = [
+    ["manual", TRIGGER_APP, "trigger"],
+    ["hook", WEBHOOK_APP, "webhook"],
+    ["code", "@w6w/script", "run"],
+    ["call", CALL_APP, "call"],
+    ["ctl", CONTROL_APP, "merge"],
+    ["tpl", TEMPLATE_APP, "render"],
+    ["http", HTTP_APP, "request"],
+  ];
+  const nodes = [...cases.map(([id, app, action]) => node(id, app, action)), node("next")];
+  const edges = cases.map(([id]) => edge(id, "next"));
+  const { steps } = upstreamStateSources("next", nodes, edges, { actionDef: () => ({}) });
+  assert.equal(steps.length, cases.length);
+  for (const [id] of cases) {
+    const s = steps.find((x) => x.id === id);
+    assert.ok(s, `${id} projected`);
+    assert.equal(Object.hasOwn(s, "hasMeta"), false, `${id} has no hasMeta key`);
+  }
+});
+
+test("P3 — a downstream or unrelated external app step is not projected", () => {
+  const nodes = [
+    node("ev", EVENTBRITE, "get-event"),
+    node("next"),
+    node("later", EVENTBRITE, "get-event"),
+    node("other", EVENTBRITE, "get-event"),
+  ];
+  const edges = [edge("ev", "next"), edge("next", "later")];
+  const { steps } = upstreamStateSources("next", nodes, edges, { actionDef: () => ({}) });
+  assert.deepEqual(
+    steps.map((s) => s.id),
+    ["ev"],
+  );
+  const viaBuilder = stepBuilderUpstreamSteps(
+    { nodeId: "next", handleType: "source" },
+    nodes,
+    edges,
+    {
+      actionDef: () => ({}),
+    },
+  );
+  assert.deepEqual(
+    viaBuilder.map((s) => s.id),
+    ["ev", "next"],
+  );
+  assert.equal(
+    viaBuilder.some((s) => s.id === "later" || s.id === "other"),
+    false,
+  );
 });
 
 // ── T3.2.2: step metadata ────────────────────────────────────────────────────

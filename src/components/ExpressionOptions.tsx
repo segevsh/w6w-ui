@@ -94,6 +94,13 @@ export interface ExpressionStepSource {
    * no test run yet — the picker tells the author to run a test to see fields.
    */
   needsTest?: boolean;
+  /**
+   * `true` for an EXTERNAL app-action step only (R-7): the picker then offers a fixed
+   * Metadata group (`steps.<id>.meta.app|version|action|connectionId`). **Omitted, not
+   * `false`**, for triggers and every `@w6w/*` node. Carries no metadata VALUE: the group
+   * is just labels, and the value exists only at run time.
+   */
+  hasMeta?: boolean;
 }
 
 /**

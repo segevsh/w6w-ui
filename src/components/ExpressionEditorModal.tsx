@@ -494,6 +494,36 @@ export function ExpressionEditorModal({
                         })}
                       </div>
                     )}
+                    {/* External app steps only (`st.hasMeta`, R-7): a fixed group of
+                        four LABELS. No value is ever shown: it exists only at run
+                        time. Independent of the fields caret and of `needsTest`. */}
+                    {st.hasMeta === true && (
+                      <>
+                        <div className="w6w-exprmodal-source-row">
+                          <button
+                            type="button"
+                            className="w6w-exprmodal-toggle-btn"
+                            data-testid="expr-meta-toggle"
+                            aria-expanded={expanded.has(`meta:${st.id}`)}
+                            onClick={() => toggleExpanded(`meta:${st.id}`)}
+                          >
+                            Metadata
+                          </button>
+                        </div>
+                        {expanded.has(`meta:${st.id}`) && (
+                          <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
+                            {META_LEAVES.map(([key, label]) =>
+                              source(
+                                label,
+                                { kind: "var", ref: `steps.${st.id}.meta.${key}` },
+                                "w6w-expr-chip-var",
+                                "·",
+                              ),
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </Fragment>
                 );
               })}
@@ -853,6 +883,14 @@ function FieldsToggle({
     </button>
   );
 }
+
+/** The fixed Metadata leaves (R-7): key under `steps.<id>.meta.`, and the label shown. */
+const META_LEAVES: [string, string][] = [
+  ["app", "App"],
+  ["version", "App version"],
+  ["action", "Action"],
+  ["connectionId", "Connection ID"],
+];
 
 interface AddValueModalProps {
   kind: "var" | "secret";
