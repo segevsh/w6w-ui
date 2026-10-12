@@ -1,7 +1,7 @@
 // Run: node --import ./src/test-jsx-loader.mjs --test src/__tests__/resolved-json.test.ts  (Node 24)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ResolveScope } from "../resolve-params.ts";
+import { type ResolveScope, isDollarExpr, isDollarPath } from "../resolve-params.ts";
 import { foldResolvedSegments, resolveParamJson, resolveVarsJson } from "../resolved-json.ts";
 
 const emptyScope: ResolveScope = { vars: {}, documents: {}, steps: {}, trigger: {} };
@@ -103,4 +103,44 @@ test("A6 — a vars-typed param folds to an object keyed by each row's key, fall
     sender: "hi@example.com",
     "(no key)": 3,
   });
+});
+
+// T3.2.1 - whole-value `{ "$": ref }` binding folds through the same path as any other value.
+const dollarScope: ResolveScope = {
+  vars: { o: { a: 1 }, arr: [1, 2], nul: null, f: false, z: 0, e: "" },
+  documents: {},
+  steps: {},
+  trigger: {},
+};
+
+test('T3.2.1 - whole-value $ preserves object/array/null/false/0/""', () => {
+  assert.deepStrictEqual(resolveParamJson({ $: "vars.o" }, dollarScope), { a: 1 });
+  assert.deepStrictEqual(resolveParamJson({ $: "vars.arr" }, dollarScope), [1, 2]);
+  assert.deepStrictEqual(resolveParamJson({ $: "vars.nul" }, dollarScope), null);
+  assert.deepStrictEqual(resolveParamJson({ $: "vars.f" }, dollarScope), false);
+  assert.deepStrictEqual(resolveParamJson({ $: "vars.z" }, dollarScope), 0);
+  assert.deepStrictEqual(resolveParamJson({ $: "vars.e" }, dollarScope), "");
+});
+
+test("T3.2.1 - whole-value $ with no value folds to the unresolved token", () => {
+  assert.equal(
+    resolveParamJson({ $: "steps.a.output" }, dollarScope),
+    "<unresolved: steps.a.output>",
+  );
+});
+
+test("T3.2.1 - a nested $ marker stays literal", () => {
+  const v = { outer: { $: "vars.o" } };
+  assert.deepStrictEqual(resolveParamJson(v, dollarScope), v);
+});
+
+test("T3.2.1 - isDollarPath / isDollarExpr: true for exactly one key only", () => {
+  assert.equal(isDollarPath({ $: "x" }), true);
+  assert.equal(isDollarPath({ $: "x", y: 1 }), false);
+  assert.equal(isDollarPath([{ $: "x" }]), false);
+  assert.equal(isDollarPath(null), false);
+  assert.equal(isDollarExpr({ $expr: {} }), true);
+  assert.equal(isDollarExpr({ $expr: {}, y: 1 }), false);
+  assert.equal(isDollarExpr([{ $expr: {} }]), false);
+  assert.equal(isDollarExpr(null), false);
 });
