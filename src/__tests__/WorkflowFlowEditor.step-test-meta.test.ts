@@ -351,3 +351,29 @@ test("W3 — stepSampleValues merges stepMetaSampleValues per upstream step", ()
   assert.equal(c.length, 1);
   assert.equal(c[0].arguments[0].getText(sf), "st.id");
 });
+
+test("C1 — the step-test fetch effect maps `lastRunMeta` into `meta` beside the latest output", () => {
+  const maps: ts.ObjectLiteralExpression[] = [];
+  const visit = (n: ts.Node) => {
+    if (
+      ts.isObjectLiteralExpression(n) &&
+      n.properties.some(
+        (p) =>
+          ts.isPropertyAssignment(p) &&
+          p.name.getText(sf) === "output" &&
+          p.initializer.getText(sf) === "latest.lastRunOutput",
+      )
+    )
+      maps.push(n);
+    ts.forEachChild(n, visit);
+  };
+  ts.forEachChild(sf, visit);
+  assert.ok(maps.length >= 1, "the listStepTests mapping exists");
+  for (const m of maps) {
+    const meta = m.properties.find(
+      (p) => ts.isPropertyAssignment(p) && p.name.getText(sf) === "meta",
+    );
+    assert.ok(meta && ts.isPropertyAssignment(meta), "mapping carries a `meta` property");
+    assert.equal(meta.initializer.getText(sf), "latest.lastRunMeta");
+  }
+});
