@@ -319,11 +319,28 @@ export interface AuthDef {
 }
 
 /** Public summary of a stored connection — never carries the credential. */
+/** The display meta the server inlines on each {@link ConnectionSummary} (`app`). */
+export interface ConnectionAppMeta {
+  displayName: string;
+  iconSvg?: string;
+  iconSvgDark?: string;
+  brandColor?: string;
+  brandColorDark?: string;
+}
+
 export interface ConnectionSummary {
   id: string;
   appId: string;
   authKey: string;
-  owner?: string;
+  /** The owning tenant. The server sends `tenant`/`subject`, never `owner`. */
+  tenant?: string;
+  /** The owning subject (the partner's user id). */
+  subject?: string;
+  /**
+   * The connection's app, inline: just enough to draw its card. `null` when the
+   * app is no longer in the catalog; absent from servers that don't send it.
+   */
+  app?: ConnectionAppMeta | null;
   displayName?: string;
   state?: "pending" | "connected" | "needs_refresh" | "broken" | "revoked" | string;
   profile?: Record<string, unknown>;

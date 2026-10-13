@@ -137,6 +137,20 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
       return apps;
     },
 
+    // Bounded lookup: dedupe; `[]` sends nothing; chunks of <= 100 (the server's
+    // `MAX_IDS_PER_QUERY`), each `GET /apps?ids=a,b` with no limit/cursor.
+    listAppsByIds: async (ids) => {
+      const unique = Array.from(new Set(ids));
+      const apps: AppSummary[] = [];
+      for (let i = 0; i < unique.length; i += 100) {
+        const chunk = unique.slice(i, i + 100);
+        const qs = chunk.map(encodeURIComponent).join(",");
+        const r = await req<{ apps: AppSummary[] }>(`/apps?ids=${qs}`);
+        apps.push(...r.apps);
+      }
+      return apps;
+    },
+
     getAppAuth: async (id: string) => {
       const r = await req<{ auths: AuthDef[] }>(`/apps/${encodeURIComponent(id)}/auths`);
       return r.auths ?? [];

@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createW6WApi } from "../createW6WApi.ts";
+import type { ConnectionAppMeta, ConnectionSummary } from "../index.ts";
 import type { W6WApi } from "../provider.tsx";
 
 function fakeFetch(capture: Headers[]) {
@@ -136,3 +137,78 @@ test("C3 — listStepTests passes lastRunMeta through", async () => {
   const [t] = await api.listStepTests("wf", "s1");
   assert.equal(t.lastRunMeta?.connectionId, "c9");
 });
+
+// ── T1.1.3 (R-B1′): createW6WApi's bounded `listAppsByIds` ────────────────────
+function urlFetch(urls: string[], respond: (url: URL) => unknown) {
+  return (async (url: string) => {
+    urls.push(url);
+    return new Response(JSON.stringify(respond(new URL(url))), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+}
+
+test("T1.1.3 A1 — listAppsByIds dedupes into ONE GET /apps?ids= request and returns its apps", async () => {
+  const urls: string[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: urlFetch(urls, (u) => ({
+      apps: (u.searchParams.get("ids") ?? "").split(",").map((id) => ({ id, displayName: id })),
+    })),
+  });
+  assert.equal(typeof api.listAppsByIds, "function");
+  const apps = await api.listAppsByIds?.(["slack", "github", "slack"]);
+
+  assert.equal(urls.length, 1);
+  const u = new URL(urls[0]);
+  assert.equal(u.pathname, "/apps");
+  assert.equal(u.searchParams.get("ids"), "slack,github");
+  assert.equal(u.searchParams.get("limit"), null, "an ids lookup never asks for a catalog page");
+  assert.deepEqual(
+    apps?.map((a) => a.id),
+    ["slack", "github"],
+  );
+});
+
+test("T1.1.3 A2 — listAppsByIds([]) sends no request; >100 ids split into chunks of at most 100", async () => {
+  const urls: string[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: urlFetch(urls, () => ({ apps: [] })),
+  });
+  assert.deepEqual(await api.listAppsByIds?.([]), []);
+  assert.equal(urls.length, 0, "an empty id list must never become an unfiltered catalog request");
+
+  const ids = Array.from({ length: 150 }, (_, i) => `app_${i}`);
+  await api.listAppsByIds?.(ids);
+  assert.equal(urls.length, 2);
+  const sizes = urls.map((s) => (new URL(s).searchParams.get("ids") ?? "").split(",").length);
+  assert.deepEqual(sizes, [100, 50]);
+});
+
+// ── T1.1.3 type pins (R-A1/R-A3/R-A6) — gated by `tsc -b --noEmit`, not at runtime ──
+const pinnedMeta: ConnectionAppMeta = {
+  displayName: "Slack",
+  iconSvg: "data:image/svg+xml;base64,AA==",
+  iconSvgDark: "data:image/svg+xml;base64,AQ==",
+  brandColor: "#4A154B",
+  brandColorDark: "#ECB22E",
+};
+const pinnedRow: ConnectionSummary = {
+  id: "c1",
+  appId: "slack",
+  authKey: "oauth",
+  tenant: "t1",
+  subject: "u1",
+  app: pinnedMeta,
+};
+const pinnedNullApp: ConnectionSummary = { id: "c2", appId: "gone", authKey: "k", app: null };
+const noOwner: ConnectionSummary = {
+  id: "c3",
+  appId: "slack",
+  authKey: "k",
+  // @ts-expect-error — `owner` is not on the wire (R-A6): the server sends `tenant`/`subject`.
+  owner: "u1",
+};
+void [pinnedRow, pinnedNullApp, noOwner];
