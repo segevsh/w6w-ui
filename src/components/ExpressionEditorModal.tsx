@@ -49,8 +49,18 @@ export interface ExpressionEditorModalProps {
   options: ExpressionOptions;
   /** Field name shown in the modal title. */
   fieldLabel?: string;
-  onSave: (next: ExprValue | string) => void;
+  /** Expression mode's commit. Not used in `mode="json-binding"` (see `onBind`). */
+  onSave?: (next: ExprValue | string) => void;
   onClose: () => void;
+  /**
+   * `"json-binding"`: pick ONE upstream step output for a whole `json`/`group`
+   * param. The rail shows only the Workflow state slot, each step gets an
+   * "Entire output" leaf, and a click calls `onBind({ $: ref })` (the plain
+   * one-key object, never an `ExprValue`) and closes. No chips editor, no
+   * Save, no template/Result panes. Absent ⇒ expression mode, unchanged.
+   */
+  mode?: "json-binding";
+  onBind?: (next: { $: string }) => void;
 }
 
 export function ExpressionEditorModal({
@@ -61,7 +71,10 @@ export function ExpressionEditorModal({
   fieldLabel,
   onSave,
   onClose,
+  mode,
+  onBind,
 }: ExpressionEditorModalProps) {
+  const jsonBinding = mode === "json-binding";
   const [parts, setParts] = useState<ExprPart[]>(() => valueToParts(value).parts);
   // Bumped ONLY for programmatic repaints — mount, and committing template
   // text back into chips. Typing/insert mutate the DOM directly and sync out,
@@ -143,14 +156,17 @@ export function ExpressionEditorModal({
 
   const save = () => {
     const el = editorRef.current;
-    onSave(partsToValue(el ? readParts(el) : parts));
+    onSave?.(partsToValue(el ? readParts(el) : parts));
     onClose();
   };
 
   // Save `part` alone as the field's value (what Save yields for an editor
   // holding only that chip) and close.
+  // In json-binding mode this is the ONE save path: a leaf (Entire output, a
+  // field, or any later Metadata leaf) yields `{ $: ref }` and closes.
   const saveOnly = (part: ExprPart) => {
-    onSave(partsToValue([part]));
+    if (jsonBinding) onBind?.({ $: part.ref ?? "" });
+    else onSave?.(partsToValue([part]));
     onClose();
   };
 
@@ -233,6 +249,7 @@ export function ExpressionEditorModal({
     cls: string,
     sigil: string | null,
     composite = false,
+    ariaLabel?: string,
   ) => (
     <div
       key={`${part.kind}:${part.ref ?? label}`}
@@ -244,68 +261,85 @@ export function ExpressionEditorModal({
         className={`w6w-exprmodal-source ${cls}`}
         style={{ flex: 1, minWidth: 0 }}
         title={composite ? `Insert ${label}` : `Use ${label}`}
+        aria-label={ariaLabel}
         onClick={() => (composite ? insertPart(part) : saveOnly(part))}
       >
         {sigil !== null && <span className="w6w-expr-chip-sigil">{sigil}</span>}
         <span className="w6w-exprmodal-source-label">{label}</span>
       </button>
-      <IconButton
-        icon="copy"
-        iconSize={14}
-        label="Copy to expression editor"
-        data-testid="expr-copy-to-editor"
-        onClick={() => insertPart(part)}
-      />
+      {!jsonBinding && (
+        <IconButton
+          icon="copy"
+          iconSize={14}
+          label="Copy to expression editor"
+          data-testid="expr-copy-to-editor"
+          onClick={() => insertPart(part)}
+        />
+      )}
     </div>
   );
 
   return (
     <Modal
-      title="Edit expression"
+      title={jsonBinding ? "Bind to a step output" : "Edit expression"}
       subtitle={fieldLabel ? <code>{fieldLabel}</code> : undefined}
       onClose={onClose}
       size="full"
       headerRight={
-        <div className="w6w-exprmodal-actions">
-          {/* Take the field back OUT of expression mode. It saves the `{{ }}`
+        jsonBinding ? (
+          <div className="w6w-exprmodal-actions">
+            <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="w6w-exprmodal-actions">
+            {/* Take the field back OUT of expression mode. It saves the `{{ }}`
               TEXT form, so the content survives exactly as the old expr→text
               toggle made it — a lone text part collapses to a plain string in
               `partsToValue`, so the field renders its plain widget again.
               Hidden when `masked`: a sealed secret has no text form. */}
-          {!masked && (
-            <button
-              type="button"
-              className="w6w-btn w6w-btn-ghost"
-              disabled={hasRenderPart}
-              title={
-                hasRenderPart
-                  ? "Unavailable — a render part has no plain-text form. Flip it back to a variable first."
-                  : "Close the expression and keep the text as a literal value"
-              }
-              onClick={() => {
-                onSave(serializeTemplate(parts));
-                onClose();
-              }}
-            >
-              Use a plain value
+            {!masked && (
+              <button
+                type="button"
+                className="w6w-btn w6w-btn-ghost"
+                disabled={hasRenderPart}
+                title={
+                  hasRenderPart
+                    ? "Unavailable — a render part has no plain-text form. Flip it back to a variable first."
+                    : "Close the expression and keep the text as a literal value"
+                }
+                onClick={() => {
+                  onSave?.(serializeTemplate(parts));
+                  onClose();
+                }}
+              >
+                Use a plain value
+              </button>
+            )}
+            <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
+              Cancel
             </button>
-          )}
-          <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" className="w6w-btn" onClick={save}>
-            Save
-          </button>
-        </div>
+            <button type="button" className="w6w-btn" onClick={save}>
+              Save
+            </button>
+          </div>
+        )
       }
     >
-      <div className="w6w-exprmodal">
+      <div
+        className="w6w-exprmodal"
+        style={jsonBinding ? { gridTemplateColumns: "1fr" } : undefined}
+      >
         {/* Left: the data sources in scope. */}
         <aside className="w6w-exprmodal-sources">
           {/* First slot — context-specific, mutually exclusive in the real
               wiring (a Function supplies `inputs` and never `steps`; the flow
               editor supplies `steps`/`hasTrigger` and never `inputs`). Render
               Workflow state first should a host ever supply both. */}
+          {jsonBinding && !hasState && (
+            <span className="w6w-expr-menu-empty">No upstream steps</span>
+          )}
           {hasState && (
             <div className="w6w-exprmodal-group">
               <span className="w6w-exprmodal-group-label">Workflow state</span>
@@ -317,6 +351,24 @@ export function ExpressionEditorModal({
                   "⚡",
                 )}
               {steps.map((st) => {
+                // The Metadata disclosure (external app steps only, R-7). It sits
+                // directly under the "N fields" toggle (same left edge, same
+                // glyph) when the step has fields, else on its own row.
+                const metaToggle = (id: string) => {
+                  const open = expanded.has(`meta:${id}`);
+                  return (
+                    <button
+                      type="button"
+                      className="w6w-exprmodal-toggle-btn"
+                      data-testid="expr-meta-toggle"
+                      aria-expanded={open}
+                      title={open ? "Hide metadata" : "Show metadata"}
+                      onClick={() => toggleExpanded(`meta:${id}`)}
+                    >
+                      Metadata {open ? "⌄" : "›"}
+                    </button>
+                  );
+                };
                 // Only keys that can become a ref the ENGINE resolves are
                 // offered. The guard lives here, at the one place a ref is
                 // built, so it holds for any host that supplies `steps` —
@@ -340,6 +392,63 @@ export function ExpressionEditorModal({
                   fields.length > 0 ? null : "▸",
                   fields.length > 0,
                 );
+                if (jsonBinding) {
+                  return (
+                    <Fragment key={st.id}>
+                      <span className="w6w-exprmodal-shape-note">{st.label ?? st.id}</span>
+                      {source(
+                        "Entire output",
+                        { kind: "var", ref: `steps.${st.id}.output` },
+                        "w6w-expr-chip-var",
+                        "▸",
+                        false,
+                        `Entire output of ${st.label ?? st.id}`,
+                      )}
+                      {st.needsTest && (
+                        <div className="w6w-exprmodal-subsources">
+                          <span className="w6w-exprmodal-shape-note" data-testid="expr-needs-test">
+                            Run a test of this step to see its fields
+                          </span>
+                        </div>
+                      )}
+                      {fields.length > 0 && (
+                        <>
+                          <div className="w6w-exprmodal-source-row">
+                            <button
+                              type="button"
+                              className="w6w-exprmodal-caret-btn"
+                              data-testid="expr-caret-fields"
+                              aria-expanded={isOpen}
+                              aria-label={isOpen ? "Hide fields" : "Show fields"}
+                              title={isOpen ? "Hide fields" : "Show fields"}
+                              onClick={() => toggleExpanded(stepKey)}
+                            >
+                              {isOpen ? "▾" : "▸"}
+                            </button>
+                            <FieldsToggle
+                              count={fields.length}
+                              open={isOpen}
+                              onToggle={() => toggleExpanded(stepKey)}
+                            />
+                          </div>
+                          {isOpen && (
+                            <div className="w6w-exprmodal-subsources">
+                              {fields.map((o) => {
+                                const ref = `steps.${st.id}.output.${o.key}`;
+                                return source(
+                                  varLabel(ref),
+                                  { kind: "var", ref },
+                                  "w6w-expr-chip-var",
+                                  "·",
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </Fragment>
+                  );
+                }
                 return (
                   <Fragment key={st.id}>
                     {fields.length > 0 ? (
@@ -356,11 +465,14 @@ export function ExpressionEditorModal({
                           {isOpen ? "▾" : "▸"}
                         </button>
                         {wholeBtn}
-                        <FieldsToggle
-                          count={fields.length}
-                          open={isOpen}
-                          onToggle={() => toggleExpanded(stepKey)}
-                        />
+                        <div className="w6w-exprmodal-toggle-stack">
+                          <FieldsToggle
+                            count={fields.length}
+                            open={isOpen}
+                            onToggle={() => toggleExpanded(stepKey)}
+                          />
+                          {st.hasMeta === true && metaToggle(st.id)}
+                        </div>
                       </div>
                     ) : (
                       wholeBtn
@@ -403,77 +515,105 @@ export function ExpressionEditorModal({
                         })}
                       </div>
                     )}
+                    {/* External app steps only (`st.hasMeta`, R-7): a fixed group of
+                        four LABELS. No value is ever shown: it exists only at run
+                        time. Independent of the fields caret and of `needsTest`. */}
+                    {st.hasMeta === true && (
+                      <>
+                        {fields.length === 0 && (
+                          <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
+                            {metaToggle(st.id)}
+                          </div>
+                        )}
+                        {expanded.has(`meta:${st.id}`) && (
+                          <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
+                            {META_LEAVES.map(([key, label]) =>
+                              source(
+                                label,
+                                { kind: "var", ref: `steps.${st.id}.meta.${key}` },
+                                "w6w-expr-chip-var",
+                                "·",
+                              ),
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </Fragment>
                 );
               })}
             </div>
           )}
 
-          {options.inputs !== undefined && (
-            <div className="w6w-exprmodal-group">
-              <span className="w6w-exprmodal-group-label">Inputs</span>
-              {inputs.length === 0 && <span className="w6w-expr-menu-empty">No inputs</span>}
-              {inputs.map((i) =>
-                source(i, { kind: "var", ref: `inputs.${i}` }, "w6w-expr-chip-var", "⇥"),
-              )}
-            </div>
-          )}
-
-          <div className="w6w-exprmodal-group">
-            <div className="w6w-field-labelrow">
-              <span className="w6w-exprmodal-group-label">Variables</span>
-              {options.createVar && (
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                  data-testid="expr-add-var"
-                  onClick={() => setAdding("var")}
-                >
-                  + Add
-                </button>
-              )}
-            </div>
-            {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
-            {vars.map((v) =>
-              source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
-            )}
-          </div>
-
-          <div className="w6w-exprmodal-group">
-            <span className="w6w-exprmodal-group-label">Documents</span>
-            {documents.length === 0 && <span className="w6w-expr-menu-empty">No documents</span>}
-            {documents.map((d) => {
-              // Same guard, same single render site, as the steps block above:
-              // enumerated raw at the source (studio's `document-sources.ts`),
-              // filtered exactly once, here, where the ref is built (A3, A4a).
-              const fields = (d.fields ?? []).filter((f) => isRefSafeKey(f.key));
-              const docKey = `doc:${d.key}`;
-              const isOpen = expanded.has(docKey);
-              // The whole document — unconditional, for every format, exactly
-              // as before (A2). Its class, label, sigil and inserted ref are
-              // unchanged from before.
-              const wholeBtn = source(
-                d.key,
-                { kind: "var", ref: `documents.${d.key}` },
-                "w6w-expr-chip-var",
-                "▦",
-                fields.length > 0,
-              );
-              return (
-                <Fragment key={d.key}>
-                  {fields.length > 0 ? (
-                    <div className="w6w-exprmodal-source-row">
-                      {wholeBtn}
-                      <FieldsToggle
-                        count={fields.length}
-                        open={isOpen}
-                        onToggle={() => toggleExpanded(docKey)}
-                      />
-                    </div>
-                  ) : (
-                    wholeBtn
+          {!jsonBinding && (
+            <>
+              {options.inputs !== undefined && (
+                <div className="w6w-exprmodal-group">
+                  <span className="w6w-exprmodal-group-label">Inputs</span>
+                  {inputs.length === 0 && <span className="w6w-expr-menu-empty">No inputs</span>}
+                  {inputs.map((i) =>
+                    source(i, { kind: "var", ref: `inputs.${i}` }, "w6w-expr-chip-var", "⇥"),
                   )}
-                  {/* …and one source per surviving top-level field, nested
+                </div>
+              )}
+
+              <div className="w6w-exprmodal-group">
+                <div className="w6w-field-labelrow">
+                  <span className="w6w-exprmodal-group-label">Variables</span>
+                  {options.createVar && (
+                    <button
+                      type="button"
+                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                      data-testid="expr-add-var"
+                      onClick={() => setAdding("var")}
+                    >
+                      + Add
+                    </button>
+                  )}
+                </div>
+                {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
+                {vars.map((v) =>
+                  source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
+                )}
+              </div>
+
+              <div className="w6w-exprmodal-group">
+                <span className="w6w-exprmodal-group-label">Documents</span>
+                {documents.length === 0 && (
+                  <span className="w6w-expr-menu-empty">No documents</span>
+                )}
+                {documents.map((d) => {
+                  // Same guard, same single render site, as the steps block above:
+                  // enumerated raw at the source (studio's `document-sources.ts`),
+                  // filtered exactly once, here, where the ref is built (A3, A4a).
+                  const fields = (d.fields ?? []).filter((f) => isRefSafeKey(f.key));
+                  const docKey = `doc:${d.key}`;
+                  const isOpen = expanded.has(docKey);
+                  // The whole document — unconditional, for every format, exactly
+                  // as before (A2). Its class, label, sigil and inserted ref are
+                  // unchanged from before.
+                  const wholeBtn = source(
+                    d.key,
+                    { kind: "var", ref: `documents.${d.key}` },
+                    "w6w-expr-chip-var",
+                    "▦",
+                    fields.length > 0,
+                  );
+                  return (
+                    <Fragment key={d.key}>
+                      {fields.length > 0 ? (
+                        <div className="w6w-exprmodal-source-row">
+                          {wholeBtn}
+                          <FieldsToggle
+                            count={fields.length}
+                            open={isOpen}
+                            onToggle={() => toggleExpanded(docKey)}
+                          />
+                        </div>
+                      ) : (
+                        wholeBtn
+                      )}
+                      {/* …and one source per surviving top-level field, nested
                       under it, collapsed until the toggle above is expanded.
                       The label is the field key itself — the parent row above
                       already shows `d.key` — never `varLabel(ref)`, which
@@ -483,224 +623,239 @@ export function ExpressionEditorModal({
                       placeholder-substitution behaviour is discoverable at
                       the moment of insertion — not only via the chip's own
                       post-insertion ⇄ toggle. */}
-                  {fields.length > 0 && isOpen && (
-                    <div className="w6w-exprmodal-subsources">
-                      {fields.map((f) => {
-                        const ref = `documents.${d.key}.${f.key}`;
-                        return (
-                          <div key={ref} className="w6w-exprmodal-subsource-row">
-                            {source(f.key, { kind: "var", ref }, "w6w-expr-chip-var", "·")}
-                            <button
-                              type="button"
-                              className="w6w-exprmodal-render-btn"
-                              data-testid="expr-insert-render"
-                              title={`Insert ${ref} and render its {{ }} placeholders`}
-                              aria-label={`Insert ${ref} and render its {{ }} placeholders`}
-                              onClick={() => insertPart({ kind: "render", ref })}
-                            >
-                              ▤
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
+                      {fields.length > 0 && isOpen && (
+                        <div className="w6w-exprmodal-subsources">
+                          {fields.map((f) => {
+                            const ref = `documents.${d.key}.${f.key}`;
+                            return (
+                              <div key={ref} className="w6w-exprmodal-subsource-row">
+                                {source(f.key, { kind: "var", ref }, "w6w-expr-chip-var", "·")}
+                                <button
+                                  type="button"
+                                  className="w6w-exprmodal-render-btn"
+                                  data-testid="expr-insert-render"
+                                  title={`Insert ${ref} and render its {{ }} placeholders`}
+                                  aria-label={`Insert ${ref} and render its {{ }} placeholders`}
+                                  onClick={() => insertPart({ kind: "render", ref })}
+                                >
+                                  ▤
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </div>
 
-          <div className="w6w-exprmodal-group">
-            <div className="w6w-field-labelrow">
-              <span className="w6w-exprmodal-group-label">Secrets</span>
-              {options.createSecret && (
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                  data-testid="expr-add-secret"
-                  onClick={() => setAdding("secret")}
-                >
-                  + Add
-                </button>
-              )}
-            </div>
-            {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
-            {secrets.map((s) =>
-              source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
-            )}
-          </div>
+              <div className="w6w-exprmodal-group">
+                <div className="w6w-field-labelrow">
+                  <span className="w6w-exprmodal-group-label">Secrets</span>
+                  {options.createSecret && (
+                    <button
+                      type="button"
+                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                      data-testid="expr-add-secret"
+                      onClick={() => setAdding("secret")}
+                    >
+                      + Add
+                    </button>
+                  )}
+                </div>
+                {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
+                {secrets.map((s) =>
+                  source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
+                )}
+              </div>
+            </>
+          )}
         </aside>
 
         {/* Right: editor over the saved {{ }} template. */}
-        <div className="w6w-exprmodal-main">
-          <div className="w6w-exprmodal-editor">
-            <span className="w6w-exprmodal-pane-label">
-              Expression
-              <span className="w6w-muted w6w-small"> — click a source on the left, or type</span>
-            </span>
-            <div
-              ref={editorRef}
-              className={`w6w-exprmodal-chips${masked ? " is-masked" : ""}${
-                parts.length === 0 ? " is-empty" : ""
-              }`}
-              contentEditable
-              suppressContentEditableWarning
-              role="textbox"
-              tabIndex={0}
-              aria-multiline={multiline ? "true" : "false"}
-              aria-label="Expression"
-              data-placeholder="Type text and insert {x} variables, 🔒 secrets, or ▸ step outputs…"
-              spellCheck={false}
-              onInput={() => {
-                // D-3: promote a just-closed `{{ … }}` marker to a chip AT
-                // THE KEYSTROKE THAT CLOSES IT — caret-safe surgery on the
-                // matched span only (see `promoteCompletedMarkerAtCaret`'s
-                // own docstring). `sync()` unconditionally afterwards either
-                // way: promoted or not, the DOM is the source of truth.
-                // NEVER bump `paintGen` here — see the warning at the top of
-                // this file and `G-typing` in `expr-template-guards.test.cjs`.
-                const el = editorRef.current;
-                if (el) promoteCompletedMarkerAtCaret(el, { renderToggle: true });
-                sync();
-              }}
-              onDoubleClick={(e) => {
-                // D-3, the reverse direction: double-click a chip back to its
-                // editable `{{ … }}` text, in place. Mirrors the onClick
-                // delegate's short-circuit order just below — data-x, then
-                // data-render-toggle — so a precise double-click on either
-                // still wins (in practice the FIRST of the two clicks that
-                // make up a dblclick already removes/flips the chip via
-                // onClick, so by the time this fires there is no
-                // `.w6w-expr-chip` left to find; these checks are the
-                // explicit guard for that intent).
-                const target = e.target as HTMLElement;
-                if (target.closest("[data-x]")) return;
-                if (target.closest("[data-render-toggle]")) return;
-                const chip = target.closest(".w6w-expr-chip") as HTMLElement | null;
-                if (!chip) return;
-                e.preventDefault();
-                const node = chipToText(chip);
-                if (node) {
-                  const doc = node.ownerDocument;
-                  const after = doc.createRange();
-                  after.setStartAfter(node);
-                  after.collapse(true);
-                  const sel = doc.getSelection();
-                  sel?.removeAllRanges();
-                  sel?.addRange(after);
-                }
-                sync();
-              }}
-              onBlur={() => {
-                // Discrete-event chip-ify commit #1: the editor just lost
-                // focus, so any hand-typed `{{ … }}` left as raw text gets
-                // one chance to become a chip. NEVER do this from `onInput`
-                // above — see the `paintGen` warning at the top of this file
-                // and G-typing in `expr-template-guards.test.cjs`.
-                const el = editorRef.current;
-                if (!el) return;
-                adoptText(serializeTemplate(readParts(el)), { restoreFocus: false });
-              }}
-              onPaste={(e) => {
-                // Discrete-event chip-ify commit #2. `insertNodeAtCaret` is
-                // the SAME mechanism a rail click uses, so the caret is
-                // preserved by construction — no bespoke caret-offset repaint
-                // needed (out of scope by contract). No `setPaintGen`: each
-                // part is inserted directly into the live DOM, exactly like a
-                // rail insertion, so the existing chips are never re-painted.
-                e.preventDefault();
-                const el = editorRef.current;
-                if (!el) return;
-                const text = e.clipboardData?.getData("text/plain") ?? "";
-                for (const part of parseRootAnchoredTemplate(text)) {
-                  if (part.kind === "text") {
-                    insertNodeAtCaret(el, el.ownerDocument.createTextNode(part.value ?? ""));
-                  } else {
-                    insertNodeAtCaret(el, makeChip(el.ownerDocument, part, { renderToggle: true }));
-                  }
-                }
-                sync();
-              }}
-              onClick={(e) => {
-                const target = e.target as HTMLElement;
-                const x = target.closest("[data-x]");
-                if (x) {
-                  e.preventDefault();
-                  x.closest(".w6w-expr-chip")?.remove();
-                  sync();
-                  return;
-                }
-                // The render affordance: flip a var⇄render chip IN PLACE. The
-                // ref never changes — only `data-kind` (via a rebuilt chip
-                // from the same `data-ref`, `makeChip`'s only construction
-                // path) — and this does NOT bump `paintGen`, exactly like the
-                // remove control above.
-                const toggle = target.closest("[data-render-toggle]");
-                if (toggle) {
-                  e.preventDefault();
-                  const chip = toggle.closest(".w6w-expr-chip") as HTMLElement | null;
-                  if (chip) {
-                    const ref = chip.getAttribute("data-ref") ?? "";
-                    const nextKind = chip.getAttribute("data-kind") === "render" ? "var" : "render";
-                    chip.replaceWith(
-                      makeChip(chip.ownerDocument, { kind: nextKind, ref }, { renderToggle: true }),
-                    );
-                  }
-                  sync();
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                // ALWAYS suppressed — with or without Shift, multiline or not.
-                // The browser's own line break (a wrapper <div>, or a <br>) is
-                // markup we neither paint nor want to depend on.
-                e.preventDefault();
-                if (!multiline) return;
-                const el = editorRef.current;
-                if (!el) return;
-                // Our own literal "\n" text node, via the same caret helper the
-                // source picker inserts chips with. `.w6w-exprmodal-chips` is
-                // `pre-wrap`, so it renders as a break. The filler keeps a break
-                // at the very END visible (and is skipped by `readParts`, so it
-                // never reaches the value).
-                insertNodeAtCaret(el, el.ownerDocument.createTextNode("\n"));
-                ensureFillerBreak(el);
-                sync();
-              }}
-            />
-          </div>
-          {usedRefs.length > 0 && (
-            <div className="w6w-exprmodal-preview">
+        {!jsonBinding && (
+          <div className="w6w-exprmodal-main">
+            <div className="w6w-exprmodal-editor">
               <span className="w6w-exprmodal-pane-label">
-                Sample values
+                Expression
+                <span className="w6w-muted w6w-small"> — click a source on the left, or type</span>
+              </span>
+              <div
+                ref={editorRef}
+                className={`w6w-exprmodal-chips${masked ? " is-masked" : ""}${
+                  parts.length === 0 ? " is-empty" : ""
+                }`}
+                contentEditable
+                suppressContentEditableWarning
+                role="textbox"
+                tabIndex={0}
+                aria-multiline={multiline ? "true" : "false"}
+                aria-label="Expression"
+                data-placeholder="Type text and insert {x} variables, 🔒 secrets, or ▸ step outputs…"
+                spellCheck={false}
+                onInput={() => {
+                  // D-3: promote a just-closed `{{ … }}` marker to a chip AT
+                  // THE KEYSTROKE THAT CLOSES IT — caret-safe surgery on the
+                  // matched span only (see `promoteCompletedMarkerAtCaret`'s
+                  // own docstring). `sync()` unconditionally afterwards either
+                  // way: promoted or not, the DOM is the source of truth.
+                  // NEVER bump `paintGen` here — see the warning at the top of
+                  // this file and `G-typing` in `expr-template-guards.test.cjs`.
+                  const el = editorRef.current;
+                  if (el) promoteCompletedMarkerAtCaret(el, { renderToggle: true });
+                  sync();
+                }}
+                onDoubleClick={(e) => {
+                  // D-3, the reverse direction: double-click a chip back to its
+                  // editable `{{ … }}` text, in place. Mirrors the onClick
+                  // delegate's short-circuit order just below — data-x, then
+                  // data-render-toggle — so a precise double-click on either
+                  // still wins (in practice the FIRST of the two clicks that
+                  // make up a dblclick already removes/flips the chip via
+                  // onClick, so by the time this fires there is no
+                  // `.w6w-expr-chip` left to find; these checks are the
+                  // explicit guard for that intent).
+                  const target = e.target as HTMLElement;
+                  if (target.closest("[data-x]")) return;
+                  if (target.closest("[data-render-toggle]")) return;
+                  const chip = target.closest(".w6w-expr-chip") as HTMLElement | null;
+                  if (!chip) return;
+                  e.preventDefault();
+                  const node = chipToText(chip);
+                  if (node) {
+                    const doc = node.ownerDocument;
+                    const after = doc.createRange();
+                    after.setStartAfter(node);
+                    after.collapse(true);
+                    const sel = doc.getSelection();
+                    sel?.removeAllRanges();
+                    sel?.addRange(after);
+                  }
+                  sync();
+                }}
+                onBlur={() => {
+                  // Discrete-event chip-ify commit #1: the editor just lost
+                  // focus, so any hand-typed `{{ … }}` left as raw text gets
+                  // one chance to become a chip. NEVER do this from `onInput`
+                  // above — see the `paintGen` warning at the top of this file
+                  // and G-typing in `expr-template-guards.test.cjs`.
+                  const el = editorRef.current;
+                  if (!el) return;
+                  adoptText(serializeTemplate(readParts(el)), { restoreFocus: false });
+                }}
+                onPaste={(e) => {
+                  // Discrete-event chip-ify commit #2. `insertNodeAtCaret` is
+                  // the SAME mechanism a rail click uses, so the caret is
+                  // preserved by construction — no bespoke caret-offset repaint
+                  // needed (out of scope by contract). No `setPaintGen`: each
+                  // part is inserted directly into the live DOM, exactly like a
+                  // rail insertion, so the existing chips are never re-painted.
+                  e.preventDefault();
+                  const el = editorRef.current;
+                  if (!el) return;
+                  const text = e.clipboardData?.getData("text/plain") ?? "";
+                  for (const part of parseRootAnchoredTemplate(text)) {
+                    if (part.kind === "text") {
+                      insertNodeAtCaret(el, el.ownerDocument.createTextNode(part.value ?? ""));
+                    } else {
+                      insertNodeAtCaret(
+                        el,
+                        makeChip(el.ownerDocument, part, { renderToggle: true }),
+                      );
+                    }
+                  }
+                  sync();
+                }}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  const x = target.closest("[data-x]");
+                  if (x) {
+                    e.preventDefault();
+                    x.closest(".w6w-expr-chip")?.remove();
+                    sync();
+                    return;
+                  }
+                  // The render affordance: flip a var⇄render chip IN PLACE. The
+                  // ref never changes — only `data-kind` (via a rebuilt chip
+                  // from the same `data-ref`, `makeChip`'s only construction
+                  // path) — and this does NOT bump `paintGen`, exactly like the
+                  // remove control above.
+                  const toggle = target.closest("[data-render-toggle]");
+                  if (toggle) {
+                    e.preventDefault();
+                    const chip = toggle.closest(".w6w-expr-chip") as HTMLElement | null;
+                    if (chip) {
+                      const ref = chip.getAttribute("data-ref") ?? "";
+                      const nextKind =
+                        chip.getAttribute("data-kind") === "render" ? "var" : "render";
+                      chip.replaceWith(
+                        makeChip(
+                          chip.ownerDocument,
+                          { kind: nextKind, ref },
+                          { renderToggle: true },
+                        ),
+                      );
+                    }
+                    sync();
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  // ALWAYS suppressed — with or without Shift, multiline or not.
+                  // The browser's own line break (a wrapper <div>, or a <br>) is
+                  // markup we neither paint nor want to depend on.
+                  e.preventDefault();
+                  if (!multiline) return;
+                  const el = editorRef.current;
+                  if (!el) return;
+                  // Our own literal "\n" text node, via the same caret helper the
+                  // source picker inserts chips with. `.w6w-exprmodal-chips` is
+                  // `pre-wrap`, so it renders as a break. The filler keeps a break
+                  // at the very END visible (and is skipped by `readParts`, so it
+                  // never reaches the value).
+                  insertNodeAtCaret(el, el.ownerDocument.createTextNode("\n"));
+                  ensureFillerBreak(el);
+                  sync();
+                }}
+              />
+            </div>
+            {usedRefs.length > 0 && (
+              <div className="w6w-exprmodal-preview">
+                <span className="w6w-exprmodal-pane-label">
+                  Sample values
+                  <span className="w6w-muted w6w-small">
+                    {" "}
+                    — try the expression against example data
+                  </span>
+                </span>
+                {usedRefs.map((ref) => (
+                  <label key={ref} className="w6w-field">
+                    <span>{ref}</span>
+                    <input
+                      type="text"
+                      value={samples[ref] ?? ""}
+                      placeholder="sample value"
+                      onChange={(e) => setSamples((s) => ({ ...s, [ref]: e.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+            <div className="w6w-exprmodal-preview w6w-exprmodal-result-pane">
+              <span className="w6w-exprmodal-pane-label">
+                Result
                 <span className="w6w-muted w6w-small">
                   {" "}
-                  — try the expression against example data
+                  — live preview against the sample values
                 </span>
               </span>
-              {usedRefs.map((ref) => (
-                <label key={ref} className="w6w-field">
-                  <span>{ref}</span>
-                  <input
-                    type="text"
-                    value={samples[ref] ?? ""}
-                    placeholder="sample value"
-                    onChange={(e) => setSamples((s) => ({ ...s, [ref]: e.target.value }))}
-                  />
-                </label>
-              ))}
+              <Copyable value={result} readOnly>
+                <pre className="w6w-exprmodal-result">{result || " "}</pre>
+              </Copyable>
             </div>
-          )}
-          <div className="w6w-exprmodal-preview w6w-exprmodal-result-pane">
-            <span className="w6w-exprmodal-pane-label">
-              Result
-              <span className="w6w-muted w6w-small"> — live preview against the sample values</span>
-            </span>
-            <Copyable value={result} readOnly>
-              <pre className="w6w-exprmodal-result">{result || " "}</pre>
-            </Copyable>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Nested "+ Add" dialog — last child of this Modal, so its own
@@ -743,6 +898,14 @@ function FieldsToggle({
     </button>
   );
 }
+
+/** The fixed Metadata leaves (R-7): key under `steps.<id>.meta.`, and the label shown. */
+const META_LEAVES: [string, string][] = [
+  ["app", "App"],
+  ["version", "App version"],
+  ["action", "Action"],
+  ["connectionId", "Connection ID"],
+];
 
 interface AddValueModalProps {
   kind: "var" | "secret";

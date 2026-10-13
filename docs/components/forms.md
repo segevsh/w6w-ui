@@ -110,6 +110,12 @@ const [values, setValues] = useState<Record<string, unknown>>({});
 Text fields accept expressions (`vars.region`, `steps.fetch.output.id` and so on), with a picker fed
 by [`ExpressionOptionsProvider`](/reference-packages/components/providers/#expressionoptionsprovider).
 
+A `json` parameter, or a `group` parameter shown as JSON, has a ƒx button too. It opens the picker
+with each upstream step's **Entire output** (and its fields) and, on a pick, stores exactly
+`{ "$": "steps.<id>.output" }` as the value. The field then shows that reference with **Edit**,
+**Clear** and a preview of the resolved JSON. **Clear** goes back to the JSON you had typed. In
+`readOnly` mode the reference and preview show, without the buttons.
+
 ## `PropertyEntryForm`
 
 `ParamsForm` with a **Code** view beside it, so an author can switch between fields and raw JSON.

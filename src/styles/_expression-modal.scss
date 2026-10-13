@@ -135,6 +135,20 @@
 .w6w-exprmodal-caret-btn:hover {
   background: var(--w6w-panel);
 }
+/* The "N fields" toggle with the Metadata toggle stacked under it, so both
+   disclosures share one left edge on a step row. */
+.w6w-exprmodal-toggle-stack {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px; /* lint-tokens-allow: 3px sits between no two steps of the spacing scale; tight stack of the fields and Metadata toggles */
+}
+/* A step with no fields: its Metadata toggle sits at the leaf indentation of
+   `.w6w-exprmodal-subsources` (margin 9px + 1px border + sp-2 padding). */
+.w6w-exprmodal-meta-row {
+  margin-left: calc(10px + var(--w6w-sp-2)); /* lint-tokens-allow: 9px margin + 1px border of .w6w-exprmodal-subsources */
+}
 /* Same 20px-high chrome as `.w6w-exprmodal-render-btn` above — the sizing
    precedent for a dense rail control — but a separate class: this toggles
    the `.w6w-exprmodal-subsources` block below it, the render-btn inserts a

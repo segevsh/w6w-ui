@@ -17,7 +17,7 @@
  * already uses), so this file never actually loads `provider.tsx`'s React
  * import.
  */
-import type { StepStartState } from "./provider.tsx";
+import type { StepMeta, StepStartState } from "./provider.tsx";
 import { type ExprPart, type ExprValue, isExprValue, isSecretValue } from "./types.ts";
 
 /**
@@ -47,7 +47,7 @@ export type ResolvedSegment =
 export interface ResolveScope {
   vars: Record<string, unknown>;
   documents: Record<string, unknown>;
-  steps: Record<string, { output?: unknown }>;
+  steps: Record<string, { output?: unknown; meta?: StepMeta }>;
   trigger: { event?: unknown };
   /**
    * The original flat `sampleValues` map, keyed by full ref string — checked
@@ -106,7 +106,7 @@ export function buildResolveScope(
   return {
     vars,
     documents,
-    steps: (testStartState?.steps as Record<string, { output?: unknown }>) ?? {},
+    steps: (testStartState?.steps as Record<string, { output?: unknown; meta?: StepMeta }>) ?? {},
     trigger: testStartState?.trigger ?? {},
     flat: sampleValues ?? {},
   };
@@ -184,7 +184,7 @@ function resolvePart(part: ExprPart, scope: ResolveScope): ResolvedSegment {
 }
 
 /** A hand-authored whole-value path marker: `{ "$": "<path>" }`, exactly one key. */
-function isDollarPath(v: unknown): v is { $: unknown } {
+export function isDollarPath(v: unknown): v is { $: unknown } {
   return (
     typeof v === "object" &&
     v !== null &&
@@ -195,7 +195,7 @@ function isDollarPath(v: unknown): v is { $: unknown } {
 }
 
 /** A hand-authored whole-value JSONLogic marker: `{ "$expr": <logic> }`, exactly one key. */
-function isDollarExpr(v: unknown): v is { $expr: unknown } {
+export function isDollarExpr(v: unknown): v is { $expr: unknown } {
   return (
     typeof v === "object" &&
     v !== null &&

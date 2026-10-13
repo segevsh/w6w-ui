@@ -431,6 +431,59 @@ test("a malformed page on LOAD-MORE (host already proved it works) shows a safe,
   await act(async () => root.unmount());
 });
 
+test("load-more failure: Retry resends the SAME cursor, shows the pending state, and double-click issues ONE request", async () => {
+  const calls: ListAppsPageOptionsLike[] = [];
+  let release: ((v: { apps: AppSummaryLike[] }) => void) | undefined;
+  const api = {
+    listApps: async () => [],
+    listAppsPage: (o?: ListAppsPageOptionsLike) => {
+      calls.push(o ?? {});
+      if (!o?.cursor)
+        return Promise.resolve({ apps: [{ id: "a", displayName: "A" }], nextCursor: "c2" });
+      if (calls.length === 2) return Promise.reject(new Error("net down"));
+      return new Promise<{ apps: AppSummaryLike[] }>((r) => {
+        release = r;
+      });
+    },
+  };
+  const { container, root } = mount(React.createElement("div"));
+  await act(async () => {
+    root.render(
+      React.createElement(
+        W6WUIProvider,
+        { api, children: null } as never,
+        React.createElement(AppPicker, { onSelectApp: () => {}, pageLimit: 2 } as never),
+      ),
+    );
+  });
+  await flush();
+  const btn = (label: string) =>
+    Array.from(container.querySelectorAll("button")).find(
+      (b) => (b.textContent || "").trim() === label,
+    ) as HTMLButtonElement | undefined;
+  const click = (b: HTMLElement | undefined) =>
+    act(async () => {
+      b?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  await click(btn("Load more"));
+  assert.deepEqual(cardIds(container), ["a"]);
+  assert.ok(btn("Retry"));
+  const retryBtn = btn("Retry");
+  await click(retryBtn);
+  await click(retryBtn);
+  assert.equal(calls.length, 3, "two Retry clicks issue ONE request");
+  assert.equal(calls[2]?.cursor, "c2", "Retry resends the same cursor");
+  assert.equal(btn("Retry"), undefined, "Retry is gone while pending");
+  const pending = btn("Loading more…");
+  assert.ok(pending?.disabled, "the disabled Loading more… button shows while pending");
+  assert.deepEqual(cardIds(container), ["a"]);
+  await act(async () => release?.({ apps: [{ id: "b", displayName: "B" }] }));
+  await flush();
+  assert.deepEqual(cardIds(container), ["a", "b"]);
+  await act(async () => root.unmount());
+});
+
 test("changing the search query aborts the previous in-flight request's signal", async () => {
   // Mount resolves immediately (so the search box actually renders); the
   // SECOND request (triggered by typing "b") is left hanging so its signal

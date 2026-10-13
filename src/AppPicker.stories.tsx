@@ -60,6 +60,19 @@ export const LoadError: Story = {
   ],
 };
 
+/** `loadPage` supplies the pages (the provider has no `listAppsPage`), with a Load more cursor. */
+export const PagedLoader: Story = {
+  args: {
+    pageLimit: 3,
+    loadPage: ({ cursor }) =>
+      Promise.resolve(
+        cursor
+          ? { apps: SAMPLE_APPS.slice(3) }
+          : { apps: SAMPLE_APPS.slice(0, 3), nextCursor: "page-2" },
+      ),
+  },
+};
+
 export const Light: Story = {
   args: { theme: "light" },
 };

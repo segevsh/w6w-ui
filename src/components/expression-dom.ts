@@ -19,11 +19,14 @@ import { parseRootAnchoredTemplate, serializeTemplate } from "./expression-templ
  */
 const STEP_OUTPUT_REF = /^steps\.(.+?)\.output(?:\.(.+))?$/;
 
+/** `steps.<id>.meta.<key>` for exactly the four metadata keys; the output form is tried first. */
+const STEP_META_REF = /^steps\.(.+?)\.meta\.(app|version|action|connectionId)$/;
+
 /**
  * The name a source or chip DISPLAYS. Never the ref it SAVES.
  *
  * A saved ref is always canonical and engine-resolvable — the run scope offers
- * exactly `vars.* · steps.<id>.output.* · trigger.* · secrets.* · documents.* ·
+ * exactly `vars.* · steps.<id>.output.* · steps.<id>.meta.* · trigger.* · secrets.* · documents.* ·
  * inputs.* · foreach.* · output.*` (`core/rfcs/workflow.md` §Expressions, built
  * in `w6w-workflow/packages/engine/src/run.ts`). Those read long in a field, so
  * the label drops the root the chip's sigil and colour already imply:
@@ -33,6 +36,7 @@ const STEP_OUTPUT_REF = /^steps\.(.+?)\.output(?:\.(.+))?$/;
  * | `vars.from_email`           | `from_email`   |
  * | `steps.gate_1.output`       | `gate_1`       |
  * | `steps.gate_1.output.email` | `gate_1.email` |
+ * | `steps.gate_1.meta.version` | `gate_1 meta · version` |
  * | anything else               | verbatim       |
  *
  * **`gate_1.email` is a LABEL ONLY — it is not an expression.** There is no
@@ -45,6 +49,8 @@ export const varLabel = (ref: string): string => {
   if (ref.startsWith("vars.")) return ref.slice("vars.".length);
   const m = STEP_OUTPUT_REF.exec(ref);
   if (m) return m[2] ? `${m[1]}.${m[2]}` : m[1];
+  const meta = STEP_META_REF.exec(ref);
+  if (meta) return `${meta[1]} meta · ${meta[2]}`;
   return ref;
 };
 
