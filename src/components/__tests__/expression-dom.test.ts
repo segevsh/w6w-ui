@@ -464,11 +464,10 @@ test("varLabel — a NESTED field keeps its whole path after the step id", () =>
   assert.equal(varLabel("steps.http_1.output.body.items"), "http_1.body.items");
 });
 
-test("varLabel — a step id containing a DOT survives", () => {
-  // Structural: anchor on the `.output` segment, never `split(".")` and
-  // reassemble — that would hand back `my` and swallow `.step`.
-  assert.equal(varLabel("steps.my.step.output.email"), "my.step.email");
-  assert.equal(varLabel("steps.my.step.output"), "my.step");
+test("varLabel — a dotted step id is not a legal ref and is shown verbatim", () => {
+  // A step id may not contain `.`, so `steps.my.step.output…` is not a step ref.
+  assert.equal(varLabel("steps.my.step.output.email"), "steps.my.step.output.email");
+  assert.equal(varLabel("steps.my.step.output"), "steps.my.step.output");
 });
 
 test("varLabel — REGRESSION: `vars.<name>` still drops its root", () => {

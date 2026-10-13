@@ -366,3 +366,30 @@ test("C4 - a childless group binds, shows the bound row, and Clear returns to th
   assert.equal(hasEditor(container, "grp"), true, "editor remounted");
   await unmount(root);
 });
+
+const hintShown = (c: Element) => (c.textContent ?? "").includes("Invalid JSON");
+
+test("I-1 - invalid draft: hint hides while bound to fx, returns after Clear, draft byte-identical", async () => {
+  const { container, root } = await render([JSON_PARAM]);
+  await typeDraft(container, "cfg", '{"a": ');
+  assert.equal(hintShown(container), true, "hint present for the invalid draft");
+  await click(fxButtons()[0]);
+  await click(entireRows()[0]);
+  assert.equal(hintShown(container), false, "hint absent while bound");
+  await click(byText("Clear")[0]);
+  assert.equal(hintShown(container), true, "hint present again after Clear");
+  assert.equal(draftOf(container, "cfg"), '{"a": ', "draft byte-identical");
+  await unmount(root);
+});
+
+test("I-1 - valid draft: bind then Clear shows no hint", async () => {
+  const { container, root } = await render([JSON_PARAM]);
+  await typeDraft(container, "cfg", '{"a": 1}');
+  assert.equal(hintShown(container), false);
+  await click(fxButtons()[0]);
+  await click(entireRows()[0]);
+  assert.equal(hintShown(container), false);
+  await click(byText("Clear")[0]);
+  assert.equal(hintShown(container), false);
+  await unmount(root);
+});

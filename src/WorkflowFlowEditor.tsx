@@ -109,6 +109,7 @@ import {
   paramsToJson,
   relayoutNodes,
   slugifyLabel,
+  stepIdError,
   stepToJson,
   storedViewport,
   suggestStepId,
@@ -2301,6 +2302,7 @@ export function StepEditModal({
   // Inline step rename (pencil next to the name). `updateStep` fixes up edges.
   const [renaming, setRenaming] = useState(false);
   const [draftId, setDraftId] = useState(step.id);
+  const [renameErr, setRenameErr] = useState<string | null>(null);
 
   const [params, setParams] = useState<ActionParam[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);
@@ -2374,7 +2376,13 @@ export function StepEditModal({
   };
   const commitRename = () => {
     const id = draftId.trim();
+    const err = id && id !== step.id ? stepIdError(id) : null;
+    if (err) {
+      setRenameErr(err);
+      return;
+    }
     if (id && id !== step.id) commit({ ...step, id });
+    setRenameErr(null);
     setRenaming(false);
   };
 
@@ -2460,12 +2468,16 @@ export function StepEditModal({
               // biome-ignore lint/a11y/noAutofocus: rename input opened on demand
               autoFocus
               value={draftId}
-              onChange={(e) => setDraftId(e.target.value)}
+              onChange={(e) => {
+                setDraftId(e.target.value);
+                setRenameErr(null);
+              }}
               onBlur={commitRename}
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitRename();
                 if (e.key === "Escape") {
                   setDraftId(step.id);
+                  setRenameErr(null);
                   setRenaming(false);
                 }
               }}
@@ -2488,6 +2500,11 @@ export function StepEditModal({
                 </button>
               )}
             </>
+          )}
+          {renameErr && (
+            <span className="w6w-hint" role="alert" style={{ color: "var(--w6w-danger)" }}>
+              {renameErr}
+            </span>
           )}
         </span>
       }

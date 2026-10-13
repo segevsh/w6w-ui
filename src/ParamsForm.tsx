@@ -952,7 +952,7 @@ function JsonParamField({
           onClose={() => setPickerOpen(false)}
         />
       )}
-      {invalid && (
+      {!bound && invalid && (
         <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
           Invalid JSON
         </span>

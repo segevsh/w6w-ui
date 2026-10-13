@@ -272,7 +272,11 @@ test("V1-V5 - varLabel meta branch", () => {
     assert.notEqual(l, ref, `${k}: differs from raw ref`);
     assert.notEqual(l, varLabel(`steps.a.output.meta.${k}`), `${k}: differs from the output form`);
     assert.ok(l.includes("a") && l.includes(k), `${k}: contains id and key`);
-    assert.ok(varLabel(`steps.my.step.meta.${k}`).includes("my.step"), `${k}: dotted id whole`);
+    assert.equal(
+      varLabel(`steps.my.step.meta.${k}`),
+      `steps.my.step.meta.${k}`,
+      `${k}: dotted id is verbatim`,
+    );
   }
   assert.equal(varLabel("steps.a.output.meta.app"), "a.meta.app");
   assert.equal(varLabel("steps.a.output"), "a");
