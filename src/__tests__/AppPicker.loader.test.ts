@@ -126,9 +126,7 @@ test("first request has EXACTLY q,cursor,limit,signal; provider without listApps
   assert.equal(reqs[0]?.q, undefined);
   assert.equal(reqs[0]?.cursor, undefined);
   assert.equal(reqs[0]?.limit, 60);
-  assert.ok(
-    reqs[0]?.signal instanceof dom.window.AbortSignal || reqs[0]?.signal instanceof AbortSignal,
-  );
+  assert.ok(reqs[0]?.signal instanceof AbortSignal);
   assert.deepEqual(cards(h.container), ["x"]);
   await act(async () => h.root.unmount());
 });
