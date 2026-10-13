@@ -12,15 +12,14 @@ import { parseRootAnchoredTemplate, serializeTemplate } from "./expression-templ
 /**
  * A step-output ref: `steps.<id>.output` optionally followed by `.<field…>`.
  *
- * Matched against the literal `.output` SEGMENT rather than by splitting on
- * ".", so a step id that itself contains a dot still resolves — for
- * `steps.my.step.output.email` the lazy `(.+?)` stops at the first `.output`
- * that is followed by end-of-ref or another segment, giving id `my.step`.
+ * The id is one dot-free segment (`[^.]+`): a step id may not contain `.`, so a
+ * dotted ref such as `steps.my.step.output.email` is NOT a step ref and falls
+ * through to {@link varLabel}'s verbatim branch.
  */
-const STEP_OUTPUT_REF = /^steps\.(.+?)\.output(?:\.(.+))?$/;
+const STEP_OUTPUT_REF = /^steps\.([^.]+)\.output(?:\.(.+))?$/;
 
 /** `steps.<id>.meta.<key>` for exactly the four metadata keys; the output form is tried first. */
-const STEP_META_REF = /^steps\.(.+?)\.meta\.(app|version|action|connectionId)$/;
+const STEP_META_REF = /^steps\.([^.]+)\.meta\.(app|version|action|connectionId)$/;
 
 /**
  * The name a source or chip DISPLAYS. Never the ref it SAVES.
