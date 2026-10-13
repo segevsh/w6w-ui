@@ -152,6 +152,11 @@ export interface StepBuilderModalProps {
    * {@link StepBuilderModalProps.callables}'s "Ready to use" tab. An
    * `undefined` filter is a no-op; every existing caller (none of which sets
    * this) is unaffected.
+   *
+   * On "Ready to use", an app built from a connection's inline `app` meta
+   * carries only `id` plus those meta keys (`displayName`, icons, brand
+   * colours) — no `version` or `categories` — so the filter sees just those,
+   * and the selected-app header omits the ` · v<version>` suffix for it.
    */
   appsFilter?: (app: AppSummary) => boolean;
   /**
@@ -1823,6 +1828,14 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set();
  * full-catalog scan (`listApps()` + the zero-credential check), unchanged —
  * and with `listApps` itself also absent (now optional, like this member),
  * settles on the empty catalog instead of calling an undefined function.
+ *
+ * On the bounded path each connection's inline `app` meta is read FIRST: an
+ * app id with a non-null `app` on any of its rows is built as
+ * `{ ...c.app, id: c.appId }` and seeded as resolved + requested, so
+ * `listAppsByIds` is called only for ids whose rows all lack it (`app` absent
+ * or `null`) — and not at all when none do. Such inline apps have no
+ * `version`/`categories`: the selected-app header drops its ` · v<version>`
+ * suffix and `appsFilter` sees only `id` and the meta keys.
  */
 function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
@@ -1836,6 +1849,8 @@ function useReadyToUse(
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Map<string, AppSummary>>(() => new Map());
   const [requestedIds, setRequestedIds] = useState<Set<string>>(() => new Set());
+  // App ids whose connection rows carried inline `app` meta — never looked up.
+  const inlineIdsRef = useRef<ReadonlySet<string>>(EMPTY_ID_SET);
 
   const wantFns = callables.includes("function");
   const wantWfs = callables.includes("workflow");
@@ -1850,10 +1865,20 @@ function useReadyToUse(
         if (canceled) return;
         const ids: string[] = [];
         const seen = new Set<string>();
+        const inline = new Map<string, AppSummary>();
         for (const c of conns) {
-          if (isInternalApp(c.appId) || seen.has(c.appId)) continue;
+          if (isInternalApp(c.appId)) continue;
+          if (bounded && c.app && !inline.has(c.appId)) {
+            inline.set(c.appId, { ...c.app, id: c.appId });
+          }
+          if (seen.has(c.appId)) continue;
           seen.add(c.appId);
           ids.push(c.appId);
+        }
+        if (inline.size > 0) {
+          inlineIdsRef.current = new Set(inline.keys());
+          setResolved((prev) => new Map([...prev, ...inline]));
+          setRequestedIds((prev) => new Set([...prev, ...inline.keys()]));
         }
         setConnectedIds(ids);
       })
@@ -1875,7 +1900,7 @@ function useReadyToUse(
     return () => {
       canceled = true;
     };
-  }, [api, wantFns, wantWfs]);
+  }, [api, bounded, wantFns, wantWfs]);
 
   // Legacy full-catalog fallback — fetched only when there is no bounded id
   // lookup to use instead, never alongside it.
@@ -1939,7 +1964,7 @@ function useReadyToUse(
   const firstBatchStartedRef = useRef(false);
   useEffect(() => {
     if (!bounded || connectedIds === null || firstBatchStartedRef.current) return;
-    const batch = nextIdBatch(connectedIds, EMPTY_ID_SET, READY_TO_USE_ID_BATCH);
+    const batch = nextIdBatch(connectedIds, inlineIdsRef.current, READY_TO_USE_ID_BATCH);
     if (batch.length === 0) return;
     firstBatchStartedRef.current = true;
     resolveBatch(batch);
