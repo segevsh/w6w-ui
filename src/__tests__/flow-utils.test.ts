@@ -972,3 +972,17 @@ test("paramsToJson — an absent `with` renders as an empty object, never null o
   const noWith: StepLike = { uses: { app: "@w6w/script", action: "run" } };
   assert.equal(paramsToJson(noWith), "{}");
 });
+
+// stepIdError — the editor's "no `.`" rename rule (D-1). Dup ids and the edge-time
+// `->` / `:error` checks are NOT its job.
+import { stepIdError } from "../flow-utils.ts";
+
+test("stepIdError — a dot at start, middle or end is refused with the pinned message", () => {
+  const P2 = "A step id can't contain a dot (.).";
+  for (const id of [".a", "my.step", "a."]) assert.equal(stepIdError(id), P2, id);
+});
+
+test("stepIdError — dot-free ids pass, including ones other rules govern", () => {
+  for (const id of ["gate_1", "my-step", "a->b", "x:error"])
+    assert.equal(stepIdError(id), null, id);
+});

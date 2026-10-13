@@ -64,6 +64,15 @@ export function flowEdgeId(from: string, to: string, when?: FlowEdge["when"]): s
 }
 
 /**
+ * Why a step id may not be saved from the editor, or `null` when it may. The one
+ * rule here is "no `.`" (a dotted id cannot be addressed by `steps.<id>.output`);
+ * duplicates and the edge-time `->` / `:error` checks are NOT this function's job.
+ */
+export function stepIdError(id: string): string | null {
+  return id.includes(".") ? "A step id can't contain a dot (.)." : null;
+}
+
+/**
  * The one wording for a refused edge id, shared by both routes into the collision —
  * drawing a wire whose minted id is taken (`applyConnect` / `connectConflict`) and
  * re-laning one onto a taken id (`setEdgeWhen` / `edgeWhenConflict`). `lead` names
