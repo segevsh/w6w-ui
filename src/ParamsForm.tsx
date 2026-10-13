@@ -6,6 +6,8 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { buildResolveScope, isDollarPath } from "./resolve-params.ts";
+import { resolveParamJson } from "./resolved-json.ts";
 import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
 
 /**
@@ -795,10 +797,20 @@ function JsonParamField({
   onChange: (key: string, value: unknown) => void;
   readOnly?: boolean;
 }) {
+  // "Bound" is DERIVED from the stored value on every render — never a local
+  // flag — so control and value cannot disagree (same stance as `FxField`'s `fx`).
+  const bound = isDollarPath(value) && typeof value.$ === "string";
+  const boundRef = bound ? String((value as { $: string }).$) : "";
   const seed = value ?? param.default;
-  const [text, setText] = useState(() => (seed === undefined ? "" : JSON.stringify(seed, null, 2)));
+  // The draft is NEVER seeded from a binding (R-18a): Clear must be able to give
+  // back the literal JSON the author had, or "" if there was none.
+  const [text, setText] = useState(() =>
+    bound || seed === undefined ? "" : JSON.stringify(seed, null, 2),
+  );
   const [invalid, setInvalid] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const exprOptions = useExpressionOptions();
 
   // Re-seed when the field identity changes OR the incoming value changes to
   // something other than what the current draft already represents — i.e. an
@@ -807,6 +819,7 @@ function JsonParamField({
   // avoids clobbering the cursor/formatting on every keystroke.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `text` is read as the draft baseline but must NOT retrigger the effect (that would reseed mid-edit); reseed is keyed on the incoming value + param identity
   useEffect(() => {
+    if (bound) return; // keep the held draft so Clear can restore it
     let current: unknown;
     try {
       current = text.trim() === "" ? undefined : JSON.parse(text);
@@ -817,7 +830,7 @@ function JsonParamField({
       setText(seed === undefined ? "" : JSON.stringify(seed, null, 2));
       setInvalid(false);
     }
-  }, [seed, param.key]);
+  }, [seed, param.key, bound]);
 
   const onEdit = (next: string) => {
     setText(next);
@@ -828,6 +841,34 @@ function JsonParamField({
   };
   const label = param.label ?? param.key;
 
+  // Clear: back to the literal JSON the editor still holds (undefined if the
+  // draft is empty or does not parse). Exactly one onChange.
+  const clear = () => {
+    let restored: unknown;
+    try {
+      restored = text.trim() === "" ? undefined : JSON.parse(text);
+    } catch {
+      restored = undefined;
+    }
+    onChange(param.key, restored);
+  };
+  // Preview: the bound ref resolved against the host's sample values. The flow
+  // editor seeds `steps.<id>.output` as a flat key, which `resolveRef` does not
+  // read for `steps.*`, so the nested `steps` scope is built from those keys.
+  const preview = (() => {
+    if (!bound) return "";
+    const steps: Record<string, { output?: unknown }> = {};
+    for (const [ref, v] of Object.entries(exprOptions.sampleValues ?? {})) {
+      const m = /^steps\.([^.]+)\.output$/.exec(ref);
+      if (m) steps[m[1]] = { output: v };
+    }
+    return JSON.stringify(
+      resolveParamJson(value, buildResolveScope(undefined, { steps })),
+      null,
+      2,
+    );
+  })();
+
   return (
     <div className="w6w-field">
       <span className="w6w-field-labelrow">
@@ -835,30 +876,82 @@ function JsonParamField({
           {label}
           {param.required ? " *" : ""}
         </span>
-        <button
-          type="button"
-          className="w6w-icon-btn w6w-btn-sm"
-          title="Open in full view"
-          aria-label={`Open ${label} in full view`}
-          onClick={() => setExpanded(true)}
-        >
-          {/* `icons.tsx`'s `maximize` — Feather `maximize-2`'s diagonal expand arrows on a
+        {!readOnly && !bound && (
+          <button
+            type="button"
+            className="w6w-expr-fx"
+            title="Use an expression"
+            aria-label={`Use an expression for ${label}`}
+            onClick={() => setPickerOpen(true)}
+          >
+            ƒx
+          </button>
+        )}
+        {!bound && (
+          <button
+            type="button"
+            className="w6w-icon-btn w6w-btn-sm"
+            title="Open in full view"
+            aria-label={`Open ${label} in full view`}
+            onClick={() => setExpanded(true)}
+          >
+            {/* `icons.tsx`'s `maximize` — Feather `maximize-2`'s diagonal expand arrows on a
               24×24 viewBox, drawn at 14px. */}
-          <Icon name="maximize" size={14} />
-        </button>
+            <Icon name="maximize" size={14} />
+          </button>
+        )}
       </span>
       {/* Inline: content-sized, grows with content up to maxHeight, then scrolls
           internally (so it never overlaps the next field). Full view via button. */}
-      <JsonEditor
-        value={text}
-        onChange={onEdit}
-        readOnly={readOnly}
-        minHeight="34px"
-        maxHeight="260px"
-        aria-label={`${param.key} JSON`}
-        onValidChange={onValid}
-        onValidityChange={({ valid }) => setInvalid(!valid)}
-      />
+      {bound ? (
+        <div className="w6w-json-binding">
+          <div className="w6w-fx-wrap is-fx">
+            <code>{boundRef}</code>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  onClick={() => setPickerOpen(true)}
+                >
+                  Edit
+                </button>
+                <button type="button" className="w6w-btn w6w-btn-ghost w6w-btn-sm" onClick={clear}>
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+          <pre
+            className="w6w-json-binding-preview"
+            data-testid="json-binding-preview"
+            style={{ margin: 0, maxHeight: 260, overflow: "auto", fontSize: "0.85em" }}
+          >
+            {preview}
+          </pre>
+        </div>
+      ) : (
+        <JsonEditor
+          value={text}
+          onChange={onEdit}
+          readOnly={readOnly}
+          minHeight="34px"
+          maxHeight="260px"
+          aria-label={`${param.key} JSON`}
+          onValidChange={onValid}
+          onValidityChange={({ valid }) => setInvalid(!valid)}
+        />
+      )}
+      {pickerOpen && (
+        <ExpressionEditorModal
+          mode="json-binding"
+          value={undefined}
+          options={exprOptions}
+          fieldLabel={label}
+          onBind={(next) => onChange(param.key, next)}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
       {invalid && (
         <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
           Invalid JSON
@@ -866,7 +959,7 @@ function JsonParamField({
       )}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
 
-      {expanded && (
+      {expanded && !bound && (
         <Modal
           title={label}
           subtitle={<code>JSON</code>}
