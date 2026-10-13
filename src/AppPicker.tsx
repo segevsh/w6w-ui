@@ -70,6 +70,20 @@ export interface AppPickerProps {
   category?: string;
   /** Bounded page size for the paged fetch. Defaults to {@link DEFAULT_PAGE_LIMIT} (60). */
   pageLimit?: number;
+  /**
+   * Optional page loader that takes precedence over `W6WApi.listAppsPage` and
+   * turns on the paged mode by itself (ignored when `apps` is supplied). It
+   * is called with exactly `{ q, cursor, limit, signal }` — never `category`
+   * or `compact` — and reuses the picker's debounce, stale-response guard,
+   * abort, Load more and Retry. Held in a ref: its identity may change every
+   * render without causing a request.
+   */
+  loadPage?: (options: {
+    q?: string;
+    cursor?: string;
+    limit: number;
+    signal: AbortSignal;
+  }) => Promise<{ apps: AppSummary[]; nextCursor?: string }>;
 }
 
 /**
@@ -103,6 +117,7 @@ export function AppPicker({
   categoryFilter = false,
   category,
   pageLimit = DEFAULT_PAGE_LIMIT,
+  loadPage,
 }: AppPickerProps) {
   const api = useW6WApi();
   // `undefined` means "not supplied" — a supplied `null` is a caller whose own
@@ -121,7 +136,9 @@ export function AppPicker({
   // package's own suites now use (`StepBuilderModal.connection-only/
   // homepage-tabs/template-node.test.ts`) rather than working around a
   // stub's shape in production semantics.
-  const paged = !supplied && typeof api.listAppsPage === "function";
+  const paged = !supplied && (loadPage !== undefined || typeof api.listAppsPage === "function");
+  const loadPageRef = useRef(loadPage);
+  loadPageRef.current = loadPage;
 
   // ── Mode 3: legacy eager full-catalog fetch (unchanged, plus the fallback above) ──
   const [fetchedApps, setFetchedApps] = useState<AppSummary[] | null>(null);
@@ -163,19 +180,28 @@ export function AppPicker({
 
   const fetchPage = useCallback(
     (query: AppsPageQuery, generation: number, cursor: string | undefined) => {
+      const custom = loadPageRef.current;
       const listAppsPage = api.listAppsPage;
-      if (!listAppsPage) return;
+      if (!custom && !listAppsPage) return;
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      listAppsPage({
-        q: query.q || undefined,
-        category: query.category,
-        cursor,
-        limit: pageLimit,
-        compact: true,
-        signal: controller.signal,
-      })
+      const request = custom
+        ? custom({
+            q: query.q || undefined,
+            cursor,
+            limit: pageLimit,
+            signal: controller.signal,
+          })
+        : (listAppsPage as NonNullable<typeof listAppsPage>)({
+            q: query.q || undefined,
+            category: query.category,
+            cursor,
+            limit: pageLimit,
+            compact: true,
+            signal: controller.signal,
+          });
+      request
         .then((page) => {
           if (generationRef.current !== generation) return; // stale: a newer query/unmount won
           if (!page || !Array.isArray((page as { apps?: unknown }).apps)) {
@@ -247,7 +273,8 @@ export function AppPicker({
   };
 
   const retry = () => {
-    if (!paged) return;
+    if (!paged || pageState.status !== "error") return;
+    dispatch({ type: "retry" });
     fetchPage(pageState.query, generationRef.current, pageState.cursor);
   };
 

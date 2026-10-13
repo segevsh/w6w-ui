@@ -69,6 +69,13 @@ export type AppsPageAction =
   /** The user asked for more results on the CURRENT query. No-op unless `status==="ready" && hasMore`. */
   | { type: "load-more" }
   /**
+   * The user pressed Retry after a failure. Only meaningful from `"error"`:
+   * back to `"loading"` when nothing is shown yet, `"loading-more"` when a
+   * list is already on screen (apps and cursor kept, so the retry resends the
+   * SAME cursor). No-op in any other status.
+   */
+  | { type: "retry" }
+  /**
    * One page arrived. `requestedCursor` is the cursor that page was fetched
    * WITH (undefined for a first page) — compared against the server's own
    * `nextCursor` to catch a server that echoes back the same cursor forever
@@ -118,6 +125,10 @@ export function appsPageReducer(state: AppsPageState, action: AppsPageAction): A
     case "load-more": {
       if (state.status !== "ready" || !state.hasMore) return state;
       return { ...state, status: "loading-more" };
+    }
+    case "retry": {
+      if (state.status !== "error") return state;
+      return { ...state, status: state.apps.length === 0 ? "loading" : "loading-more" };
     }
     case "page-loaded": {
       // A late arrival from an abandoned generation is dropped outright — the

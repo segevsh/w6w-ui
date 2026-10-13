@@ -317,3 +317,41 @@ test("mergeResolvedApps silently OMITS an id with no resolved entry (missing/404
     ["a", "b"],
   );
 });
+
+// ── retry (G10) ───────────────────────────────────────────────────────────────
+
+test("retry: error with NO apps goes to loading; keeps cursor, generation and query", () => {
+  const s: AppsPageState = {
+    ...initialAppsPageState({ q: "x" }, 3),
+    status: "error",
+    error: "boom",
+  };
+  const next = appsPageReducer(s, { type: "retry" });
+  assert.equal(next.status, "loading");
+  assert.equal(next.generation, 3);
+  assert.deepEqual(next.query, { q: "x" });
+});
+
+test("retry: error WITH apps goes to loading-more, keeping apps and cursor", () => {
+  const s: AppsPageState = {
+    ...initialAppsPageState({ q: "" }, 1),
+    status: "error",
+    error: "boom",
+    apps: [app("a")],
+    cursor: "c2",
+    hasMore: true,
+  };
+  const next = appsPageReducer(s, { type: "retry" });
+  assert.equal(next.status, "loading-more");
+  assert.deepEqual(next.apps, [app("a")]);
+  assert.equal(next.cursor, "c2");
+  assert.equal(next.hasMore, true);
+});
+
+test("retry: no-op (same reference) outside the error status", () => {
+  const base = initialAppsPageState({ q: "" }, 0);
+  for (const status of ["loading", "loading-more", "ready"] as const) {
+    const s: AppsPageState = { ...base, status };
+    assert.equal(appsPageReducer(s, { type: "retry" }), s);
+  }
+});
