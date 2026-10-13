@@ -33,7 +33,7 @@ import {
   isTriggerApp,
 } from "./flow-types.ts";
 import { paramsToJson, stepToJson } from "./flow-utils.ts";
-import { type StepStartState, useW6WApi, useWorkflowProject } from "./provider.tsx";
+import { type StepMeta, type StepStartState, useW6WApi, useWorkflowProject } from "./provider.tsx";
 import { startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
@@ -1567,7 +1567,7 @@ export function isTestRequired(surface: unknown): boolean {
 
 type TestState =
   | { status: "running" }
-  | { status: "done"; value: unknown; logs?: string[] }
+  | { status: "done"; value: unknown; logs?: string[]; meta?: StepMeta }
   | { status: "error"; error: string; errorCode?: string; logs?: string[] };
 
 /**
@@ -1664,6 +1664,7 @@ export const StepTestRun = forwardRef<
         status: "done",
         value: result.value,
         logs: (result as { logs?: string[] }).logs,
+        ...(result.meta ? { meta: result.meta } : {}),
       };
     } catch (e) {
       const err = e as { message?: string; code?: string; logs?: string[] };
@@ -1690,6 +1691,7 @@ export const StepTestRun = forwardRef<
           input: persist.input,
           output: outcome.status === "done" ? outcome.value : undefined,
           error: outcome.status === "error" ? outcome.error : undefined,
+          ...(outcome.status === "done" && outcome.meta ? { meta: outcome.meta } : {}),
         });
       } catch (err) {
         console.error("step test persist failed", err);
@@ -1738,6 +1740,17 @@ export const StepTestRun = forwardRef<
           >
             {JSON.stringify(state.value, null, 2)}
           </pre>
+          {state.meta && (
+            <>
+              <div className="w6w-testout-label">Metadata</div>
+              <pre
+                className="w6w-result"
+                style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
+              >
+                {JSON.stringify(state.meta, null, 2)}
+              </pre>
+            </>
+          )}
         </div>
       )}
       {logs && logs.length > 0 && (

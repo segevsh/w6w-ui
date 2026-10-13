@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  CALL_APP,
+  CONTROL_APP,
   DOCUMENT_APP,
   HTTP_APP,
   SCHEDULER_APP,
@@ -10,11 +12,12 @@ import {
   WEBHOOK_APP,
 } from "../flow-types.ts";
 import type { StepNode } from "../flow-utils.ts";
-import type { StepTest } from "../provider.tsx";
+import type { StepMeta, StepTest } from "../provider.tsx";
 import {
   fetchSeedSources,
   startStateFromSeeds,
   stepBuilderUpstreamSteps,
+  stepMetaSampleValues,
   upstreamStateSources,
 } from "../step-preview-state.ts";
 
@@ -214,6 +217,7 @@ test("upstreamStateSources — an app action's declared output projects as path 
         { key: "start.utc", label: "Start (UTC)", path: true },
       ],
       outputsFrom: "declared",
+      hasMeta: true,
     },
   ]);
 });
@@ -237,7 +241,7 @@ test("upstreamStateSources — no shape and no test run: the step needs a test",
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
     actionDef: () => ({}),
   });
-  assert.deepEqual(steps, [{ id: "ev", label: "ev", needsTest: true }]);
+  assert.deepEqual(steps, [{ id: "ev", label: "ev", needsTest: true, hasMeta: true }]);
 });
 
 test("upstreamStateSources — action definition not loaded yet: no needs-test claim", () => {
@@ -245,7 +249,7 @@ test("upstreamStateSources — action definition not loaded yet: no needs-test c
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
     actionDef: () => undefined,
   });
-  assert.deepEqual(steps, [{ id: "ev", label: "ev" }]);
+  assert.deepEqual(steps, [{ id: "ev", label: "ev", hasMeta: true }]);
 });
 
 test("upstreamStateSources — a built-in node with no static output falls back to its test run, never needs-test", () => {
@@ -273,5 +277,150 @@ test("upstreamStateSources — a webhook entry node takes no fallback shape from
 test("upstreamStateSources — without a shape context the projection is unchanged", () => {
   const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")]);
-  assert.deepEqual(steps, [{ id: "ev", label: "ev" }]);
+  assert.deepEqual(steps, [{ id: "ev", label: "ev", hasMeta: true }]);
+});
+
+// ── T3.2.3: hasMeta (R-7) ────────────────────────────────────────────────────
+
+test("P1 — an external app ancestor with a test output carries hasMeta: true", () => {
+  const nodes = [node("ev", EVENTBRITE, "get-event"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
+    actionDef: () => ({}),
+    testOutputs: { ev: { id: "1" } },
+  });
+  assert.equal(steps[0].outputsFrom, "test");
+  assert.equal(steps[0].hasMeta, true);
+});
+
+test("P2 — hasMeta is a missing key (not false) for triggers and every @w6w/* node", () => {
+  const cases: [string, string, string][] = [
+    ["manual", TRIGGER_APP, "trigger"],
+    ["hook", WEBHOOK_APP, "webhook"],
+    ["code", "@w6w/script", "run"],
+    ["call", CALL_APP, "call"],
+    ["ctl", CONTROL_APP, "merge"],
+    ["tpl", TEMPLATE_APP, "render"],
+    ["http", HTTP_APP, "request"],
+  ];
+  const nodes = [...cases.map(([id, app, action]) => node(id, app, action)), node("next")];
+  const edges = cases.map(([id]) => edge(id, "next"));
+  const { steps } = upstreamStateSources("next", nodes, edges, { actionDef: () => ({}) });
+  assert.equal(steps.length, cases.length);
+  for (const [id] of cases) {
+    const s = steps.find((x) => x.id === id);
+    assert.ok(s, `${id} projected`);
+    assert.equal(Object.hasOwn(s, "hasMeta"), false, `${id} has no hasMeta key`);
+  }
+});
+
+test("P2b — a blank or whitespace-only uses.app gets no hasMeta key (any shape path)", () => {
+  for (const app of ["", "   "]) {
+    for (const opts of [
+      { actionDef: () => ({}), testOutputs: { ev: { id: "1" } } },
+      { actionDef: () => ({}) },
+      { actionDef: () => undefined },
+    ]) {
+      const nodes = [node("ev", app, "get-event"), node("next")];
+      const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], opts);
+      assert.equal(steps.length, 1);
+      assert.equal(Object.hasOwn(steps[0], "hasMeta"), false, `app ${JSON.stringify(app)}`);
+    }
+  }
+});
+
+test("P3 — a downstream or unrelated external app step is not projected", () => {
+  const nodes = [
+    node("ev", EVENTBRITE, "get-event"),
+    node("next"),
+    node("later", EVENTBRITE, "get-event"),
+    node("other", EVENTBRITE, "get-event"),
+  ];
+  const edges = [edge("ev", "next"), edge("next", "later")];
+  const { steps } = upstreamStateSources("next", nodes, edges, { actionDef: () => ({}) });
+  assert.deepEqual(
+    steps.map((s) => s.id),
+    ["ev"],
+  );
+  const viaBuilder = stepBuilderUpstreamSteps(
+    { nodeId: "next", handleType: "source" },
+    nodes,
+    edges,
+    {
+      actionDef: () => ({}),
+    },
+  );
+  assert.deepEqual(
+    viaBuilder.map((s) => s.id),
+    ["ev", "next"],
+  );
+  assert.equal(
+    viaBuilder.some((s) => s.id === "later" || s.id === "other"),
+    false,
+  );
+});
+
+// ── T3.2.2: step metadata ────────────────────────────────────────────────────
+const META: StepMeta = { app: "gate", version: "1.0.0", action: "check", connectionId: "c1" };
+function seedOf(patch: Partial<StepTest>) {
+  const test: StepTest = {
+    id: "st1",
+    workflowId: "wf",
+    stepId: "gate_1",
+    name: null,
+    input: {},
+    with: {},
+    createdAt: "",
+    updatedAt: "",
+    ...patch,
+  };
+  return [{ stepId: "gate_1", label: "gate_1", test }];
+}
+
+test("S1 — startStateFromSeeds: meta rides with the output", () => {
+  const r = startStateFromSeeds(
+    seedOf({ lastRunStatus: "succeeded", lastRunOutput: { a: 1 }, lastRunMeta: META }),
+  );
+  assert.deepEqual(r, { steps: { gate_1: { output: { a: 1 }, meta: META } } });
+});
+
+test("S2 — legacy fixture (meta undefined or null) has no meta key", () => {
+  for (const lastRunMeta of [undefined, null]) {
+    const r = startStateFromSeeds(seedOf({ lastRunOutput: { a: 1 }, lastRunMeta }));
+    assert.deepEqual(r, { steps: { gate_1: { output: { a: 1 } } } });
+    assert.equal(Object.hasOwn(r?.steps?.gate_1 ?? {}, "meta"), false);
+  }
+});
+
+test("S3 — a succeeded run with null output seeds { output: null }, with and without meta", () => {
+  const without = startStateFromSeeds(seedOf({ lastRunStatus: "succeeded", lastRunOutput: null }));
+  assert.deepEqual(without, { steps: { gate_1: { output: null } } });
+  assert.equal(Object.hasOwn(without?.steps?.gate_1 ?? {}, "output"), true);
+  assert.equal(Object.hasOwn(without?.steps?.gate_1 ?? {}, "meta"), false);
+  const withMeta = startStateFromSeeds(
+    seedOf({ lastRunStatus: "succeeded", lastRunOutput: null, lastRunMeta: META }),
+  );
+  assert.deepEqual(withMeta, { steps: { gate_1: { output: null, meta: META } } });
+  // never ran: no entry
+  assert.equal(startStateFromSeeds(seedOf({ lastRunOutput: null })), undefined);
+});
+
+test("S4 — a failed run is not seeded even when it carries meta", () => {
+  assert.equal(
+    startStateFromSeeds(
+      seedOf({ lastRunStatus: "failed", lastRunOutput: null, lastRunMeta: META }),
+    ),
+    undefined,
+  );
+});
+
+test("S5 — stepMetaSampleValues: {} when absent; exactly the 4 named keys otherwise", () => {
+  assert.deepEqual(stepMetaSampleValues("s", undefined), {});
+  assert.deepEqual(stepMetaSampleValues("s", null), {});
+  const withExtra = { ...META, connectionId: null, token: "secret" } as unknown as StepMeta;
+  assert.deepEqual(stepMetaSampleValues("s", withExtra), {
+    "steps.s.meta.app": "gate",
+    "steps.s.meta.version": "1.0.0",
+    "steps.s.meta.action": "check",
+    "steps.s.meta.connectionId": null,
+  });
 });

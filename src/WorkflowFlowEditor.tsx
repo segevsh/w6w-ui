@@ -121,6 +121,7 @@ import {
 // header comment for why this lives outside WorkflowFlowEditor.tsx.
 import { valueAtPath } from "./output-shape.ts";
 import {
+  type StepMeta,
   type StepStartState,
   type StepTest,
   WorkflowProjectProvider,
@@ -136,6 +137,7 @@ import {
   type StepShapeContext,
   startStateFromSeeds,
   stepBuilderUpstreamSteps,
+  stepMetaSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
 import { useEffectiveTheme } from "./theme.ts";
@@ -337,6 +339,8 @@ interface StepRunState {
   stepId: string;
   status: "collect" | "running" | "done" | "error";
   value?: unknown;
+  /** Which app/version/action/connection the run used; absent when the host sent none. */
+  meta?: StepMeta;
   error?: string;
   errorCode?: string;
   /** console.* output captured from a script node run, if any. */
@@ -911,7 +915,7 @@ function Inner({
     (
       stepId: string,
       fixture: { input: Record<string, unknown>; with: Record<string, unknown> },
-      outcome: { status: string; output?: unknown; error?: unknown },
+      outcome: { status: string; output?: unknown; error?: unknown; meta?: StepMeta },
     ) => {
       void (async () => {
         const saved = await api.saveStepTest(value.id, stepId, fixture).catch((err) => {
@@ -924,6 +928,7 @@ function Inner({
           input: fixture.input,
           output: outcome.output,
           error: outcome.error,
+          ...(outcome.meta ? { meta: outcome.meta } : {}),
         });
       })().catch((err) => {
         console.error("step run persist failed", err);
@@ -991,10 +996,21 @@ function Inner({
         });
         // Script nodes may return captured console output alongside the value.
         const logs = (result as { logs?: string[] }).logs;
-        setRunResult({ stepId: id, status: "done", value: result.value, logs });
+        const meta = result.meta;
+        setRunResult({
+          stepId: id,
+          status: "done",
+          value: result.value,
+          logs,
+          ...(meta ? { meta } : {}),
+        });
         // Remember the values and log the run against the fixture they were
         // saved as (best-effort — never fail the run over it).
-        persistStepRun(id, fixture, { status: "succeeded", output: result.value });
+        persistStepRun(id, fixture, {
+          status: "succeeded",
+          output: result.value,
+          ...(meta ? { meta } : {}),
+        });
       } catch (e) {
         // The api client wraps network/parse failures with context; duck-type the
         // code so the modal can show it next to the message.
@@ -1103,6 +1119,7 @@ function Inner({
   // `sample`, else that step's last test run — so a later step can reference
   // `steps.<id>.output.<field>` without running anything first.
   const [stepTestOutputs, setStepTestOutputs] = useState<Record<string, unknown>>({});
+  const [stepTestMetas, setStepTestMetas] = useState<Record<string, StepMeta>>({});
   const stepShapes = useMemo<StepShapeContext>(
     () => ({
       actionDef: (app, action) => actionDefs[app]?.find((a) => a.key === action),
@@ -1135,6 +1152,7 @@ function Inner({
     const ids = JSON.parse(upstreamIdsKey) as string[];
     if (!editingId || ids.length === 0) {
       setStepTestOutputs({});
+      setStepTestMetas({});
       return;
     }
     let canceled = false;
@@ -1147,7 +1165,7 @@ function Inner({
           // `listStepTests` is oldest-first, so the LAST entry is the most recent
           // fixture — the "latest" convention this file already uses twice.
           const latest = tests.length ? tests[tests.length - 1] : null;
-          return latest ? { id, output: latest.lastRunOutput } : null;
+          return latest ? { id, output: latest.lastRunOutput, meta: latest.lastRunMeta } : null;
         } catch {
           return null;
         }
@@ -1160,11 +1178,14 @@ function Inner({
       // `artifacts/T5.1.3-r2-checks.sh` §X (mutant M11).
       if (canceled) return;
       const next: Record<string, unknown> = {};
+      const nextMetas: Record<string, StepMeta> = {};
       for (const r of res) {
+        if (r?.meta) nextMetas[r.id] = r.meta;
         if (!r || r.output === undefined || r.output === null) continue;
         next[r.id] = r.output;
       }
       setStepTestOutputs(next);
+      setStepTestMetas(nextMetas);
     });
     return () => {
       canceled = true;
@@ -1176,6 +1197,7 @@ function Inner({
   const stepSampleValues = useMemo(() => {
     const next: Record<string, unknown> = {};
     for (const st of upstreamState.steps) {
+      Object.assign(next, stepMetaSampleValues(st.id, stepTestMetas[st.id]));
       const output = stepTestOutputs[st.id];
       if (output === undefined) continue;
       next[`steps.${st.id}.output`] = output;
@@ -1193,7 +1215,7 @@ function Inner({
       }
     }
     return next;
-  }, [upstreamState.steps, stepTestOutputs]);
+  }, [upstreamState.steps, stepTestOutputs, stepTestMetas]);
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
   // editor's left panel shows every source at once.
@@ -1523,6 +1545,27 @@ function Inner({
                                 >
                                   {JSON.stringify(runResult.value, null, 2)}
                                 </pre>
+                                {runResult.meta && (
+                                  <>
+                                    <div
+                                      className="w6w-muted w6w-small"
+                                      style={{ margin: "10px 0 6px" }}
+                                    >
+                                      Metadata
+                                    </div>
+                                    <pre
+                                      className="w6w-result"
+                                      style={{
+                                        whiteSpace: "pre-wrap",
+                                        maxHeight: 360,
+                                        overflow: "auto",
+                                        margin: 0,
+                                      }}
+                                    >
+                                      {JSON.stringify(runResult.meta, null, 2)}
+                                    </pre>
+                                  </>
+                                )}
                               </div>
                             )}
                             {runResult.logs && runResult.logs.length > 0 && (

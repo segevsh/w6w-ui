@@ -43,6 +43,17 @@ export interface TestRunSummary {
 }
 
 /**
+ * Which app, version, action and connection a step ran with. A local structural
+ * copy of the engine's `StepMeta` (`@w6w/workflow-types`); the server sanitizes it.
+ */
+export interface StepMeta {
+  app: string;
+  version: string;
+  action: string;
+  connectionId: string | null;
+}
+
+/**
  * A saved per-step test fixture — a reusable, project-owned named capture of a
  * workflow step's resolved incoming state (`input`) and its params (`with`),
  * keyed by `(workflowId, stepId)`. Mirrors the connection-scoped `SavedTest`,
@@ -65,6 +76,8 @@ export interface StepTest {
   lastRunError?: unknown;
   /** The most recent run's captured output, or null. */
   lastRunOutput?: unknown;
+  /** The most recent run's step metadata; omitted when the server has none. */
+  lastRunMeta?: StepMeta | null;
 }
 
 /**
@@ -85,7 +98,7 @@ export interface StepTest {
  */
 export interface StepStartState {
   /** Outputs of steps that already ran, keyed by step id → `steps.<id>.output`. */
-  steps?: Record<string, { output?: unknown }>;
+  steps?: Record<string, { output?: unknown; meta?: StepMeta }>;
   /** Trigger context; only `event` is honoured → `trigger.event`. */
   trigger?: { event?: unknown };
 }
@@ -244,7 +257,12 @@ export interface W6WApi {
       state?: StepStartState;
       overrides?: RequestOverrides;
     },
-  ): Promise<{ value: unknown; logs?: string[]; apiCalls?: ApiCallRecord[] }>;
+  ): Promise<{
+    value: unknown;
+    logs?: string[];
+    apiCalls?: ApiCallRecord[];
+    meta?: StepMeta;
+  }>;
 
   /** List the saved action-test inputs stored against a connection. */
   listSavedTests(connectionId: string): Promise<SavedTest[]>;
@@ -322,6 +340,7 @@ export interface W6WApi {
       input?: unknown;
       output?: unknown;
       error?: unknown;
+      meta?: unknown;
     },
   ): Promise<void>;
 
