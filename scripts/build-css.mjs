@@ -44,7 +44,11 @@ for (const name of ENTRIES) {
   const target = join(root, "src", `${name}.css`);
   const compiled =
     banner(name) +
-    sass.compile(join(root, "src", `${name}.scss`), { style: "expanded", sourceMap: false }).css.trimEnd() +
+    sass.compile(join(root, "src", `${name}.scss`), {
+      style: "expanded",
+      sourceMap: false,
+      loadPaths: [join(root, "node_modules")],
+    }).css.trimEnd() +
     "\n";
 
   if (!check) {

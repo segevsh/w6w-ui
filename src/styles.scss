@@ -46,6 +46,9 @@
 @use "styles/tabs";
 @use "styles/step-builder";
 @use "styles/step-config";
+// React Flow's base rules, BEFORE our overrides in styles/flow. Resolved via
+// loadPaths (scripts/build-css.mjs; `--load-path` for the bare sass CLI).
+@use "@xyflow/react/dist/style";
 @use "styles/flow";
 @use "styles/sections";
 @use "styles/tester";

@@ -105,7 +105,7 @@ ln -sfn "$PKG/node_modules" "$W/tree/node_modules"
 # copied from the generated styles.css, so the harness tests what the
 # partials under src/styles/ currently say and never a stale build artifact.
 if [ -f "$SRC/styles.scss" ]; then
-  "$PKG/node_modules/.bin/sass" --no-source-map --style=expanded "$SRC/styles.scss" "$W/ui.css"
+  "$PKG/node_modules/.bin/sass" --no-source-map --load-path="$PKG/node_modules" --style=expanded "$SRC/styles.scss" "$W/ui.css"
 else
   cp "$SRC/styles.css" "$W/ui.css"
 fi

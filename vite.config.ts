@@ -56,7 +56,13 @@ export default defineConfig({
         "@uiw/react-codemirror",
         "@w6w/expr",
       ],
-      output: { globals: { react: "React", "react-dom": "ReactDOM" } },
+      output: {
+        globals: { react: "React", "react-dom": "ReactDOM" },
+        // Entry chunks only (index/flow/code, .mjs and .cjs): they use hooks and
+        // context, so a Next.js App Router server page can import them without
+        // a consumer-side "use client" wrapper. Shared chunks stay bare.
+        banner: (chunk) => (chunk.isEntry ? '"use client";' : ""),
+      },
     },
     sourcemap: true,
     emptyOutDir: true,

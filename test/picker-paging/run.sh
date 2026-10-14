@@ -83,7 +83,7 @@ ln -sfn "$PKG/node_modules" "$W/tree/node_modules"
 # `styles.css`), then studio.css — same load order as studio/src/main.tsx,
 # mirroring `test/picker-layout/run.sh` exactly.
 if [ -f "$SRC/styles.scss" ]; then
-  "$PKG/node_modules/.bin/sass" --no-source-map --style=expanded "$SRC/styles.scss" "$W/ui.css"
+  "$PKG/node_modules/.bin/sass" --no-source-map --load-path="$PKG/node_modules" --style=expanded "$SRC/styles.scss" "$W/ui.css"
 else
   cp "$SRC/styles.css" "$W/ui.css"
 fi
