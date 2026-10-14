@@ -30,34 +30,31 @@ components into your own pages.
 ## Before you start
 
 - A React app on React 18 or later (`react` and `react-dom` are peer dependencies).
-- A bundler that compiles TypeScript (`.tsx`) source from a dependency. Vite does this out of the
-  box. See [Bundler notes](#bundler-notes) for Next.js, Astro and webpack.
+- A bundler for your app. Vite works out of the box. If you install from git or a `link:`ed
+  checkout instead of npm, the package is TypeScript (`.tsx`) source your bundler must compile: see
+  [Bundler notes](#bundler-notes) for Next.js, Astro and webpack.
 - A W6W server URL and a way to get a bearer token for the signed-in user. See the
   [Quickstart](/quickstart/).
 
 ## 1. Add the package
 
-`@w6w/ui` is not on npm yet. Install it from the public GitHub repository, pinned to a commit:
+Install it from npm:
 
-```json
-{
-  "dependencies": {
-    "@w6w/ui": "github:w6w-io/w6w-ui#<commit-sha>"
-  }
-}
+```sh
+npm install @w6w/ui react react-dom
 ```
 
-Then run `pnpm install`.
+(or `pnpm add @w6w/ui react react-dom`). `@w6w/expr`, the expression engine the editors use, is a
+regular dependency and comes with it.
 
-Use pnpm. `@w6w/ui` depends on `@w6w/expr` through a subdirectory git spec
-(`github:w6w-io/w6w-core#path:packages/expr`), and other package managers may not resolve the
-`#path:` form. If yours can't, check the repository out beside your app and depend on it with
-`"@w6w/ui": "link:../w6w-ui"` instead.
+You'll know it worked when `node_modules/@w6w/ui/dist/index.mjs` exists.
 
-You'll know it worked when `node_modules/@w6w/ui/src/index.ts` exists.
-
-> **Good to know:** the package ships TypeScript source, not a compiled `dist/`. Its `exports` point
-> at `./src/index.ts`, so your bundler compiles it the same way it compiles your own code.
+> **Good to know:** the npm tarball ships compiled `dist/` (ESM and CJS, with `.d.ts` files), so your
+> bundler needs no special TypeScript handling for it. The CommonJS build can be `require()`d from
+> Node 20.19+ / 22.12+ because `@w6w/expr` is ESM-only. A git or `link:` install
+> (`"@w6w/ui": "github:w6w-io/w6w-ui#<commit-sha>"`, or `"link:../w6w-ui"` for a sibling checkout)
+> instead resolves `exports` to the TypeScript source under `./src`, which your bundler compiles
+> like your own code; the [Bundler notes](#bundler-notes) below apply to that route.
 
 ## 2. Import the stylesheet once
 
@@ -142,6 +139,9 @@ If you build with Sass, you can `@use "@w6w/ui/styles.scss"` (or a single partia
 `@use "@w6w/ui/styles/health"`) instead of the CSS file.
 
 ## Bundler notes
+
+These matter when you consume `@w6w/ui` as source (a git or `link:` install). The npm tarball is
+pre-compiled and needs none of them except the React dedupe.
 
 | Toolchain | What to set |
 | --- | --- |
