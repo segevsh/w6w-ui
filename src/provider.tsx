@@ -453,7 +453,8 @@ export interface W6WUIProviderProps {
   api: W6WApi;
   /**
    * Force the theme every `@w6w/ui` component resolves to — both the CSS
-   * tokens (`styles.css`'s `:where([data-theme=...])` blocks) and the
+   * tokens (`styles.css`'s `:where([data-theme=...])` blocks; `color-scheme` is
+   * declared on component roots, never on the host `<html>`) and the
    * JS-side theme-aware components (`AppIcon`, `CodeEditor`, `JsonEditor`,
    * `WorkflowFlowEditor`, via `useEffectiveTheme`) — instead of each one
    * independently falling back to `data-theme` on `<html>` or the visitor's

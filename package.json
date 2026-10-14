@@ -1,6 +1,6 @@
 {
   "name": "@w6w/ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "React components for w6w — central API management. Build plugins, apps and integrations on them.",
   "license": "MIT",
   "homepage": "https://w6w.io",
@@ -88,6 +88,7 @@
     "test:picker-layout": "bash test/picker-layout/run.sh",
     "test:expr-template": "bash test/expr-template/run.sh",
     "test:action-test-form": "bash test/action-test-form/run.sh",
+    "test:host-isolation": "bash test/host-isolation/run.sh",
     "test:copyable": "bash test/copyable/run.sh",
     "test:pack-smoke": "bash test/pack-smoke/run.sh",
     "storybook": "storybook dev -p 6006 --no-open",
