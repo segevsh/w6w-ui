@@ -221,12 +221,12 @@ export function ExpressionEditorModal({
   }, [parts]);
 
   // Best-effort client-side preview of the expression against the sample values.
-  // TODO(HITL-2): `@w6w/expr` is a Deno/JSR package that isn't resolvable in the
-  // ui Node/pnpm toolchain (not a dependency here), so inline JSONLogic (`expr`
-  // parts) can't be evaluated client-side — we fall back to rendering the
-  // resolved `{{ }}` template: substitute sample values for var refs, mask
-  // secrets, and keep the `{{ … }}` form for anything we can't resolve. Never
-  // throws on an un-evaluable expression.
+  // Follow-up: `@w6w/expr` is now a dependency of this package, but the
+  // preview does not call it yet, so inline JSONLogic (`expr` parts) isn't
+  // evaluated client-side — we render the resolved `{{ }}` template instead:
+  // substitute sample values for var refs, mask secrets, and keep the
+  // `{{ … }}` form for anything we can't resolve. Never throws on an
+  // un-evaluable expression.
   const result = useMemo(() => {
     try {
       return renderResult(parts, effectiveSamples);
