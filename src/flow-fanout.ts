@@ -24,3 +24,8 @@ export function setFanOut(step: FlowStep, mode: FanOutMode): FlowStep {
   const { fanOut: _drop, ...rest } = step;
   return mode === "parallel" ? { ...rest, fanOut: "parallel" } : rest;
 }
+
+/** Card-badge wording: how many next steps run, and in which mode. */
+export function fanOutLabel(count: number, mode: FanOutMode): string {
+  return `Runs these ${count} steps in ${mode === "parallel" ? "parallel" : "sequence"}`;
+}

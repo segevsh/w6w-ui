@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge } from "@xyflow/react";
-import { fanOutState, setFanOut } from "../flow-fanout.ts";
+import { fanOutLabel, fanOutState, setFanOut } from "../flow-fanout.ts";
 import type { FlowStep } from "../flow-types.ts";
 import type { FlowWorkflow } from "../flow-types.ts";
 import { type StepNode, flowToWorkflow } from "../flow-utils.ts";
@@ -45,4 +45,9 @@ test("A2 setFanOut + round trip", () => {
     }) as StepNode;
   assert.equal(flowToWorkflow(wf, [nd(p)], []).steps[0].fanOut, "parallel");
   assert.equal("fanOut" in flowToWorkflow(wf, [nd(s)], []).steps[0], false);
+});
+
+test("A3 fanOutLabel wording is pinned", () => {
+  assert.equal(fanOutLabel(3, "parallel"), "Runs these 3 steps in parallel");
+  assert.equal(fanOutLabel(2, "sequential"), "Runs these 2 steps in sequence");
 });
