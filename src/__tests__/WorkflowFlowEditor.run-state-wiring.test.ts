@@ -113,3 +113,19 @@ test("U4 — StepNodeCard and ControlNodeCard both derive their border from step
     );
   }
 });
+
+test("U5 — ControlNodeCard renders a <FanOutBadge> element (the fan-out badge is not StepNodeCard-only)", () => {
+  const fn = findFunction("ControlNodeCard");
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      node.tagName.getText(sf) === "FanOutBadge"
+    ) {
+      found = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(fn, visit);
+  assert.ok(found, "ControlNodeCard must render <FanOutBadge");
+});
