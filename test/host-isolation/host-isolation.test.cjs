@@ -144,7 +144,7 @@ test("N1 nested themes: the nearest data-theme wins (light in dark, dark in ligh
       const nest = `<div data-theme="${outer}"><div id="in" data-theme="${inner}">${UI_BODY}${OTHER_BODY}</div></div>`;
       await withPage(os, { body: nest }, async (page) => {
         for (const sel of sels) assert.equal(await scheme(page, sel), inner, `os=${os} ${outer}>${inner} ${sel}`);
-        assert.equal(await scheme(page, "#in"), inner, `os=${os} ${outer}>${inner} wrapper`);
+        assert.equal(await scheme(page, "#in"), "normal", `os=${os} ${outer}>${inner} host wrapper untouched`);
       });
       await withPage(os, { htmlAttrs: `data-theme="${outer}"`, body: `<div data-theme="${inner}">${UI_BODY}${OTHER_BODY}</div>` }, async (page) => {
         for (const sel of sels) assert.equal(await scheme(page, sel), inner, `os=${os} html=${outer} panel=${inner} ${sel}`);
@@ -154,12 +154,56 @@ test("N1 nested themes: the nearest data-theme wins (light in dark, dark in ligh
   }
 });
 
-test("W1 a themed wrapper's own canvas follows its theme; <html> never does", async () => {
+test("W1 a themed host wrapper keeps its own canvas; the ui root inside it follows the theme", async () => {
   for (const os of OS) {
     const t = os === "light" ? "dark" : "light";
-    await withPage(os, { body: `<div id="w" data-theme="${t}"></div>` }, async (page) => {
-      assert.equal(await scheme(page, "#w"), t, `os=${os}`);
+    await withPage(os, { body: `<div id="w" data-theme="${t}"><div class="w6w-field" id="f"></div></div>` }, async (page) => {
+      assert.equal(await scheme(page, "#w"), "normal", `os=${os}`);
+      assert.equal(await scheme(page, "#f"), t, `os=${os}`);
       assert.equal(await scheme(page, "html"), "normal", `os=${os}`);
     });
+  }
+});
+
+test("H4 a host data-theme element keeps its own color-scheme (any theme value, any OS)", async () => {
+  for (const os of OS) {
+    for (const theme of ["forest", "dark", "light"]) {
+      await withPage(
+        os,
+        { body: `<div id="h" data-theme="${theme}"><input id="hi" type="text"></div>` },
+        async (page) => {
+          assert.equal(await scheme(page, "#h"), "normal", `os=${os} theme=${theme}`);
+          assert.equal(await scheme(page, "#hi"), "normal", `os=${os} theme=${theme} input`);
+        },
+      );
+    }
+  }
+});
+
+test("H5 a host class that merely contains w6w- is not a ui root", async () => {
+  for (const os of OS) {
+    await withPage(
+      os,
+      { body: `<div id="h" class="my-w6w-card"><select id="hs"><option>a</option></select></div>` },
+      async (page) => {
+        assert.equal(await scheme(page, "#h"), "normal", `os=${os}`);
+        assert.equal(await scheme(page, "#hs"), "normal", `os=${os} select`);
+      },
+    );
+  }
+});
+
+test("H6 a host element's own color-scheme wins for an input nested in a ui root", async () => {
+  for (const os of OS) {
+    await withPage(
+      os,
+      {
+        body: `<div class="w6w-field"><div id="h" style="color-scheme:dark"><input id="hi" type="text"></div><input id="ui" type="text"></div>`,
+      },
+      async (page) => {
+        assert.equal(await scheme(page, "#hi"), "dark", `os=${os} host input`);
+        assert.equal(await scheme(page, "#ui"), os, `os=${os} ui input still follows ui root`);
+      },
+    );
   }
 });

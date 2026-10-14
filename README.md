@@ -153,7 +153,8 @@ troubleshooting list: [`docs/theming.md`](docs/theming.md).
 `styles.css` never sets `color-scheme` on `<html>` (or on any element that is the document root): your
 page owns its own scheme. The resolved mode is exposed as the inherited `--w6w-scheme` custom property, and every `w6w-` component
 (and the native controls inside it) sets `color-scheme` from it, so native controls and popups match even
-when themes nest (the nearest `data-theme` wins).
+when themes nest (the nearest `data-theme` wins). Only elements whose class list has a token starting
+`w6w-` get it; a ui component without a `w6w-` class on its root (today `Combobox`) inherits your page's.
 
 The same namespace carries the spacing and type scale (`--w6w-sp-*`, `--w6w-fs-*`, `--w6w-fw-*`,
 `--w6w-lh-*`, `--w6w-font-*`): [`docs/design-system.md`](docs/design-system.md). The `lint:tokens`

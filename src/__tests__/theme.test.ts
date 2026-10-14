@@ -202,9 +202,15 @@ test("styles.css — token blocks declare no color-scheme; only non-root selecto
     );
   }
   assert.ok(
-    schemeBlocks.some((b) => b.selector.includes("[class*=w6w-]")),
+    schemeBlocks.some((b) => b.selector.includes("[class^=w6w-]")),
     "scheme is declared on every w6w- component root, not a hand-picked list",
   );
+  // Pinned selector: only elements whose class LIST has a token starting `w6w-`; no host-reaching arms.
+  assert.equal(schemeBlocks.length, 1);
+  const sel = schemeBlocks[0].selector.replace(/["']/g, "").replace(/\s+/g, " ");
+  assert.equal(sel, ":where([class^=w6w-]:not(:root), [class*= w6w-]:not(:root))");
+  assert.doesNotMatch(sel, /data-theme/, "a host data-theme element is never matched");
+  assert.doesNotMatch(sel, /\[class\*=w6w-\]/, "no substring arm that reaches my-w6w-card");
 });
 
 test("styles.css — an option/optgroup rule paints token text on the panel background", () => {
