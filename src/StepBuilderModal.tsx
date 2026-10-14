@@ -753,7 +753,8 @@ function AppTriggerPicker({
   const [creating, setCreating] = useState(false);
   // A poll trigger waits here for its "Check every N minutes" before it is created.
   const [pending, setPending] = useState<TriggerSummary | null>(null);
-  const [minutes, setMinutes] = useState(5);
+  // Raw text while editing — clamped to the trigger's minimum only on blur / confirm.
+  const [minutes, setMinutes] = useState("5");
 
   useEffect(() => {
     const load = api.getAppTriggers;
@@ -773,7 +774,7 @@ function AppTriggerPicker({
     if (t.type !== "poll") return create(t.key);
     setError(null);
     setPending(t);
-    setMinutes(Math.max(5, Math.ceil((t.minIntervalMs ?? 0) / 60000)));
+    setMinutes(String(Math.max(5, Math.ceil((t.minIntervalMs ?? 0) / 60000))));
   };
 
   const create = (triggerKey: string, intervalMs?: number) => {
@@ -834,18 +835,15 @@ function AppTriggerPicker({
               step={1}
               value={minutes}
               disabled={creating}
-              onChange={(e) =>
-                setMinutes(
-                  Math.max(minMinutes(pending), Number(e.target.value) || minMinutes(pending)),
-                )
-              }
+              onChange={(e) => setMinutes(e.target.value)}
+              onBlur={() => setMinutes(String(clampMinutes(minutes, minMinutes(pending))))}
             />
           </label>
           <button
             type="button"
             className="w6w-btn w6w-btn-primary w6w-btn-sm"
             disabled={creating}
-            onClick={() => create(pending.key, minutes * 60000)}
+            onClick={() => create(pending.key, clampMinutes(minutes, minMinutes(pending)) * 60000)}
           >
             Add trigger
           </button>
@@ -1837,7 +1835,18 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set();
  * `version`/`categories`: the selected-app header drops its ` · v<version>`
  * suffix and `appsFilter` sees only `id` and the meta keys.
  */
-function useReadyToUse(
+/**
+ * Clamp the poll-interval text to an integer number of minutes ≥ `min`. Blank,
+ * non-numeric or below-minimum input yields `min`; fractions round to nearest.
+ */
+export function clampMinutes(raw: string, min: number): number {
+  const n = Number(raw.trim());
+  if (raw.trim() === "" || !Number.isFinite(n) || n < min) return min;
+  return Math.max(min, Math.round(n));
+}
+
+/** Exported for tests only (not re-exported from the package index). */
+export function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
   appsFilter?: (app: AppSummary) => boolean,
 ): ReadyToUse {
@@ -1849,6 +1858,15 @@ function useReadyToUse(
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Map<string, AppSummary>>(() => new Map());
   const [requestedIds, setRequestedIds] = useState<Set<string>>(() => new Set());
+  // Ids sent to `listAppsByIds` and not yet resolved. Separate from
+  // `requestedIds` (whose emptiness is the first-batch loading gate). The ref
+  // mirrors it so a same-tick second call is guarded too.
+  const [inFlightIds, setInFlightIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
+  const inFlightRef = useRef<ReadonlySet<string>>(EMPTY_ID_SET);
+  const setInFlight = useCallback((next: ReadonlySet<string>) => {
+    inFlightRef.current = next;
+    setInFlightIds(next);
+  }, []);
   // App ids whose connection rows carried inline `app` meta — never looked up.
   const inlineIdsRef = useRef<ReadonlySet<string>>(EMPTY_ID_SET);
 
@@ -1935,10 +1953,12 @@ function useReadyToUse(
   const resolveBatch = useCallback(
     (batch: string[]) => {
       const listAppsByIds = api.listAppsByIds;
-      if (!listAppsByIds || batch.length === 0) return;
+      if (!listAppsByIds || batch.length === 0 || inFlightRef.current.size > 0) return;
+      setInFlight(new Set(batch));
       listAppsByIds(batch)
         .then((apps) => {
           if (!mountedRef.current) return;
+          setInFlight(EMPTY_ID_SET);
           // An empty result (every requested id was a 404) is a legitimate
           // answer, not evidence the optional method "isn't really
           // implemented" — see this hook's own doc-comment above. It is
@@ -1953,7 +1973,7 @@ function useReadyToUse(
         })
         .catch((e) => mountedRef.current && setError((e as Error).message));
     },
-    [api],
+    [api, setInFlight],
   );
 
   // Exactly ONE automatic batch, the moment connected ids first arrive —
@@ -1972,7 +1992,9 @@ function useReadyToUse(
 
   const loadMoreApps = () => {
     if (!bounded || connectedIds === null) return;
-    resolveBatch(nextIdBatch(connectedIds, requestedIds, READY_TO_USE_ID_BATCH));
+    if (inFlightRef.current.size > 0) return;
+    const exclude = new Set([...requestedIds, ...inFlightRef.current]);
+    resolveBatch(nextIdBatch(connectedIds, exclude, READY_TO_USE_ID_BATCH));
   };
 
   if (error)
@@ -1989,7 +2011,9 @@ function useReadyToUse(
       return { state: "loading", apps: [], fns, wfs, moreApps: false, loadMoreApps };
     }
     const apps = mergeResolvedApps(connectedIds, resolved).filter((a) => appsFilter?.(a) ?? true);
-    const moreApps = nextIdBatch(connectedIds, requestedIds, 1).length > 0;
+    const moreApps =
+      inFlightIds.size === 0 &&
+      nextIdBatch(connectedIds, new Set([...requestedIds, ...inFlightIds]), 1).length > 0;
     const empty = apps.length === 0 && fns.length === 0 && wfs.length === 0 && !moreApps;
     return { state: empty ? "empty" : "ready", apps, fns, wfs, moreApps, loadMoreApps };
   }
