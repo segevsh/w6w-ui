@@ -47,3 +47,12 @@ test("InfoTip — collapsed by default; click expands, second click collapses; n
   assert.ok(!container.textContent?.includes("Hidden copy"));
   await act(async () => root.unmount());
 });
+
+test("InfoTip — aria-controls is on the button in the INITIAL server markup (no effect needed)", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const html = renderToStaticMarkup(
+    React.createElement(InfoTip, { label: "About secrets", children: "Hidden copy" }),
+  );
+  assert.match(html, /<button[^>]*aria-controls="[^"]+"/);
+  assert.doesNotMatch(html, /Hidden copy/);
+});

@@ -1803,6 +1803,16 @@ const READY_TO_USE_ID_BATCH = 12;
 const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 
 /**
+ * Clamp the poll-interval text to an integer number of minutes ≥ `min`. Blank,
+ * non-numeric or below-minimum input yields `min`; fractions round to nearest.
+ */
+export function clampMinutes(raw: string, min: number): number {
+  const n = Number(raw.trim());
+  if (raw.trim() === "" || !Number.isFinite(n) || n < min) return min;
+  return Math.max(min, Math.round(n));
+}
+
+/**
  * "Ready to use"'s data: distinct connected app ids (A3) resolved in bounded
  * batches via the optional `listAppsByIds`, plus Functions/Workflows.
  *
@@ -1834,18 +1844,9 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set();
  * or `null`) — and not at all when none do. Such inline apps have no
  * `version`/`categories`: the selected-app header drops its ` · v<version>`
  * suffix and `appsFilter` sees only `id` and the meta keys.
+ *
+ * Exported for tests only (not re-exported from the package index).
  */
-/**
- * Clamp the poll-interval text to an integer number of minutes ≥ `min`. Blank,
- * non-numeric or below-minimum input yields `min`; fractions round to nearest.
- */
-export function clampMinutes(raw: string, min: number): number {
-  const n = Number(raw.trim());
-  if (raw.trim() === "" || !Number.isFinite(n) || n < min) return min;
-  return Math.max(min, Math.round(n));
-}
-
-/** Exported for tests only (not re-exported from the package index). */
 export function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
   appsFilter?: (app: AppSummary) => boolean,

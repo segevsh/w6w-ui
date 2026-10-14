@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { IconButton } from "./IconButton.tsx";
 
 export interface InfoTipProps {
@@ -18,19 +18,13 @@ export interface InfoTipProps {
 export function InfoTip({ label, children, className }: InfoTipProps) {
   const [open, setOpen] = useState(false);
   const id = useId();
-  const btn = useRef<HTMLButtonElement>(null);
-  // `IconButton` has no `aria-controls` passthrough (and is outside this
-  // change's footprint), so wire the relationship on the rendered <button>.
-  useEffect(() => {
-    btn.current?.setAttribute("aria-controls", id);
-  }, [id]);
   return (
     <span className={["w6w-info-tip", className ?? ""].filter(Boolean).join(" ")}>
       <IconButton
-        ref={btn}
         label={label}
         icon="info"
         aria-expanded={open}
+        aria-controls={id}
         onClick={() => setOpen((o) => !o)}
       />
       {open && (

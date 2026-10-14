@@ -29,6 +29,8 @@ export interface IconButtonProps {
   "aria-pressed"?: boolean;
   /** Passed straight through, for a disclosure button. */
   "aria-expanded"?: boolean;
+  /** Passed straight through, for a disclosure button naming the region it controls. */
+  "aria-controls"?: string;
   "data-testid"?: string;
 }
 
@@ -84,6 +86,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         aria-label={label}
         aria-pressed={rest["aria-pressed"]}
         aria-expanded={rest["aria-expanded"]}
+        aria-controls={rest["aria-controls"]}
         disabled={disabled}
         onClick={onClick}
         data-testid={rest["data-testid"]}
