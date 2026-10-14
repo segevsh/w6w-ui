@@ -159,7 +159,8 @@ gate that keeps new code on that scale is described in [CONTRIBUTING.md](CONTRIB
 The stylesheet is authored in **Sass**: `src/styles.scss` is the entry point and `src/styles/*.scss`
 holds one partial per component family. `src/styles.css` is compiled from those (`pnpm build:css`)
 and committed, so `import "@w6w/ui/styles.css"` above needs no Sass toolchain on your side — that
-stays the supported way in.
+stays the supported way in. It also carries React Flow's base rules, so mounting the flow editor
+needs no further stylesheet.
 
 If you *do* build with Sass, you can import the source instead and get the partials as
 `@use`-able modules:
@@ -168,6 +169,10 @@ If you *do* build with Sass, you can import the source instead and get the parti
 @use "@w6w/ui/styles.scss";   // the whole stylesheet
 @use "@w6w/ui/styles/health"; // or one family — see src/styles/ for the list
 ```
+
+The Sass source does **not** include React Flow's base rules. A Sass consumer that mounts the flow
+editor also imports `@xyflow/react/dist/style.css` (or uses `@w6w/ui/styles.css`, which includes
+them).
 
 Editing `src/styles.css` by hand has no effect — it is regenerated, and `pnpm check:css` fails when
 it has drifted from the Sass sources. Two things stay fixed on purpose: `--w6w-*` remain **CSS**

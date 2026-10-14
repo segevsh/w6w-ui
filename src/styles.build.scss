@@ -1,0 +1,5 @@
+// Build-only entry for src/styles.css — NOT published. Prepends React Flow's base rules (resolved
+// via loadPaths in scripts/build-css.mjs) so `@w6w/ui/styles.css` is the one import a host needs.
+// The published `styles.scss` stays free of external @use so Sass consumers need no loadPaths.
+@use "@xyflow/react/dist/style";
+@use "styles";

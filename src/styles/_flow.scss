@@ -10,7 +10,7 @@
 
    Custom properties, deliberately, rather than a `.react-flow__controls-button`
    override: React Flow's own stylesheet is compiled into the same
-   styles.css (`@use "@xyflow/react/dist/style"` in styles.scss), but cascade
+   styles.css (`@use` in the build-only styles.build.scss), but cascade
    order is not something to lean on: a bare class override (0,1,0) would tie
    with the library's own rule and lose if the order ever changed. Custom properties inherit and are
    order-independent, and scoping them on `.w6w-flow` keeps them off the rest of

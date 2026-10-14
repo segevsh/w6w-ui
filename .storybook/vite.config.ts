@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { defaultClientConditions, defineConfig } from "vite";
 
 /**
@@ -15,23 +14,7 @@ import { defaultClientConditions, defineConfig } from "vite";
  * `@w6w/expr` (via ExpressionEditorModal), which this repo resolves to the
  * sibling's source through the `w6w-source` export condition. Vite 6 REPLACES
  * the default conditions when set, hence the spread.
- *
- * It also aliases `@xyflow/react/dist/style` (the bare-specifier `@use` in
- * `src/styles.scss`) to the package's stylesheet by path: Vite's Sass importer
- * resolves a `@use` through the package `exports` map, which only lists
- * `./dist/style.css`, and throws before Sass's own `loadPaths` lookup (which is
- * what `scripts/build-css.mjs` relies on) is consulted.
  */
 export default defineConfig({
-  resolve: {
-    conditions: ["w6w-source", ...defaultClientConditions],
-    alias: [
-      {
-        find: /^@xyflow\/react\/dist\/style$/,
-        replacement: fileURLToPath(
-          new URL("../node_modules/@xyflow/react/dist/style.css", import.meta.url),
-        ),
-      },
-    ],
-  },
+  resolve: { conditions: ["w6w-source", ...defaultClientConditions] },
 });

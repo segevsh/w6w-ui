@@ -73,6 +73,12 @@ import { defineConfig } from "vite";
 export default defineConfig({ plugins: [react()] });
 TS
 
+# Sass-consumer probe: the PUBLISHED styles.scss must compile with no loadPaths/alias.
+cat > src/probe.scss <<'SCSS'
+@use "@w6w/ui/styles.scss";
+.pack-smoke-scss-probe { color: red; }
+SCSS
+
 cat > index.html <<'HTML'
 <!doctype html><html><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
 HTML
@@ -82,6 +88,7 @@ import { ConfirmModal, W6WUIProvider } from "@w6w/ui";
 import { WorkflowFlowEditor } from "@w6w/ui/flow";
 import { CodeBlock } from "@w6w/ui/code";
 import "@w6w/ui/styles.css";
+import "./probe.scss";
 import { evaluate } from "@w6w/expr";
 import { createRoot } from "react-dom/client";
 
@@ -105,7 +112,7 @@ SPECS=("$UI_TGZ")
 [ -z "${EXPR_TGZ:-}" ] || SPECS+=("$EXPR_TGZ")
 npm install --no-audit --no-fund --loglevel=error \
   react@18 react-dom@18 vite@6 @vitejs/plugin-react@4 typescript@5.8 \
-  @types/react@18 @types/react-dom@18 "${SPECS[@]}" \
+  @types/react@18 @types/react-dom@18 sass "${SPECS[@]}" \
   || { echo "FAIL: npm install of the consumer" >&2; exit 1; }
 
 # The consumer must have resolved @w6w/expr as a dependency of the tarball, and
@@ -122,6 +129,11 @@ echo "== vite build"
 [ -d dist ] && ls dist/assets/*.js >/dev/null 2>&1 || { echo "FAIL: vite build produced no JS" >&2; exit 1; }
 
 ls dist/assets/*.css >/dev/null 2>&1 || { echo "FAIL: vite build produced no CSS" >&2; exit 1; }
+cat dist/assets/*.css | grep -q 'pack-smoke-scss-probe' \
+  || { echo "FAIL: Vite lane: .scss probe (@use \"@w6w/ui/styles.scss\") not in built CSS" >&2; exit 1; }
+if grep -rEn '@(use|import) +"@xyflow' node_modules/@w6w/ui/src/styles.scss node_modules/@w6w/ui/src/styles/ >/dev/null 2>&1; then
+  echo "FAIL: published Sass references @xyflow" >&2; exit 1; fi
+[ ! -e node_modules/@w6w/ui/src/styles.build.scss ] || { echo "FAIL: build-only styles.build.scss was published" >&2; exit 1; }
 cat dist/assets/*.css | grep -q '\.react-flow{' \
   || { echo "FAIL: Vite lane: built CSS has no .react-flow{ (React Flow base rules missing from @w6w/ui/styles.css)" >&2; exit 1; }
 
@@ -134,11 +146,20 @@ for f in index flow code; do
     [ "$FIRST" = '"use client";' ] || { echo "FAIL: $FILE does not start with \"use client\" (got: $FIRST)" >&2; exit 1; }
   done
 done
-# Shared chunks must carry no banner.
-for c in node_modules/@w6w/ui/dist/*.mjs node_modules/@w6w/ui/dist/*.cjs; do
+# Shared chunks must carry no banner. `vite build` of the library emits entries
+# AND shared chunks as flat dist/*.{mjs,cjs,js}; enumerate every non-entry JS file
+# and require at least one, so a glob that matches nothing cannot pass vacuously.
+SHARED=()
+for c in node_modules/@w6w/ui/dist/*.mjs node_modules/@w6w/ui/dist/*.cjs node_modules/@w6w/ui/dist/*.js; do
+  [ -f "$c" ] || continue
   case "$(basename "$c")" in index.*|flow.*|code.*) continue ;; esac
-  if head -c 13 "$c" | grep -q 'use client'; then echo "FAIL: shared chunk $c carries the banner" >&2; exit 1; fi
+  SHARED+=("$c")
 done
+[ "${#SHARED[@]}" -gt 0 ] || { echo "FAIL: found no shared chunk files in dist/ (enumeration empty)" >&2; exit 1; }
+for c in "${SHARED[@]}"; do
+  if head -c 40 "$c" | grep -q 'use client'; then echo "FAIL: shared chunk $c carries the banner" >&2; exit 1; fi
+done
+echo "   ${#SHARED[@]} shared chunk(s) banner-free"
 
 echo "== Next lane (App Router, React 19, next@16.4.1)"
 N="$W/next"

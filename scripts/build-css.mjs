@@ -1,7 +1,8 @@
 /**
  * Compiles the package's Sass entrypoints to the .css files it exports.
  *
- *   src/styles.scss → src/styles.css    (@w6w/ui/styles.css — the whole library)
+ *   src/styles.build.scss → src/styles.css (@w6w/ui/styles.css — the whole library,
+ *                                           incl. React Flow's base rules)
  *   src/code.scss   → src/code.css      (@w6w/ui/code.css   — <CodeBlock> only)
  *
  * Each generated .css is COMMITTED, on purpose. The package exports them, and
@@ -29,9 +30,17 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** Every entrypoint, by basename. Add one here and both modes pick it up. */
 const ENTRIES = ["styles", "code"];
 
+/**
+ * Sass source compiled for an entry when it differs from the published one.
+ * `styles.build.scss` is build-only (not in package.json `files`): it prepends
+ * React Flow's base rules, so the published `styles.scss` stays free of any
+ * external `@use` and Sass consumers need no loadPaths.
+ */
+const SOURCE = { styles: "styles.build" };
+
 const banner = (name) => `/* GENERATED FILE — DO NOT EDIT.
  *
- * Compiled from src/${name}.scss by scripts/build-css.mjs (\`pnpm build:css\`).
+ * Compiled from src/${SOURCE[name] ?? name}.scss by scripts/build-css.mjs (\`pnpm build:css\`).
  * Edit the .scss partials under src/styles/ instead; \`pnpm check:css\` fails
  * if this file has drifted from them.
  */
@@ -44,7 +53,7 @@ for (const name of ENTRIES) {
   const target = join(root, "src", `${name}.css`);
   const compiled =
     banner(name) +
-    sass.compile(join(root, "src", `${name}.scss`), {
+    sass.compile(join(root, "src", `${SOURCE[name] ?? name}.scss`), {
       style: "expanded",
       sourceMap: false,
       loadPaths: [join(root, "node_modules")],
