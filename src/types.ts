@@ -316,6 +316,11 @@ export interface AuthDef {
    * `autoSatisfied` means "the user does not have to pick anything for it".
    */
   autoSatisfied?: boolean;
+  /**
+   * `true` on the one method the server marks as the tenant's default for this
+   * app. The connect modal preselects it (among the available methods).
+   */
+  default?: boolean;
 }
 
 /** Public summary of a stored connection — never carries the credential. */
