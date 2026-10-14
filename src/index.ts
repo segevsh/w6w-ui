@@ -129,6 +129,8 @@ export { isExprValue, isSecretValue } from "./types.ts";
 
 export { IconButton } from "./components/IconButton.tsx";
 export type { IconButtonProps } from "./components/IconButton.tsx";
+export { InfoTip } from "./components/InfoTip.tsx";
+export type { InfoTipProps } from "./components/InfoTip.tsx";
 export { Icon } from "./components/Icon.tsx";
 export type { IconProps } from "./components/Icon.tsx";
 export { iconNames } from "./components/icons.tsx";

@@ -28,6 +28,7 @@
 
 /* Light — the base defaults. */
 :where(:root) {
+  color-scheme: light;
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -56,6 +57,7 @@
    forced a mode via data-theme, which is handled by the blocks below). */
 @media (prefers-color-scheme: dark) {
   :where(:root) {
+    color-scheme: dark;
     --w6w-bg: #0f1115;
     --w6w-panel: #181b22;
     --w6w-panel-2: #1f232c;
@@ -83,6 +85,7 @@
 /* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
    a forced data-theme always beats the OS preference. */
 :where([data-theme="light"]) {
+  color-scheme: light;
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -106,6 +109,7 @@
   --w6w-code-variable: #953800;
 }
 :where([data-theme="dark"]) {
+  color-scheme: dark;
   --w6w-bg: #0f1115;
   --w6w-panel: #181b22;
   --w6w-panel-2: #1f232c;

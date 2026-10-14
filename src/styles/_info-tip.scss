@@ -1,0 +1,9 @@
+.w6w-info-tip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+}
+.w6w-info-tip-body {
+  flex-basis: 100%;
+}

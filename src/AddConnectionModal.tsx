@@ -178,7 +178,12 @@ function ConnectionConfig({
   }, [api, app.id]);
 
   const available = auths ?? [];
-  const auth: AuthDef | undefined = available.find((a) => a.key === authKey) ?? available[0];
+  // User's pick, else the server-flagged default (over the already-filtered
+  // list, so an unavailable default falls through), else the first.
+  const auth: AuthDef | undefined =
+    available.find((a) => a.key === authKey) ??
+    available.find((a) => a.default === true) ??
+    available[0];
   const fields: AuthField[] = auth?.fields ?? [];
   const isOAuth = auth?.type === "oauth2";
   // The synthetic "no connection needed" entry `GET /apps/:id/auths` appends
