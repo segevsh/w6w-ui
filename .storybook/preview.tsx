@@ -7,6 +7,7 @@ import type { Decorator, Preview } from "@storybook/react-vite";
  * hot-reloads the canvas — with the .css you would have to re-run
  * `pnpm build:css` to see a token change.
  */
+import "@xyflow/react/dist/style.css"; // React Flow base rules: the Sass source does not carry them
 import "../src/styles.scss";
 
 /**
@@ -15,7 +16,8 @@ import "../src/styles.scss";
  * Every `--w6w-*` default is declared on `:where(:root)` with a
  * `prefers-color-scheme` override, and `:where([data-theme="light"|"dark"])`
  * beats both — on ANY ancestor, which is why a wrapper element is enough and
- * nothing has to be written to `<html>`. `data-theme` is also the exact signal
+ * nothing has to be written to `<html>`. `color-scheme` follows the same wrapper
+ * (declared on component roots, never on `<html>`). `data-theme` is also the exact signal
  * the JS components read (explicit prop > data-theme > OS pref), so a story
  * that switches this is exercising the real theming contract, not a Storybook
  * approximation.

@@ -65,6 +65,17 @@ small and authoritative for two specific surfaces — see the routing table belo
    --check"`. Edit the partial, run `build:css`, commit both files — never hand-merge the generated
    `.css` on a conflict; regenerate instead (`build-css.mjs` is deterministic).
 
+   **verified: 2026-10-14** — `src/styles.css` is compiled from the BUILD-ONLY `src/styles.build.scss`
+   (`scripts/build-css.mjs`: `const SOURCE = { styles: "styles.build" }`, `loadPaths: [join(root,
+   "node_modules")]`), which `@use`s `"@xyflow/react/dist/style"` and then `"styles"`.
+   `styles.build.scss` is not published (build-css.mjs: "build-only (not in package.json `files`)").
+   The published `src/styles.scss` and `src/styles/_*.scss` contain NO external `@use` (`grep -rn
+   "@use" src/styles.scss src/styles` → only sibling partials), so Sass consumers need no loadPaths
+   (pack-smoke's `.scss` probe compiles `@use "@w6w/ui/styles.scss"` with none). `pnpm check:css`
+   gates sync. `src/WorkflowFlowEditor.tsx` imports `@xyflow/react` components only, no React Flow CSS
+   (`grep -n "import.*css" src/WorkflowFlowEditor.tsx` → none; `src/flow.ts` header: "compiled in from
+   `@xyflow/react/dist/style`, so no second import is needed").
+
 3. **`pnpm test` is a TWO-root glob, not a flat one.** `package.json`'s `"test"` script:
    ```
    "test": "node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts"
@@ -595,9 +606,31 @@ from the engine through the ui:
   - `test/pack-smoke/run.sh` (`UI_TGZ=… [EXPR_TGZ=…]`) is the clean-consumer tsc + vite gate.
   - `release.yml` checks out `w6w-io/w6w-core` as a `core/` sibling for its gates. It skips the
     publish step when the version is already on npm.
-- **Gate baselines:** measured on `proj/26-10-14-01-npm-publish-expr-ui` @ `58a7fcb`.
-  - `NODE_OPTIONS=--experimental-strip-types pnpm test` gives **802 pass / 0 fail** on Node 22.16.
-  - The `test/*/run.sh` browser halves cannot run in this devcontainer: docker can't see the mktemp
-    mount. Only their bundling half is gateable here.
+- **verified: 2026-10-14** — `vite.config.ts` `output.banner: (chunk) => (chunk.isEntry ? '"use client";' : "")` adds
+  `"use client";` to the six entry files only (index/flow/code × mjs/cjs); shared chunks carry no
+  banner. `test/pack-smoke/run.sh` asserts both (`== "use client" banner on the six entry files`,
+  `shared chunk(s) banner-free`).
+- **verified: 2026-10-14** — `color-scheme` is set only on elements whose class list has a token starting `w6w-`:
+  `:where([class^="w6w-"]:not(:root), [class*=" w6w-"]:not(:root)) { color-scheme: var(--w6w-scheme); }`
+  (`src/styles/_tokens.scss`, the comment above that rule says it never matches `<html>`/`:root` or a
+  host `data-theme` wrapper). `--w6w-scheme` inherits. `Combobox` (`src/components/Combobox.tsx`)
+  applies only the caller's `className` prop and no `w6w-` class of its own (`grep -rn w6w-combobox
+  src` → none), so its root inherits the host's scheme.
+- **verified: 2026-10-14** — Test rigs:
+  - `pnpm test:pack-smoke` (`bash test/pack-smoke/run.sh`) requires `UI_TGZ=<pnpm pack tarball>`
+    (`fatal "UI_TGZ is required"`). It builds a Vite + React 18 consumer and a Next `16.4.1` + React 19
+    consumer (turbopack and `--webpack`: `for BUILDER in turbopack webpack`), plus a `.scss` probe. It
+    installs from npm, so it needs network.
+  - `test/host-isolation/run.sh` (`EXPECTED_TESTS` default 13) gates in `HOST_BROWSER=1` mode, using
+    host chromium from `~/.cache/ms-playwright/chromium-*`; docker mode needs the
+    `mcr.microsoft.com/playwright:v1.60.0-noble` image.
+  - Docker mode cannot run from this devcontainer: the rigs bind-mount a mktemp dir, and bind mounts
+    resolve on the docker host, not in the devcontainer.
+  - The five bare-sass rigs (picker-layout, picker-paging, action-test-form, expr-template, copyable)
+    run `"$PKG/node_modules/.bin/sass" --no-source-map --style=expanded "$SRC/styles.scss"` with no
+    `--load-path`; none is needed because the published `styles.scss` has no external `@use`.
+- **verified: 2026-10-14** — Gate baselines: `NODE_OPTIONS=--experimental-strip-types pnpm test` gives **802 pass / 0
+  fail** on Node 22.16 (bare `pnpm test` fails with `ERR_UNKNOWN_FILE_EXTENSION`; fact 3). Package
+  version is `0.1.1` (`package.json` `"version"`).
 
-verified: 2026-10-14 · against `proj/26-10-14-01-npm-publish-expr-ui` @ `58a7fcb`.
+verified: 2026-10-14 · against `proj/26-10-14-05-embed-client-kit` @ `e6d9bf0`.

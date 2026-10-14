@@ -23,8 +23,6 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import type { FinalConnectionState } from "@xyflow/react";
-import { WaitEditor } from "./WaitEditor.tsx";
-import "@xyflow/react/dist/style.css";
 import { Handle } from "@xyflow/react";
 import {
   type ReactNode,
@@ -54,6 +52,7 @@ import {
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
+import { WaitEditor } from "./WaitEditor.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";

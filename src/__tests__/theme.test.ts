@@ -163,19 +163,54 @@ function topLevelBlocks(css: string): { selector: string; body: string }[] {
   return out;
 }
 
-test("styles.css — every block declaring --w6w-text also declares the matching color-scheme (exactly 4 blocks)", () => {
+test("styles.css — token blocks declare no color-scheme; only non-root selectors do (host <html> is never themed)", () => {
   const css = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "styles.css"),
     "utf8",
   );
-  const blocks = topLevelBlocks(css).filter((b) => /--w6w-text\s*:/.test(b.body));
-  assert.equal(blocks.length, 4);
-  for (const b of blocks) {
-    const text = /--w6w-text\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
-    const scheme = /(?:^|[;\s])color-scheme\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
-    const want = text === "#1a1d24" ? "light" : text === "#e6e8ee" ? "dark" : "?";
-    assert.equal(scheme, want, `${b.selector}: text ${text} needs color-scheme ${want}`);
+  const blocks = topLevelBlocks(css);
+  const tokenBlocks = blocks.filter((b) => /--w6w-text\s*:/.test(b.body));
+  assert.equal(tokenBlocks.length, 4);
+  for (const b of tokenBlocks) {
+    assert.doesNotMatch(b.body, /color-scheme\s*:/, `${b.selector}: token block sets color-scheme`);
   }
+  const schemeBlocks = blocks.filter((b) => /(?:^|[;\s])color-scheme\s*:/.test(b.body));
+  const value = (b: { body: string }) => /color-scheme\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
+  // A selector in the list that could match the root element itself.
+  const matchesRoot = (sel: string) =>
+    sel.split(/,(?![^(]*\))/).some((part) => {
+      const p = part.trim();
+      if (/^:where\(:root\)$|^:root$|^html\b/.test(p)) return true;
+      // bare `[data-theme=…]` with no descendant combinator and no :not(:root)
+      return /^:where\(\[data-theme[^\]]*\]\)$|^\[data-theme[^\]]*\]$/.test(p);
+    });
+  for (const b of schemeBlocks) {
+    assert.ok(!matchesRoot(b.selector), `${b.selector}: color-scheme on a root-matching selector`);
+  }
+  // Each token block carries the inherited `--w6w-scheme`, so the nearest themed ancestor wins.
+  assert.deepEqual(
+    tokenBlocks.map((b) => /--w6w-scheme\s*:\s*([^;]+);/.exec(b.body)?.[1].trim()),
+    ["light", "dark", "light", "dark"],
+  );
+  // Every color-scheme declaration reads that property; none hard-codes a scheme.
+  assert.ok(schemeBlocks.length > 0);
+  for (const b of schemeBlocks) {
+    assert.equal(
+      value(b),
+      "var(--w6w-scheme)",
+      `${b.selector}: color-scheme not from --w6w-scheme`,
+    );
+  }
+  assert.ok(
+    schemeBlocks.some((b) => b.selector.includes("[class^=w6w-]")),
+    "scheme is declared on every w6w- component root, not a hand-picked list",
+  );
+  // Pinned selector: only elements whose class LIST has a token starting `w6w-`; no host-reaching arms.
+  assert.equal(schemeBlocks.length, 1);
+  const sel = schemeBlocks[0].selector.replace(/["']/g, "").replace(/\s+/g, " ");
+  assert.equal(sel, ":where([class^=w6w-]:not(:root), [class*= w6w-]:not(:root))");
+  assert.doesNotMatch(sel, /data-theme/, "a host data-theme element is never matched");
+  assert.doesNotMatch(sel, /\[class\*=w6w-\]/, "no substring arm that reaches my-w6w-card");
 });
 
 test("styles.css — an option/optgroup rule paints token text on the panel background", () => {

@@ -6,10 +6,11 @@ import ts from "typescript";
 register(import.meta.url, import.meta.url);
 
 export async function load(url, context, nextLoad) {
-  // `@xyflow/react` imports its own `dist/style.css`; Node's ESM loader has no
-  // handler for `.css` and throws `ERR_UNKNOWN_FILE_EXTENSION` under
-  // `node --test`. A stub empty module is enough — the test harness doesn't
-  // render CSS, it only needs the import to resolve.
+  // Defensive stub: Node's ESM loader has no handler for `.css` and throws
+  // `ERR_UNKNOWN_FILE_EXTENSION` under `node --test`. No component imports CSS
+  // any more (React Flow's base rules ship inside `styles.css`), but a future
+  // import of a stylesheet must not take the whole suite down. An empty module
+  // is enough — the harness doesn't render CSS.
   if (url.endsWith(".css")) {
     return { format: "module", source: "export default {};", shortCircuit: true };
   }

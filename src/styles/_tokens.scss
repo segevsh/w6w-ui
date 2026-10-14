@@ -28,7 +28,6 @@
 
 /* Light — the base defaults. */
 :where(:root) {
-  color-scheme: light;
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -51,13 +50,13 @@
   --w6w-code-punctuation: #5f6875;
   --w6w-code-variable: #953800;
   --w6w-radius: 10px;
+  --w6w-scheme: light;
 }
 
 /* Dark — followed automatically from the OS preference (unless a host has
    forced a mode via data-theme, which is handled by the blocks below). */
 @media (prefers-color-scheme: dark) {
   :where(:root) {
-    color-scheme: dark;
     --w6w-bg: #0f1115;
     --w6w-panel: #181b22;
     --w6w-panel-2: #1f232c;
@@ -72,6 +71,7 @@
     --w6w-health-down: var(--w6w-danger);
     --w6w-health-unknown: #9aa3b2;
     --w6w-icon-swatch: #1f232c;
+    --w6w-scheme: dark;
   --w6w-code-comment: #7d8797;
   --w6w-code-keyword: #d2a8ff;
   --w6w-code-string: #7ee787;
@@ -85,7 +85,7 @@
 /* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
    a forced data-theme always beats the OS preference. */
 :where([data-theme="light"]) {
-  color-scheme: light;
+  --w6w-scheme: light;
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -109,7 +109,7 @@
   --w6w-code-variable: #953800;
 }
 :where([data-theme="dark"]) {
-  color-scheme: dark;
+  --w6w-scheme: dark;
   --w6w-bg: #0f1115;
   --w6w-panel: #181b22;
   --w6w-panel-2: #1f232c;
@@ -138,4 +138,23 @@
 }
 .w6w-small {
   font-size: 0.85em;
+}
+
+/* color-scheme — declared on ui COMPONENT ROOTS, never on the host's <html>.
+   `color-scheme` inherits and also themes the page canvas, scrollbars and form
+   controls, so setting it on :root / [data-theme] let importing this file flip a
+   host's whole document. Instead each token block above also sets the
+   `--w6w-scheme` custom property (light / dark), which INHERITS, so the nearest
+   themed ancestor wins however themes nest (a light panel inside a dark page and
+   the reverse). Elements ui renders (any `w6w-` class, which covers the native
+   <dialog> modals) and the native controls inside them read it with
+   `color-scheme: var(--w6w-scheme)`. Not a hand-picked root list: every ui
+   component carries a `w6w-` class. Only an element whose class LIST has a token
+   starting `w6w-` matches (`class^=` / `class*=" w6w-"`), so host elements are never
+   touched: not a host `data-theme` wrapper, not a host class that merely contains
+   `w6w-` (`my-w6w-card`), and not a host element's own color-scheme on inputs nested
+   in a ui root (color-scheme inherits, so no descendant rule is needed). Nothing here
+   ever matches <html>/:root. All zero specificity. */
+:where([class^="w6w-"]:not(:root), [class*=" w6w-"]:not(:root)) {
+  color-scheme: var(--w6w-scheme);
 }
