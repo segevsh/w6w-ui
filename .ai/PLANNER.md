@@ -571,3 +571,33 @@ from the engine through the ui:
   `AppPicker.tsx` (`const retry`) dispatch it.
 - Tests: `src/__tests__/AppPicker.loader.test.ts`, extended `AppPicker.paged.test.ts`
   and `app-pages.test.ts`. `package.json` is at 0.0.14.
+
+## npm packaging and `@w6w/expr` resolution (26-10-14-01-npm-publish-expr-ui)
+
+- **`@w6w/expr` is an npm dependency (`^0.1.0`) and external to the build.** `vite.config.ts` lists it
+  in the externals. Inside this repo, `pnpm-workspace.yaml`'s override still links
+  `../core/packages/expr`.
+- **That link resolves to source through the `w6w-source` export condition, not to expr's `dist/`.**
+  Expr's `package.json` `exports["."]` puts `"w6w-source": "./mod.ts"` first. The opt-ins are:
+  - `tsconfig.json` `customConditions`.
+  - `vite.config.ts` and `.storybook/vite.config.ts` `resolve.conditions`. Storybook does **not**
+    inherit the root vite config, and Vite 6 *replaces* its default conditions when you set them, so
+    spread `defaultClientConditions`.
+  - `node --conditions=w6w-source` in `pnpm test`.
+  - `--conditions=w6w-source` on every `test/*/run.sh` esbuild call.
+  - **Trap:** drop any one of these and that gate fails with TS2307 / "Failed to resolve entry". It
+    only fails while expr's `dist/` is absent, so gate with it absent.
+- **Publishing goes through `pnpm pack`.** `npm publish`/`npm pack` ignore `publishConfig`'s
+  main/types/exports and would ship `./src/index.ts`. The steps are:
+  1. `pnpm pack`.
+  2. `node scripts/assert-packed-manifest.mjs <tgz>`.
+  3. `npm publish <tgz> --provenance`, run from `release.yml`.
+  - `test/pack-smoke/run.sh` (`UI_TGZ=… [EXPR_TGZ=…]`) is the clean-consumer tsc + vite gate.
+  - `release.yml` checks out `w6w-io/w6w-core` as a `core/` sibling for its gates. It skips the
+    publish step when the version is already on npm.
+- **Gate baselines:** measured on `proj/26-10-14-01-npm-publish-expr-ui` @ `58a7fcb`.
+  - `NODE_OPTIONS=--experimental-strip-types pnpm test` gives **802 pass / 0 fail** on Node 22.16.
+  - The `test/*/run.sh` browser halves cannot run in this devcontainer: docker can't see the mktemp
+    mount. Only their bundling half is gateable here.
+
+verified: 2026-10-14 · against `proj/26-10-14-01-npm-publish-expr-ui` @ `58a7fcb`.

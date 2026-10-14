@@ -34,6 +34,7 @@
  */
 /* Light — the base defaults. */
 :where(:root) {
+  color-scheme: light;
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -62,6 +63,7 @@
    forced a mode via data-theme, which is handled by the blocks below). */
 @media (prefers-color-scheme: dark) {
   :where(:root) {
+    color-scheme: dark;
     --w6w-bg: #0f1115;
     --w6w-panel: #181b22;
     --w6w-panel-2: #1f232c;
@@ -88,6 +90,7 @@
 /* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
    a forced data-theme always beats the OS preference. */
 :where([data-theme=light]) {
+  color-scheme: light;
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -112,6 +115,7 @@
 }
 
 :where([data-theme=dark]) {
+  color-scheme: dark;
   --w6w-bg: #0f1115;
   --w6w-panel: #181b22;
   --w6w-panel-2: #1f232c;
@@ -255,6 +259,17 @@
   color: var(--w6w-text);
   font-size: var(--w6w-fs-sm);
   font-family: inherit;
+}
+
+/* Native popups: the list background follows `color-scheme` (declared with the
+   tokens), so give the options token colours too — never one theme's text on
+   the other theme's background. */
+.w6w-field option,
+.w6w-field optgroup,
+select option,
+select optgroup {
+  color: var(--w6w-text);
+  background-color: var(--w6w-panel);
 }
 
 .w6w-field input:focus,
@@ -3426,6 +3441,17 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 .w6w-icon-button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.w6w-info-tip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+}
+
+.w6w-info-tip-body {
+  flex-basis: 100%;
 }
 
 /* The shared `Icon` (`src/components/Icon.tsx`).

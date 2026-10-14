@@ -30,20 +30,26 @@ This README covers the repository itself: what's in it and how it's built.
 
 ## Install / consume
 
-`@w6w/ui` is not published to npm yet (the release workflow exists; no version has shipped). Two
-routes:
+```sh
+npm install @w6w/ui react react-dom
+```
 
-- **Git dependency**: `"@w6w/ui": "github:w6w-io/w6w-ui#<commit-sha>"` — the repo is public. Use
-  pnpm: `@w6w/expr` is itself a subdirectory git dependency
-  (`github:w6w-io/w6w-core#path:packages/expr`), and not every package manager resolves `#path:`.
+`@w6w/expr` is a regular npm dependency and installs with it. `react` and `react-dom` (18 or later)
+are peer dependencies. The npm tarball ships compiled `dist/` (ESM + CJS + `.d.ts`), plus the
+stylesheets; the CommonJS build needs Node 20.19+ / 22.12+ to `require()` the ESM-only `@w6w/expr`.
+
+Two source routes remain, for working against an unreleased commit or a sibling checkout:
+
+- **Git dependency**: `"@w6w/ui": "github:w6w-io/w6w-ui#<commit-sha>"` — the repo is public.
 - **Sibling checkout with `link:`**: `"@w6w/ui": "link:../w6w-ui"` — the pattern this monorepo
   uses (`studio` links `ui` this way).
 
-`react` and `react-dom` (18 or later) are peer dependencies.
-
-`main`/`module`/`types` and `exports` all point at raw `.tsx` source under `./src`, not a pre-built
-`dist/` (`publishConfig` switches them to `dist/` for the npm tarball), so your bundler compiles the
-package like your own code. Vite needs nothing extra; a few setups do — see the
+In this repo `main`/`module`/`types` and `exports` point at raw `.tsx` source under `./src`
+(`publishConfig` switches them to `dist/` in the packed npm tarball, which `pnpm pack` applies), so
+on those two routes your bundler compiles the package like your own code. Inside this repo
+`@w6w/expr` resolves to the sibling `packages/core` checkout through the `w6w-source` export
+condition (set in `tsconfig.json`, `vite.config.ts`, `.storybook/vite.config.ts`, the `test` script
+and the `test/` rigs). Vite needs nothing extra; a few setups do — see the
 [bundler notes](docs/overview.md#bundler-notes):
 
 - **Vite with a `link:` checkout**: studio sets `optimizeDeps.exclude: ["@w6w/ui"]` so edits are

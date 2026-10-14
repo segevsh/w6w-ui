@@ -10,27 +10,35 @@ name: Release
 # invalidates the publisher registration. Don't.
 #
 # One-time setup, BEFORE the first release is ever cut:
-#   1. npmjs.com does not let a first-ever publish of a scoped package go
+#   1. `@w6w/expr` must already be on npm at a version satisfying this
+#      package's range (`^0.1.0`): the `test` job's pack smoke installs the
+#      packed tarball into a clean consumer, which resolves expr from the
+#      registry. Publish expr first (core's publish-expr.yml).
+#   2. npmjs.com does not let a first-ever publish of a scoped package go
 #      through trusted publishing — the package has to exist first. Someone
-#      with npm publish rights to the @w6w org runs one manual
-#      `npm publish --access public` from a built `packages/ui` checkout.
-#      (Root CLAUDE.md / this session's memory: "every new @w6w/* name costs
-#      one manual publish first; never fix it with a stored CI token" — do
-#      not try to route around this step with a secret here.)
-#   2. THEN, on npmjs.com → @w6w/ui package → Settings → Trusted Publishers,
+#      with npm publish rights to the @w6w org does ONE manual first publish
+#      of the `pnpm pack` TARBALL (`pnpm build && pnpm pack`, assert it with
+#      `node scripts/assert-packed-manifest.mjs <tgz>`, then
+#      `npm publish <tgz> --access public`). NEVER `npm publish` of the
+#      directory: npm ignores `publishConfig.exports`/`main`/`types`, so it
+#      would ship a manifest pointing at `src/*`. (Root CLAUDE.md / memory:
+#      "every new @w6w/* name costs one manual publish first; never fix it
+#      with a stored CI token" — do not route around this with a secret.)
+#   3. THEN, on npmjs.com → @w6w/ui package → Settings → Trusted Publishers,
 #      add a GitHub Actions publisher: owner `w6w-io`, repository `w6w-ui`,
-#      workflow `release.yml`. No environment needed for npm (unlike PyPI).
-#   3. Also unresolved as of 2026-09-23 and NOT this workflow's job to fix:
-#      `.claude/docs/strategy/STRATEGY.md` §5.1's audit note says the
-#      `@w6w/expr` github-dependency this package carries
-#      (`github:w6w-io/w6w-core#path:packages/expr`) has a manifest/LICENSE
-#      mismatch in `core` that the doc calls "the blocker on publishing
-#      @w6w/ui to npm" — decide that in `core` before cutting the first
-#      release, not by editing this file.
+#      workflow `release.yml` (or from a shell:
+#      `npm trust github @w6w/ui --file release.yml --repo w6w-io/w6w-ui --allow-publish`).
+#      No environment needed for npm (unlike PyPI).
+#
+# Layout: `@w6w/expr` is a plain npm dependency, but this repo's
+# pnpm-workspace.yaml overrides it to `link:../core/packages/expr` (live
+# sibling source), so every job that installs checks THIS repo out at `ui/`
+# and `w6w-io/w6w-core` at `core/` — the same sibling layout as a local
+# checkout — and runs from `ui/`.
 #
 # Release flow: bump the version in package.json, commit, then publish a
-# GitHub Release tagged `vX.Y.Z`. `workflow_dispatch` runs the gates and a
-# dry-run pack WITHOUT publishing — use it to check a release before cutting
+# GitHub Release tagged `vX.Y.Z`. `workflow_dispatch` runs the gates, the pack
+# smoke and a dry-run publish of the tarball WITHOUT publishing — use it to check a release before cutting
 # one.
 
 on:
@@ -73,16 +81,31 @@ jobs:
           fi
 
   # ── Gates + build ────────────────────────────────────────────────────────
+  # Builds the tarball ONCE (`pnpm pack` — the only packer that applies
+  # `publishConfig`'s dist entry points), asserts its manifest, installs it into
+  # a clean consumer, and dry-runs the publish of that same tarball.
   test:
     needs: verify
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
     steps:
       - uses: actions/checkout@v6
+        with:
+          path: ui
+      - uses: actions/checkout@v6
+        with:
+          repository: w6w-io/w6w-core
+          path: core
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -92,32 +115,70 @@ jobs:
       - name: Build (also what the publish job packs)
         run: pnpm build
 
-      - name: Dry-run pack, every release/dispatch
-        run: npm publish --dry-run
+      - name: Pack with pnpm
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+      - name: Assert the packed manifest
+        run: node scripts/assert-packed-manifest.mjs "$RUNNER_TEMP"/pack/w6w-ui-*.tgz
+
+      - name: Clean-consumer smoke (expr from the npm registry)
+        run: UI_TGZ="$(ls "$RUNNER_TEMP"/pack/w6w-ui-*.tgz)" bash test/pack-smoke/run.sh
+
+      - name: Dry-run publish of the tarball, every release/dispatch
+        run: npm publish "$(ls "$RUNNER_TEMP"/pack/w6w-ui-*.tgz)" --dry-run
 
   # ── npm ──────────────────────────────────────────────────────────────────
   # npm >= 11.5.1 detects the trusted publisher itself from this job's OIDC
-  # identity — no NODE_AUTH_TOKEN anywhere. `publishConfig` in package.json
-  # is what points the published tarball's main/exports at `dist/*`; the
-  # top-level fields keep pointing at `src/*` so studio's local
-  # `link:../ui` dev flow stays a live source link, exactly as
-  # root CLAUDE.md documents — this job does not touch that.
+  # identity — no NODE_AUTH_TOKEN anywhere. The tarball is packed by `pnpm
+  # pack`, which applies `publishConfig` so its manifest points at `dist/*`
+  # (the top-level fields keep pointing at `src/*` so studio's local
+  # `link:../ui` dev flow stays a live source link, exactly as root CLAUDE.md
+  # documents). `npm publish <tgz>` uploads exactly those bytes; it never
+  # re-reads the directory.
   npm:
     needs: [verify, test]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+    defaults:
+      run:
+        working-directory: ui
     steps:
       - uses: actions/checkout@v6
+        with:
+          path: ui
+      - uses: actions/checkout@v6
+        with:
+          repository: w6w-io/w6w-core
+          path: core
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
           registry-url: "https://registry.npmjs.org"
       - run: npm install --global npm@latest
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Pack with pnpm
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+      - name: Assert the packed manifest
+        run: node scripts/assert-packed-manifest.mjs "$RUNNER_TEMP"/pack/w6w-ui-*.tgz
+      - name: Skip publish when this version is already on npm
+        id: exists
+        run: |
+          VER="$(node -p "require('./package.json').version")"
+          if npm view "@w6w/ui@$VER" version >/dev/null 2>&1; then
+            echo "::notice::@w6w/ui@$VER is already on npm — nothing to publish"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish @w6w/ui
-        run: npm publish --access public
+        if: steps.exists.outputs.skip != 'true'
+        run: npm publish "$(ls "$RUNNER_TEMP"/pack/w6w-ui-*.tgz)" --provenance --access public

@@ -358,3 +358,42 @@ test("empty copy only once exhausted: No apps match “eve”. / emptyMessage", 
   assert.ok(btn(h2.container, "Load more"));
   await act(async () => h2.root.unmount());
 });
+
+test("a synchronously throwing loadPage lands in error + Retry (first page), then recovers", async () => {
+  let ok = false;
+  const loader: Loader = () => {
+    if (!ok) throw new Error("boom");
+    return Promise.resolve({ apps: [a("ok")] });
+  };
+  const h = render(loader);
+  await h.mount();
+  await flush();
+  assert.match(text(h.container), /boom/);
+  assert.ok(btn(h.container, "Retry"));
+  ok = true;
+  await click(btn(h.container, "Retry"));
+  await flush();
+  assert.deepEqual(cards(h.container), ["ok"]);
+  await act(async () => h.root.unmount());
+});
+
+test("a synchronously throwing loadPage on Load more keeps the list, shows Retry, recovers", async () => {
+  let ok = false;
+  const loader: Loader = (o) => {
+    if (!o.cursor) return Promise.resolve({ apps: [a("a")], nextCursor: "c2" });
+    if (!ok) throw new Error("boom2");
+    return Promise.resolve({ apps: [a("b")] });
+  };
+  const h = render(loader);
+  await h.mount();
+  await flush();
+  await click(btn(h.container, "Load more"));
+  await flush();
+  assert.deepEqual(cards(h.container), ["a"]);
+  assert.ok(btn(h.container, "Retry"));
+  ok = true;
+  await click(btn(h.container, "Retry"));
+  await flush();
+  assert.deepEqual(cards(h.container), ["a", "b"]);
+  await act(async () => h.root.unmount());
+});

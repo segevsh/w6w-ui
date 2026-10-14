@@ -2,9 +2,9 @@
 
 ## Supported Versions
 
-`@w6w/ui` is not published to npm (see the README's
-[Install / consume](README.md#install--consume) section) and carries no versioned release line.
-The **latest `main`** is the only supported version — there is nothing older to backport a fix to.
+`@w6w/ui` is published to npm (see the README's
+[Install / consume](README.md#install--consume) section). The **latest published release line** (and
+the matching `main`) is the only supported version — there is nothing older to backport a fix to.
 
 ## Reporting a Vulnerability
 

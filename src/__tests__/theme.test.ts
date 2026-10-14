@@ -5,7 +5,10 @@
 // explicit per-component prop and the pre-existing `data-theme`-on-`<html>`/
 // OS-preference fallback. Mirrors DeleteButton.test.ts:1-46's JSDOM/`act` setup.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 
 const g = globalThis as unknown as Record<string, unknown>;
@@ -126,4 +129,64 @@ test("useEffectiveTheme — with no provider in the tree, still resolves OS pref
     root.unmount();
   });
   prefersDark = false;
+});
+
+// --- T3.1.1: native-control contrast. Static, over the COMPILED styles.css
+// (mirrors scale-tokens.test.ts): a native <select> popup takes its background
+// from `color-scheme`, its option text from our tokens, so the two must be
+// declared together.
+function topLevelBlocks(css: string): { selector: string; body: string }[] {
+  const out: { selector: string; body: string }[] = [];
+  const walk = (src: string) => {
+    let i = 0;
+    while (i < src.length) {
+      const open = src.indexOf("{", i);
+      if (open === -1) break;
+      const selector = src
+        .slice(i, open)
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .trim();
+      let depth = 1;
+      let j = open + 1;
+      while (j < src.length && depth > 0) {
+        if (src[j] === "{") depth++;
+        else if (src[j] === "}") depth--;
+        j++;
+      }
+      const body = src.slice(open + 1, j - 1);
+      if (selector.startsWith("@")) walk(body);
+      else out.push({ selector, body });
+      i = j;
+    }
+  };
+  walk(css);
+  return out;
+}
+
+test("styles.css — every block declaring --w6w-text also declares the matching color-scheme (exactly 4 blocks)", () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "styles.css"),
+    "utf8",
+  );
+  const blocks = topLevelBlocks(css).filter((b) => /--w6w-text\s*:/.test(b.body));
+  assert.equal(blocks.length, 4);
+  for (const b of blocks) {
+    const text = /--w6w-text\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
+    const scheme = /(?:^|[;\s])color-scheme\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
+    const want = text === "#1a1d24" ? "light" : text === "#e6e8ee" ? "dark" : "?";
+    assert.equal(scheme, want, `${b.selector}: text ${text} needs color-scheme ${want}`);
+  }
+});
+
+test("styles.css — an option/optgroup rule paints token text on the panel background", () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "styles.css"),
+    "utf8",
+  );
+  const rule = topLevelBlocks(css).find(
+    (b) => /(^|[\s,])option(\s*,|$)/.test(b.selector) && /optgroup/.test(b.selector),
+  );
+  assert.ok(rule, "no rule with option and optgroup in its selector list");
+  assert.match(rule.body, /(^|[;\s])color\s*:\s*var\(--w6w-text\)/);
+  assert.match(rule.body, /background-color\s*:\s*var\(--w6w-panel\)/);
 });

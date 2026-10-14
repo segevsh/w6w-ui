@@ -186,21 +186,29 @@ export function AppPicker({
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      const request = custom
-        ? custom({
-            q: query.q || undefined,
-            cursor,
-            limit: pageLimit,
-            signal: controller.signal,
-          })
-        : (listAppsPage as NonNullable<typeof listAppsPage>)({
-            q: query.q || undefined,
-            category: query.category,
-            cursor,
-            limit: pageLimit,
-            compact: true,
-            signal: controller.signal,
-          });
+      // A loader that throws synchronously must land in the same error/Retry
+      // state as a rejected promise (and not defer the call: request-shape
+      // timing is observable).
+      let request: ReturnType<NonNullable<typeof custom>>;
+      try {
+        request = custom
+          ? custom({
+              q: query.q || undefined,
+              cursor,
+              limit: pageLimit,
+              signal: controller.signal,
+            })
+          : (listAppsPage as NonNullable<typeof listAppsPage>)({
+              q: query.q || undefined,
+              category: query.category,
+              cursor,
+              limit: pageLimit,
+              compact: true,
+              signal: controller.signal,
+            });
+      } catch (e) {
+        request = Promise.reject(e);
+      }
       request
         .then((page) => {
           if (generationRef.current !== generation) return; // stale: a newer query/unmount won

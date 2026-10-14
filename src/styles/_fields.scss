@@ -22,6 +22,16 @@
   font-size: var(--w6w-fs-sm);
   font-family: inherit;
 }
+/* Native popups: the list background follows `color-scheme` (declared with the
+   tokens), so give the options token colours too — never one theme's text on
+   the other theme's background. */
+.w6w-field option,
+.w6w-field optgroup,
+select option,
+select optgroup {
+  color: var(--w6w-text);
+  background-color: var(--w6w-panel);
+}
 .w6w-field input:focus,
 .w6w-field select:focus,
 .w6w-field textarea:focus {
