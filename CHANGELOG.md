@@ -19,8 +19,8 @@ repo's git history for exact dates and commits.
 - `color-scheme` is no longer declared on `:root` or `[data-theme]`, so importing `styles.css` leaves
   the host `<html>` element's computed `color-scheme` untouched (it used to force `light`/`dark` on
   the whole host document). Each token block now also sets an inherited `--w6w-scheme`
-  property, and every element with a `w6w-` class (plus the native controls inside them, and any
-  non-root `[data-theme]` element) declares `color-scheme: var(--w6w-scheme)`. It follows the OS and
+  property, and only elements whose class list has a token starting `w6w-` declare
+  `color-scheme: var(--w6w-scheme)`; host elements are never matched. It follows the OS and
   `data-theme` on any ancestor, `<html>` included, and the nearest themed ancestor wins when themes nest. A host that
   relied on ui setting the page's scheme must now set `color-scheme` itself.
 - `test/pack-smoke` grows a Vite consumer and a Next.js 16 consumer (turbopack and webpack) that
