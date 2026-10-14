@@ -90,6 +90,12 @@ a plain `:root { }`, wins without `!important`:
 
 Load your overrides after `@w6w/ui/styles.css`, or anywhere: specificity already favors yours.
 
+> **`color-scheme` belongs to your page.** `@w6w/ui/styles.css` never sets `color-scheme` on `<html>`,
+> whatever `data-theme` is placed there, so importing it can't change your page's canvas, scrollbars
+> or native controls. The components declare it on their own roots instead (fields, modals, code
+> blocks, the workflow canvas), following the same mode order as the colors. If you want your page's
+> scheme to track the mode, set `color-scheme` on `<html>` yourself.
+
 You'll know it worked when primary buttons (`.w6w-btn`) and the border of a focused input switch
 to your accent.
 

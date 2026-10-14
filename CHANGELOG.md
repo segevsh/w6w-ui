@@ -9,6 +9,25 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+## [0.1.1]
+
+- `styles.css` now carries React Flow's base rules (`.react-flow{`, handles, controls), so
+  `WorkflowFlowEditor` is styled with the one documented stylesheet import. `styles.scss` stays
+  self-contained: Sass consumers add `@xyflow/react/dist/style.css` themselves.
+- The `dist` entry files (`index`, `flow`, `code`; `.mjs` and `.cjs`) start with `"use client";`, so a
+  Next.js App Router server page can import `@w6w/ui` without a consumer-side wrapper module.
+- `color-scheme` is no longer declared on `:root` or `[data-theme]`, so importing `styles.css` leaves
+  the host `<html>` element's computed `color-scheme` untouched (it used to force `light`/`dark` on
+  the whole host document). It is declared on ui component roots instead (`.w6w-field`,
+  `.w6w-copyable`, `dialog.w6w-modal`, `.w6w-flow`, `.w6w-code-block`, and the native controls inside
+  them), still following the OS and `data-theme` on any ancestor, `<html>` included. A host that
+  relied on ui setting the page's scheme must now set `color-scheme` itself.
+- `test/pack-smoke` grows a Vite consumer and a Next.js 16 consumer (turbopack and webpack) that
+  assert the React Flow rules and the `"use client"` banner in the packed tarball.
+- Added `test/host-isolation` (`pnpm test:host-isolation`, `HOST_BROWSER=1` to use a host Chromium): a
+  real-browser rig asserting the host `<html>` `color-scheme` is untouched and component roots are
+  still themed.
+
 ## [0.1.0]
 
 First npm release (`npm install @w6w/ui`).

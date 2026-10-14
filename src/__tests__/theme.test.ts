@@ -163,19 +163,37 @@ function topLevelBlocks(css: string): { selector: string; body: string }[] {
   return out;
 }
 
-test("styles.css — every block declaring --w6w-text also declares the matching color-scheme (exactly 4 blocks)", () => {
+test("styles.css — token blocks declare no color-scheme; only non-root selectors do (host <html> is never themed)", () => {
   const css = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "styles.css"),
     "utf8",
   );
-  const blocks = topLevelBlocks(css).filter((b) => /--w6w-text\s*:/.test(b.body));
-  assert.equal(blocks.length, 4);
-  for (const b of blocks) {
-    const text = /--w6w-text\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
-    const scheme = /(?:^|[;\s])color-scheme\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
-    const want = text === "#1a1d24" ? "light" : text === "#e6e8ee" ? "dark" : "?";
-    assert.equal(scheme, want, `${b.selector}: text ${text} needs color-scheme ${want}`);
+  const blocks = topLevelBlocks(css);
+  const tokenBlocks = blocks.filter((b) => /--w6w-text\s*:/.test(b.body));
+  assert.equal(tokenBlocks.length, 4);
+  for (const b of tokenBlocks) {
+    assert.doesNotMatch(b.body, /color-scheme\s*:/, `${b.selector}: token block sets color-scheme`);
   }
+  const schemeBlocks = blocks.filter((b) => /(?:^|[;\s])color-scheme\s*:/.test(b.body));
+  const value = (b: { body: string }) => /color-scheme\s*:\s*([^;]+);/.exec(b.body)?.[1].trim();
+  // A selector in the list that could match the root element itself.
+  const matchesRoot = (sel: string) =>
+    sel.split(/,(?![^(]*\))/).some((part) => {
+      const p = part.trim();
+      if (/^:where\(:root\)$|^:root$|^html\b/.test(p)) return true;
+      // bare `[data-theme=…]` with no descendant combinator and no :not(:root)
+      return /^:where\(\[data-theme[^\]]*\]\)$|^\[data-theme[^\]]*\]$/.test(p);
+    });
+  for (const b of schemeBlocks) {
+    assert.ok(!matchesRoot(b.selector), `${b.selector}: color-scheme on a root-matching selector`);
+  }
+  const values = new Set(schemeBlocks.map(value));
+  assert.ok(values.has("light"), "a light color-scheme block exists");
+  assert.ok(values.has("dark"), "a dark color-scheme block exists");
+  assert.ok(
+    schemeBlocks.some((b) => b.selector.includes(".w6w-field") && value(b) === "dark"),
+    "dark scheme is declared on component roots",
+  );
 });
 
 test("styles.css — an option/optgroup rule paints token text on the panel background", () => {

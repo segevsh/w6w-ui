@@ -150,6 +150,10 @@ then a `data-theme` attribute on `<html>` (or any ancestor, for the CSS), then t
 the components may render in a different mode than the page around them. Full tables and the
 troubleshooting list: [`docs/theming.md`](docs/theming.md).
 
+`styles.css` never sets `color-scheme` on `<html>` (or on any element that is the document root): your
+page owns its own scheme. The components set it on their own roots (fields, modals, code blocks, the
+workflow canvas), following the resolved mode above, so native controls and popups inside them match.
+
 The same namespace carries the spacing and type scale (`--w6w-sp-*`, `--w6w-fs-*`, `--w6w-fw-*`,
 `--w6w-lh-*`, `--w6w-font-*`): [`docs/design-system.md`](docs/design-system.md). The `lint:tokens`
 gate that keeps new code on that scale is described in [CONTRIBUTING.md](CONTRIBUTING.md).
