@@ -111,6 +111,7 @@ export type {
   AppSummary,
   AuthDef,
   AuthField,
+  ConnectionAppMeta,
   ConnectionSummary,
   ExprPart,
   ExprPartKind,

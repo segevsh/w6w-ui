@@ -306,3 +306,145 @@ test("legacy fallback: no listAppsByIds ⇒ the ORIGINAL full-catalog + zeroCred
   );
   await act(async () => root.unmount());
 });
+
+// ── T1.1.3 (I-0 / R-B1′): inline `ConnectionSummary.app` first ──────────────
+const readItemNames = (container: Element) =>
+  Array.from(container.querySelectorAll(".w6w-readytouse .w6w-stepbuilder-item strong")).map((el) =>
+    (el.textContent || "").trim(),
+  );
+const readItemIconSrcs = (container: Element) =>
+  Array.from(container.querySelectorAll(".w6w-readytouse .w6w-stepbuilder-item img")).map(
+    (el) => el.getAttribute("src") ?? "",
+  );
+
+test("T1.1.3 I1 — every connection carries inline app meta ⇒ ZERO app-lookup calls, cards render the inline meta", async () => {
+  let byIdsCalls = 0;
+  let listAppsCalls = 0;
+  const api = {
+    listConnections: async () => [
+      {
+        id: "c1",
+        appId: "slack",
+        app: { displayName: "Slack Inline", iconSvg: "data:image/svg+xml;base64,U0xBQ0s=" },
+      },
+      { id: "c2", appId: "github", app: { displayName: "GitHub Inline", brandColor: "#24292F" } },
+    ],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: async () => {
+      byIdsCalls += 1;
+      return [];
+    },
+    listApps: async () => {
+      listAppsCalls += 1;
+      return [];
+    },
+  };
+  const { container, root } = mount(api);
+  await render({ container, root, api, props: {} });
+
+  assert.equal(byIdsCalls, 0, "inline app meta on every row ⇒ listAppsByIds is never called");
+  assert.equal(listAppsCalls, 0, "inline app meta on every row ⇒ listApps is never called");
+  assert.deepEqual(readConnectedAppIds(container).sort(), ["github", "slack"]);
+  assert.deepEqual(readItemNames(container).sort(), ["GitHub Inline", "Slack Inline"]);
+  assert.deepEqual(readItemIconSrcs(container), ["data:image/svg+xml;base64,U0xBQ0s="]);
+  const tile = container.querySelector(
+    ".w6w-readytouse .w6w-stepbuilder-item span[aria-hidden='true']",
+  ) as HTMLElement | null;
+  assert.equal(
+    tile?.style.background,
+    "rgb(36, 41, 47)",
+    "inline brandColor paints the initials tile",
+  );
+  assert.equal(findLoadMore(container), undefined, "nothing unresolved ⇒ no Load more");
+  await act(async () => root.unmount());
+});
+
+test("T1.1.3 I2 — a mix ⇒ exactly ONE listAppsByIds, carrying only the ids whose rows lack app meta (absent or null)", async () => {
+  const byIdsCalls: string[][] = [];
+  const api = {
+    listConnections: async () => [
+      { id: "c1", appId: "slack", app: { displayName: "Slack Inline" } },
+      { id: "c2", appId: "github" },
+      { id: "c3", appId: "notion", app: null },
+    ],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: async (ids: readonly string[]) => {
+      byIdsCalls.push([...ids]);
+      const table: Record<string, AppLike> = {
+        github: { id: "github", displayName: "GitHub Catalog" },
+        notion: { id: "notion", displayName: "Notion Catalog" },
+      };
+      return ids.map((id) => table[id]).filter((a): a is AppLike => Boolean(a));
+    },
+    listApps: async () => {
+      throw new Error("listApps must not be called on the bounded path");
+    },
+  };
+  const { container, root } = mount(api);
+  await render({ container, root, api, props: {} });
+
+  assert.equal(byIdsCalls.length, 1, "exactly one bounded lookup for the rows lacking app meta");
+  assert.deepEqual([...byIdsCalls[0]].sort(), ["github", "notion"]);
+  assert.deepEqual(readConnectedAppIds(container).sort(), ["github", "notion", "slack"]);
+  assert.deepEqual(readItemNames(container).sort(), [
+    "GitHub Catalog",
+    "Notion Catalog",
+    "Slack Inline",
+  ]);
+  await act(async () => root.unmount());
+});
+
+test("T1.1.3 I3 — appsFilter applies to inline-resolved apps exactly as to looked-up ones", async () => {
+  let byIdsCalls = 0;
+  const api = {
+    listConnections: async () => [
+      { id: "c1", appId: "slack", app: { displayName: "Slack Inline" } },
+      { id: "c2", appId: "github", app: { displayName: "GitHub Inline" } },
+    ],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: async () => {
+      byIdsCalls += 1;
+      return [];
+    },
+  };
+  const { container, root } = mount(api);
+  await render({
+    container,
+    root,
+    api,
+    props: { appsFilter: (a: { id: string }) => a.id === "github" },
+  });
+
+  assert.equal(byIdsCalls, 0);
+  assert.deepEqual(readConnectedAppIds(container), ["github"]);
+  await act(async () => root.unmount());
+});
+
+test("T1.1.3 I4 — dark theme renders the inline iconSvgDark", async () => {
+  const api = {
+    listConnections: async () => [
+      {
+        id: "c1",
+        appId: "slack",
+        app: {
+          displayName: "Slack Inline",
+          iconSvg: "data:image/svg+xml;base64,TElHSFQ=",
+          iconSvgDark: "data:image/svg+xml;base64,REFSSw==",
+        },
+      },
+    ],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: async () => {
+      throw new Error("listAppsByIds must not be called when every row carries app meta");
+    },
+  };
+  const { container, root } = mount(api);
+  await render({ container, root, api, props: { theme: "dark" } });
+
+  assert.deepEqual(readItemIconSrcs(container), ["data:image/svg+xml;base64,REFSSw=="]);
+  await act(async () => root.unmount());
+});
