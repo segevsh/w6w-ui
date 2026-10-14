@@ -448,3 +448,92 @@ test("T1.1.3 I4 — dark theme renders the inline iconSvgDark", async () => {
   assert.deepEqual(readItemIconSrcs(container), ["data:image/svg+xml;base64,REFSSw=="]);
   await act(async () => root.unmount());
 });
+
+test("T-5 — mixed inline-seeded case: no Load more while the first batch is in flight; a forced loadMoreApps never sends a second lookup", async () => {
+  const { useReadyToUse } = await import("../StepBuilderModal.tsx");
+  const byIdsCalls: string[][] = [];
+  let release: (apps: AppLike[]) => void = () => {};
+  const conns = [
+    { id: "c0", appId: "inline", app: { displayName: "Inline" } },
+    ...Array.from({ length: 15 }, (_, i) => ({ id: `c${i + 1}`, appId: `app${i + 1}` })),
+  ];
+  const api = {
+    listConnections: async () => conns,
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: (ids: readonly string[]) => {
+      byIdsCalls.push([...ids]);
+      return new Promise<AppLike[]>((r) => {
+        release = r;
+      });
+    },
+  };
+  let latest: ReturnType<typeof useReadyToUse> | undefined;
+  const Probe = () => {
+    latest = useReadyToUse([]);
+    return null;
+  };
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      React.createElement(W6WUIProvider, { api, children: React.createElement(Probe) } as never),
+    );
+  });
+  await flush();
+
+  assert.equal(byIdsCalls.length, 1, "first batch started");
+  assert.equal(latest?.moreApps, false, "no Load more while the batch is pending");
+  assert.notEqual(latest?.state, "empty");
+  await act(async () => {
+    latest?.loadMoreApps();
+    latest?.loadMoreApps();
+  });
+  assert.equal(byIdsCalls.length, 1, "forced loadMoreApps sends no duplicate lookup");
+
+  await act(async () => {
+    release(byIdsCalls[0].map((id) => ({ id, displayName: id })));
+  });
+  await flush();
+  assert.equal(latest?.moreApps, true, "3 ids remain after the first 12");
+  await act(async () => {
+    latest?.loadMoreApps();
+  });
+  assert.equal(byIdsCalls.length, 2);
+  assert.equal(byIdsCalls[1].length, 3);
+  assert.equal(latest?.moreApps, false, "second batch in flight ⇒ no Load more");
+  await act(async () => {
+    release(byIdsCalls[1].map((id) => ({ id, displayName: id })));
+  });
+  await flush();
+  assert.equal(latest?.moreApps, false, "nothing left");
+  await act(async () => root.unmount());
+});
+
+test("T-5 — non-inline first batch pending ⇒ state is loading, never empty", async () => {
+  const { useReadyToUse } = await import("../StepBuilderModal.tsx");
+  const api = {
+    listConnections: async () => [{ id: "c1", appId: "a" }],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: () => new Promise<AppLike[]>(() => {}),
+  };
+  let latest: ReturnType<typeof useReadyToUse> | undefined;
+  const Probe = () => {
+    latest = useReadyToUse([]);
+    return null;
+  };
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      React.createElement(W6WUIProvider, { api, children: React.createElement(Probe) } as never),
+    );
+  });
+  await flush();
+  assert.equal(latest?.state, "loading");
+  assert.equal(latest?.moreApps, false);
+  await act(async () => root.unmount());
+});
