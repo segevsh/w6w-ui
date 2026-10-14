@@ -25,6 +25,8 @@ First npm release (`npm install @w6w/ui`).
   `w6w-source` export condition (tsconfig `customConditions`, Vite/Storybook `resolve.conditions`,
   `node --conditions`, the `test/` rigs' esbuild), so no expr `dist/` has to be built first.
 
+### Earlier unreleased changes, shipped in 0.1.0
+
 - The expression editor's rail toggle for a source's child fields (a step's output fields, a
   document's keys) now reads "N fields ›" instead of a bare 20px chevron, which went unnoticed
   beside the source chip. On a step with fields, the `▸` arrow moved out of the chip into its own
