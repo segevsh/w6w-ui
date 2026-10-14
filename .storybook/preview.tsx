@@ -7,6 +7,7 @@ import type { Decorator, Preview } from "@storybook/react-vite";
  * hot-reloads the canvas — with the .css you would have to re-run
  * `pnpm build:css` to see a token change.
  */
+import "@xyflow/react/dist/style.css"; // React Flow base rules: the Sass source does not carry them
 import "../src/styles.scss";
 
 /**

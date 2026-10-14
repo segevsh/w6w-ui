@@ -1,7 +1,3 @@
-// Per the `flow.ts` consumer contract, a caller of `WorkflowFlowEditor`
-// imports React Flow's stylesheet itself — so this story does too, rather
-// than relying on `.storybook/preview.tsx` to supply it for every story.
-import "@xyflow/react/dist/style.css";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { SAMPLE_APPS, fakeApi } from "../.storybook/fixtures.ts";
