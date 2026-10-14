@@ -82,7 +82,7 @@ import {
 } from "./flow-connect.ts";
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
-import { fanOutState, setFanOut } from "./flow-fanout.ts";
+import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
 import {
   CALL_APP,
   ERROR_SOURCE_HANDLE,
@@ -2065,7 +2065,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
 function FanOutBadge({ step, count }: { step: FlowStep; count: number }) {
   if (count < 2) return null;
   const parallel = step.fanOut === "parallel";
-  const label = `Runs these ${count} steps in ${parallel ? "parallel" : "sequence"}`;
+  const label = fanOutLabel(count, parallel ? "parallel" : "sequential");
   return (
     <div className="w6w-fanout-badge" role="img" aria-label={label} title={label}>
       <span aria-hidden="true">{parallel ? "⇉" : "→"}</span> {count}
@@ -2180,6 +2180,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const isTrigger = isTriggerApp(step.uses.app);
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
+  const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
     <div>
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
@@ -2230,6 +2231,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           </>
         )}
       </div>
+      {fanBadge}
       {/* Meta line under the card: the step id (internal nodes carry no version). */}
       <div
         className="w6w-muted"
