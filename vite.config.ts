@@ -1,15 +1,16 @@
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defaultClientConditions, defineConfig } from "vite";
 import dts from "vite-plugin-dts";
 
 /**
  * Library-mode build. Produces `dist/index.mjs` (base), `dist/flow.mjs` (the
  * visual workflow editor) and `dist/code.mjs` (the read-only code block) as
  * separate entrypoints so a consumer who only uses one surface doesn't pull in
- * the others' dependencies — @xyflow/react for flow, CodeMirror and @w6w/expr
- * for the base index. `.cjs` mirrors + `.d.ts`
- * files are emitted alongside.
+ * the others' dependencies — @xyflow/react for flow, CodeMirror for the base
+ * index. `@w6w/expr` is EXTERNAL (a real npm dependency of the published
+ * package, not bundled in), like the other runtime deps. `.cjs` mirrors +
+ * `.d.ts` files are emitted alongside.
  *
  * For local development (studio consuming `@w6w/ui` via `link:../ui`), Vite in
  * the consumer transpiles the TS sources directly — the build step is only
@@ -21,8 +22,17 @@ export default defineConfig({
   // surface — `package.json`'s `files` drops them from the tarball too.
   plugins: [
     react(),
-    dts({ include: ["src"], exclude: ["src/**/*.stories.tsx"], insertTypesEntry: true }),
+    dts({
+      include: ["src"],
+      exclude: ["src/**/*.stories.tsx", "src/**/__tests__/**"],
+      insertTypesEntry: true,
+    }),
   ],
+  // In this repo `@w6w/expr` resolves (pnpm override, `link:../core/packages/expr`)
+  // to the sibling's TypeScript source through its `w6w-source` export
+  // condition, so no expr `dist/` has to be built first. Vite 6 REPLACES the
+  // default conditions when this is set, hence the spread.
+  resolve: { conditions: ["w6w-source", ...defaultClientConditions] },
   build: {
     lib: {
       entry: {
@@ -44,6 +54,7 @@ export default defineConfig({
         "@xyflow/react",
         /^@codemirror\//,
         "@uiw/react-codemirror",
+        "@w6w/expr",
       ],
       output: { globals: { react: "React", "react-dom": "ReactDOM" } },
     },

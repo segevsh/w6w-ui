@@ -1,6 +1,6 @@
 {
   "name": "@w6w/ui",
-  "version": "0.0.17",
+  "version": "0.1.0",
   "description": "React components for w6w — central API management. Build plugins, apps and integrations on them.",
   "license": "MIT",
   "homepage": "https://w6w.io",
@@ -39,12 +39,14 @@
     "./styles/*": "./src/styles/_*.scss"
   },
   "files": [
-    "src",
-    "!src/**/*.stories.tsx",
     "dist",
-    "docs",
+    "src/styles.css",
+    "src/code.css",
+    "src/styles.scss",
+    "src/styles/_*.scss",
+    "LICENSE",
     "README.md",
-    "LICENSE"
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public",
@@ -82,11 +84,12 @@
     "build:css": "node scripts/build-css.mjs",
     "check:css": "node scripts/build-css.mjs --check",
     "typecheck": "tsc -b --noEmit",
-    "test": "node --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts",
+    "test": "node --conditions=w6w-source --import ./src/test-jsx-loader.mjs --test src/__tests__/*.test.ts src/components/__tests__/*.test.ts",
     "test:picker-layout": "bash test/picker-layout/run.sh",
     "test:expr-template": "bash test/expr-template/run.sh",
     "test:action-test-form": "bash test/action-test-form/run.sh",
     "test:copyable": "bash test/copyable/run.sh",
+    "test:pack-smoke": "bash test/pack-smoke/run.sh",
     "storybook": "storybook dev -p 6006 --no-open",
     "build-storybook": "storybook build",
     "lint": "biome check .",
@@ -107,7 +110,7 @@
     "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.35.0",
     "@uiw/react-codemirror": "^4.23.7",
-    "@w6w/expr": "github:w6w-io/w6w-core#path:packages/expr",
+    "@w6w/expr": "^0.1.0",
     "@xyflow/react": "^12.3.6",
     "prism-react-renderer": "^2.4.1"
   },

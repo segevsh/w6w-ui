@@ -92,7 +92,7 @@ cp "$HERE/harness-entry.tsx" "$W/tree/src/__copyable_entry.tsx"
 [ -d "$PKG/node_modules" ] || fatal "missing $PKG/node_modules — run pnpm install in $PKG"
 ln -sfn "$PKG/node_modules" "$W/tree/node_modules"
 
-"$ESBUILD" "$W/tree/src/__copyable_entry.tsx" --bundle --loader:.tsx=tsx --loader:.ts=ts \
+"$ESBUILD" "$W/tree/src/__copyable_entry.tsx" --bundle --conditions=w6w-source --loader:.tsx=tsx --loader:.ts=ts \
   --jsx=automatic --jsx-import-source=react --format=iife --log-level=warning \
   --outfile="$W/bundle.js" --define:process.env.NODE_ENV='"development"'
 [ -s "$W/bundle.js" ] || { echo "DID NOT RUN: the tree at $SRC does not bundle"; exit 3; }

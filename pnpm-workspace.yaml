@@ -3,14 +3,14 @@
 # script, and that unresolved value makes a later `pnpm install` exit non-zero —
 # which is what put the frontend dev container into a restart loop once (see the
 # same list in packages/frontend/pnpm-workspace.yaml).
-# `@w6w/expr`'s real dependency spec (in package.json) is the git-installable
-# form real consumers need: `github:w6w-io/w6w-core#path:packages/expr`. That
-# spec is fine for anyone installing `@w6w/ui` from outside this repo, but
-# inside it we want the LIVE sibling checkout — no GitHub fetch on every
-# install, and local edits to packages/core picked up immediately. This
-# override is local-only: it does not propagate to anyone who installs
-# `@w6w/ui` as their own dependency (pnpm overrides apply only to the project
-# that declares them), so the real spec above is what they actually get.
+# `@w6w/expr` is an ordinary npm dependency in package.json (`^0.1.0`) — that
+# is what a consumer of the published `@w6w/ui` gets. Inside this repo we want
+# the LIVE sibling checkout instead — no registry fetch on every install, and
+# local edits to packages/core picked up immediately — so this override links
+# it. It is local-only: pnpm overrides apply only to the project that declares
+# them and are not in the published manifest. The linked package exposes its
+# TypeScript source under the `w6w-source` export condition, which tsconfig,
+# Vite, Storybook, `pnpm test` and the test/ rigs opt into (no expr `dist/`).
 overrides:
   '@w6w/expr': 'link:../core/packages/expr'
 
