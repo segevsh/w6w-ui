@@ -723,6 +723,7 @@ svg.react-flow__connectionline {
   --w6w-code-punctuation: #5f6875;
   --w6w-code-variable: #953800;
   --w6w-radius: 10px;
+  --w6w-scheme: light;
 }
 
 /* Dark — followed automatically from the OS preference (unless a host has
@@ -743,6 +744,7 @@ svg.react-flow__connectionline {
     --w6w-health-down: var(--w6w-danger);
     --w6w-health-unknown: #9aa3b2;
     --w6w-icon-swatch: #1f232c;
+    --w6w-scheme: dark;
     --w6w-code-comment: #7d8797;
     --w6w-code-keyword: #d2a8ff;
     --w6w-code-string: #7ee787;
@@ -755,6 +757,7 @@ svg.react-flow__connectionline {
 /* Explicit mode. Declared AFTER the media query at equal (zero) specificity, so
    a forced data-theme always beats the OS preference. */
 :where([data-theme=light]) {
+  --w6w-scheme: light;
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
   --w6w-panel-2: #f0f2f6;
@@ -779,6 +782,7 @@ svg.react-flow__connectionline {
 }
 
 :where([data-theme=dark]) {
+  --w6w-scheme: dark;
   --w6w-bg: #0f1115;
   --w6w-panel: #181b22;
   --w6w-panel-2: #1f232c;
@@ -813,34 +817,19 @@ svg.react-flow__connectionline {
 /* color-scheme — declared on ui COMPONENT ROOTS, never on the host's <html>.
    `color-scheme` inherits and also themes the page canvas, scrollbars and form
    controls, so setting it on :root / [data-theme] let importing this file flip a
-   host's whole document. The roots below are the elements ui renders itself
-   (native <dialog> modals render in place, so `dialog.w6w-modal` is a root);
-   the native controls inside them are listed too so their popup/option
-   rendering follows the same scheme. Same order as the tokens: light base, OS
-   dark, then the explicit mode. The explicit forms match a [data-theme] ANCESTOR
-   (including <html>) via the descendant combinator, and a [data-theme] element
-   that is not the root element itself, so never `<html>`. All zero specificity. */
-:where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block),
-:where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block) :where(select, option, textarea, input) {
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block),
-  :where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block) :where(select, option, textarea, input) {
-    color-scheme: dark;
-  }
-}
-:where([data-theme=light]) :where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block),
-:where([data-theme=light]:not(:root)),
-:where([data-theme=light]) :where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block) :where(select, option, textarea, input) {
-  color-scheme: light;
-}
-
-:where([data-theme=dark]) :where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block),
-:where([data-theme=dark]:not(:root)),
-:where([data-theme=dark]) :where(.w6w-field, .w6w-copyable, dialog.w6w-modal, .w6w-flow, .w6w-code-block) :where(select, option, textarea, input) {
-  color-scheme: dark;
+   host's whole document. Instead each token block above also sets the
+   `--w6w-scheme` custom property (light / dark), which INHERITS, so the nearest
+   themed ancestor wins however themes nest (a light panel inside a dark page and
+   the reverse). Elements ui renders (any `w6w-` class, which covers the native
+   <dialog> modals) and the native controls inside them read it with
+   `color-scheme: var(--w6w-scheme)`. Not a hand-picked root list: every ui
+   component carries a `w6w-` class. A [data-theme] element that is not the root
+   element also gets it, so a themed wrapper's own canvas follows. Nothing here
+   ever matches <html>/:root. All zero specificity. */
+:where([class*=w6w-]:not(:root)),
+:where([class*=w6w-]) :where(select, option, textarea, input),
+:where([data-theme]:not(:root)) {
+  color-scheme: var(--w6w-scheme);
 }
 
 /*

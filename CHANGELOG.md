@@ -18,15 +18,16 @@ repo's git history for exact dates and commits.
   Next.js App Router server page can import `@w6w/ui` without a consumer-side wrapper module.
 - `color-scheme` is no longer declared on `:root` or `[data-theme]`, so importing `styles.css` leaves
   the host `<html>` element's computed `color-scheme` untouched (it used to force `light`/`dark` on
-  the whole host document). It is declared on ui component roots instead (`.w6w-field`,
-  `.w6w-copyable`, `dialog.w6w-modal`, `.w6w-flow`, `.w6w-code-block`, and the native controls inside
-  them), still following the OS and `data-theme` on any ancestor, `<html>` included. A host that
+  the whole host document). Each token block now also sets an inherited `--w6w-scheme`
+  property, and every element with a `w6w-` class (plus the native controls inside them, and any
+  non-root `[data-theme]` element) declares `color-scheme: var(--w6w-scheme)`. It follows the OS and
+  `data-theme` on any ancestor, `<html>` included, and the nearest themed ancestor wins when themes nest. A host that
   relied on ui setting the page's scheme must now set `color-scheme` itself.
 - `test/pack-smoke` grows a Vite consumer and a Next.js 16 consumer (turbopack and webpack) that
   assert the React Flow rules and the `"use client"` banner in the packed tarball.
 - Added `test/host-isolation` (`pnpm test:host-isolation`, `HOST_BROWSER=1` to use a host Chromium): a
   real-browser rig asserting the host `<html>` `color-scheme` is untouched and component roots are
-  still themed.
+  still themed, including nested light-in-dark / dark-in-light themes.
 
 ## [0.1.0]
 

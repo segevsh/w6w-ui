@@ -92,8 +92,10 @@ Load your overrides after `@w6w/ui/styles.css`, or anywhere: specificity already
 
 > **`color-scheme` belongs to your page.** `@w6w/ui/styles.css` never sets `color-scheme` on `<html>`,
 > whatever `data-theme` is placed there, so importing it can't change your page's canvas, scrollbars
-> or native controls. The components declare it on their own roots instead (fields, modals, code
-> blocks, the workflow canvas), following the same mode order as the colors. If you want your page's
+> or native controls. Instead the resolved mode is exposed as an inherited custom property, `--w6w-scheme`
+> (`light` or `dark`, set alongside the colour tokens), and every element with a `w6w-` class, plus the native
+> controls inside them, sets `color-scheme: var(--w6w-scheme)`. The nearest `data-theme` ancestor wins, so a
+> light panel inside a dark page (or the reverse) gets the right native controls. If you want your page's
 > scheme to track the mode, set `color-scheme` on `<html>` yourself.
 
 You'll know it worked when primary buttons (`.w6w-btn`) and the border of a focused input switch

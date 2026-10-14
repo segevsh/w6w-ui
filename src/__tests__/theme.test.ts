@@ -187,12 +187,23 @@ test("styles.css — token blocks declare no color-scheme; only non-root selecto
   for (const b of schemeBlocks) {
     assert.ok(!matchesRoot(b.selector), `${b.selector}: color-scheme on a root-matching selector`);
   }
-  const values = new Set(schemeBlocks.map(value));
-  assert.ok(values.has("light"), "a light color-scheme block exists");
-  assert.ok(values.has("dark"), "a dark color-scheme block exists");
+  // Each token block carries the inherited `--w6w-scheme`, so the nearest themed ancestor wins.
+  assert.deepEqual(
+    tokenBlocks.map((b) => /--w6w-scheme\s*:\s*([^;]+);/.exec(b.body)?.[1].trim()),
+    ["light", "dark", "light", "dark"],
+  );
+  // Every color-scheme declaration reads that property; none hard-codes a scheme.
+  assert.ok(schemeBlocks.length > 0);
+  for (const b of schemeBlocks) {
+    assert.equal(
+      value(b),
+      "var(--w6w-scheme)",
+      `${b.selector}: color-scheme not from --w6w-scheme`,
+    );
+  }
   assert.ok(
-    schemeBlocks.some((b) => b.selector.includes(".w6w-field") && value(b) === "dark"),
-    "dark scheme is declared on component roots",
+    schemeBlocks.some((b) => b.selector.includes("[class*=w6w-]")),
+    "scheme is declared on every w6w- component root, not a hand-picked list",
   );
 });
 

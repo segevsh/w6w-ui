@@ -105,3 +105,61 @@ test("P3 data-theme on <html> beats the OS for ui roots (and not for <html>)", a
     });
   }
 });
+
+// Not one of the original hand-listed roots: ExecutionFilters / AppPicker /
+// standalone Combobox markup (class names copied from the components).
+const OTHER_BODY = `
+  <div class="w6w-execution-filters"><input id="xs" class="w6w-execution-filters-search" type="search">
+    <select id="xe" class="w6w-execution-filters-select"><option>a</option></select>
+    <input id="xd" class="w6w-execution-filters-date" type="date"></div>
+  <div class="w6w-stepbuilder-apps"><input id="ap" class="w6w-stepbuilder-search" type="text"></div>
+  <select id="cb" class="w6w-combobox"><option>a</option></select>`;
+const OTHER_SELS = ["#xs", "#xe", "#xd", "#ap", "#cb"];
+
+test("R1 components outside the old root list follow the OS", async () => {
+  for (const os of OS) {
+    await withPage(os, { body: OTHER_BODY }, async (page) => {
+      for (const sel of OTHER_SELS) assert.equal(await scheme(page, sel), os, `os=${os} ${sel}`);
+    });
+  }
+});
+
+test("R2 components outside the old root list follow data-theme on <html> and a wrapper", async () => {
+  for (const os of OS) {
+    const t = os === "light" ? "dark" : "light";
+    await withPage(os, { htmlAttrs: `data-theme="${t}"`, body: OTHER_BODY }, async (page) => {
+      for (const sel of OTHER_SELS) assert.equal(await scheme(page, sel), t, `os=${os} html=${t} ${sel}`);
+      assert.equal(await scheme(page, "html"), "normal", `os=${os} html stays normal`);
+    });
+    await withPage(os, { body: `<div data-theme="${t}">${OTHER_BODY}</div>` }, async (page) => {
+      for (const sel of OTHER_SELS) assert.equal(await scheme(page, sel), t, `os=${os} wrapper=${t} ${sel}`);
+    });
+  }
+});
+
+test("N1 nested themes: the nearest data-theme wins (light in dark, dark in light)", async () => {
+  const sels = [".w6w-field", "#s", "#i", "dialog.w6w-modal", "#ds", ...OTHER_SELS];
+  for (const os of OS) {
+    for (const [outer, inner] of [["dark", "light"], ["light", "dark"]]) {
+      const nest = `<div data-theme="${outer}"><div id="in" data-theme="${inner}">${UI_BODY}${OTHER_BODY}</div></div>`;
+      await withPage(os, { body: nest }, async (page) => {
+        for (const sel of sels) assert.equal(await scheme(page, sel), inner, `os=${os} ${outer}>${inner} ${sel}`);
+        assert.equal(await scheme(page, "#in"), inner, `os=${os} ${outer}>${inner} wrapper`);
+      });
+      await withPage(os, { htmlAttrs: `data-theme="${outer}"`, body: `<div data-theme="${inner}">${UI_BODY}${OTHER_BODY}</div>` }, async (page) => {
+        for (const sel of sels) assert.equal(await scheme(page, sel), inner, `os=${os} html=${outer} panel=${inner} ${sel}`);
+        assert.equal(await scheme(page, "html"), "normal", `os=${os} html stays normal`);
+      });
+    }
+  }
+});
+
+test("W1 a themed wrapper's own canvas follows its theme; <html> never does", async () => {
+  for (const os of OS) {
+    const t = os === "light" ? "dark" : "light";
+    await withPage(os, { body: `<div id="w" data-theme="${t}"></div>` }, async (page) => {
+      assert.equal(await scheme(page, "#w"), t, `os=${os}`);
+      assert.equal(await scheme(page, "html"), "normal", `os=${os}`);
+    });
+  }
+});

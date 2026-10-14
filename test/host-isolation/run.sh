@@ -25,9 +25,9 @@ PKG="$(cd "$HERE/../.." && pwd)"
 PW_VERSION="${PW_VERSION:-1.60.0}"
 PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 CSS_FILE="${CSS_FILE:-$PKG/src/styles.css}"
-# One top-level test() each: H1 H2 H3 P1 P2 P3. A verdict is REFUSED unless
+# One top-level test() each: H1 H2 H3 P1 P2 P3 R1 R2 N1 W1. A verdict is REFUSED unless
 # exactly this many ran.
-EXPECTED_TESTS="${EXPECTED_TESTS:-6}"
+EXPECTED_TESTS="${EXPECTED_TESTS:-10}"
 
 fatal() {
   echo "FATAL: $*"
