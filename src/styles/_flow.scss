@@ -9,10 +9,10 @@
    added to that stack later inherits it with no styling of its own.
 
    Custom properties, deliberately, rather than a `.react-flow__controls-button`
-   override: `@xyflow/react/dist/style.css` is imported as a side effect from
-   WorkflowFlowEditor.tsx, so it rides in the LAZY chunk and is injected *after*
-   this stylesheet. A bare class override (0,1,0) would tie with the library's
-   own rule and lose on source order. Custom properties inherit and are
+   override: React Flow's own stylesheet is compiled into the same
+   styles.css (`@use` in the build-only styles.build.scss), but cascade
+   order is not something to lean on: a bare class override (0,1,0) would tie
+   with the library's own rule and lose if the order ever changed. Custom properties inherit and are
    order-independent, and scoping them on `.w6w-flow` keeps them off the rest of
    the page.
 

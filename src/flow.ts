@@ -7,8 +7,10 @@
  * ```ts
  * import { WorkflowFlowEditor } from "@w6w/ui/flow";
  * import "@w6w/ui/styles.css";
- * import "@xyflow/react/dist/style.css";
  * ```
+ *
+ * `@w6w/ui/styles.css` already carries React Flow's base stylesheet (it is
+ * compiled in from `@xyflow/react/dist/style`), so no second import is needed.
  */
 export { WorkflowFlowEditor } from "./WorkflowFlowEditor.tsx";
 export type { WorkflowFlowEditorProps } from "./WorkflowFlowEditor.tsx";

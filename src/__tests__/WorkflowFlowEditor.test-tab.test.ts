@@ -6,8 +6,9 @@
 // never mounts `StepEditModal`:
 //   1. jsdom@30 has no `HTMLDialogElement.prototype.showModal` — `Modal.tsx`
 //      calls it in an effect on every mount.
-//   2. `WorkflowFlowEditor.tsx` imports `@xyflow/react`, which imports its own
-//      `dist/style.css` — `test-jsx-loader.mjs`'s new `.css` arm stubs it.
+//   2. (historical) `WorkflowFlowEditor.tsx` no longer imports any CSS — React
+//      Flow's base rules ship in `styles.css` — so `test-jsx-loader.mjs`'s `.css`
+//      stub is now only a defensive fallback.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";

@@ -110,7 +110,7 @@ without those in its tree fails to *build*, not merely to slim down.
 
 | Import | Contains | Stylesheet |
 |--------|----------|------------|
-| `@w6w/ui` | everything except the flow editor | `@w6w/ui/styles.css` (~121 KB) |
+| `@w6w/ui` | everything except the flow editor | `@w6w/ui/styles.css` (~141 KB, includes React Flow's base rules) |
 | `@w6w/ui/flow` | `WorkflowFlowEditor` and its helpers — pulls in `@xyflow/react` | `@w6w/ui/styles.css` |
 | `@w6w/ui/code` | `CodeBlock` + `Copyable` — needs only React and `prism-react-renderer` | `@w6w/ui/code.css` (~19 KB) |
 
@@ -119,7 +119,11 @@ byte-identical. Reach for `@w6w/ui/code` when you want the highlighter in someth
 full W6W console; the marketing site (`packages/frontend`) renders its homepage snippets that way,
 at build time, shipping no React at all.
 
-`WorkflowFlowEditor` imports React Flow's stylesheet (`@xyflow/react/dist/style.css`) itself.
+`@w6w/ui/styles.css` already contains React Flow's base stylesheet — there is nothing else to import for
+the canvas.
+
+The `dist` entries (`index`, `flow`, `code`; ESM and CJS) start with `"use client"`, so a Next.js App
+Router server page can import them directly; no wrapper module of your own is needed.
 
 ```tsx
 import { CodeBlock } from "@w6w/ui/code";
@@ -146,6 +150,12 @@ then a `data-theme` attribute on `<html>` (or any ancestor, for the CSS), then t
 the components may render in a different mode than the page around them. Full tables and the
 troubleshooting list: [`docs/theming.md`](docs/theming.md).
 
+`styles.css` never sets `color-scheme` on `<html>` (or on any element that is the document root): your
+page owns its own scheme. The resolved mode is exposed as the inherited `--w6w-scheme` custom property, and every `w6w-` component
+(and the native controls inside it) sets `color-scheme` from it, so native controls and popups match even
+when themes nest (the nearest `data-theme` wins). Only elements whose class list has a token starting
+`w6w-` get it; a ui component without a `w6w-` class on its root (today `Combobox`) inherits your page's.
+
 The same namespace carries the spacing and type scale (`--w6w-sp-*`, `--w6w-fs-*`, `--w6w-fw-*`,
 `--w6w-lh-*`, `--w6w-font-*`): [`docs/design-system.md`](docs/design-system.md). The `lint:tokens`
 gate that keeps new code on that scale is described in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -155,7 +165,8 @@ gate that keeps new code on that scale is described in [CONTRIBUTING.md](CONTRIB
 The stylesheet is authored in **Sass**: `src/styles.scss` is the entry point and `src/styles/*.scss`
 holds one partial per component family. `src/styles.css` is compiled from those (`pnpm build:css`)
 and committed, so `import "@w6w/ui/styles.css"` above needs no Sass toolchain on your side — that
-stays the supported way in.
+stays the supported way in. It also carries React Flow's base rules, so mounting the flow editor
+needs no further stylesheet.
 
 If you *do* build with Sass, you can import the source instead and get the partials as
 `@use`-able modules:
@@ -164,6 +175,10 @@ If you *do* build with Sass, you can import the source instead and get the parti
 @use "@w6w/ui/styles.scss";   // the whole stylesheet
 @use "@w6w/ui/styles/health"; // or one family — see src/styles/ for the list
 ```
+
+The Sass source does **not** include React Flow's base rules. A Sass consumer that mounts the flow
+editor also imports `@xyflow/react/dist/style.css` (or uses `@w6w/ui/styles.css`, which includes
+them).
 
 Editing `src/styles.css` by hand has no effect — it is regenerated, and `pnpm check:css` fails when
 it has drifted from the Sass sources. Two things stay fixed on purpose: `--w6w-*` remain **CSS**
