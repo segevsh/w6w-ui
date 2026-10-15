@@ -125,8 +125,16 @@ jobs:
       - name: Clean-consumer smoke (expr from the npm registry)
         run: UI_TGZ="$(ls "$RUNNER_TEMP"/pack/w6w-ui-*.tgz)" bash test/pack-smoke/run.sh
 
+      # npm refuses even a dry run over a version it already has, so a dispatch after a release
+      # would fail here; skip with a notice instead, as the npm job does.
       - name: Dry-run publish of the tarball, every release/dispatch
-        run: npm publish "$(ls "$RUNNER_TEMP"/pack/w6w-ui-*.tgz)" --dry-run
+        run: |
+          VER="$(node -p "require('./package.json').version")"
+          if npm view "@w6w/ui@$VER" version >/dev/null 2>&1; then
+            echo "::notice::@w6w/ui@$VER is already on npm — dry-run publish skipped"
+          else
+            npm publish "$(ls "$RUNNER_TEMP"/pack/w6w-ui-*.tgz)" --dry-run
+          fi
 
   # ── npm ──────────────────────────────────────────────────────────────────
   # npm >= 11.5.1 detects the trusted publisher itself from this job's OIDC
