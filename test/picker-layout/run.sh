@@ -74,8 +74,8 @@ fatal() {
 command -v docker >/dev/null 2>&1 || fatal "docker is required to run a real browser"
 docker image inspect "$PW_IMAGE" >/dev/null 2>&1 || fatal "image $PW_IMAGE is not present — docker pull $PW_IMAGE"
 
-STUDIO_CSS="$PKG/../studio/src/styles.css"
-[ -f "$STUDIO_CSS" ] || fatal "no $STUDIO_CSS — packages/studio must be checked out as a sibling"
+STUDIO_CSS="$PKG/../studio/packages/studio/src/styles.css"
+[ -f "$STUDIO_CSS" ] || fatal "no $STUDIO_CSS — w6w-studio must be checked out as a sibling (its app is packages/studio)"
 
 ESBUILD="${ESBUILD:-$({ find "$PKG/node_modules/.pnpm" -maxdepth 5 -path '*/esbuild/bin/esbuild' -type f 2>/dev/null || true; } | head -1)}"
 [ -n "$ESBUILD" ] || fatal "no esbuild binary under $PKG/node_modules/.pnpm — run pnpm install in $PKG"
