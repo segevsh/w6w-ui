@@ -147,6 +147,10 @@ export interface ListAppsPageOptions {
   compact?: boolean;
   /** Abort this request. Local request control only; never a wire field. */
   signal?: AbortSignal;
+  /** Snapshot id from a prior {@link AppsPageResult.snapshot}. Navigation normally uses `cursor` alone. */
+  snapshot?: string;
+  /** Absolute offset into the snapshot. */
+  offset?: number;
 }
 
 /** One page of apps, as returned by {@link W6WApi.listAppsPage}. */
@@ -154,6 +158,11 @@ export interface AppsPageResult {
   apps: AppSummary[];
   /** Present unless this is the last page. */
   nextCursor?: string;
+  snapshot?: string;
+  total?: number;
+  offset?: number;
+  limit?: number;
+  expiresAt?: string;
 }
 
 export interface W6WApi {
