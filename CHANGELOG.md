@@ -24,6 +24,10 @@ repo's git history for exact dates and commits.
   `createW6WApi`. Without it `EditConnectionModal` shows no Save button, so existing custom clients
   keep compiling.
 - `AuthFieldsForm` takes `mode?: "create" | "edit"` (default `"create"`, unchanged behaviour).
+- `listApps` (the `createW6WApi` client the pickers use) walks ONE pinned snapshot of the catalog: the
+  first page pins it and every later page reads that same snapshot. If the snapshot expires mid-walk,
+  the walk restarts once from the first page. `AppPicker` shows "N of M" and restarts on expiry. This
+  was prepared as 0.1.2, which was never published, so it ships first in 0.2.0.
 
 ## [0.1.1]
 

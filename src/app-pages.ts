@@ -56,6 +56,8 @@ export interface AppsPageState {
   /** Cursor to send on the NEXT "load more"; absent once the server has no more pages. */
   cursor?: string;
   hasMore: boolean;
+  /** The server's total for the current query, once a page has carried it. */
+  total?: number;
   error?: string;
 }
 
@@ -88,6 +90,7 @@ export type AppsPageAction =
       apps: AppSummary[];
       nextCursor?: string;
       requestedCursor?: string;
+      total?: number;
     }
   | { type: "page-failed"; generation: number; error: string };
 
@@ -148,6 +151,7 @@ export function appsPageReducer(state: AppsPageState, action: AppsPageAction): A
         apps,
         cursor: hasMore ? action.nextCursor : undefined,
         hasMore,
+        total: typeof action.total === "number" ? action.total : state.total,
         error: undefined,
       };
     }

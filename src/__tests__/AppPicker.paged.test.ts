@@ -61,6 +61,7 @@ const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { AppPicker } = await import("../AppPicker.tsx");
+const { appsPageReducer, initialAppsPageState } = await import("../app-pages.ts");
 const { StepBuilderModal } = await import("../StepBuilderModal.tsx");
 const { W6WUIProvider } = await import("../provider.tsx");
 type W6WApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6WApi>>;
@@ -741,4 +742,24 @@ test("StepBuilderModal: a host with no listAppsByIds and no listApps renders wit
     "falls to the Apps tab, which settles into AppPicker's own empty state",
   );
   await act(async () => root.unmount());
+});
+
+// ── T3.1.1 A4: the reducer carries the server's `total` ───────────────────────
+test("T3.1.1 A4 — page-loaded sets total; a page without total keeps it", () => {
+  let st = initialAppsPageState({ q: "" }, 1);
+  st = appsPageReducer(st, { type: "page-loaded", generation: 1, apps: [], total: 7 });
+  assert.equal(st.total, 7);
+  st = appsPageReducer(st, { type: "page-loaded", generation: 1, apps: [] });
+  assert.equal(st.total, 7);
+  st = appsPageReducer(st, { type: "page-loaded", generation: 1, apps: [], total: 9 });
+  assert.equal(st.total, 9);
+});
+
+test("T3.1.1 A4 — query-changed resets total; a stale generation never writes it", () => {
+  let st = initialAppsPageState({ q: "" }, 1);
+  st = appsPageReducer(st, { type: "page-loaded", generation: 1, apps: [], total: 7 });
+  const stale = appsPageReducer(st, { type: "page-loaded", generation: 0, apps: [], total: 99 });
+  assert.equal(stale.total, 7);
+  st = appsPageReducer(st, { type: "query-changed", query: { q: "x" }, generation: 2 });
+  assert.equal(st.total, undefined);
 });
