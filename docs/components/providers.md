@@ -18,8 +18,8 @@ updatedAt: null
 
 # Providers and the API client
 
-Five components call your W6W server themselves: `AppPicker`, `AddConnectionModal`,
-`ActionTestForm`, `StepBuilderModal` and `WorkflowFlowEditor`. They get their client from
+Six components call your W6W server themselves: `AppPicker`, `AddConnectionModal`,
+`EditConnectionModal`, `ActionTestForm`, `StepBuilderModal` and `WorkflowFlowEditor`. They get their client from
 `W6WUIProvider`. This page covers that provider, the two ways to build the client it needs, and
 `ExpressionOptionsProvider`, which feeds the variable and secret pickers.
 
@@ -76,7 +76,7 @@ Errors reject with `ApiError`, which carries:
 | `message` | The server's message, or a description naming the method and URL. |
 | `body` | The parsed error body, when there was one. A failed action invoke carries its `logs` and `apiCalls` here. |
 
-What it implements: every required `W6WApi` member (below), plus `listApps`, `listAppsByIds` and `listTestRuns`.
+What it implements: every required `W6WApi` member (below), plus `listApps`, `listAppsByIds`, `listTestRuns` and `updateConnection`.
 What it doesn't, and what that means:
 
 - No `listAppsPage`, so `AppPicker` loads the whole catalog up front (it pages
