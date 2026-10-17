@@ -121,20 +121,36 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
 
   return {
     // A bare GET only returns the server's default page (50) — every consumer
-    // of this client treats the result as the complete catalog, so page
-    // through it here. Capped at 20 pages as a runaway backstop.
+    // of this client treats the result as the complete catalog, so walk one
+    // server snapshot by `nextCursor` (opaque; the cursor encodes the
+    // snapshot, so `snapshot`/`offset` are never sent). No page cap: the walk
+    // ends when the cursor is absent or fails to advance. If the snapshot
+    // expired mid-walk (410 `snapshot_expired` / 404 `unknown_snapshot`, alike
+    // to a token holder), drop what was gathered and restart once.
     listApps: async () => {
-      const apps: AppSummary[] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < 20; page++) {
-        const qs = new URLSearchParams({ limit: "200" });
-        if (cursor) qs.set("cursor", cursor);
-        const r = await req<{ apps: AppSummary[]; nextCursor?: string }>(`/apps?${qs}`);
-        apps.push(...r.apps);
-        if (!r.nextCursor) break;
-        cursor = r.nextCursor;
+      const walk = async (): Promise<AppSummary[]> => {
+        const apps: AppSummary[] = [];
+        let cursor: string | undefined;
+        for (;;) {
+          const qs = new URLSearchParams({ limit: "200" });
+          if (cursor) qs.set("cursor", cursor);
+          const r = await req<{ apps: AppSummary[]; nextCursor?: string }>(`/apps?${qs}`);
+          apps.push(...r.apps);
+          if (!r.nextCursor || r.nextCursor === cursor) return apps;
+          cursor = r.nextCursor;
+        }
+      };
+      try {
+        return await walk();
+      } catch (e) {
+        if (
+          e instanceof ApiError &&
+          (e.code === "snapshot_expired" || e.code === "unknown_snapshot")
+        ) {
+          return await walk();
+        }
+        throw e;
       }
-      return apps;
     },
 
     // Bounded lookup: dedupe; `[]` sends nothing; chunks of <= 100 (the server's
@@ -159,6 +175,12 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
     createConnection: (appId, body) =>
       req<{ connection: ConnectionSummary }>(`/apps/${encodeURIComponent(appId)}/connections`, {
         method: "POST",
+        body: JSON.stringify(body),
+      }).then((r) => r.connection),
+
+    updateConnection: (id, body) =>
+      req<{ connection: ConnectionSummary }>(`/connections/${encodeURIComponent(id)}`, {
+        method: "PATCH",
         body: JSON.stringify(body),
       }).then((r) => r.connection),
 
