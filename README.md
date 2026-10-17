@@ -62,8 +62,8 @@ and the `test/` rigs). Vite needs nothing extra; a few setups do — see the
 
 ## Usage
 
-Five components call your W6W server themselves — `AppPicker`, `AddConnectionModal`,
-`ActionTestForm`, `StepBuilderModal` and `WorkflowFlowEditor`. They read one API client from
+Six components call your W6W server themselves — `AppPicker`, `AddConnectionModal`,
+`EditConnectionModal`, `ActionTestForm`, `StepBuilderModal` and `WorkflowFlowEditor`. They read one API client from
 `W6WUIProvider`. Every other component is props in, callbacks out.
 
 ```tsx
@@ -196,7 +196,7 @@ not pulled in automatically.
 
 ## Components
 
-42 exported components (the count `pnpm coverage:stories` checks), grouped as in the docs:
+50 exported components (the count `pnpm coverage:stories` checks), grouped as in the docs:
 
 - **Providers**: `W6WUIProvider`, `ExpressionOptionsProvider` (plus `createW6WApi`, `useW6WApi`,
   `useExpressionOptions`, `startOAuthPopup`, `useEnterSubmit`).

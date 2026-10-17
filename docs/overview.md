@@ -115,7 +115,7 @@ token is missing or expired.
 
 | Needs `W6WUIProvider` | Works without it (props in, callbacks out) |
 | --- | --- |
-| `AppPicker`, `AddConnectionModal`, `ActionTestForm`, `StepBuilderModal`, `WorkflowFlowEditor` | Everything else: buttons, icons, `Modal`, `ConfirmModal`, forms, editors, `CodeBlock`, status pills, execution history, server resources |
+| `AppPicker`, `AddConnectionModal`, `EditConnectionModal`, `ActionTestForm`, `StepBuilderModal`, `WorkflowFlowEditor` | Everything else: buttons, icons, `Modal`, `ConfirmModal`, forms, editors, `CodeBlock`, status pills, execution history, server resources |
 
 The props-only components never fetch. You pass the data and handle the callbacks, so you can wire
 them to `@w6w/react`, your own client or static data.
