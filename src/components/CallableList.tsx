@@ -17,7 +17,7 @@ export interface CallableListProps {
   rows: readonly CallableListRow[];
   title: ReactNode;
   description?: ReactNode;
-  /** Shown when `rows` is empty (total, not the visible subset). */
+  /** Shown when `rows` is empty (total, not the visible subset) and not `loading`. */
   emptyCopy?: ReactNode;
   /** Label of the New button. Defaults to "New". */
   newLabel?: string;

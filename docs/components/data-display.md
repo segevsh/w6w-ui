@@ -85,7 +85,7 @@ through `ListItem`, so with `getHref` each row is a real anchor and a click stil
 | `rows` | `CallableListRow[]` | Required. `{ id, title, description?, archived, badges?, trailing? }`; the host decides `archived`. |
 | `title` | `ReactNode` | Required. Rendered as an `<h2>`. |
 | `description` | `ReactNode` | Muted text under the title. |
-| `emptyCopy` | `ReactNode` | Shown when `rows` is empty. |
+| `emptyCopy` | `ReactNode` | Shown when `rows` is empty once loaded; suppressed while `loading`. |
 | `newLabel` | `string` | New button label. Defaults to `New`. |
 | `onCreate` / `creating` | `() => void` / `boolean` | The New button shows only with `onCreate`; `creating` disables it. |
 | `onImport` | `() => void` | The Import button shows only with this. |

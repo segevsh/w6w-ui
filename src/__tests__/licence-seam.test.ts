@@ -15,54 +15,56 @@ const uiRoot = fileURLToPath(new URL("../..", import.meta.url));
 const srcRoot = join(uiRoot, "src");
 
 const SPECIFIER =
-  /\b(?:import|export)\s+(?:type\s+)?(?:[^'"`;]*?\sfrom\s*)?["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+  /\b(?:import|export)\s+(?:type\s+)?(?:[^'"`;]*?\s*from\s*)?["']([^"']+)["']|\b(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/g;
 
-function specifiers(source: string): string[] {
-  const out: string[] = [];
+/** Every module specifier in the WHOLE file text (multi-line aware), with its 1-based line. */
+function specifiers(source: string): Array<{ spec: string; line: number }> {
+  const out: Array<{ spec: string; line: number }> = [];
   for (const m of source.matchAll(SPECIFIER)) {
     const spec = m[1] ?? m[2];
-    if (spec !== undefined) out.push(spec);
+    if (spec === undefined) continue;
+    const line = source.slice(0, m.index).split("\n").length;
+    out.push({ spec, line });
   }
   return out;
 }
 
-interface Rule {
-  name: string;
-  /** Returns true when the source text of one file breaks the rule on this line. */
-  line(line: string, specs: readonly string[]): boolean;
-}
+type Rule = { name: string; spec: (spec: string) => boolean } | { name: string; text: RegExp };
 
 const RULES: Rule[] = [
-  {
-    name: "embed-import",
-    line: (_l, specs) => specs.some((s) => s === "@w6w/embed" || s.startsWith("@w6w/embed/")),
-  },
+  { name: "embed-import", spec: (s) => s === "@w6w/embed" || s.startsWith("@w6w/embed/") },
   {
     name: "router",
-    line: (_l, specs) =>
-      specs.some(
-        (s) =>
-          s === "react-router" ||
-          s.startsWith("react-router/") ||
-          s === "react-router-dom" ||
-          s.startsWith("react-router-dom/"),
-      ),
+    spec: (s) =>
+      s === "react-router" ||
+      s.startsWith("react-router/") ||
+      s === "react-router-dom" ||
+      s.startsWith("react-router-dom/"),
   },
   {
     name: "window-location",
-    line: (l) => /\bwindow\.location\b|\bglobalThis\.location\b|\bhistory\.pushState\(/.test(l),
+    text: /\bwindow\.location\b|\bglobalThis\.location\b|\bhistory\.pushState\(/,
   },
 ];
 
-/** `rule: line` for every violation in `source` (1-based lines). Specifiers are judged per line. */
+/**
+ * `rule: line` for every violation in `source` (1-based lines). Specifier rules run over the
+ * whole file text so a wrapped `import {\n A,\n} from "…"` is caught, reported at the line
+ * of its `import`/`export` keyword; text rules run per line.
+ */
 function scan(source: string): Array<{ rule: string; line: number }> {
   const hits: Array<{ rule: string; line: number }> = [];
-  source.split("\n").forEach((text, i) => {
-    const specs = specifiers(text);
-    for (const rule of RULES)
-      if (rule.line(text, specs)) hits.push({ rule: rule.name, line: i + 1 });
-  });
-  return hits;
+  const specs = specifiers(source);
+  for (const rule of RULES) {
+    if ("spec" in rule) {
+      for (const s of specs) if (rule.spec(s.spec)) hits.push({ rule: rule.name, line: s.line });
+    } else {
+      source.split("\n").forEach((text, i) => {
+        if (rule.text.test(text)) hits.push({ rule: rule.name, line: i + 1 });
+      });
+    }
+  }
+  return hits.sort((x, y) => x.line - y.line);
 }
 
 function sourceFiles(dir: string): string[] {
@@ -98,6 +100,17 @@ test("licence seam: every rule fires on its own negative control", () => {
   // Forms beyond the plain import: export-from and dynamic import also count.
   assert.equal(scan(`export * from "@w6w/embed";`)[0]?.rule, "embed-import");
   assert.equal(scan(`const m = await import("@w6w/embed/editor");`)[0]?.rule, "embed-import");
+  // Multi-line forms (Biome wraps imports over 100 columns) are caught, at the keyword's line.
+  const multi: Array<[string, string, string]> = [
+    ["embed-import", `\nimport {\n  visibleRows,\n} from "@w6w/embed/lib";`, "import-from"],
+    ["embed-import", `\nimport type {\n  A,\n  B,\n} from "@w6w/embed";`, "import-type"],
+    ["embed-import", `\nexport {\n  x,\n} from "@w6w/embed";`, "export-from"],
+    ["embed-import", `\nconst m = await import(\n  "@w6w/embed/editor"\n);`, "dynamic"],
+    ["router", `\nimport {\n  Link,\n} from "react-router-dom";`, "router"],
+    ["embed-import", `\nconst m = require("@w6w/embed");`, "require"],
+  ];
+  for (const [rule, src, label] of multi)
+    assert.deepEqual(scan(src), [{ rule, line: 2 }], `${rule} ${label}`);
   // A comment that merely names the package is legal (specifiers are matched, not words).
   assert.deepEqual(scan("// imports nothing from @w6w/embed"), []);
 });
