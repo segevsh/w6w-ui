@@ -27,3 +27,8 @@ type Story = StoryObj<typeof meta>;
 /** No enum/disabled axis on this component — one field per declared type
  *  (secret, string, boolean) covers its whole render surface. */
 export const Default: Story = {};
+
+/** Edit mode: nothing is seeded from `default`, secrets read "•••••• (unchanged)", blank = keep. */
+export const EditMode: Story = {
+  args: { mode: "edit", values: {} },
+};

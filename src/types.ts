@@ -351,6 +351,14 @@ export interface ConnectionSummary {
   profile?: Record<string, unknown>;
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * True for the server's synthetic "no credential needed" rows. They have no stored credential,
+   * so the server 404s get/test/delete on their ids; the connection UI offers nothing on them.
+   * Detect with this flag only, never an id prefix.
+   */
+  builtIn?: boolean;
+  /** The last test result: `false` = failed, `null`/absent = never tested. */
+  lastTestOk?: boolean | null;
 }
 
 /** A saved set of action-test input values, scoped to a connection + action. */

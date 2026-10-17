@@ -178,6 +178,12 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
         body: JSON.stringify(body),
       }).then((r) => r.connection),
 
+    updateConnection: (id, body) =>
+      req<{ connection: ConnectionSummary }>(`/connections/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }).then((r) => r.connection),
+
     startAppOAuthFlow: (appId, authKey, body) =>
       req<{ authorizationUrl: string }>(
         `/apps/${encodeURIComponent(appId)}/oauth-config/${encodeURIComponent(authKey)}/authorize-url`,

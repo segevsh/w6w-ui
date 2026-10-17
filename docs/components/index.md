@@ -23,25 +23,26 @@ and a short example. Unless a page says otherwise, import from `@w6w/ui` and loa
 `@w6w/ui/styles.css` once.
 
 Most components are **props in, callbacks out**: they never fetch, so you can feed them from
-`@w6w/react`, your own client or fixtures. The five marked "provider" below read the API client
+`@w6w/react`, your own client or fixtures. The six marked "provider" below read the API client
 from [`W6WUIProvider`](/reference-packages/components/providers/) and call your W6W server themselves.
 
 | Group | Components |
 | --- | --- |
 | [Providers and the API client](/reference-packages/components/providers/) | `W6WUIProvider`, `createW6WApi`, `useW6WApi`, `ExpressionOptionsProvider` |
 | [Buttons and icons](/reference-packages/components/buttons/) | `IconButton`, `Icon`, `EditButton`, `DeleteButton` |
-| [Data display](/reference-packages/components/data-display/) | `AppIcon`, `ListItem`, `Copyable`, `CopyableText` |
+| [Data display](/reference-packages/components/data-display/) | `AppIcon`, `ListItem`, `CallableList`, `Copyable`, `CopyableText` |
 | [Forms](/reference-packages/components/forms/) | `AppPicker` (provider), `ActionTestForm` (provider), `ParamsForm`, `PropertyEntryForm`, `AuthFieldsForm`, `ExpressionInput`, `NodeConfigForm`, `RetryPolicyFields` |
 | [Editors](/reference-packages/components/editors/) | `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor` |
 | [Workflow canvas](/reference-packages/components/flow-editor/) | `WorkflowFlowEditor` (provider, from `@w6w/ui/flow`) |
 | [Modals](/reference-packages/components/modals/) | `Modal`, `ConfirmModal`, `AddConnectionModal` (provider), `StepBuilderModal` (provider) |
-| [Status and health](/reference-packages/components/status/) | `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`, `RepoSyncIndicator` |
+| [Status and health](/reference-packages/components/status/) | `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`, `RepoSyncIndicator`, `ReliabilityList`, `ReliabilityChart` |
 | [Executions](/reference-packages/components/executions/) | `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`, `ExecutionLogPanel`, `ApiCallsPanel` |
 | [Server resources](/reference-packages/components/server-resources/) | `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`, `ServerResourcesBadge` |
+| [Connections](/reference-packages/components/connections/) | `ConnectionList`, `ConnectionHeader`, `EditConnectionModal` (provider) |
 
 ## What you compose yourself
 
-There's no ready-made table of workflows, functions or connections. Build those lists from your own
+There's no ready-made table of workflows or functions beyond `CallableList`. Build those lists from your own
 components (or `ListItem`) with data from `@w6w/react` or your own client. `@w6w/ui` supplies the
 interactive pieces around them: the pickers, modals, forms, the canvas and the run views.
 

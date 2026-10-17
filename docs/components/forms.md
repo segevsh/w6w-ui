@@ -150,6 +150,7 @@ own connect flow. `AddConnectionModal` uses it inside.
 | `values` | `Record<string, unknown>` | Required. |
 | `onChange` | `(values) => void` | Required. |
 | `enterSubmitProps` | `{ onKeyDown }` | The result of `useEnterSubmit(submit)`, so Enter in a field submits. |
+| `mode` | `"create" \| "edit"` | `"create"` (default) seeds each field from its manifest `default`. `"edit"` is for replacing part of a stored credential: no seeding, secret inputs show `•••••• (unchanged)`, and an emptied number input reports `""` so blank can mean "keep what is stored". `EditConnectionModal` uses it. |
 
 ```tsx
 import { AuthFieldsForm, useEnterSubmit } from "@w6w/ui";

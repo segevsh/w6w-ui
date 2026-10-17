@@ -62,8 +62,8 @@ and the `test/` rigs). Vite needs nothing extra; a few setups do — see the
 
 ## Usage
 
-Five components call your W6W server themselves — `AppPicker`, `AddConnectionModal`,
-`ActionTestForm`, `StepBuilderModal` and `WorkflowFlowEditor`. They read one API client from
+Six components call your W6W server themselves — `AppPicker`, `AddConnectionModal`,
+`EditConnectionModal`, `ActionTestForm`, `StepBuilderModal` and `WorkflowFlowEditor`. They read one API client from
 `W6WUIProvider`. Every other component is props in, callbacks out.
 
 ```tsx
@@ -196,23 +196,25 @@ not pulled in automatically.
 
 ## Components
 
-42 exported components (the count `pnpm coverage:stories` checks), grouped as in the docs:
+50 exported components (the count `pnpm coverage:stories` checks), grouped as in the docs:
 
 - **Providers**: `W6WUIProvider`, `ExpressionOptionsProvider` (plus `createW6WApi`, `useW6WApi`,
   `useExpressionOptions`, `startOAuthPopup`, `useEnterSubmit`).
 - **Buttons and icons**: `IconButton`, `Icon`, `EditButton`, `DeleteButton`.
-- **Data display**: `AppIcon`, `ListItem`, `Copyable`, `CopyableText`.
+- **Data display**: `AppIcon`, `ListItem`, `CallableList`, `Copyable`, `CopyableText`.
 - **Forms**: `AppPicker`, `ActionTestForm`, `ParamsForm`, `PropertyEntryForm`, `AuthFieldsForm`,
   `ExpressionInput`, `NodeConfigForm`, `RetryPolicyFields`.
 - **Editors**: `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor`.
 - **Workflow canvas**: `WorkflowFlowEditor` (from `@w6w/ui/flow`).
 - **Modals**: `Modal`, `ConfirmModal`, `AddConnectionModal`, `StepBuilderModal`.
 - **Status and health**: `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`,
-  `RepoSyncIndicator`.
+  `RepoSyncIndicator`, `ReliabilityList`, `ReliabilityChart`.
 - **Executions**: `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`,
   `ExecutionLogPanel`, `ApiCallsPanel`.
 - **Server resources**: `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`,
   `ServerResourcesBadge`.
+- **Connections**: `ConnectionList`, `ConnectionHeader`, `EditConnectionModal` (provider; needs
+  the optional `updateConnection` on the API client).
 
 Everything is exported from `@w6w/ui` except `WorkflowFlowEditor`, which is only in `@w6w/ui/flow`
 (alongside a re-export of `ExpressionOptionsProvider`). `@w6w/ui/code` re-exports `CodeBlock` and
