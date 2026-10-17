@@ -4892,3 +4892,387 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   font-size: var(--w6w-fs-xs);
   white-space: nowrap;
 }
+
+/* --- ReliabilityList / ReliabilityChart ---------------------------------- */
+/* The service-reliability board: "needs attention" cards, a calls x p95
+   scatter and the services table. State colour throughout comes from the
+   shared `--w6w-health-*` tokens via HealthStatusPill and UptimeStrip (and,
+   for the scatter, read directly) — never from a colour written here.
+   Every navigation site (card, service cell, scatter point) may be an `<a>`,
+   a `<button>` or a plain element, so the shared rules reset all three. */
+.w6w-rel-section {
+  margin-bottom: var(--w6w-sp-6);
+}
+
+.w6w-rel-heading {
+  margin: 0 0 var(--w6w-sp-2);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--w6w-sp-3);
+}
+
+.w6w-rel-intro {
+  margin: 0 0 var(--w6w-sp-2);
+}
+
+.w6w-rel-card {
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  padding: var(--w6w-sp-4);
+}
+
+.w6w-rel-card h4 {
+  margin: 0 0 var(--w6w-sp-2);
+}
+
+.w6w-rel-tag {
+  display: inline-block;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 999px;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-2);
+  font-size: var(--w6w-fs-xs);
+  color: var(--w6w-muted);
+  margin-right: var(--w6w-sp-1);
+}
+
+.w6w-rel-group + .w6w-rel-group {
+  margin-top: var(--w6w-sp-5);
+}
+
+.w6w-rel-group-head {
+  margin: 0 0 var(--w6w-sp-2);
+  font-size: var(--w6w-fs-sm);
+}
+
+/* The "N more — view all" line under a capped section. */
+.w6w-rel-more-note {
+  margin: var(--w6w-sp-2) 0 0;
+}
+
+/* --- "Needs attention" callout — a few dense cards, not table rows -------- */
+.w6w-rel-issues {
+  display: grid;
+  /* `auto-fit`, not `auto-fill`: with fewer cards than fit the row, `auto-fill`
+     keeps empty width-reserving tracks and the cards stop short of the edge. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--w6w-sp-2);
+}
+
+.w6w-rel-issue-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+  padding: var(--w6w-sp-3);
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  /* Same `--w6w-health-*` tokens as the pills inside, so the stripe cannot
+     drift from the pill beside it. `down` on either signal escalates it. */
+  border-left: 3px solid var(--w6w-health-degraded);
+  border-radius: var(--w6w-radius);
+  color: inherit;
+  text-decoration: none;
+  /* button reset (the card is a <button> when only `onOpen` is given) */
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+
+div.w6w-rel-issue-card {
+  cursor: default;
+}
+
+.w6w-rel-issue-card:has(.w6w-health-pill-down) {
+  border-left-color: var(--w6w-health-down);
+}
+
+a.w6w-rel-issue-card:hover,
+a.w6w-rel-issue-card:focus-visible,
+button.w6w-rel-issue-card:hover,
+button.w6w-rel-issue-card:focus-visible {
+  border-color: var(--w6w-accent);
+}
+
+.w6w-rel-issue-head {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+}
+
+.w6w-rel-issue-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  min-width: 0;
+}
+
+.w6w-rel-issue-signals {
+  display: flex;
+  gap: var(--w6w-sp-4);
+}
+
+.w6w-rel-issue-signal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+}
+
+/* --- Performance scatter — calls x p95, one point per API ----------------- */
+.w6w-rel-scatter svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* SVG shapes have no fill unless one is set here; without it the plot
+   renders as SVG's default opaque black regardless of theme. */
+.w6w-rel-scatter-plot-bg {
+  fill: var(--w6w-panel-2);
+}
+
+.w6w-rel-scatter-grid {
+  stroke: var(--w6w-border);
+  stroke-width: 1;
+}
+
+.w6w-rel-scatter-axis-label {
+  fill: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+}
+
+.w6w-rel-scatter-axis-title {
+  fill: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+}
+
+/* The point's coloured ring — carries exec status. */
+.w6w-rel-scatter-ring {
+  fill: var(--w6w-panel);
+  stroke-width: 2;
+}
+
+.w6w-rel-scatter-ring-ok {
+  stroke: var(--w6w-health-ok);
+}
+
+.w6w-rel-scatter-ring-degraded {
+  stroke: var(--w6w-health-degraded);
+}
+
+.w6w-rel-scatter-ring-down {
+  stroke: var(--w6w-health-down);
+}
+
+.w6w-rel-scatter-ring-unknown {
+  stroke: var(--w6w-health-unknown);
+}
+
+.w6w-rel-scatter-point-link {
+  cursor: pointer;
+}
+
+.w6w-rel-scatter-point-link:hover .w6w-rel-scatter-ring,
+.w6w-rel-scatter-point-link:focus-visible .w6w-rel-scatter-ring {
+  stroke-width: 3;
+}
+
+.w6w-rel-scatter-point {
+  stroke: var(--w6w-panel);
+  stroke-width: 1.5;
+  fill-opacity: 0.85;
+}
+
+.w6w-rel-scatter-point-ok {
+  fill: var(--w6w-health-ok);
+}
+
+.w6w-rel-scatter-point-degraded {
+  fill: var(--w6w-health-degraded);
+}
+
+.w6w-rel-scatter-point-down {
+  fill: var(--w6w-health-down);
+}
+
+.w6w-rel-scatter-point-unknown {
+  fill: var(--w6w-health-unknown);
+}
+
+.w6w-rel-scatter-note {
+  margin: var(--w6w-sp-1) 0 0;
+}
+
+/* --- The full roster — one real <table> ------------------------------------ */
+.w6w-rel-table-wrap {
+  overflow-x: auto;
+}
+
+.w6w-rel-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.w6w-rel-table th {
+  padding: var(--w6w-sp-2) var(--w6w-sp-3);
+  text-align: left;
+  font-size: var(--w6w-fs-xs);
+  font-weight: var(--w6w-fw-semibold);
+  color: var(--w6w-muted);
+  border-bottom: 1px solid var(--w6w-border);
+  white-space: nowrap;
+}
+
+.w6w-rel-table td {
+  padding: var(--w6w-sp-2-5) var(--w6w-sp-3);
+  border-bottom: 1px solid var(--w6w-border);
+  vertical-align: top;
+}
+
+/* Inside a compact card there is no rule under the last row. */
+.w6w-rel-card .w6w-rel-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.w6w-rel-table tbody tr:hover {
+  background: var(--w6w-panel-2);
+}
+
+/* A row's own stripe — same tokens and escalation as the issue card; both the
+   tier and the state that select the token are decided server-side. */
+.w6w-rel-tr.w6w-rel-attention {
+  box-shadow: inset 3px 0 0 var(--w6w-health-degraded);
+}
+
+.w6w-rel-tr.w6w-rel-attention:has(.w6w-health-pill-down) {
+  box-shadow: inset 3px 0 0 var(--w6w-health-down);
+}
+
+.w6w-rel-tr[data-attention=recent] {
+  box-shadow: inset 3px 0 0 var(--w6w-health-unknown);
+}
+
+.w6w-rel-open {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  color: inherit;
+  text-decoration: none;
+  /* button reset (the cell is a <button> when only `onOpen` is given) */
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+a.w6w-rel-open,
+button.w6w-rel-open {
+  cursor: pointer;
+}
+
+.w6w-rel-td-service-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  min-width: 0;
+}
+
+.w6w-rel-td-service strong {
+  overflow-wrap: anywhere;
+}
+
+a.w6w-rel-open:hover strong,
+a.w6w-rel-open:focus-visible strong,
+button.w6w-rel-open:hover strong,
+button.w6w-rel-open:focus-visible strong {
+  color: var(--w6w-accent);
+}
+
+.w6w-rel-td-uptime {
+  min-width: 220px;
+}
+
+.w6w-rel-td-uptime .w6w-uptime-strip {
+  max-width: 260px;
+}
+
+/* A single short value ("397 ms" / "—"); no caption, whose varying length
+   destabilised this column's `auto` layout. */
+.w6w-rel-td-p95 {
+  white-space: nowrap;
+}
+
+/* Both signals stacked as one line each ("Ops: <pill>" / "API: <pill>") rather
+   than two columns, so the table fits a smaller screen without scrolling. */
+.w6w-rel-td-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+  min-width: 140px;
+}
+
+.w6w-rel-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--w6w-sp-1-5);
+}
+
+.w6w-rel-status-label {
+  min-width: 28px;
+}
+
+/* Within a status ROW the signal reads inline, beside its label — the issue
+   card's own use of `.w6w-rel-signal` (label above pill) is unaffected. */
+.w6w-rel-status-row .w6w-rel-signal {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* One labelled signal inside a state cell/card — label ABOVE its pill, so two
+   labelled pills in a narrow column do not wrap unpredictably. */
+.w6w-rel-signal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--w6w-sp-0-5);
+  min-width: 0;
+}
+
+.w6w-rel-vendor-msg {
+  color: var(--w6w-muted);
+  /* The API's own incident title — clamped, full text in the row's `title`, so
+     one verbose status page cannot stretch a board row. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* A service the account never called: no strip, just a note. */
+.w6w-rel-idle-note {
+  font-size: var(--w6w-fs-xs);
+  font-style: italic;
+  color: var(--w6w-text);
+}
+
+.w6w-rel-allclear {
+  margin-bottom: var(--w6w-sp-4);
+}
+
+.w6w-rel-allclear p {
+  margin: 0 0 var(--w6w-sp-1-5);
+}
+
+@media (max-width: 900px) {
+  /* The table scrolls inside `.w6w-rel-table-wrap` rather than reflowing —
+     4 columns of pills and a strip cannot usefully stack. */
+  .w6w-rel-table {
+    min-width: 600px;
+  }
+}

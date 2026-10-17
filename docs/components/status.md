@@ -134,6 +134,65 @@ import { RepoSyncIndicator } from "@w6w/ui";
 />
 ```
 
+## `ReliabilityList`
+
+The service-reliability board: "needs attention" cards, the performance chart and a services table,
+drawn from rows you pass in. It makes no request and needs no provider, so icons come from each
+row's own `iconSrc`, `iconSrcDark` and `brandColor`. Loading, error and no-project states belong to
+whatever fetches the rows. Rows are `ReliabilityServiceView`; the SDK's `ReliabilityService`
+assigns to it, and the component keeps your richer row type.
+
+| Prop | Type | What it does |
+| --- | --- | --- |
+| `services` | `readonly T[]` | Required. Rows in the server's order. Nothing is sorted. |
+| `window` | `{ from, to, days }` | Labels the heading with the window the rows cover. |
+| `days` | `number` | Table column label ("Last N days"). Defaults to `window.days`, else 30. |
+| `compact` | `boolean` | Dashboard mode: at most 3 attention cards (current first) and `limit` table rows. |
+| `showChart` | `boolean` | Defaults to `!compact`. |
+| `limit` | `number` | Compact table row cap. Default 5. |
+| `getHref` | `(appId) => string` | Makes each card, service cell and chart point a real link. |
+| `onOpen` | `(appId, event) => void` | Called on a click at any of those sites. Never `preventDefault`ed here. |
+| `showAllHref`, `onShowAll` | `string`, `(event) => void` | The "Show all services →" and "view all →" links render only when one is given. |
+| `slots` | `{ header?, actions?, empty? }` | Replace the title, add controls to the heading row, replace the empty message. |
+
+Which group a row lands in comes only from its `attention` field (`now`, `recent`, `none`). The
+"All clear" card reads `state` only, on purpose: it speaks about your own calls, which stay fine
+while a vendor reports an incident you have not hit. With neither `getHref` nor `onOpen` nothing is
+a link. The layout decisions (`partitionBoard`, `displayBoard`, `performancePoints`, `uptimeDays`)
+are exported as plain functions.
+
+```tsx
+import { ReliabilityList } from "@w6w/ui";
+
+<ReliabilityList
+  services={board.services}
+  window={board.window}
+  getHref={(appId) => `/reliability/${encodeURIComponent(appId)}`}
+  onOpen={(appId, event) => {
+    event.preventDefault();
+    router.push(`/reliability/${encodeURIComponent(appId)}`);
+  }}
+/>
+```
+
+## `ReliabilityChart`
+
+The performance scatter on its own: one point per service, calls on the x axis and p95 latency on
+the y axis. The y axis is inverted, so up is faster and the top right is fast and busy. Ring colour
+is the exec status and point size is the error count. Services with no timed call are not plotted.
+
+| Prop | Type | What it does |
+| --- | --- | --- |
+| `services` | `readonly T[]` | Required. The same rows `ReliabilityList` takes. |
+| `getHref` | `(appId) => string` | Makes each point an SVG link. |
+| `onOpen` | `(appId, event) => void` | Called on a point click. With only `onOpen`, points are buttons. |
+
+```tsx
+import { ReliabilityChart } from "@w6w/ui";
+
+<ReliabilityChart services={board.services} getHref={(appId) => `/reliability/${appId}`} />
+```
+
 ## Where to next
 
 - **[Executions](/reference-packages/components/executions/)**: lists and details of past runs.

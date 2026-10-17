@@ -35,7 +35,7 @@ from [`W6WUIProvider`](/reference-packages/components/providers/) and call your 
 | [Editors](/reference-packages/components/editors/) | `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor` |
 | [Workflow canvas](/reference-packages/components/flow-editor/) | `WorkflowFlowEditor` (provider, from `@w6w/ui/flow`) |
 | [Modals](/reference-packages/components/modals/) | `Modal`, `ConfirmModal`, `AddConnectionModal` (provider), `StepBuilderModal` (provider) |
-| [Status and health](/reference-packages/components/status/) | `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`, `RepoSyncIndicator` |
+| [Status and health](/reference-packages/components/status/) | `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`, `RepoSyncIndicator`, `ReliabilityList`, `ReliabilityChart` |
 | [Executions](/reference-packages/components/executions/) | `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`, `ExecutionLogPanel`, `ApiCallsPanel` |
 | [Server resources](/reference-packages/components/server-resources/) | `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`, `ServerResourcesBadge` |
 

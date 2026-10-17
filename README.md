@@ -208,7 +208,7 @@ not pulled in automatically.
 - **Workflow canvas**: `WorkflowFlowEditor` (from `@w6w/ui/flow`).
 - **Modals**: `Modal`, `ConfirmModal`, `AddConnectionModal`, `StepBuilderModal`.
 - **Status and health**: `HealthStatusPill`, `StepStatusPill`, `UptimeStrip`, `HistoryTimeline`,
-  `RepoSyncIndicator`.
+  `RepoSyncIndicator`, `ReliabilityList`, `ReliabilityChart`.
 - **Executions**: `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`,
   `ExecutionLogPanel`, `ApiCallsPanel`.
 - **Server resources**: `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`,
