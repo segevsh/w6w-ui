@@ -211,6 +211,17 @@ export interface W6WApi {
   ): Promise<ConnectionSummary>;
 
   /**
+   * Rename a connection and/or replace some of its credential fields (`PATCH /connections/:id`).
+   * Send only the fields being changed: the server merges a partial `credential` over the stored
+   * one. Optional: when absent, `EditConnectionModal` shows no Save button (a one-line notice
+   * instead) and hosts should not offer an Edit action. It never throws for the absence.
+   */
+  updateConnection?(
+    id: string,
+    body: { displayName?: string; credential?: Record<string, unknown> },
+  ): Promise<ConnectionSummary>;
+
+  /**
    * Start an OAuth 2.0 flow. Server builds the provider's authorize URL and
    * returns it; the caller opens it in a popup and awaits the server's
    * callback message (see `startOAuthPopup`).

@@ -208,3 +208,13 @@ export type {
 // ── CallableList (B-1u) ──
 export { CallableList } from "./components/CallableList.tsx";
 export type { CallableListProps, CallableListRow } from "./components/CallableList.tsx";
+
+// ── Connections (D-12u) ──
+export { ConnectionList } from "./components/ConnectionList.tsx";
+export type { ConnectionListProps } from "./components/ConnectionList.tsx";
+export { EditConnectionModal } from "./EditConnectionModal.tsx";
+export type { EditConnectionModalProps } from "./EditConnectionModal.tsx";
+export { ConnectionHeader } from "./ConnectionHeader.tsx";
+export type { ConnectionHeaderProps } from "./ConnectionHeader.tsx";
+export { connectionAppIdsToLookUp, resolveConnectionAppMeta } from "./connection-app-meta.ts";
+export type { InlineAppMeta } from "./connection-app-meta.ts";

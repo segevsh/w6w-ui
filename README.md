@@ -213,6 +213,8 @@ not pulled in automatically.
   `ExecutionLogPanel`, `ApiCallsPanel`.
 - **Server resources**: `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`,
   `ServerResourcesBadge`.
+- **Connections**: `ConnectionList`, `ConnectionHeader`, `EditConnectionModal` (provider; needs
+  the optional `updateConnection` on the API client).
 
 Everything is exported from `@w6w/ui` except `WorkflowFlowEditor`, which is only in `@w6w/ui/flow`
 (alongside a re-export of `ExpressionOptionsProvider`). `@w6w/ui/code` re-exports `CodeBlock` and
