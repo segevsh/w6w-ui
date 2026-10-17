@@ -205,3 +205,6 @@ export type {
   ReliabilityServiceView,
   ReliabilityViewState,
 } from "./reliability-board-layout.ts";
+// ── CallableList (B-1u) ──
+export { CallableList } from "./components/CallableList.tsx";
+export type { CallableListProps, CallableListRow } from "./components/CallableList.tsx";

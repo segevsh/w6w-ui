@@ -201,7 +201,7 @@ not pulled in automatically.
 - **Providers**: `W6WUIProvider`, `ExpressionOptionsProvider` (plus `createW6WApi`, `useW6WApi`,
   `useExpressionOptions`, `startOAuthPopup`, `useEnterSubmit`).
 - **Buttons and icons**: `IconButton`, `Icon`, `EditButton`, `DeleteButton`.
-- **Data display**: `AppIcon`, `ListItem`, `Copyable`, `CopyableText`.
+- **Data display**: `AppIcon`, `ListItem`, `CallableList`, `Copyable`, `CopyableText`.
 - **Forms**: `AppPicker`, `ActionTestForm`, `ParamsForm`, `PropertyEntryForm`, `AuthFieldsForm`,
   `ExpressionInput`, `NodeConfigForm`, `RetryPolicyFields`.
 - **Editors**: `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor`.
