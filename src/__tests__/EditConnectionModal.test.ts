@@ -171,6 +171,8 @@ test("exact credential key set: only non-blank fields, never a default; name onl
   assert.equal(input(c, "w6w-cred-apiKey").value, "");
   type(input(c, "w6w-cred-domain"), "acme.example");
   type(input(c, "w6w-cred-port"), "0");
+  // typed then cleared: the state holds "" for this field, which must not be sent
+  type(input(c, "w6w-cred-apiKey"), "x");
   type(input(c, "w6w-cred-apiKey"), "");
   await clickSave(c);
   assert.equal(calls.update.length, 1);
