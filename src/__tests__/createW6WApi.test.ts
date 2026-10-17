@@ -6,9 +6,9 @@
 // nullish/empty resolution sends no `authorization` header at all.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createW6WApi } from "../createW6WApi.ts";
+import { ApiError, createW6WApi } from "../createW6WApi.ts";
 import type { ConnectionAppMeta, ConnectionSummary } from "../index.ts";
-import type { W6WApi } from "../provider.tsx";
+import type { AppsPageResult, ListAppsPageOptions, W6WApi } from "../provider.tsx";
 
 function fakeFetch(capture: Headers[]) {
   return (async (_url: string, init?: RequestInit) => {
@@ -212,3 +212,157 @@ const noOwner: ConnectionSummary = {
   owner: "u1",
 };
 void [pinnedRow, pinnedNullApp, noOwner];
+
+// ── T3.1.1: listApps walks ONE snapshot ───────────────────────────────────────
+type Resp = { status?: number; body: unknown };
+function seqFetch(urls: string[], respond: (url: URL, n: number) => Resp, max = 50) {
+  return (async (url: string) => {
+    urls.push(url);
+    if (urls.length > max) throw new Error("fetch fake: runaway walk");
+    const r = respond(new URL(url), urls.length);
+    return new Response(JSON.stringify(r.body), {
+      status: r.status ?? 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+}
+const pg = (n: number, last: number, tag = "") => ({
+  apps: [{ id: `${tag}app${n}`, displayName: `${tag}app${n}` }],
+  ...(n < last ? { nextCursor: `${tag}c${n + 1}` } : {}),
+});
+const expired = (code: string, status: number) => ({
+  status,
+  body: { error: { code, message: code } },
+});
+
+test("T3.1.1 A2 — listApps walks by nextCursor only: exact URLs, server order", async () => {
+  const urls: string[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: seqFetch(urls, (u) => {
+      const c = u.searchParams.get("cursor");
+      return { body: pg(c ? Number(c.slice(1)) : 1, 3) };
+    }),
+  });
+  const apps = await api.listApps?.();
+  assert.deepEqual(
+    apps?.map((a) => a.id),
+    ["app1", "app2", "app3"],
+  );
+  assert.deepEqual(urls, [
+    "https://example.test/apps?limit=200",
+    "https://example.test/apps?limit=200&cursor=c2",
+    "https://example.test/apps?limit=200&cursor=c3",
+  ]);
+  for (const u of urls) {
+    assert.equal(new URL(u).searchParams.get("snapshot"), null);
+    assert.equal(new URL(u).searchParams.get("offset"), null);
+  }
+});
+
+test("T3.1.1 A2 — listApps has no page cap: 25 pages => 25 requests, 25 apps", async () => {
+  const urls: string[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: seqFetch(urls, (u) => {
+      const c = u.searchParams.get("cursor");
+      return { body: pg(c ? Number(c.slice(1)) : 1, 25) };
+    }),
+  });
+  const apps = await api.listApps?.();
+  assert.equal(urls.length, 25);
+  assert.equal(apps?.length, 25);
+});
+
+test("T3.1.1 A2 — a server echoing the cursor ends the walk (non-advancing guard)", async () => {
+  const urls: string[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: seqFetch(urls, () => ({
+      body: { apps: [{ id: `a${urls.length}`, displayName: "x" }], nextCursor: "same" },
+    })),
+  });
+  const apps = await api.listApps?.();
+  assert.equal(urls.length, 2, "first (cursorless) + one echo, then stop");
+  assert.equal(apps?.length, 2);
+});
+
+for (const [code, status] of [
+  ["snapshot_expired", 410],
+  ["unknown_snapshot", 404],
+] as const) {
+  test(`T3.1.1 A3 — ${status} ${code} on page 2 restarts once and returns only the second walk`, async () => {
+    const urls: string[] = [];
+    let failed = false;
+    const api = createW6WApi({
+      baseUrl: "https://example.test",
+      fetch: seqFetch(urls, (u) => {
+        const c = u.searchParams.get("cursor");
+        if (c && !failed) {
+          failed = true;
+          return expired(code, status);
+        }
+        const tag = failed ? "second-" : "first-";
+        return { body: pg(c ? Number(c.slice(c.lastIndexOf("c") + 1)) : 1, 3, tag) };
+      }),
+    });
+    const apps = await api.listApps?.();
+    assert.deepEqual(
+      apps?.map((a) => a.id),
+      ["second-app1", "second-app2", "second-app3"],
+    );
+    assert.equal(urls.length, 5);
+    assert.equal(
+      new URL(urls[2] as string).searchParams.get("cursor"),
+      null,
+      "restart is cursorless",
+    );
+  });
+}
+
+test("T3.1.1 A3 — a second expiry in one call throws after exactly 4 requests", async () => {
+  const urls: string[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: seqFetch(urls, (u) =>
+      u.searchParams.get("cursor") ? expired("snapshot_expired", 410) : { body: pg(1, 3) },
+    ),
+  });
+  await assert.rejects(
+    () => api.listApps?.() as Promise<unknown>,
+    (e: unknown) => e instanceof ApiError && e.code === "snapshot_expired",
+  );
+  assert.equal(urls.length, 4);
+});
+
+test("T3.1.1 A3 — any other error throws at once, no restart", async () => {
+  const urls: string[] = [];
+  const api = createW6WApi({
+    baseUrl: "https://example.test",
+    fetch: seqFetch(urls, (u) =>
+      u.searchParams.get("cursor")
+        ? { status: 500, body: { error: { code: "internal", message: "x" } } }
+        : { body: pg(1, 3) },
+    ),
+  });
+  await assert.rejects(
+    () => api.listApps?.() as Promise<unknown>,
+    (e: unknown) => e instanceof ApiError && e.code === "internal",
+  );
+  assert.equal(urls.length, 2);
+});
+
+// ── T3.1.1 A1 type pins (W-2) — gated by `tsc -b --noEmit`, not at runtime ──
+const pinnedResultFull: AppsPageResult = {
+  apps: [],
+  nextCursor: "c",
+  snapshot: "lsn_1",
+  total: 5,
+  offset: 0,
+  limit: 200,
+  expiresAt: "2026-10-16T00:00:00Z",
+};
+const pinnedResultBare: AppsPageResult = { apps: [] };
+const pinnedOptsFull: ListAppsPageOptions = { snapshot: "lsn_1", offset: 10 };
+const pinnedOptsBare: ListAppsPageOptions = {};
+void [pinnedResultFull, pinnedResultBare, pinnedOptsFull, pinnedOptsBare];

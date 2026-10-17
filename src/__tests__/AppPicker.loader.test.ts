@@ -59,7 +59,7 @@ const { act } = await import("react-dom/test-utils");
 const { AppPicker } = await import("../AppPicker.tsx");
 const { W6WUIProvider } = await import("../provider.tsx");
 type A = { id: string; displayName: string };
-type Page = { apps: A[]; nextCursor?: string };
+type Page = { apps: A[]; nextCursor?: string; total?: number };
 type Req = { q?: string; cursor?: string; limit: number; signal: AbortSignal };
 type Loader = (o: Req) => Promise<Page>;
 
@@ -396,4 +396,113 @@ test("a synchronously throwing loadPage on Load more keeps the list, shows Retry
   await flush();
   assert.deepEqual(cards(h.container), ["a", "b"]);
   await act(async () => h.root.unmount());
+});
+
+// ── T3.1.1: "N of M" and snapshot-expiry restart ──────────────────────────────
+const counter = (c: Element) => /\d+ of \d+/.exec(text(c))?.[0];
+const coded = (code: string) => Object.assign(new Error("x"), { code });
+
+test("T3.1.1 A5 — shows loaded/total (internal apps counted), updates on Load more", async () => {
+  const loader: Loader = async (o) =>
+    o.cursor
+      ? { apps: [a("c"), a("d")], total: 5, nextCursor: "c3" }
+      : { apps: [a("a"), a("@w6w/http")], total: 5, nextCursor: "c2" };
+  const h = render(loader);
+  await h.mount();
+  await flush();
+  assert.equal(counter(h.container), "2 of 5");
+  await click(btn(h.container, "Load more"));
+  await flush();
+  assert.equal(counter(h.container), "4 of 5");
+  await act(async () => h.root.unmount());
+});
+
+test("T3.1.1 A5 — no total => no counter; a search change hides it until its page arrives", async () => {
+  const none = render(async () => ({ apps: [a("a")] }));
+  await none.mount();
+  await flush();
+  assert.equal(counter(none.container), undefined);
+  assert.ok(!text(none.container).includes(" of "));
+  await act(async () => none.root.unmount());
+
+  let release: ((p: Page) => void) | undefined;
+  const loader: Loader = (o) =>
+    o.q
+      ? new Promise((r) => {
+          release = r;
+        })
+      : Promise.resolve({ apps: [a("a")], total: 5, nextCursor: "c2" });
+  const h = render(loader);
+  await h.mount();
+  await flush();
+  assert.equal(counter(h.container), "1 of 5");
+  await type(h.container, "zz");
+  await debounce();
+  assert.equal(counter(h.container), undefined);
+  await act(async () => release?.({ apps: [a("z")], total: 1 }));
+  await flush();
+  assert.equal(counter(h.container), "1 of 1");
+  await act(async () => h.root.unmount());
+});
+
+for (const code of ["snapshot_expired", "unknown_snapshot"]) {
+  test(`T3.1.1 A6 — ${code} on Load more resets and restarts once, cursorless, same q`, async () => {
+    const reqs: Req[] = [];
+    let n = 0;
+    const loader: Loader = (o) => {
+      reqs.push(o);
+      n++;
+      if (n === 1) return Promise.resolve({ apps: [a("a")], total: 3, nextCursor: "c2" });
+      if (n === 2) return Promise.reject(coded(code));
+      return Promise.resolve({ apps: [a("x")], total: 1 });
+    };
+    const h = render(loader);
+    await h.mount();
+    await flush();
+    await click(btn(h.container, "Load more"));
+    await flush();
+    assert.equal(reqs.length, 3);
+    assert.equal(reqs[2]?.cursor, undefined);
+    assert.equal(reqs[2]?.q, reqs[0]?.q);
+    assert.deepEqual(cards(h.container), ["x"]);
+    assert.equal(btn(h.container, "Retry"), undefined);
+    assert.equal(counter(h.container), "1 of 1");
+    await act(async () => h.root.unmount());
+  });
+}
+
+test("T3.1.1 A6 — expiry on Retry of a cursor request restarts; a cursorless expiry is an error", async () => {
+  const reqs: Req[] = [];
+  let n = 0;
+  const loader: Loader = (o) => {
+    reqs.push(o);
+    n++;
+    if (n === 1) return Promise.resolve({ apps: [a("a")], nextCursor: "c2" });
+    if (n === 2) return Promise.reject(new Error("net"));
+    if (n === 3) return Promise.reject(coded("snapshot_expired"));
+    return Promise.resolve({ apps: [a("y")] });
+  };
+  const h = render(loader);
+  await h.mount();
+  await flush();
+  await click(btn(h.container, "Load more"));
+  await flush();
+  await click(btn(h.container, "Retry"));
+  await flush();
+  assert.equal(reqs.length, 4);
+  assert.equal(reqs[3]?.cursor, undefined);
+  assert.deepEqual(cards(h.container), ["y"]);
+  await act(async () => h.root.unmount());
+
+  const reqs2: Req[] = [];
+  const h2 = render((o) => {
+    reqs2.push(o);
+    return Promise.reject(coded("snapshot_expired"));
+  });
+  await h2.mount();
+  await flush();
+  await flush();
+  assert.equal(reqs2.length, 1, "a cursorless failure never loops");
+  assert.ok(btn(h2.container, "Retry"));
+  await act(async () => h2.root.unmount());
 });

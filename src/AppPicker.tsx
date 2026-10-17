@@ -83,7 +83,7 @@ export interface AppPickerProps {
     cursor?: string;
     limit: number;
     signal: AbortSignal;
-  }) => Promise<{ apps: AppSummary[]; nextCursor?: string }>;
+  }) => Promise<{ apps: AppSummary[]; nextCursor?: string; total?: number }>;
 }
 
 /**
@@ -232,6 +232,7 @@ export function AppPicker({
             apps: page.apps,
             nextCursor: page.nextCursor,
             requestedCursor: cursor,
+            total: typeof page.total === "number" ? page.total : undefined,
           });
         })
         .catch((e: unknown) => {
@@ -239,6 +240,20 @@ export function AppPicker({
           // Our own cancellation (query change / unmount) — not a user-facing
           // error; the newer request (or nothing, on unmount) owns the state.
           if (e instanceof Error && e.name === "AbortError") return;
+          // The snapshot behind our cursor is gone (410 and 404 alike to a
+          // token holder). Detected structurally: the host's loader throws its
+          // own error class (the SDK's), never ui's `ApiError`. Reset and
+          // restart from page 1, once; a cursorless failure is a real error.
+          const code = (e as { code?: unknown } | null)?.code;
+          if (
+            cursor !== undefined &&
+            (code === "snapshot_expired" || code === "unknown_snapshot")
+          ) {
+            const next = ++generationRef.current;
+            dispatch({ type: "query-changed", query, generation: next });
+            fetchPage(query, next, undefined);
+            return;
+          }
           dispatch({ type: "page-failed", generation, error: (e as Error).message });
         });
     },
@@ -537,6 +552,11 @@ export function AppPicker({
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+          {paged && typeof pageState.total === "number" && (
+            <div className="w6w-small w6w-apppicker-count">
+              {pageState.apps.length} of {pageState.total}
             </div>
           )}
           {paged && pageError && (
