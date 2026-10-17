@@ -16,6 +16,10 @@ button.w6w-list-item {
   font: inherit;
   font-size: var(--w6w-fs-sm);
 }
+a.w6w-list-item {
+  text-decoration: none;
+  color: inherit;
+}
 .w6w-list-item:hover {
   background: var(--w6w-panel-2);
 }

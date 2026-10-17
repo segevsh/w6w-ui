@@ -180,3 +180,7 @@ export { ExecutionStats } from "./components/ExecutionStats.tsx";
 export type { ExecutionStatsProps, ExecutionStatsValue } from "./components/ExecutionStats.tsx";
 export { ExecutionDetail } from "./components/ExecutionDetail.tsx";
 export type { ExecutionDetailProps, ExecutionDetailValue } from "./components/ExecutionDetail.tsx";
+
+// ── CallableList (B-1u) ──
+export { CallableList } from "./components/CallableList.tsx";
+export type { CallableListProps, CallableListRow } from "./components/CallableList.tsx";

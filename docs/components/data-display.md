@@ -54,7 +54,8 @@ One row of a list: an optional leading icon, a title, a muted subtitle and a tra
 | `icon` | `ReactNode` | Leading slot, such as an `AppIcon`. |
 | `trailing` | `ReactNode` | Right-aligned slot, such as a status pill. |
 | `active` | `boolean` | Highlights the row; reflected as `aria-pressed` when clickable. |
-| `onClick` | `() => void` | Makes the row a button. |
+| `onClick` | `(event) => void` | Makes the row a button, or with `href` still fires on the anchor click. ListItem never calls `preventDefault`; the host decides. |
+| `href` | `string` | Renders the row as a real `<a href>` (middle-click, copy link). `trailing` sits inside the anchor, so keep it non-interactive. |
 | `ariaLabel` | `string` | Accessible name for a clickable row. Defaults to the title's text. |
 
 ```tsx
@@ -71,6 +72,40 @@ import { AppIcon, HealthStatusPill, ListItem } from "@w6w/ui";
     onClick={() => setSelectedId(c.id)}
   />
 ))}
+```
+
+## `CallableList`
+
+A list of callables (Functions, Endpoints, Workflows): rows in, callbacks out. It imports no router,
+query client or `@w6w/embed` code, and it never learns what kind of callable it shows. Rows render
+through `ListItem`, so with `getHref` each row is a real anchor and a click still calls `onOpen`.
+
+| Prop | Type | What it does |
+| --- | --- | --- |
+| `rows` | `CallableListRow[]` | Required. `{ id, title, description?, archived, badges?, trailing? }`; the host decides `archived`. |
+| `title` | `ReactNode` | Required. Rendered as an `<h2>`. |
+| `description` | `ReactNode` | Muted text under the title. |
+| `emptyCopy` | `ReactNode` | Shown when `rows` is empty. |
+| `newLabel` | `string` | New button label. Defaults to `New`. |
+| `onCreate` / `creating` | `() => void` / `boolean` | The New button shows only with `onCreate`; `creating` disables it. |
+| `onImport` | `() => void` | The Import button shows only with this. |
+| `onOpen` | `(id, event) => void` | Row click. The event is untouched, so the host may `preventDefault`. |
+| `getHref` | `(id) => string` | Makes each row an anchor. |
+| `showArchived` / `onShowArchivedChange` | `boolean` / `(next) => void` | Controls the Show archived toggle. Omit for an uncontrolled toggle that starts off. |
+| `loading` / `error` | `boolean` / `string \| null` | Loading line and error banner. |
+| `openRowTitle`, `testIds` | `string`, `{ showArchived?, importOpen?, archivedBadge? }` | Row tooltip and test ids. |
+| `slots` | `{ header?, actions?, empty? }` | `header` replaces the title block, `actions` renders before Import/New, `empty` replaces `emptyCopy`. |
+
+```tsx
+import { CallableList } from "@w6w/ui";
+
+<CallableList
+  title="Functions"
+  rows={functions.map((f) => ({ id: f.id, title: f.name, archived: f.archivedAt != null }))}
+  getHref={(id) => `/functions/${id}`}
+  onOpen={(id) => openFunction(id)}
+  onCreate={createFunction}
+/>
 ```
 
 ## `Copyable`

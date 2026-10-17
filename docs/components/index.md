@@ -30,7 +30,7 @@ from [`W6WUIProvider`](/reference-packages/components/providers/) and call your 
 | --- | --- |
 | [Providers and the API client](/reference-packages/components/providers/) | `W6WUIProvider`, `createW6WApi`, `useW6WApi`, `ExpressionOptionsProvider` |
 | [Buttons and icons](/reference-packages/components/buttons/) | `IconButton`, `Icon`, `EditButton`, `DeleteButton` |
-| [Data display](/reference-packages/components/data-display/) | `AppIcon`, `ListItem`, `Copyable`, `CopyableText` |
+| [Data display](/reference-packages/components/data-display/) | `AppIcon`, `ListItem`, `CallableList`, `Copyable`, `CopyableText` |
 | [Forms](/reference-packages/components/forms/) | `AppPicker` (provider), `ActionTestForm` (provider), `ParamsForm`, `PropertyEntryForm`, `AuthFieldsForm`, `ExpressionInput`, `NodeConfigForm`, `RetryPolicyFields` |
 | [Editors](/reference-packages/components/editors/) | `CodeBlock`, `CodeEditor`, `JsonEditor`, `YamlEditor` |
 | [Workflow canvas](/reference-packages/components/flow-editor/) | `WorkflowFlowEditor` (provider, from `@w6w/ui/flow`) |

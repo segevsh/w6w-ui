@@ -27,3 +27,8 @@ export const WithIconAndTrailing: Story = {
     trailing: <span className="w6w-muted w6w-small">v3</span>,
   },
 };
+
+/** With `href` the row is a real anchor; a click still reaches `onClick` and the host decides. */
+export const Href: Story = {
+  args: { href: "#sendgrid", active: false },
+};
