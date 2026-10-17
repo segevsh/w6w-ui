@@ -5276,3 +5276,17 @@ button.w6w-rel-open:focus-visible strong {
     min-width: 600px;
   }
 }
+/* "Show all services →" when only `onShowAll` is given: a <button> that reads as the link. */
+.w6w-rel-show-all {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.w6w-rel-show-all:hover,
+.w6w-rel-show-all:focus-visible {
+  color: var(--w6w-accent);
+}

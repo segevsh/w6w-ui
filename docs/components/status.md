@@ -18,7 +18,7 @@ updatedAt: null
 
 # Status and health
 
-Small indicators for whether something works. All five are props-only and render a state you've
+Small indicators for whether something works. They are all props-only and render a state you've
 already decided: none of them computes health or uptime. Every state shows a text label as well as
 a color. The health colors come from the `--w6w-health-*` [tokens](/reference-packages/theming/); the step and run
 pill uses `--w6w-accent`, `--w6w-success`, `--w6w-danger` and `--w6w-muted`.

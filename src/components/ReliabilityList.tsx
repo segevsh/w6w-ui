@@ -265,16 +265,28 @@ export function ReliabilityList<T extends ReliabilityServiceView>({
   } = displayBoard(services, { compact, limit });
   const shouldShowChart = showChart ?? !compact;
   const canShowAll = showAllHref !== undefined || onShowAll !== undefined;
-  const showAllLink = (text: string): ReactNode =>
-    canShowAll ? (
-      <a
-        href={showAllHref}
-        className={text.startsWith("Show") ? "w6w-muted w6w-small" : undefined}
-        onClick={onShowAll}
-      >
-        {text}
-      </a>
-    ) : null;
+  const showAllLink = (text: string): ReactNode => {
+    const className = text.startsWith("Show") ? "w6w-muted w6w-small" : undefined;
+    if (showAllHref !== undefined) {
+      return (
+        <a href={showAllHref} className={className} onClick={onShowAll}>
+          {text}
+        </a>
+      );
+    }
+    if (onShowAll) {
+      return (
+        <button
+          type="button"
+          className={`w6w-rel-show-all${className ? ` ${className}` : ""}`}
+          onClick={onShowAll}
+        >
+          {text}
+        </button>
+      );
+    }
+    return null;
+  };
 
   return (
     <section className="w6w-rel-section">

@@ -176,6 +176,58 @@ test("renders with no provider and hands the inline icon fields to AppIcon", asy
   assert.equal(img.getAttribute("src"), "https://cdn.example/icon.png");
 });
 
+test("srcDark reaches AppIcon under a dark theme", async () => {
+  document.documentElement.setAttribute("data-theme", "dark");
+  try {
+    const { container } = await mount(ReliabilityList, {
+      services: [
+        svc({ iconSrc: "https://cdn.example/l.png", iconSrcDark: "https://cdn.example/d.png" }),
+      ],
+      showChart: false,
+    });
+    const img = container.querySelector("td.w6w-rel-td-service img");
+    assert.ok(img);
+    assert.equal(img.getAttribute("src"), "https://cdn.example/d.png");
+  } finally {
+    document.documentElement.removeAttribute("data-theme");
+  }
+});
+
+test("onOpen alone — issue card and table row are buttons that fire onOpen", async () => {
+  const calls: string[] = [];
+  const { container } = await mount(ReliabilityList, {
+    services: [BAD, FINE],
+    showChart: false,
+    onOpen: (id: string) => calls.push(id),
+  });
+  const card = container.querySelector("button.w6w-rel-issue-card");
+  const row = container.querySelector("td.w6w-rel-td-service button.w6w-rel-open");
+  assert.ok(card, "issue card is a button");
+  assert.ok(row, "table row is a button");
+  await act(async () => {
+    card.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  await act(async () => {
+    row.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  assert.equal(calls.length, 2);
+  assert.ok(calls.includes("bad") || calls.includes("fine"));
+});
+
+test("show-all — <a> only with showAllHref; a <button> with only onShowAll", async () => {
+  let n = 0;
+  const a = await mount(ReliabilityList, { services: [FINE], compact: true, showAllHref: "/all" });
+  assert.equal(a.container.querySelector('a[href="/all"]')?.textContent, "Show all services →");
+  const b = await mount(ReliabilityList, { services: [FINE], compact: true, onShowAll: () => n++ });
+  assert.equal(b.container.querySelectorAll("a").length, 0);
+  const btn = b.container.querySelector("button.w6w-rel-show-all");
+  assert.ok(btn);
+  await act(async () => {
+    btn.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  assert.equal(n, 1);
+});
+
 test("vendor null reads 'not published'; vendor unknown reads 'Unavailable'", async () => {
   const a = await mount(ReliabilityList, { services: [svc()], showChart: false });
   assert.match(a.container.textContent ?? "", /not published/);
