@@ -4968,3 +4968,121 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-muted);
   font-size: var(--w6w-fs-xs);
 }
+
+/* Connections (D-12u): ConnectionList, ConnectionHeader and the state tags they share. */
+.w6w-connection-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-3);
+}
+
+.w6w-connection-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--w6w-sp-4);
+}
+
+.w6w-connection-list-heading {
+  min-width: 0;
+}
+
+.w6w-connection-list-actions {
+  display: flex;
+  gap: var(--w6w-sp-2);
+  flex-shrink: 0;
+}
+
+.w6w-connection-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+}
+
+.w6w-connection-row {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+}
+
+.w6w-connection-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.w6w-connection-row-actions {
+  display: flex;
+  gap: var(--w6w-sp-1-5);
+  flex-shrink: 0;
+}
+
+.w6w-connection-name {
+  margin-right: var(--w6w-sp-2);
+}
+
+/* State tags (connected / needs attention / invalid). */
+.w6w-connection-tag {
+  display: inline-block;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 999px;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-2);
+  font-size: var(--w6w-fs-xs);
+  margin-right: var(--w6w-sp-1);
+}
+
+.w6w-connection-tag-warn {
+  color: #ffb86b;
+  border-color: #ffb86b;
+}
+
+.w6w-connection-tag-danger {
+  color: var(--w6w-danger);
+  border-color: var(--w6w-danger);
+}
+
+/* ConnectionHeader */
+.w6w-connection-header {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-3);
+}
+
+.w6w-connection-header-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.w6w-connection-header-title {
+  margin: 0;
+}
+
+.w6w-connection-header-meta {
+  margin: 0;
+}
+
+.w6w-connection-header-actions {
+  display: flex;
+  gap: var(--w6w-sp-1-5);
+  align-items: center;
+}
+
+/* The id's copy button appears on hover/focus only. */
+.w6w-connection-id-copy.w6w-copyable {
+  display: inline-flex;
+  width: auto;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.w6w-connection-id-copy .w6w-copyable-btn {
+  opacity: 0;
+}
+
+.w6w-connection-id-copy:hover .w6w-copyable-btn,
+.w6w-connection-id-copy:focus-within .w6w-copyable-btn {
+  opacity: 1;
+}

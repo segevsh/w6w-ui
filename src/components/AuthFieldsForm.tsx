@@ -12,13 +12,26 @@ interface Props {
    * component still works with no submit-on-Enter wiring at all.
    */
   enterSubmitProps?: { onKeyDown: KeyboardEventHandler<HTMLElement> };
+  /**
+   * `"create"` (default) seeds each field from its manifest `default`. `"edit"` is for replacing
+   * part of a stored credential: it never seeds `default`, gives secret inputs the placeholder
+   * `•••••• (unchanged)`, and reports an emptied number input as `""` (not `0`) so the caller can
+   * treat blank as "keep what is stored".
+   */
+  mode?: "create" | "edit";
 }
 
 /**
  * Renders the form for an Auth method's `fields` declaration. Field shape
  * comes from the app's manifest so no app-specific knowledge is needed here.
  */
-export function AuthFieldsForm({ fields, values, onChange, enterSubmitProps }: Props) {
+export function AuthFieldsForm({
+  fields,
+  values,
+  onChange,
+  enterSubmitProps,
+  mode = "create",
+}: Props) {
   const update = (key: string, value: unknown) => onChange({ ...values, [key]: value });
 
   return (
@@ -30,7 +43,11 @@ export function AuthFieldsForm({ fields, values, onChange, enterSubmitProps }: P
         </p>
       )}
       {fields.map((field) => {
-        const value = (values[field.key] ?? field.default ?? "") as string | number | boolean;
+        const edit = mode === "edit";
+        const value = (values[field.key] ?? (edit ? undefined : field.default) ?? "") as
+          | string
+          | number
+          | boolean;
         if (field.type === "boolean") {
           return (
             <label key={field.key} className="w6w-field">
@@ -65,8 +82,14 @@ export function AuthFieldsForm({ fields, values, onChange, enterSubmitProps }: P
               type={inputType}
               className={isSecret ? "w6w-secret-input" : undefined}
               value={String(value ?? "")}
+              placeholder={edit && isSecret ? "•••••• (unchanged)" : undefined}
               onChange={(e) =>
-                update(field.key, field.type === "number" ? Number(e.target.value) : e.target.value)
+                update(
+                  field.key,
+                  field.type === "number" && !(edit && e.target.value === "")
+                    ? Number(e.target.value)
+                    : e.target.value,
+                )
               }
               // Belt-and-braces opt-out from browser autofill + password managers.
               name={`w6w-cred-${field.key}`}
