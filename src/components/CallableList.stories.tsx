@@ -37,6 +37,16 @@ export const ShowingArchived: Story = {
   args: { showArchived: true },
 };
 
+/** Every row is archived and "Show archived" is off: an EmptyState with a control to reveal them. */
+export const ArchivedOnly: Story = {
+  args: {
+    rows: [
+      { id: "a", title: "Alpha", archived: true },
+      { id: "b", title: "Beta", archived: true },
+    ],
+  },
+};
+
 export const Empty: Story = {
   args: { rows: [] },
 };
