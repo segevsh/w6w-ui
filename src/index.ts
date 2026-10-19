@@ -220,3 +220,5 @@ export { ConnectionHeader } from "./ConnectionHeader.tsx";
 export type { ConnectionHeaderProps } from "./ConnectionHeader.tsx";
 export { connectionAppIdsToLookUp, resolveConnectionAppMeta } from "./connection-app-meta.ts";
 export type { InlineAppMeta } from "./connection-app-meta.ts";
+export { EmptyState } from "./components/EmptyState.tsx";
+export type { EmptyStateProps } from "./components/EmptyState.tsx";
