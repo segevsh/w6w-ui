@@ -84,11 +84,51 @@ test("without getHref rows are buttons; with neither they are non-interactive", 
   const seen: string[] = [];
   const c = mount({ onOpen: (id: string) => seen.push(id) });
   assert.equal(c.querySelector("a"), null);
-  click(c.querySelector("ul button") as Element);
+  click(c.querySelector("tbody button") as Element);
   assert.deepEqual(seen, ["a"]);
   const c2 = mount({});
-  assert.equal(c2.querySelector("ul button"), null);
-  assert.equal(c2.querySelector("ul a"), null);
+  assert.equal(c2.querySelector("tbody button"), null);
+  assert.equal(c2.querySelector("tbody a"), null);
+});
+
+test("archived-only + Show archived off: EmptyState with a control that turns it on", () => {
+  const only = [{ id: "b", title: "Beta", archived: true }];
+  const c = mount({ rows: only, emptyCopy: "Nothing here", testIds: { showArchived: "sa" } });
+  assert.equal(c.querySelector("tbody tr"), null, "row absent");
+  assert.ok(c.querySelector(".w6w-empty-state"), "EmptyState present");
+  assert.ok(text(c).includes("archived"));
+  assert.ok(!text(c).includes("Nothing here"));
+  const btn = [...c.querySelectorAll("button")].find((b) => b.textContent === "Show archived");
+  assert.ok(btn, "Show archived control");
+  click(btn);
+  assert.ok(text(c).includes("Beta"), "toggle on reveals the row");
+  assert.equal(c.querySelector(".w6w-empty-state"), null);
+  assert.equal((c.querySelector('[data-testid="sa"]') as HTMLInputElement).checked, true);
+});
+
+test("archived-only controlled: control reports true, prop still wins", () => {
+  const seen: boolean[] = [];
+  const c = mount({
+    rows: [{ id: "b", title: "Beta", archived: true }],
+    showArchived: false,
+    onShowArchivedChange: (n: boolean) => seen.push(n),
+  });
+  click(
+    [...c.querySelectorAll("button")].find((b) => b.textContent === "Show archived") as Element,
+  );
+  assert.deepEqual(seen, [true]);
+  assert.ok(c.querySelector(".w6w-empty-state"));
+  assert.ok(
+    text(
+      mount({ rows: [{ id: "b", title: "Beta", archived: true }], showArchived: true }),
+    ).includes("Beta"),
+  );
+});
+
+test("loading shows no EmptyState", () => {
+  const c = mount({ rows: [], loading: true, emptyCopy: "Nothing here" });
+  assert.equal(c.querySelector(".w6w-empty-state"), null);
+  assert.ok(text(c).includes("Loading"));
 });
 
 test("New/Import render only with their callbacks; empty copy shows when rows is empty", () => {
