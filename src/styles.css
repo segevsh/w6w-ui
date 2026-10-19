@@ -5367,6 +5367,39 @@ button.w6w-rel-open:focus-visible strong {
   font-size: var(--w6w-fs-xs);
 }
 
+.w6w-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+}
+
+.w6w-data-table th,
+.w6w-data-table td {
+  border: 1px solid var(--w6w-border);
+  padding: var(--w6w-sp-2) var(--w6w-sp-3);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.w6w-data-table th {
+  color: var(--w6w-muted);
+}
+
+.w6w-data-table-row-clickable {
+  cursor: pointer;
+}
+
+.w6w-data-table-row-clickable:hover {
+  background: var(--w6w-panel-2);
+}
+
+.w6w-data-table-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
 /* Connections (D-12u): ConnectionList, ConnectionHeader and the state tags they share. */
 .w6w-connection-list {
   display: flex;
@@ -5483,4 +5516,28 @@ button.w6w-rel-open:focus-visible strong {
 .w6w-connection-id-copy:hover .w6w-copyable-btn,
 .w6w-connection-id-copy:focus-within .w6w-copyable-btn {
   opacity: 1;
+}
+
+.w6w-empty-state {
+  position: relative;
+  min-height: 10rem;
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  border: 1px solid var(--w6w-border);
+}
+
+.w6w-empty-state-inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  text-align: center;
+}
+
+.w6w-empty-state-body {
+  color: var(--w6w-muted);
 }
