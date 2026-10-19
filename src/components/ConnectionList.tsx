@@ -2,9 +2,10 @@ import type { MouseEvent, ReactNode } from "react";
 import { type InlineAppMeta, resolveConnectionAppMeta } from "../connection-app-meta.ts";
 import type { ConnectionSummary } from "../types.ts";
 import { AppIcon } from "./AppIcon.tsx";
+import { DataTable, type DataTableColumn } from "./DataTable.tsx";
 import { DeleteButton } from "./DeleteButton.tsx";
 import { EditButton } from "./EditButton.tsx";
-import { ListItem } from "./ListItem.tsx";
+import { EmptyState } from "./EmptyState.tsx";
 
 export interface ConnectionListProps {
   connections: readonly ConnectionSummary[];
@@ -39,9 +40,8 @@ export interface ConnectionListProps {
 }
 
 /**
- * A presentational list of connections: rows in, callbacks out; it needs no provider. Each row is
- * a {@link ListItem} (app icon, name, auth key, state, an `invalid` tag after a failed test) with
- * Edit and Delete buttons as SIBLINGS of its link, never inside it.
+ * A presentational list of connections: rows in, callbacks out; it needs no provider. Rows render
+ * through {@link DataTable} (name/app, status, and an Edit/Delete column that is never a link).
  *
  * A `builtIn` row (the server's synthetic "no credential" entry) is a plain non-interactive item:
  * no link, no `onOpen`, no Edit, no Delete, because the server 404s get/test/delete on its id.
@@ -60,6 +60,83 @@ export function ConnectionList({
   slots,
 }: ConnectionListProps) {
   const byId = appsById ?? new Map<string, InlineAppMeta>();
+  const hasActions = onEdit !== undefined || onDelete !== undefined;
+  const columns: DataTableColumn<ConnectionSummary>[] = [
+    {
+      key: "name",
+      header: "Name",
+      render: (c) => {
+        const app = resolveConnectionAppMeta(c, byId);
+        const name = c.displayName || c.id;
+        return (
+          <span className="w6w-connection-cell-name">
+            <AppIcon
+              src={app?.iconSvg}
+              srcDark={app?.iconSvgDark}
+              brandColor={app?.brandColor}
+              name={app?.displayName ?? c.appId}
+            />
+            <strong className="w6w-connection-name" title={name}>
+              {name}
+            </strong>{" "}
+            <span className="w6w-muted">{app?.displayName ?? c.appId}</span>
+          </span>
+        );
+      },
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (c) => (
+        <>
+          auth <code>{c.authKey}</code> ·{" "}
+          <span
+            className={`w6w-connection-tag${c.state === "connected" ? "" : " w6w-connection-tag-warn"}`}
+          >
+            {c.state}
+          </span>
+          {c.lastTestOk === false && (
+            <span
+              className="w6w-connection-tag w6w-connection-tag-danger"
+              title="Last test failed — update or re-test."
+            >
+              invalid
+            </span>
+          )}
+        </>
+      ),
+    },
+  ];
+  if (hasActions) {
+    columns.push({
+      key: "actions",
+      header: "",
+      align: "right",
+      link: false,
+      render: (c) =>
+        c.builtIn === true ? null : (
+          // Clicks here must not reach the row's onOpen.
+          // biome-ignore lint/a11y/useKeyWithClickEvents: propagation guard only; the buttons inside are the controls.
+          <div className="w6w-connection-row-actions" onClick={(e) => e.stopPropagation()}>
+            {onEdit && (
+              <EditButton
+                label="Edit"
+                onClick={() => onEdit(c)}
+                data-testid={`connection-edit-${c.id}`}
+              />
+            )}
+            {onDelete && (
+              <DeleteButton
+                label="Delete"
+                onClick={() => onDelete(c)}
+                disabled={busy}
+                data-testid={`connection-delete-${c.id}`}
+              />
+            )}
+          </div>
+        ),
+    });
+  }
   return (
     <section className="w6w-connection-list">
       {(slots?.header != null || slots?.actions != null) && (
@@ -70,79 +147,24 @@ export function ConnectionList({
       )}
       {error && <div className="w6w-error">{error}</div>}
       {loading && <p className="w6w-muted">Loading…</p>}
-      {connections.length === 0 && !loading && (
-        <div className="w6w-muted">{slots?.empty ?? "No connections yet."}</div>
+      {connections.length === 0 && !loading ? (
+        <EmptyState testId="w6w-connection-list-empty">
+          {slots?.empty ?? "No connections yet."}
+        </EmptyState>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={connections}
+          rowKey={(c) => c.id}
+          loading={loading}
+          getRowHref={getHref ? (c) => (c.builtIn === true ? undefined : getHref(c.id)) : undefined}
+          onRowClick={
+            onOpen
+              ? (c, event) => (c.builtIn === true ? undefined : onOpen(c.id, event))
+              : undefined
+          }
+        />
       )}
-      <ul className="w6w-connection-rows">
-        {connections.map((c) => {
-          const app = resolveConnectionAppMeta(c, byId);
-          const name = c.displayName || c.id;
-          const builtIn = c.builtIn === true;
-          return (
-            <li key={c.id} className="w6w-connection-row">
-              <div className="w6w-connection-row-main">
-                <ListItem
-                  href={builtIn ? undefined : getHref?.(c.id)}
-                  onClick={builtIn || !onOpen ? undefined : (event) => onOpen(c.id, event)}
-                  icon={
-                    <AppIcon
-                      src={app?.iconSvg}
-                      srcDark={app?.iconSvgDark}
-                      brandColor={app?.brandColor}
-                      name={app?.displayName ?? c.appId}
-                    />
-                  }
-                  title={
-                    <>
-                      <strong className="w6w-connection-name" title={name}>
-                        {name}
-                      </strong>{" "}
-                      <span className="w6w-muted">{app?.displayName ?? c.appId}</span>
-                    </>
-                  }
-                  subtitle={
-                    <>
-                      auth <code>{c.authKey}</code> ·{" "}
-                      <span
-                        className={`w6w-connection-tag${c.state === "connected" ? "" : " w6w-connection-tag-warn"}`}
-                      >
-                        {c.state}
-                      </span>
-                      {c.lastTestOk === false && (
-                        <span
-                          className="w6w-connection-tag w6w-connection-tag-danger"
-                          title="Last test failed — update or re-test."
-                        >
-                          invalid
-                        </span>
-                      )}
-                    </>
-                  }
-                />
-              </div>
-              {!builtIn && (onEdit || onDelete) && (
-                <div className="w6w-connection-row-actions">
-                  {onEdit && (
-                    <EditButton
-                      label="Edit"
-                      onClick={() => onEdit(c)}
-                      data-testid={`connection-edit-${c.id}`}
-                    />
-                  )}
-                  {onDelete && (
-                    <DeleteButton
-                      label="Delete"
-                      onClick={() => onDelete(c)}
-                      disabled={busy}
-                      data-testid={`connection-delete-${c.id}`}
-                    />
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
     </section>
   );
 }

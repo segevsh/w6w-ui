@@ -5435,24 +5435,10 @@ button.w6w-rel-open:focus-visible strong {
   flex-shrink: 0;
 }
 
-.w6w-connection-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--w6w-sp-1);
-}
-
-.w6w-connection-row {
-  display: flex;
+.w6w-connection-cell-name {
+  display: inline-flex;
   align-items: center;
   gap: var(--w6w-sp-2);
-}
-
-.w6w-connection-row-main {
-  flex: 1;
-  min-width: 0;
 }
 
 .w6w-connection-row-actions {
