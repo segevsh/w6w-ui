@@ -5367,6 +5367,39 @@ button.w6w-rel-open:focus-visible strong {
   font-size: var(--w6w-fs-xs);
 }
 
+.w6w-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+}
+
+.w6w-data-table th,
+.w6w-data-table td {
+  border: 1px solid var(--w6w-border);
+  padding: var(--w6w-sp-2) var(--w6w-sp-3);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.w6w-data-table th {
+  color: var(--w6w-muted);
+}
+
+.w6w-data-table-row-clickable {
+  cursor: pointer;
+}
+
+.w6w-data-table-row-clickable:hover {
+  background: var(--w6w-panel-2);
+}
+
+.w6w-data-table-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
 /* Connections (D-12u): ConnectionList, ConnectionHeader and the state tags they share. */
 .w6w-connection-list {
   display: flex;

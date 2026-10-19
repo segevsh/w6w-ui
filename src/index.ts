@@ -210,6 +210,8 @@ export { CallableList } from "./components/CallableList.tsx";
 export type { CallableListProps, CallableListRow } from "./components/CallableList.tsx";
 
 // ── Connections (D-12u) ──
+export { DataTable } from "./components/DataTable.tsx";
+export type { DataTableColumn, DataTableProps } from "./components/DataTable.tsx";
 export { ConnectionList } from "./components/ConnectionList.tsx";
 export type { ConnectionListProps } from "./components/ConnectionList.tsx";
 export { EditConnectionModal } from "./EditConnectionModal.tsx";
