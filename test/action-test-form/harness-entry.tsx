@@ -20,11 +20,10 @@ import type { ActionDef } from "./types.ts";
 // saved-tests rail nor the run-history effect needs a real response to lay
 // out), so clicking "Run action" reliably produces a `.w6w-result.w6w-error`
 // box.
-//   embedded-rail   — embedded + connectionId set → renders `savedTestsRail`
-//                     → exercises `.w6w-tester-embedded-main` (the
-//                     screenshot's own configuration).
-//   embedded-norail — embedded, no connectionId → exercises
-//                     `.w6w-tester-embedded-scroll` directly.
+//   embedded-rail   — embedded + connectionId set → renders the saved-tests
+//                     card (the screenshot's own configuration).
+//   embedded-norail — embedded, no connectionId → params and result cards
+//                     only, no saved-tests card.
 //   delete-confirm  — connectionId + seedTestId set (T1.1.2) → the Delete
 //                     button renders without waiting on the saved-tests list
 //                     (which never resolves here, same as every other

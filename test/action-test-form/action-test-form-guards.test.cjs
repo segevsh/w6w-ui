@@ -174,12 +174,10 @@ test("M-popout-scroll — ActionTestForm's -full pop-out shows all content via a
 });
 
 // ── T2.1.1 defect 1 — the error box must NOT sit flush against whatever
-//    region sits directly above it, in BOTH embedded variants
-//    (`.w6w-tester-embedded-main`, the rail case, AND
-//    `.w6w-tester-embedded-scroll`, the no-rail case). A fix on
-//    `.w6w-tester-embedded-main` alone passes the rail variant and leaves the
-//    no-rail one at a 0px gap — that near-miss is exactly why both variants
-//    are exercised in one test rather than one probe each.
+//    region sits directly above it, in BOTH embedded variants (with and
+//    without a connection). Both embedded variants lay params out as a
+//    `.card` inside `.w6w-tester-embedded-scroll`; the error box lives in the
+//    Parameters card, so the gap is measured inside that card. ──
 //
 //    Updated for T2.1.1 round 2: this originally asserted the error box's
 //    *specific* previous sibling was `paramsRegion` itself (`w6w-stack`
@@ -196,7 +194,7 @@ test("M-popout-scroll — ActionTestForm's -full pop-out shows all content via a
 //    strong a guard against a collapsed/removed gap as measuring against
 //    one named element — and, unlike the old assertion, does not need
 //    updating every time a new sibling is inserted into this stack. ───────
-test("T2.1.1 defect 1 — 12px gap between params and the error box, in both embedded variants", async () => {
+test("T2.1.1 defect 1 — 12px gap between params and the error box inside the params card, in both embedded variants", async () => {
   for (const variant of ["embedded-rail", "embedded-norail"]) {
     const page = await open(browser, variant);
 
@@ -213,6 +211,11 @@ test("T2.1.1 defect 1 — 12px gap between params and the error box, in both emb
       const prevRect = prev?.getBoundingClientRect();
       return {
         errFound: !!err,
+        inCard: !!err?.closest(".card"),
+        // One column: every card starts at the same x (no side column).
+        cardLefts: [...document.querySelectorAll(".card")].map((c) =>
+          Math.round(c.getBoundingClientRect().left),
+        ),
         errHeight: errRect ? errRect.height : null,
         prevFound: !!prev,
         prevClass: prev ? prev.className : null,
@@ -235,6 +238,11 @@ test("T2.1.1 defect 1 — 12px gap between params and the error box, in both emb
     // guards applies uniformly to every direct child regardless of identity
     // or count (see the updated comment above). `prevClass`/`prevText` are
     // still captured for the failure message below, not asserted on.
+    assert.ok(info.inCard, `[${variant}] error box is not inside a .card`);
+    assert.ok(
+      info.cardLefts.length >= 1 && new Set(info.cardLefts).size === 1,
+      `[${variant}] cards must stack in one column, got lefts ${JSON.stringify(info.cardLefts)}`,
+    );
     assert.ok(info.prevFound, `[${variant}] error box has no previous sibling to measure against`);
 
     // The literal 12, not a self-referential read of --w6w-sp-3 — a tree that
