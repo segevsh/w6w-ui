@@ -839,6 +839,16 @@ function JsonParamField({
     setInvalid(false);
     onChange(param.key, parsed);
   };
+  // Empty is not invalid: it clears the value (required-ness is enforced on
+  // submit, not by this field). Only non-empty unparseable text is "Invalid JSON".
+  const onValidity = ({ valid, error }: { valid: boolean; error?: string }) => {
+    if (!valid && error === "Empty") {
+      setInvalid(false);
+      onChange(param.key, undefined);
+      return;
+    }
+    setInvalid(!valid);
+  };
   const label = param.label ?? param.key;
 
   // Clear: back to the literal JSON the editor still holds (undefined if the
@@ -876,17 +886,6 @@ function JsonParamField({
           {label}
           {param.required ? " *" : ""}
         </span>
-        {!readOnly && !bound && (
-          <button
-            type="button"
-            className="w6w-expr-fx"
-            title="Use an expression"
-            aria-label={`Use an expression for ${label}`}
-            onClick={() => setPickerOpen(true)}
-          >
-            ƒx
-          </button>
-        )}
         {!bound && (
           <button
             type="button"
@@ -939,7 +938,20 @@ function JsonParamField({
           maxHeight="260px"
           aria-label={`${param.key} JSON`}
           onValidChange={onValid}
-          onValidityChange={({ valid }) => setInvalid(!valid)}
+          onValidityChange={onValidity}
+          overlay={
+            readOnly ? undefined : (
+              <button
+                type="button"
+                className="w6w-expr-fx"
+                title="Use an expression"
+                aria-label={`Use an expression for ${label}`}
+                onClick={() => setPickerOpen(true)}
+              >
+                ƒx
+              </button>
+            )
+          }
         />
       )}
       {pickerOpen && (
@@ -975,7 +987,7 @@ function JsonParamField({
               minHeight="360px"
               aria-label={`${param.key} JSON (full view)`}
               onValidChange={onValid}
-              onValidityChange={({ valid }) => setInvalid(!valid)}
+              onValidityChange={onValidity}
             />
           </div>
           {invalid && (
