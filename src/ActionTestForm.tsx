@@ -942,36 +942,37 @@ export function ActionTestForm({
             // The scrollable tester content: params editor + error + result. Shared
             // by every layout (inline body, pop-out modal, embedded footer layout)
             // so it stays a single instance bound to the single `values` state.
+            const errorBox = error ? (
+              <div className="w6w-result w6w-error">
+                <strong>{error.headline}</strong>
+                {error.hint && <div style={{ marginTop: "var(--w6w-sp-1-5)" }}>{error.hint}</div>}
+                {error.detail && (
+                  <div
+                    className="w6w-muted w6w-small"
+                    style={{
+                      marginTop: "var(--w6w-sp-1-5)",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {error.detail}
+                  </div>
+                )}
+              </div>
+            ) : null;
+            const resultBlock =
+              result !== undefined ? (
+                <div className="w6w-stack" style={{ gap: "var(--w6w-sp-1)" }}>
+                  <strong className="w6w-small">Result</strong>
+                  <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
+                </div>
+              ) : null;
             const paramsAndResult = (
               <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
                 {paramsRegion}
                 {overridesRegion}
-                {error && (
-                  <div className="w6w-result w6w-error">
-                    <strong>{error.headline}</strong>
-                    {error.hint && (
-                      <div style={{ marginTop: "var(--w6w-sp-1-5)" }}>{error.hint}</div>
-                    )}
-                    {error.detail && (
-                      <div
-                        className="w6w-muted w6w-small"
-                        style={{
-                          marginTop: "var(--w6w-sp-1-5)",
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-word",
-                        }}
-                      >
-                        {error.detail}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {result !== undefined && (
-                  <div className="w6w-stack" style={{ gap: "var(--w6w-sp-1)" }}>
-                    <strong className="w6w-small">Result</strong>
-                    <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
-                  </div>
-                )}
+                {errorBox}
+                {resultBlock}
                 <ApiCallsPanel calls={apiCalls} />
               </div>
             );
@@ -1026,14 +1027,41 @@ export function ActionTestForm({
               return (
                 <div className="w6w-tester-embedded">
                   <div className="w6w-tester-embedded-scroll">
-                    {savedTestsRail ? (
-                      <div className="w6w-tester-embedded-cols">
-                        <div className="w6w-tester-embedded-main">{paramsAndResult}</div>
-                        <div className="w6w-tester-embedded-rail">{savedTestsRail}</div>
+                    {/* Card layout: params, result and (with a connection) saved
+                        tests + history each in a `.card`, stacked in one column. */}
+                    <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
+                      <div className="card">
+                        <div className="section-head">
+                          <h3>Parameters</h3>
+                        </div>
+                        <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
+                          {paramsRegion}
+                          {overridesRegion}
+                          {errorBox}
+                        </div>
                       </div>
-                    ) : (
-                      paramsAndResult
-                    )}
+                      {(resultBlock || apiCalls.length > 0) && (
+                        <div className="card">
+                          <div className="section-head">
+                            <h3>Result</h3>
+                          </div>
+                          <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
+                            {result !== undefined && (
+                              <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
+                            )}
+                            <ApiCallsPanel calls={apiCalls} />
+                          </div>
+                        </div>
+                      )}
+                      {savedTestsRail && (
+                        <div className="card">
+                          <div className="section-head">
+                            <h3>Saved tests and history</h3>
+                          </div>
+                          {savedTestsRail}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {actionBar}
                 </div>

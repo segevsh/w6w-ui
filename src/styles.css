@@ -3648,7 +3648,7 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 
 /* Host-embedded ActionTestForm (studio's ConnectionTesterModal wraps it in its
    OWN full modal). The widget then fills that modal as a full-height flex column:
-   the params + saved-tests region scrolls, and the action bar is a bottom-pinned,
+   the params / result / saved-tests cards scroll, and the action bar is a bottom-pinned,
    non-scrolling footer. These classes are only applied in `embedded` mode, so the
    inline / own-pop-out layout is untouched. */
 .w6w-tester-embedded-root {
@@ -3667,22 +3667,6 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-
-.w6w-tester-embedded-cols {
-  display: flex;
-  gap: var(--w6w-sp-4);
-  align-items: flex-start;
-}
-
-.w6w-tester-embedded-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.w6w-tester-embedded-rail {
-  width: 260px;
-  flex-shrink: 0;
 }
 
 /* The action bar as a pinned footer: kept out of the scroll region and separated
