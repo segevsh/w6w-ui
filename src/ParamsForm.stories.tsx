@@ -56,3 +56,11 @@ export const ReadOnly: Story = {
 export const Empty: Story = {
   args: { params: [], values: {} },
 };
+
+/** An optional `json` param: the `ƒx` sits inside the editor box, top-right. */
+export const JsonParam: Story = {
+  args: {
+    params: [{ key: "payload", label: "Payload", type: "json" }],
+    values: {},
+  },
+};

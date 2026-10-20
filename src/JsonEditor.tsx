@@ -2,7 +2,7 @@ import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { lintGutter, linter } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import { CheckGlyph, CopyGlyph } from "./components/Copyable.tsx";
 import { useCopyToClipboard } from "./components/use-copy.ts";
 import { useEffectiveTheme } from "./theme.ts";
@@ -56,6 +56,24 @@ export interface JsonEditorProps {
    * this prop existed.
    */
   copyable?: boolean;
+
+  /**
+   * Content overlaid inside the editor box at its top-right corner, a direct
+   * child of `.w6w-json-editor` (same overlay mechanism as `copyable`). The
+   * `ParamsForm` json field puts its `ƒx` here. Text keeps right padding so
+   * line 1 is not covered.
+   */
+  overlay?: ReactNode;
+}
+
+/**
+ * An empty (or whitespace-only) document is not an error: there is nothing to
+ * validate yet, and required-ness is the form's job on submit. Wraps
+ * `jsonParseLinter()` so empty yields no diagnostics; anything else defers to it.
+ */
+function lintJsonUnlessEmpty() {
+  const parse = jsonParseLinter();
+  return (view: EditorView) => (view.state.doc.toString().trim() === "" ? [] : parse(view));
 }
 
 /**
@@ -78,7 +96,7 @@ export function JsonEditor(props: JsonEditorProps) {
   const extensions = useMemo(
     () => [
       json(),
-      linter(jsonParseLinter()),
+      linter(lintJsonUnlessEmpty()),
       lintGutter(),
       EditorView.theme({
         "&": {
@@ -146,6 +164,7 @@ export function JsonEditor(props: JsonEditorProps) {
           closeBrackets: true,
         }}
       />
+      {props.overlay}
       {props.copyable && (
         <>
           <button

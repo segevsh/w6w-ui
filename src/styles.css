@@ -1804,6 +1804,32 @@ select optgroup {
   color: var(--w6w-accent);
 }
 
+/* The json param's ƒx rides INSIDE the editor box, top-right, as the editor's
+   `overlay` (same mechanism as the `copyable` button in `_step-config.scss`).
+   Opaque backdrop because it sits on line 1; the text keeps right padding so
+   it is never covered; with `copyable` on it steps left of the copy button. */
+.w6w-json-editor > .w6w-expr-fx {
+  position: absolute;
+  top: var(--w6w-sp-1);
+  right: var(--w6w-sp-1);
+  z-index: 1;
+  border: none;
+  background: var(--w6w-panel);
+  border-radius: 6px;
+}
+
+.w6w-json-editor:has(> .w6w-expr-fx) .cm-content {
+  padding-right: var(--w6w-sp-10);
+}
+
+.w6w-json-editor:has(> .w6w-copyable-btn) > .w6w-expr-fx {
+  right: calc(var(--w6w-sp-1) * 2 + var(--w6w-sp-8));
+}
+
+.w6w-json-editor:has(> .w6w-copyable-btn):has(> .w6w-expr-fx) .cm-content {
+  padding-right: var(--w6w-sp-20);
+}
+
 /* Copyable — an in-box copy affordance decorating a value-displaying control
    (an <input>, a <textarea>, or CodeBlock's <pre>). Mirrors `.w6w-fx-wrap`
    (`_fx.scss:1-88`): the WRAPPER owns the box chrome and every child it holds
