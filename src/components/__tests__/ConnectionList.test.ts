@@ -62,7 +62,7 @@ function mount(props: Record<string, unknown>) {
 }
 
 const tid = (c: Element, id: string) => c.querySelector(`[data-testid="${id}"]`);
-const li = (c: Element, n: number) => c.querySelectorAll("li.w6w-connection-row")[n];
+const li = (c: Element, n: number) => c.querySelectorAll("tbody tr")[n];
 const noop = () => {};
 
 test("builtIn row: no anchor, no open, no Edit, no Delete (flag, not id prefix)", () => {
@@ -77,12 +77,11 @@ test("builtIn row: no anchor, no open, no Edit, no Delete (flag, not id prefix)"
   const row = li(c, 0);
   assert.equal(row.querySelectorAll("a").length, 0, "builtIn-no-anchor");
   assert.equal(row.querySelectorAll("button").length, 0, "builtIn has no button at all");
+  assert.equal(row.querySelectorAll("a").length, 0);
   assert.equal(tid(c, "connection-edit-plain-built-in"), null, "builtIn-no-Edit");
   assert.equal(tid(c, "connection-delete-plain-built-in"), null, "builtIn-no-Delete");
   act(() => {
-    row
-      .querySelector(".w6w-list-item")
-      ?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    row.querySelector("td")?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   });
   assert.deepEqual(opened, []);
 });
@@ -108,7 +107,7 @@ test("a stored row whose id starts zerocred: still offers anchor, open, Edit and
   assert.ok(tid(c, "connection-delete-zerocred:acme"));
 });
 
-test("Edit and Delete are siblings of the row anchor inside the li, never inside it", () => {
+test("Edit and Delete are siblings of the row anchor inside the row, never inside it", () => {
   const c = mount({
     connections: [stored],
     getHref: (id: string) => `#/${id}`,
@@ -127,12 +126,16 @@ test("Edit and Delete are siblings of the row anchor inside the li, never inside
 test("Edit and Delete render only with their callbacks; callbacks get the row; busy disables Delete", () => {
   const edited: string[] = [];
   const deleted: string[] = [];
+  const opened: string[] = [];
+  const opened2: string[] = [];
+  const deleted2: string[] = [];
   const bare = mount({ connections: [stored] });
   assert.equal(tid(bare, "connection-edit-c1"), null);
   assert.equal(tid(bare, "connection-delete-c1"), null);
   const c = mount({
     connections: [stored],
     busy: true,
+    onOpen: (id: string) => opened.push(id),
     onEdit: (x: { id: string }) => edited.push(x.id),
     onDelete: (x: { id: string }) => deleted.push(x.id),
   });
@@ -145,6 +148,21 @@ test("Edit and Delete render only with their callbacks; callbacks get the row; b
   });
   assert.deepEqual(edited, ["c1"]);
   assert.deepEqual(deleted, []);
+  assert.deepEqual(opened, [], "Edit must not trigger onOpen");
+  const c2 = mount({
+    connections: [stored],
+    getHref: (id: string) => `#/${id}`,
+    onOpen: (id: string) => opened2.push(id),
+    onDelete: (x: { id: string }) => deleted2.push(x.id),
+  });
+  act(() => {
+    tid(c2, "connection-delete-c1")?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true }),
+    );
+  });
+  assert.deepEqual(deleted2, ["c1"]);
+  assert.deepEqual(opened2, [], "Delete must not trigger onOpen");
+  assert.equal(c2.querySelector("td:last-child a"), null, "actions column is link:false");
 });
 
 test("row content: name, auth key, state, and an invalid tag only after a failed test", () => {

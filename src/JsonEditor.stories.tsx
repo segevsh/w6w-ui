@@ -44,6 +44,11 @@ export const Copyable: Story = {
   args: { copyable: true },
 };
 
+/** Empty — no lint diagnostic: there is nothing to validate yet. */
+export const Empty: Story = {
+  args: { value: "" },
+};
+
 /** Malformed JSON — CodeMirror's lint gutter marks the error. */
 export const InvalidJson: Story = {
   args: { value: INVALID },

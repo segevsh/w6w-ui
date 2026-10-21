@@ -914,6 +914,15 @@ svg.react-flow__connectionline {
  * uncoordinated ones exist across the four repos today).
  */
 /* Layout helpers */
+/* A vertical column whose direct children are cards/panels. ONE gap, from the
+   shared spacing scale — never a per-screen number and never a second gap: do
+   not add this class to a container whose parent already gaps its children. */
+.w6w-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-4);
+}
+
 .w6w-stack {
   display: flex;
   flex-direction: column;
@@ -1802,6 +1811,32 @@ select optgroup {
 
 .w6w-expr-fx.is-active {
   color: var(--w6w-accent);
+}
+
+/* The json param's ƒx rides INSIDE the editor box, top-right, as the editor's
+   `overlay` (same mechanism as the `copyable` button in `_step-config.scss`).
+   Opaque backdrop because it sits on line 1; the text keeps right padding so
+   it is never covered; with `copyable` on it steps left of the copy button. */
+.w6w-json-editor > .w6w-expr-fx {
+  position: absolute;
+  top: var(--w6w-sp-1);
+  right: var(--w6w-sp-1);
+  z-index: 1;
+  border: none;
+  background: var(--w6w-panel);
+  border-radius: 6px;
+}
+
+.w6w-json-editor:has(> .w6w-expr-fx) .cm-content {
+  padding-right: var(--w6w-sp-10);
+}
+
+.w6w-json-editor:has(> .w6w-copyable-btn) > .w6w-expr-fx {
+  right: calc(var(--w6w-sp-1) * 2 + var(--w6w-sp-8));
+}
+
+.w6w-json-editor:has(> .w6w-copyable-btn):has(> .w6w-expr-fx) .cm-content {
+  padding-right: var(--w6w-sp-20);
 }
 
 /* Copyable — an in-box copy affordance decorating a value-displaying control
@@ -3648,7 +3683,7 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 
 /* Host-embedded ActionTestForm (studio's ConnectionTesterModal wraps it in its
    OWN full modal). The widget then fills that modal as a full-height flex column:
-   the params + saved-tests region scrolls, and the action bar is a bottom-pinned,
+   the params / result / saved-tests cards scroll, and the action bar is a bottom-pinned,
    non-scrolling footer. These classes are only applied in `embedded` mode, so the
    inline / own-pop-out layout is untouched. */
 .w6w-tester-embedded-root {
@@ -3667,22 +3702,6 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-
-.w6w-tester-embedded-cols {
-  display: flex;
-  gap: var(--w6w-sp-4);
-  align-items: flex-start;
-}
-
-.w6w-tester-embedded-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.w6w-tester-embedded-rail {
-  width: 260px;
-  flex-shrink: 0;
 }
 
 /* The action bar as a pinned footer: kept out of the scroll region and separated
@@ -5341,16 +5360,23 @@ button.w6w-rel-open:focus-visible strong {
 .w6w-callable-list-body {
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  padding: var(--w6w-sp-2);
+  background: var(--w6w-surface, #fff);
+  overflow: hidden;
 }
 
-.w6w-callable-list-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.w6w-callable-list-main {
   display: flex;
   flex-direction: column;
-  gap: var(--w6w-sp-1);
+  gap: var(--w6w-sp-0-5);
+  min-width: 0;
+  text-align: left;
+}
+
+.w6w-callable-list-open {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  width: 100%;
 }
 
 .w6w-callable-list-trail {
@@ -5365,6 +5391,75 @@ button.w6w-rel-open:focus-visible strong {
   border: 1px solid var(--w6w-border);
   color: var(--w6w-muted);
   font-size: var(--w6w-fs-xs);
+}
+
+.w6w-callable-list-row-desc {
+  display: block;
+}
+
+/* The frame is the ONLY element of a DataTable that draws an outer border and a
+   radius (T-3). `overflow: hidden` clips the cells at the rounded corners, so
+   the table below never needs an outer edge of its own. */
+.w6w-data-table-frame {
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel);
+  overflow: hidden;
+}
+
+/* No outer border here (T-3): the frame above already draws it. */
+.w6w-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--w6w-text);
+}
+
+/* Inner separators only (T-3): a right border on every cell but the last column
+   and a bottom border on every row but the last. First column, first row, last
+   column and last row therefore paint nothing on the outside — one border per
+   outer edge, from the frame. */
+.w6w-data-table th,
+.w6w-data-table td {
+  border-right: 1px solid var(--w6w-border);
+  border-bottom: 1px solid var(--w6w-border);
+  padding: var(--w6w-sp-2) var(--w6w-sp-3);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.w6w-data-table th:last-child,
+.w6w-data-table td:last-child {
+  border-right: 0;
+}
+
+.w6w-data-table tbody tr:last-child > td {
+  border-bottom: 0;
+}
+
+/* Header-only table (rows=[] + loading, e.g. a list still fetching): there is no
+   `tbody tr:last-child` to strip, so the header's bottom border would sit right
+   on top of the frame's own bottom edge and paint it twice. With no body row the
+   header is the last row, so it paints no bottom border — the frame supplies it. */
+.w6w-data-table:not(:has(tbody tr)) th {
+  border-bottom: 0;
+}
+
+.w6w-data-table th {
+  color: var(--w6w-muted);
+}
+
+.w6w-data-table-row-clickable {
+  cursor: pointer;
+}
+
+.w6w-data-table-row-clickable:hover {
+  background: var(--w6w-panel-2);
+}
+
+.w6w-data-table-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
 }
 
 /* Connections (D-12u): ConnectionList, ConnectionHeader and the state tags they share. */
@@ -5391,24 +5486,10 @@ button.w6w-rel-open:focus-visible strong {
   flex-shrink: 0;
 }
 
-.w6w-connection-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--w6w-sp-1);
-}
-
-.w6w-connection-row {
-  display: flex;
+.w6w-connection-cell-name {
+  display: inline-flex;
   align-items: center;
   gap: var(--w6w-sp-2);
-}
-
-.w6w-connection-row-main {
-  flex: 1;
-  min-width: 0;
 }
 
 .w6w-connection-row-actions {
@@ -5483,4 +5564,28 @@ button.w6w-rel-open:focus-visible strong {
 .w6w-connection-id-copy:hover .w6w-copyable-btn,
 .w6w-connection-id-copy:focus-within .w6w-copyable-btn {
   opacity: 1;
+}
+
+.w6w-empty-state {
+  position: relative;
+  min-height: 10rem;
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  border: 1px solid var(--w6w-border);
+}
+
+.w6w-empty-state-inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  text-align: center;
+}
+
+.w6w-empty-state-body {
+  color: var(--w6w-muted);
 }
