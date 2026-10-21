@@ -133,12 +133,28 @@ async function mount(
 }
 
 async function pickAction(container: Element) {
-  const select = container.querySelector("select") as HTMLSelectElement | null;
-  assert.ok(select, "action <select> should be present on the Setup tab");
+  // T-1: the Action field is always the searchable combobox — open it on focus
+  // and pick the option by its `Title (key)` label (no native <select>).
+  const input = container.querySelector(
+    '.w6w-field input[role="combobox"]',
+  ) as HTMLInputElement | null;
+  assert.ok(input, "the Action combobox should be present on the Setup tab");
   await act(async () => {
-    select.value = "send";
-    select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    input.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
   });
+  const option = Array.from(container.querySelectorAll('[role="option"]')).find((o) =>
+    (o.textContent ?? "").trim().endsWith("(send)"),
+  ) as HTMLElement | undefined;
+  assert.ok(option, "the Send action should be listed");
+  await act(async () => {
+    option.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+  });
+}
+
+/** No connection picker, i.e. the Action combobox is the only picker on screen. */
+function assertNoConnectionPicker(container: Element, message: string) {
+  assert.equal(container.querySelectorAll("select").length, 0, message);
+  assert.equal(container.querySelectorAll('.w6w-field input[role="combobox"]').length, 1, message);
 }
 
 // Case A — auto-satisfied, no existing connections: picking the action
@@ -157,8 +173,7 @@ test("case A: auto-satisfied with no connections — commits with no `connection
     action: "send",
   });
 
-  const selects = container.querySelectorAll("select");
-  assert.equal(selects.length, 1, "only the action <select> renders — no connection picker");
+  assertNoConnectionPicker(container, "only the Action combobox renders — no connection picker");
 
   const text = container.textContent ?? "";
   assert.ok(
@@ -233,8 +248,7 @@ test("case D: oauth2 + auto-satisfied tenantAuth — auto-satisfied wins", async
   await pickAction(container);
 
   assert.equal(onAddCalls.length, 1);
-  const selects = container.querySelectorAll("select");
-  assert.equal(selects.length, 1, "no connection <select> renders");
+  assertNoConnectionPicker(container, "only the Action combobox renders — no connection picker");
   const uses = (onAddCalls[0] as { uses: Record<string, unknown> }).uses;
   assert.ok(!("connection" in uses));
 

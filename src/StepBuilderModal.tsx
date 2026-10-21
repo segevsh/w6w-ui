@@ -2612,12 +2612,19 @@ export function AppStepConfig({
               (actions.length === 0 ? (
                 <p className="w6w-muted w6w-small">This app exposes no actions.</p>
               ) : (
-                // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
+                // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
                 <label className="w6w-field">
                   <span>Action{actionKey ? "" : " *"}</span>
                   <Combobox
                     value={actionKey}
                     placeholder="— pick an action —"
+                    // Always the searchable combobox (T-1): a short action list used
+                    // to collapse to a native <select>, which hides the filter and
+                    // opens an unbounded OS popup over the modal.
+                    mode="combobox"
+                    // …and its popup is capped below the shared 240px so it fits the
+                    // modal body instead of adding a second scroller to it (T-1).
+                    listMaxHeight={200}
                     onChange={(key) => {
                       setActionKey(key);
                       setWithValues({});
