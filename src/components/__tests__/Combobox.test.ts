@@ -321,3 +321,34 @@ test("R9 — disabled and placeholder reach the combobox input", async () => {
   assert.equal(input.getAttribute("placeholder"), "Pick a fruit");
   await unmount(root);
 });
+
+test("R10 — the open list is height-bounded: 240px by default, per instance via listMaxHeight", async () => {
+  const listStyleOf = async (el: ReactElement) => {
+    const { container, root } = await render(el);
+    const input = container.querySelector("input");
+    assert.ok(input);
+    await act(async () => {
+      input.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+    });
+    const list = container.querySelector('[role="listbox"]') as HTMLElement | null;
+    assert.ok(list, "the listbox opens on focus");
+    const style = { maxHeight: list.style.maxHeight, overflowY: list.style.overflowY };
+    await unmount(root);
+    return style;
+  };
+
+  assert.deepEqual(
+    await listStyleOf(React.createElement(Combobox, { ...PLAIN, mode: "combobox" })),
+    {
+      maxHeight: "240px",
+      overflowY: "auto",
+    },
+  );
+  assert.deepEqual(
+    await listStyleOf(
+      React.createElement(Combobox, { ...PLAIN, mode: "combobox", listMaxHeight: 200 }),
+    ),
+    { maxHeight: "200px", overflowY: "auto" },
+    "a host inside a scrolling container passes its own cap",
+  );
+});

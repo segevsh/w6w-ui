@@ -1,9 +1,10 @@
 // Run: node --import ./src/test-jsx-loader.mjs --test src/__tests__/StepBuilderModal.action-picker.test.ts  (Node 24)
 //
 // N2 — `AppStepConfig`'s Action field picks the app action with a `Combobox` in
-// `mode="auto"`: the short list keeps the native `<select>` (placeholder option
-// "— pick an action —" first, `Title (key)` labels), a long one is the
-// filterable combobox — and picking clears the `Action *` required marker.
+// `mode="combobox"` (T-1): the filterable combobox for EVERY list length — a
+// short list no longer collapses to a native `<select>` — with the placeholder
+// "— pick an action —" and `Title (key)` labels, and picking clears the
+// `Action *` required marker.
 // Mirrors `StepBuilderModal.autoconnect.test.ts`'s jsdom + act rig.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -147,20 +148,57 @@ async function setInputValue(input: HTMLInputElement, value: string) {
   });
 }
 
-test('a short action list keeps the native <select>: "— pick an action —" first, labels "Title (key)"', async () => {
+/** The Action field's combobox input (never a native `<select>`, whatever the list length). */
+function actionInput(container: Element): HTMLInputElement {
+  const input = actionField(container).querySelector(
+    'input[role="combobox"]',
+  ) as HTMLInputElement | null;
+  assert.ok(input, "the Action picker must be the combobox input");
+  assert.equal(actionField(container).querySelector("select"), null, "never a native <select>");
+  return input;
+}
+
+/** Open the Action combobox (it opens on focus) and read its visible options. */
+async function openActionList(container: Element) {
+  const input = actionInput(container);
+  await act(async () => {
+    input.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+  });
+  return {
+    input,
+    labels: () =>
+      Array.from(actionField(container).querySelectorAll('[role="option"]'), (o) =>
+        (o.textContent ?? "").trim(),
+      ),
+  };
+}
+
+test('a short action list is the searchable combobox too: placeholder, labels "Title (key)", list capped ≤ 240px', async () => {
   const { container, root } = await mount(SHORT);
 
-  const select = actionField(container).querySelector("select") as HTMLSelectElement | null;
-  assert.ok(select, "a short action list must still render the native <select>");
+  const { input, labels } = await openActionList(container);
+  assert.equal(input.getAttribute("placeholder"), "— pick an action —");
   assert.deepEqual(
-    Array.from(select.options).map((o) => [o.value, o.textContent]),
+    labels(),
     [
-      ["", "— pick an action —"],
       // alphabetical by title, as before
-      ["list", "List (list)"],
-      ["send", "Send (send)"],
+      "List (list)",
+      "Send (send)",
     ],
+    "a short list keeps the combobox, not a native <select>",
   );
+
+  // T-1: the open list is bounded (≤ 240px) and its scroll never chains into
+  // the modal body, so the modal cannot grow a second scrollbar.
+  const list = actionField(container).querySelector('[role="listbox"]') as HTMLElement;
+  assert.ok(list, "the listbox is open");
+  const maxHeight = Number.parseInt(list.style.maxHeight, 10);
+  assert.ok(
+    maxHeight > 0 && maxHeight <= 240,
+    `list max-height must be ≤ 240px, got "${list.style.maxHeight}"`,
+  );
+  assert.equal(list.style.overflowY, "auto");
+  assert.equal(list.style.overscrollBehavior, "contain");
 
   await act(async () => {
     root.unmount();
