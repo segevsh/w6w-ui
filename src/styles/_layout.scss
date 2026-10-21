@@ -1,4 +1,14 @@
 /* Layout helpers */
+
+/* A vertical column whose direct children are cards/panels. ONE gap, from the
+   shared spacing scale — never a per-screen number and never a second gap: do
+   not add this class to a container whose parent already gaps its children. */
+.w6w-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-4);
+}
+
 .w6w-stack {
   display: flex;
   flex-direction: column;
