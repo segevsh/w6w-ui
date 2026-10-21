@@ -1029,7 +1029,7 @@ export function ActionTestForm({
                   <div className="w6w-tester-embedded-scroll">
                     {/* Card layout: params, result and (with a connection) saved
                         tests + history each in a `.card`, stacked in one column. */}
-                    <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
+                    <div className="w6w-card-stack">
                       <div className="card">
                         <div className="section-head">
                           <h3>Parameters</h3>
