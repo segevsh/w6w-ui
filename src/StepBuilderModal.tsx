@@ -171,6 +171,13 @@ export interface StepBuilderModalProps {
    * selection alone. Only meaningful with {@link StepBuilderModalProps.connectionOnly}.
    */
   onConnected?: (connectionId: string, app: AppSummary) => void;
+  /**
+   * Callable ids (`fn_…` / `wf_…`) the Functions and Workflows tabs, and the
+   * "Ready to use" tab, never offer — matched by id equality only. A Function
+   * editor passes its own id: a Function bound to itself has no state change,
+   * so the only outcome is an infinite loop. Absent ⇒ nothing is excluded.
+   */
+  excludeCallableIds?: readonly string[];
 }
 
 /** {@link StepBuilderModalProps.callables}'s default — both families. Module
@@ -288,6 +295,7 @@ export function StepBuilderModal({
   appsFilter,
   connectionOnly,
   onConnected,
+  excludeCallableIds,
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
@@ -312,7 +320,7 @@ export function StepBuilderModal({
   // whether the TAB EXISTS depends on them: nothing connected and nothing
   // built ⇒ no "Ready to use" tab at all. Still `"loading"` counts as present,
   // so the sidebar does not shuffle a beat after it renders.
-  const readyToUse = useReadyToUse(callables, appsFilter);
+  const readyToUse = useReadyToUse(callables, appsFilter, excludeCallableIds);
   const homeAvailable = readyToUse.state !== "empty";
   // If the home tab vanishes while it is the open one, fall to the catalogue
   // rather than rendering a tab body with no tab.
@@ -541,11 +549,13 @@ export function StepBuilderModal({
           ) : tab === "functions" ? (
             <CallableList
               family="function"
+              excludeIds={excludeCallableIds}
               onSelect={(t) => setSelectedCallable({ family: "function", ...t })}
             />
           ) : tab === "workflows" ? (
             <CallableList
               family="workflow"
+              excludeIds={excludeCallableIds}
               onSelect={(t) => setSelectedCallable({ family: "workflow", ...t })}
             />
           ) : tab === "apps" ? (
@@ -1112,9 +1122,12 @@ export function ControlStepConfig({
  */
 function CallableList({
   family,
+  excludeIds,
   onSelect,
 }: {
   family: "function" | "workflow";
+  /** See {@link StepBuilderModalProps.excludeCallableIds}. */
+  excludeIds?: readonly string[];
   onSelect: (target: { id: string; label: string }) => void;
 }) {
   const api = useW6WApi();
@@ -1151,7 +1164,7 @@ function CallableList({
   // named identically wherever it is listed.
   const label = callableLabel;
   const q = query.trim().toLowerCase();
-  const sorted = [...items].sort(byLabel(label));
+  const sorted = withoutIds(items, excludeIds).sort(byLabel(label));
   const visible = q
     ? sorted.filter((it) => label(it).toLowerCase().includes(q) || it.id.toLowerCase().includes(q))
     : sorted;
@@ -1850,12 +1863,13 @@ export function clampMinutes(raw: string, min: number): number {
 export function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
   appsFilter?: (app: AppSummary) => boolean,
+  excludeIds?: readonly string[],
 ): ReadyToUse {
   const api = useW6WApi();
   const [connectedIds, setConnectedIds] = useState<string[] | null>(null);
   const [allApps, setAllApps] = useState<AppSummary[] | null>(null);
-  const [fns, setFns] = useState<FunctionSummary[] | null>(null);
-  const [wfs, setWfs] = useState<WorkflowSummary[] | null>(null);
+  const [fnsRaw, setFns] = useState<FunctionSummary[] | null>(null);
+  const [wfsRaw, setWfs] = useState<WorkflowSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Map<string, AppSummary>>(() => new Map());
   const [requestedIds, setRequestedIds] = useState<Set<string>>(() => new Set());
@@ -2000,9 +2014,13 @@ export function useReadyToUse(
 
   if (error)
     return { state: "error", error, apps: [], fns: [], wfs: [], moreApps: false, loadMoreApps };
-  if (fns === null || wfs === null) {
+  if (fnsRaw === null || wfsRaw === null) {
     return { state: "loading", apps: [], fns: [], wfs: [], moreApps: false, loadMoreApps };
   }
+  // Excluded at the read, not in the fetch effect: the exclusion list's identity
+  // is the caller's, and must never re-trigger the network calls.
+  const fns = withoutIds(fnsRaw, excludeIds);
+  const wfs = withoutIds(wfsRaw, excludeIds);
 
   if (bounded) {
     if (connectedIds === null) {
@@ -2042,6 +2060,15 @@ export function useReadyToUse(
   );
   const empty = apps.length === 0 && fns.length === 0 && wfs.length === 0;
   return { state: empty ? "empty" : "ready", apps, fns, wfs, moreApps: false, loadMoreApps };
+}
+
+/** A copy of `items` without any entry whose `id` equals one of `ids` (id
+ *  equality only — never name or position). No `ids` ⇒ an unchanged copy. */
+export function withoutIds<T extends { id: string }>(
+  items: readonly T[],
+  ids?: readonly string[],
+): T[] {
+  return ids && ids.length > 0 ? items.filter((it) => !ids.includes(it.id)) : [...items];
 }
 
 /** Sort helper — by display label, case-insensitively. */
