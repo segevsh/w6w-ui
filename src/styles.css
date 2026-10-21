@@ -5388,19 +5388,43 @@ button.w6w-rel-open:focus-visible strong {
   display: block;
 }
 
+/* The frame is the ONLY element of a DataTable that draws an outer border and a
+   radius (T-3). `overflow: hidden` clips the cells at the rounded corners, so
+   the table below never needs an outer edge of its own. */
+.w6w-data-table-frame {
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel);
+  overflow: hidden;
+}
+
+/* No outer border here (T-3): the frame above already draws it. */
 .w6w-data-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--w6w-panel);
   color: var(--w6w-text);
 }
 
+/* Inner separators only (T-3): a right border on every cell but the last column
+   and a bottom border on every row but the last. First column, first row, last
+   column and last row therefore paint nothing on the outside — one border per
+   outer edge, from the frame. */
 .w6w-data-table th,
 .w6w-data-table td {
-  border: 1px solid var(--w6w-border);
+  border-right: 1px solid var(--w6w-border);
+  border-bottom: 1px solid var(--w6w-border);
   padding: var(--w6w-sp-2) var(--w6w-sp-3);
   text-align: left;
   vertical-align: middle;
+}
+
+.w6w-data-table th:last-child,
+.w6w-data-table td:last-child {
+  border-right: 0;
+}
+
+.w6w-data-table tbody tr:last-child > td {
+  border-bottom: 0;
 }
 
 .w6w-data-table th {

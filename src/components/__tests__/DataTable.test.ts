@@ -88,6 +88,30 @@ test("A3 onRowClick fires with row and event", () => {
   assert.equal(c.querySelectorAll(".w6w-data-table-row-clickable").length, 2);
 });
 
+test("T3 the frame wraps the table and is its only child", () => {
+  const c = mount({});
+  const frames = c.querySelectorAll(".w6w-data-table-frame");
+  assert.equal(frames.length, 1, "exactly one frame owns the outer border");
+  const table = frames[0].querySelector("table.w6w-data-table");
+  assert.ok(table, "the table lives inside the frame");
+  assert.equal(frames[0].children.length, 1, "the frame holds nothing but the table");
+  assert.equal(table.parentElement, frames[0]);
+  // the outer border/radius belong to the frame alone — the table keeps no own class
+  assert.deepEqual([...table.classList], ["w6w-data-table"]);
+  assert.equal(c.querySelectorAll("table").length, 1);
+});
+
+test("T3 className and testId still land on the table, not the frame", () => {
+  const c = mount({ className: "extra", testId: "tbl" });
+  const table = c.querySelector("table") as HTMLElement;
+  assert.equal(table.getAttribute("data-testid"), "tbl");
+  assert.ok(table.classList.contains("extra"));
+  assert.ok(table.classList.contains("w6w-data-table"));
+  const frame = c.querySelector(".w6w-data-table-frame") as HTMLElement;
+  assert.equal(frame.getAttribute("data-testid"), null);
+  assert.equal(frame.className, "w6w-data-table-frame");
+});
+
 test("A4 empty rows + empty renders node, no tbody; loading suppresses it", () => {
   const empty = React.createElement("p", { id: "e" }, "Nothing");
   const c = mount({ rows: [], empty });

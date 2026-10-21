@@ -38,50 +38,54 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
   if (rows.length === 0 && !loading && empty !== undefined && empty !== null) {
     return <>{empty}</>;
   }
+  // The frame owns the ONE outer border + radius (T-3); the table and its cells
+  // draw inner separators only, so no outer edge is painted twice.
   return (
-    <table
-      className={className ? `w6w-data-table ${className}` : "w6w-data-table"}
-      data-testid={testId}
-      aria-busy={loading ? true : undefined}
-    >
-      <thead>
-        <tr>
-          {columns.map((c) => (
-            <th key={c.key} style={{ width: c.width, textAlign: c.align }} scope="col">
-              {c.header}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const href = getRowHref?.(row);
-          return (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: row click is a mouse convenience; keyboard users reach the row through its cell anchors (getRowHref) or the column's own controls.
-            <tr
-              key={rowKey(row)}
-              data-testid={props.rowTestId?.(row)}
-              className={onRowClick ? "w6w-data-table-row-clickable" : undefined}
-              onClick={onRowClick ? (e) => onRowClick(row, e) : undefined}
-            >
-              {columns.map((c) => {
-                const content = cellValue(c, row);
-                return (
-                  <td key={c.key} style={{ textAlign: c.align }}>
-                    {href !== undefined && c.link !== false ? (
-                      <a className="w6w-data-table-link" href={href}>
-                        {content}
-                      </a>
-                    ) : (
-                      content
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="w6w-data-table-frame">
+      <table
+        className={className ? `w6w-data-table ${className}` : "w6w-data-table"}
+        data-testid={testId}
+        aria-busy={loading ? true : undefined}
+      >
+        <thead>
+          <tr>
+            {columns.map((c) => (
+              <th key={c.key} style={{ width: c.width, textAlign: c.align }} scope="col">
+                {c.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const href = getRowHref?.(row);
+            return (
+              // biome-ignore lint/a11y/useKeyWithClickEvents: row click is a mouse convenience; keyboard users reach the row through its cell anchors (getRowHref) or the column's own controls.
+              <tr
+                key={rowKey(row)}
+                data-testid={props.rowTestId?.(row)}
+                className={onRowClick ? "w6w-data-table-row-clickable" : undefined}
+                onClick={onRowClick ? (e) => onRowClick(row, e) : undefined}
+              >
+                {columns.map((c) => {
+                  const content = cellValue(c, row);
+                  return (
+                    <td key={c.key} style={{ textAlign: c.align }}>
+                      {href !== undefined && c.link !== false ? (
+                        <a className="w6w-data-table-link" href={href}>
+                          {content}
+                        </a>
+                      ) : (
+                        content
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
