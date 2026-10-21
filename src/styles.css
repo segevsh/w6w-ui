@@ -914,6 +914,15 @@ svg.react-flow__connectionline {
  * uncoordinated ones exist across the four repos today).
  */
 /* Layout helpers */
+/* A vertical column whose direct children are cards/panels. ONE gap, from the
+   shared spacing scale — never a per-screen number and never a second gap: do
+   not add this class to a container whose parent already gaps its children. */
+.w6w-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-4);
+}
+
 .w6w-stack {
   display: flex;
   flex-direction: column;
@@ -5388,19 +5397,51 @@ button.w6w-rel-open:focus-visible strong {
   display: block;
 }
 
+/* The frame is the ONLY element of a DataTable that draws an outer border and a
+   radius (T-3). `overflow: hidden` clips the cells at the rounded corners, so
+   the table below never needs an outer edge of its own. */
+.w6w-data-table-frame {
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  background: var(--w6w-panel);
+  overflow: hidden;
+}
+
+/* No outer border here (T-3): the frame above already draws it. */
 .w6w-data-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--w6w-panel);
   color: var(--w6w-text);
 }
 
+/* Inner separators only (T-3): a right border on every cell but the last column
+   and a bottom border on every row but the last. First column, first row, last
+   column and last row therefore paint nothing on the outside — one border per
+   outer edge, from the frame. */
 .w6w-data-table th,
 .w6w-data-table td {
-  border: 1px solid var(--w6w-border);
+  border-right: 1px solid var(--w6w-border);
+  border-bottom: 1px solid var(--w6w-border);
   padding: var(--w6w-sp-2) var(--w6w-sp-3);
   text-align: left;
   vertical-align: middle;
+}
+
+.w6w-data-table th:last-child,
+.w6w-data-table td:last-child {
+  border-right: 0;
+}
+
+.w6w-data-table tbody tr:last-child > td {
+  border-bottom: 0;
+}
+
+/* Header-only table (rows=[] + loading, e.g. a list still fetching): there is no
+   `tbody tr:last-child` to strip, so the header's bottom border would sit right
+   on top of the frame's own bottom edge and paint it twice. With no body row the
+   header is the last row, so it paints no bottom border — the frame supplies it. */
+.w6w-data-table:not(:has(tbody tr)) th {
+  border-bottom: 0;
 }
 
 .w6w-data-table th {

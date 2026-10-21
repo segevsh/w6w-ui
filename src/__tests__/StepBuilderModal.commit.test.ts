@@ -133,12 +133,21 @@ test("AppStepConfig commits once on setup-complete, then routes edits through on
 
   assert.equal(onAddCalls.length, 0, "no action picked yet — nothing committed");
 
-  const select = container.querySelector("select") as HTMLSelectElement | null;
-  assert.ok(select, "action <select> should be present on the Setup tab");
-
+  // T-1: the Action field is always the searchable combobox — open it on focus
+  // and pick the option by its `Title (key)` label.
+  const actionInput = container.querySelector(
+    '.w6w-field input[role="combobox"]',
+  ) as HTMLInputElement | null;
+  assert.ok(actionInput, "the Action combobox should be present on the Setup tab");
   await act(async () => {
-    select.value = "send";
-    select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    actionInput.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+  });
+  const sendOption = Array.from(container.querySelectorAll('[role="option"]')).find((o) =>
+    (o.textContent ?? "").trim().endsWith("(send)"),
+  ) as HTMLElement | undefined;
+  assert.ok(sendOption, "the Send action should be listed");
+  await act(async () => {
+    sendOption.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
   });
 
   assert.equal(onAddCalls.length, 1, "picking the action commits exactly once");

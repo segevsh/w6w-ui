@@ -1070,7 +1070,7 @@ test("F1 — the test-required note never moves the footer buttons", async () =>
 
   // Drives AppStepConfig's Test tab from the real component — no fifth rig,
   // no transcribed footer markup: Apps tab -> first app row -> the Setup
-  // tab's action <select> -> the "Test" subtab. `treq=0` (see harness-entry)
+  // tab's Action combobox -> the "Test" subtab. `treq=0` (see harness-entry)
   // makes the harness stamp `testRequired: false` on every seeded app — the
   // note-absent state; omitting it is the note-present (default-required)
   // state.
@@ -1086,16 +1086,25 @@ test("F1 — the test-required note never moves the footer buttons", async () =>
     });
     assert.ok(rowClicked, "no .w6w-stepbuilder-item to click");
     await page.waitForTimeout(150);
-    const actionPicked = await page.evaluate(() => {
-      const sel = document.querySelector("select");
-      if (!sel) return false;
-      const opt = [...sel.options].find((o) => o.value !== "");
-      if (!opt) return false;
-      sel.value = opt.value;
-      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    const actionOpened = await page.evaluate(() => {
+      // T-1: the Action field is always the searchable combobox, never a
+      // native <select>; it opens its listbox on focus.
+      const input = document.querySelector('input[role="combobox"]');
+      if (!input) return false;
+      input.focus();
       return true;
     });
-    assert.ok(actionPicked, "no selectable action option in the Setup tab's <select>");
+    assert.ok(actionOpened, "no Action combobox input on the Setup tab");
+    await page.waitForTimeout(150);
+    const actionPicked = await page.evaluate(() => {
+      const opt = [...document.querySelectorAll('[role="option"]')].find(
+        (o) => (o.textContent ?? "").trim() !== "",
+      );
+      if (!opt) return false;
+      opt.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      return true;
+    });
+    assert.ok(actionPicked, "no selectable action option in the Setup tab's Action combobox");
     await page.waitForTimeout(150);
     const testClicked = await page.evaluate(() => {
       const b = [...document.querySelectorAll(".w6w-subtab")].find(

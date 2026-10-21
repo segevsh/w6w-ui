@@ -18,6 +18,12 @@ export interface ComboboxProps {
   forceSelection?: boolean;
   /** Estimated option height in px, used by `auto` mode. Default 32. */
   optionHeight?: number;
+  /**
+   * Cap for the open list, in px — the list scrolls past it instead of growing.
+   * Default 240 (the shared value). A host inside an already-scrolling container
+   * (a modal body) passes a smaller one so the popup cannot add a second scroller.
+   */
+  listMaxHeight?: number;
   className?: string;
 }
 
@@ -39,14 +45,19 @@ export function filterOptions(options: ComboboxOption[], query: string): Combobo
   );
 }
 
+export const DEFAULT_LIST_MAX_HEIGHT = 240;
+
+/** Everything but the height cap, which is per-instance (`listMaxHeight`). */
 const LIST_STYLE: CSSProperties = {
   position: "absolute",
   zIndex: 50,
   left: 0,
   right: 0,
   top: "100%",
-  maxHeight: 240,
   overflowY: "auto",
+  // The list is its own scroller; stop its scroll from chaining into the
+  // surrounding modal/page once it hits either end.
+  overscrollBehavior: "contain",
   margin: 0,
   padding: 4,
   listStyle: "none",
@@ -66,6 +77,7 @@ export function Combobox({
   mode = "auto",
   forceSelection = true,
   optionHeight = 32,
+  listMaxHeight = DEFAULT_LIST_MAX_HEIGHT,
   className,
 }: ComboboxProps) {
   const useBox =
@@ -93,6 +105,10 @@ export function Combobox({
   const shown = useMemo(
     () => (filtering ? filterOptions(options, text) : options),
     [options, text, filtering],
+  );
+  const listStyle = useMemo<CSSProperties>(
+    () => ({ ...LIST_STYLE, maxHeight: listMaxHeight }),
+    [listMaxHeight],
   );
 
   if (!useBox) {
@@ -193,7 +209,7 @@ export function Combobox({
           role="listbox"
           tabIndex={-1}
           aria-label={ariaLabel}
-          style={LIST_STYLE}
+          style={listStyle}
         >
           {shown.map((o, i) => (
             <div
