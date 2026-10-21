@@ -32,6 +32,13 @@
 .w6w-data-table tbody tr:last-child > td {
   border-bottom: 0;
 }
+/* Header-only table (rows=[] + loading, e.g. a list still fetching): there is no
+   `tbody tr:last-child` to strip, so the header's bottom border would sit right
+   on top of the frame's own bottom edge and paint it twice. With no body row the
+   header is the last row, so it paints no bottom border — the frame supplies it. */
+.w6w-data-table:not(:has(tbody tr)) th {
+  border-bottom: 0;
+}
 .w6w-data-table th {
   color: var(--w6w-muted);
 }
