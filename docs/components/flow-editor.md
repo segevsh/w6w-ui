@@ -104,6 +104,98 @@ const workflow: FlowWorkflow = {
 - **`fanOut`** (optional, on a node): `"parallel"` runs a node's next nodes at the same time. Leave it
   out and they run one after another. Only `"parallel"` is ever written; `"sequential"` is the
   absence of the key.
+- **`canvas`** (optional): notes and sections drawn around the graph. The engine ignores it. See
+  [Notes and sections](#notes-and-sections).
+
+## Notes and sections
+
+Beside its nodes a workflow can carry canvas furniture: **notes** for prose, and **sections** that
+frame a group of nodes. Both live under the workflow's `canvas` key, which the engine ignores — it is
+layout, not behaviour.
+
+```ts
+const workflow: FlowWorkflow = {
+  // …nodes and edges…
+  canvas: {
+    notes: [
+      {
+        id: "note_1",
+        color: "#facc15",
+        position: { x: 40, y: 40 },
+        size: { width: 200, height: 120 },
+        content: "Retries here are **deliberate** — see the runbook.",
+      },
+    ],
+    sections: [
+      {
+        id: "section_1",
+        title: "Notification fan-out",
+        color: "#6366f1",
+        position: { x: 320, y: 20 },
+        size: { width: 420, height: 260 },
+        nodes: ["send", "notify"],
+      },
+    ],
+  },
+};
+```
+
+- **`notes[]`**: `id`, `color`, `position`, `size` and `content`, the note's Markdown.
+- **`sections[]`**: `id`, `title` (plain text, not Markdown), `color`, `position`, `size` and
+  `nodes[]`, the ids of the nodes the section frames. A node belongs to at most one section, and a
+  section never contains another section.
+- **Color** is always `#rrggbb`.
+- **Caps**: 200 notes, 200 sections, and 10 KB of Markdown per note. The editor clamps to them rather
+  than refusing the edit.
+- Ids share no namespace with node ids, so a note may be called `send` without colliding.
+
+### Making them on the canvas
+
+**Add note** and **Group into section** sit in the editor toolbar beside **+ Node**. The second one
+is disabled until at least one node is selected; it frames every selected node with 32px of padding
+and makes those nodes its members.
+
+A note and a section are moved and resized the same way: drag its title strip to move it, drag its
+corner to resize it. Each carries its own controls — a color swatch, **Delete**, and a pencil that
+turns a note's body into a Markdown textarea (the text is kept when you click away). A section's
+title strip holds a text input: type into it and press Enter to rename the section.
+**Delete** asks first, in a modal; deleting a section removes the frame and keeps every node in it.
+
+Dragging a section carries its member nodes along by the same offset, and emits one `onChange` on
+drop rather than one per animation frame. Drag a node until its center sits inside a section and it
+joins that section, leaving whichever section it was in before; drag it out and it leaves. Deleting
+a node drops it from its section, and renaming a node remaps the section to the new id, so a section
+never points at a node that is gone.
+
+### What a note renders
+
+Note content is Markdown, kept to a deliberately small subset because it was written by whoever
+authored the workflow — not necessarily by whoever is reading it:
+
+- **Headings, bold, italic, lists, quotes, code blocks, tables and links** render.
+- **No raw HTML.** A typed `<div>` or `<script>` tag is dropped rather than rendered.
+- **No images.** `![alt](url)` renders nothing; there is no image support on the canvas.
+- **Links only to `http:`, `https:` and `mailto:`.** Any other scheme — `javascript:`, `data:`, or a
+  relative path — renders as link text with no `href` at all. Permitted links open in a new tab.
+
+`Markdown` is exported from `@w6w/ui/flow` (and `@w6w/ui`) with those rules already applied, for
+when you render note content somewhere else.
+
+### Where they sit
+
+The drawing order is background, sections, notes, edges, then nodes. Notes and sections are drawn
+below the graph, so selecting or dragging one never lifts it over an edge or a node. A click that
+passes through the empty part of a section still reaches the canvas and clears the selection.
+
+`readOnly` hides **Add note**, **Group into section** and every control on a note or section, and
+turns their drag off. Panning and zooming still work.
+
+### Notes when `savePosition` is off
+
+With `settings.savePosition: false` a note or section still moves and resizes live on the canvas,
+but the position and size that persist are the stored ones — the same rule node positions follow.
+A note or section created in that session keeps the geometry it was given, because there is no
+stored value to hold it at.
 
 ## How many edges a node can have
 
