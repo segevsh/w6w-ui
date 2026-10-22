@@ -986,3 +986,34 @@ test("stepIdError — dot-free ids pass, including ones other rules govern", () 
   for (const id of ["gate_1", "my-step", "a->b", "x:error"])
     assert.equal(stepIdError(id), null, id);
 });
+
+test("canvas survives flowToWorkflow(workflowToFlow(def)) deep-equal", () => {
+  const canvas = {
+    notes: [
+      {
+        id: "n1",
+        color: "#112233",
+        position: { x: 1, y: 2 },
+        size: { width: 3, height: 4 },
+        content: "**hi**",
+      },
+    ],
+    sections: [
+      {
+        id: "s1",
+        title: "S",
+        color: "#445566",
+        position: { x: 5, y: 6 },
+        size: { width: 7, height: 8 },
+        nodes: ["a"],
+      },
+    ],
+  };
+  const def = {
+    steps: [{ id: "a", uses: { app: "@w6w/script", action: "run" } }],
+    edges: [],
+    canvas,
+  } as unknown as FlowWorkflow;
+  const { nodes, edges } = workflowToFlow(def);
+  assert.deepEqual(flowToWorkflow(def, nodes, edges).canvas, canvas);
+});

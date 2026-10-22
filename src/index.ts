@@ -222,3 +222,7 @@ export { connectionAppIdsToLookUp, resolveConnectionAppMeta } from "./connection
 export type { InlineAppMeta } from "./connection-app-meta.ts";
 export { EmptyState } from "./components/EmptyState.tsx";
 export type { EmptyStateProps } from "./components/EmptyState.tsx";
+export { CanvasLayer } from "./CanvasLayer.tsx";
+export type { CanvasLayerProps } from "./CanvasLayer.tsx";
+export { Markdown } from "./Markdown.tsx";
+export type { MarkdownProps } from "./Markdown.tsx";
