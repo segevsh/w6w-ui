@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FlowStep } from "../flow-types.ts";
 import { flowToWorkflow, workflowToFlow } from "../flow-utils.ts";
+import type { StepStartState } from "../provider.tsx";
+import { buildResolveScope, resolveParamValue } from "../resolve-params.ts";
 import { type RunState, edgeRunState, stepVisualState } from "../run-visuals.ts";
 import { startStateFromSeeds } from "../step-preview-state.ts";
 
@@ -71,12 +73,11 @@ test("A3 step-preview-state start state is independent of wire shape", () => {
   assert.deepEqual(startStateFromSeeds(seeds), { steps: { a: { output: { x: 1 } } } });
 });
 
-test("A4 — nodes.x.output.f and steps.x.output.f resolve to the same value in resolve-params", async () => {
-  const { buildResolveScope, resolveParamValue } = (await import("../resolve-params.ts")) as any;
+test("A4 — nodes.x.output.f and steps.x.output.f resolve to the same value in resolve-params", () => {
   const scope = buildResolveScope(undefined, {
     steps: { x: { output: { f: 7 } } },
     trigger: {},
-  } as any);
+  } as unknown as StepStartState);
   const r = (ref: string) =>
     resolveParamValue({ type: "expr", parts: [{ kind: "var", ref }] }, scope);
   assert.deepEqual(r("nodes.x.output.f"), [
