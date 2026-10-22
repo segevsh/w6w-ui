@@ -45,7 +45,7 @@ const WF: FlowWorkflow = {
   manifestVersion: "2",
   id: "wf_test",
   name: "test",
-  steps: [
+  nodes: [
     { id: "a", uses: { app: "@w6w/script", action: "run" } },
     { id: "b", uses: { app: "@w6w/script", action: "run" } },
     { id: "c", uses: { app: "@w6w/script", action: "run" } },
@@ -213,7 +213,7 @@ const CHAIN: FlowWorkflow = {
   manifestVersion: "2",
   id: "wf_chain",
   name: "chain",
-  steps: [
+  nodes: [
     { id: "a", uses: { app: "@w6w/script", action: "run" } },
     { id: "b", uses: { app: "@w6w/script", action: "run" } },
   ],
@@ -223,7 +223,7 @@ const CHAIN: FlowWorkflow = {
 test("workflowToFlow — a stored step.position wins over the computed slot", () => {
   const { nodes } = workflowToFlow({
     ...CHAIN,
-    steps: [{ ...CHAIN.steps[0], position: { x: 123, y: 456 } }, CHAIN.steps[1]],
+    nodes: [{ ...CHAIN.nodes[0], position: { x: 123, y: 456 } }, CHAIN.nodes[1]],
   });
   assert.deepEqual(nodes[0].position, { x: 123, y: 456 });
 });
@@ -245,7 +245,7 @@ test("workflowToFlow — a partially positioned graph mixes stored and computed"
   // graph, not of which neighbours happen to carry one).
   const { nodes } = workflowToFlow({
     ...CHAIN,
-    steps: [CHAIN.steps[0], { ...CHAIN.steps[1], position: { x: -7, y: 900 } }],
+    nodes: [CHAIN.nodes[0], { ...CHAIN.nodes[1], position: { x: -7, y: 900 } }],
   });
   assert.deepEqual(
     nodes.map((n) => n.position),
@@ -265,14 +265,14 @@ test("flowToWorkflow — with `settings` absent, every step gets an INTEGER posi
   const next = flowToWorkflow(WF, nodes, []);
   assert.equal(next.settings, undefined, "settings must not be invented");
   assert.deepEqual(
-    next.steps.map((s) => s.position),
+    next.nodes.map((s) => s.position),
     [
       { x: 100, y: 201 },
       { x: 101, y: 200 },
       { x: 102, y: 199 },
     ],
   );
-  for (const s of next.steps) {
+  for (const s of next.nodes) {
     assert.ok(Number.isInteger(s.position?.x), `x not an integer: ${s.position?.x}`);
     assert.ok(Number.isInteger(s.position?.y), `y not an integer: ${s.position?.y}`);
   }
@@ -285,12 +285,12 @@ test("flowToWorkflow — savePosition:false writes NO position and ERASES none",
   // the only assertion that catches a delete, so it is deliberately whole-object.
   const wf: FlowWorkflow = {
     ...WF,
-    steps: [{ ...WF.steps[0], position: { x: 11, y: 22 } }, WF.steps[1], WF.steps[2]],
+    nodes: [{ ...WF.nodes[0], position: { x: 11, y: 22 } }, WF.nodes[1], WF.nodes[2]],
     settings: { savePosition: false },
   };
   const nodes = nodesOf(wf).map((n) => ({ ...n, position: { x: 999.5, y: 888.5 } }));
   const next = flowToWorkflow(wf, nodes, []);
-  assert.deepEqual(next.steps, wf.steps);
+  assert.deepEqual(next.nodes, wf.nodes);
 });
 
 // ── The four position invariants T3.3.1's evaluation found UNPINNED, and which
@@ -317,7 +317,7 @@ test("workflowToFlow — a POSITIONED sibling still consumes its row slot", () =
   // silently MOVE `c` — an edit to one node relocating another.
   const { nodes } = workflowToFlow({
     ...FANOUT,
-    steps: [WF.steps[0], { ...WF.steps[1], position: { x: 900, y: 900 } }, WF.steps[2]],
+    nodes: [WF.nodes[0], { ...WF.nodes[1], position: { x: 900, y: 900 } }, WF.nodes[2]],
   });
   assert.deepEqual(
     nodes.map((n) => n.position),
@@ -347,7 +347,7 @@ test("workflowToFlow — a GARBAGE stored position falls back to the computed sl
   ]) {
     const { nodes } = workflowToFlow({
       ...CHAIN,
-      steps: [{ ...CHAIN.steps[0], position: bad }, CHAIN.steps[1]],
+      nodes: [{ ...CHAIN.nodes[0], position: bad }, CHAIN.nodes[1]],
     });
     assert.deepEqual(nodes[0].position, { x: 40, y: 40 }, `bad position leaked: ${String(bad)}`);
   }
@@ -359,13 +359,13 @@ test("flowToWorkflow — a non-finite node coordinate is NEVER written to the do
   // the JSON round-trip that follows.
   const wf: FlowWorkflow = {
     ...WF,
-    steps: [{ ...WF.steps[0], position: { x: 11, y: 22 } }, WF.steps[1], WF.steps[2]],
+    nodes: [{ ...WF.nodes[0], position: { x: 11, y: 22 } }, WF.nodes[1], WF.nodes[2]],
   };
   const nodes = nodesOf(wf).map((n) => ({ ...n, position: { x: Number.NaN, y: 5 } }));
   const next = flowToWorkflow(wf, nodes, []);
-  assert.deepEqual(next.steps, wf.steps);
+  assert.deepEqual(next.nodes, wf.nodes);
   // Belt and braces on what the host would actually persist.
-  assert.doesNotMatch(JSON.stringify(next.steps), /null/);
+  assert.doesNotMatch(JSON.stringify(next.nodes), /null/);
 });
 
 test("workflowToFlow — node.position is a FRESH object a drag cannot write back through", () => {
@@ -376,15 +376,15 @@ test("workflowToFlow — node.position is a FRESH object a drag cannot write bac
   // erase none") could not hold. Aliasing was harmless until this node shipped a
   // writer; it is load-bearing now.
   const stored = { x: 123, y: 456 };
-  const wf: FlowWorkflow = { ...CHAIN, steps: [{ ...CHAIN.steps[0], position: stored }] };
+  const wf: FlowWorkflow = { ...CHAIN, nodes: [{ ...CHAIN.nodes[0], position: stored }] };
   const { nodes } = workflowToFlow(wf);
   assert.notStrictEqual(nodes[0].position, stored, "the node aliased the step's own object");
   nodes[0].position.x = 999; // ← what a drag does
   assert.deepEqual(stored, { x: 123, y: 456 }, "a drag reached back into the definition");
   const next = flowToWorkflow(wf, nodes, []);
-  assert.deepEqual(next.steps[0].position, { x: 999, y: 456 });
-  assert.notStrictEqual(next.steps[0].position, nodes[0].position, "emitted an aliased coordinate");
-  assert.notStrictEqual(next.steps[0].position, stored);
+  assert.deepEqual(next.nodes[0].position, { x: 999, y: 456 });
+  assert.notStrictEqual(next.nodes[0].position, nodes[0].position, "emitted an aliased coordinate");
+  assert.notStrictEqual(next.nodes[0].position, stored);
 });
 
 // ── ADDENDUM A: `computeLayers` must TERMINATE on a cyclic graph ─────────────
@@ -529,7 +529,7 @@ test("withViewport — writes ONLY settings.viewport: siblings and the graph are
   // not be collateral damage for `autoSave` / `savePosition` either.
   const wf: FlowWorkflow = {
     ...WF,
-    steps: [{ ...WF.steps[0], position: { x: 11, y: 22 } }, WF.steps[1], WF.steps[2]],
+    nodes: [{ ...WF.nodes[0], position: { x: 11, y: 22 } }, WF.nodes[1], WF.nodes[2]],
     settings: { autoSave: false, savePosition: true },
   };
   const next = withViewport(wf, { x: 5, y: 6, zoom: 2 });
@@ -538,7 +538,7 @@ test("withViewport — writes ONLY settings.viewport: siblings and the graph are
     savePosition: true,
     viewport: { x: 5, y: 6, zoom: 2 },
   });
-  assert.strictEqual(next.steps, wf.steps, "steps must be carried across untouched");
+  assert.strictEqual(next.nodes, wf.nodes, "steps must be carried across untouched");
   assert.strictEqual(next.edges, wf.edges, "edges must be carried across untouched");
   // With no `settings` at all, exactly one key is invented.
   assert.deepEqual(withViewport(WF, { x: 5, y: 6, zoom: 2 }).settings, {
@@ -622,9 +622,9 @@ test("relayoutNodes — OVERRIDES whatever positions the nodes currently have", 
   // loses here. Absolute expected values, so a changed constant is a failure.
   const { nodes, edges } = workflowToFlow({
     ...CHAIN,
-    steps: [
-      { ...CHAIN.steps[0], position: { x: -4000, y: 7777 } },
-      { ...CHAIN.steps[1], position: { x: 1, y: 2 } },
+    nodes: [
+      { ...CHAIN.nodes[0], position: { x: -4000, y: 7777 } },
+      { ...CHAIN.nodes[1], position: { x: 1, y: 2 } },
     ],
   });
   assert.deepEqual(
@@ -708,12 +708,12 @@ test("relayoutNodes — a re-flow round-trips into the document as INTEGER posit
   // for it to persist — this pins that the pairing actually works end to end.
   const wf: FlowWorkflow = {
     ...FANOUT,
-    steps: [{ ...WF.steps[0], position: { x: 901, y: 902 } }, WF.steps[1], WF.steps[2]],
+    nodes: [{ ...WF.nodes[0], position: { x: 901, y: 902 } }, WF.nodes[1], WF.nodes[2]],
   };
   const { nodes, edges } = workflowToFlow(wf);
   const next = flowToWorkflow(wf, relayoutNodes(nodes, edges), edges);
   assert.deepEqual(
-    next.steps.map((s) => [s.id, s.position]),
+    next.nodes.map((s) => [s.id, s.position]),
     [
       ["a", { x: 40, y: 40 }],
       ["b", { x: 280, y: 40 }],
@@ -739,7 +739,7 @@ test("idClashMessage — a collision from an embedded `->` does NOT blame a `:er
   // is correctly refused — yet NO step id ends in `:error`.
   const wf: FlowWorkflow = {
     ...WF,
-    steps: [
+    nodes: [
       { id: "a", uses: { app: "@w6w/script", action: "run" } },
       { id: "b->c", uses: { app: "@w6w/script", action: "run" } },
       { id: "a->b", uses: { app: "@w6w/script", action: "run" } },
@@ -774,7 +774,7 @@ test("idClashMessage — the `:error` route still names the error-lane marker", 
   // holding `a->b:error`, then drawing `a → "b:error"` on the success lane.
   const wf: FlowWorkflow = {
     ...WF,
-    steps: [
+    nodes: [
       { id: "a", uses: { app: "@w6w/script", action: "run" } },
       { id: "b", uses: { app: "@w6w/script", action: "run" } },
       { id: "b:error", uses: { app: "@w6w/script", action: "run" } },
@@ -814,7 +814,7 @@ test("idClashMessage — mixed lanes name the success edge's `:error` target, no
   // refused, so the author is sent to rename the one step that cannot help.
   const wf: FlowWorkflow = {
     ...WF,
-    steps: [
+    nodes: [
       { id: "p->q", uses: { app: "@w6w/script", action: "run" } },
       { id: "b", uses: { app: "@w6w/script", action: "run" } },
       { id: "b:error", uses: { app: "@w6w/script", action: "run" } },
@@ -842,12 +842,12 @@ test("idClashMessage — mixed lanes name the success edge's `:error` target, no
   // id, renaming the shared source `p->q` does not.
   const renamed = workflowToFlow({
     ...wf,
-    steps: wf.steps.map((s) => (s.id === "b:error" ? { ...s, id: "berr" } : s)),
+    nodes: wf.nodes.map((s) => (s.id === "b:error" ? { ...s, id: "berr" } : s)),
   });
   assert.equal(connectConflict("p->q", "berr", renamed.nodes, renamed.edges), null);
   const sourceRenamed = workflowToFlow({
     ...wf,
-    steps: wf.steps.map((s) => (s.id === "p->q" ? { ...s, id: "w" } : s)),
+    nodes: wf.nodes.map((s) => (s.id === "p->q" ? { ...s, id: "w" } : s)),
     edges: [{ from: "w", to: "b", when: "error" }],
   });
   assert.equal(
@@ -863,7 +863,7 @@ test("idClashMessage — the same lane on both edges is never blamed on the erro
   // error lane is — the cause can only be the embedded separator.
   const wf: FlowWorkflow = {
     ...WF,
-    steps: [
+    nodes: [
       { id: "x:error", uses: { app: "@w6w/script", action: "run" } },
       { id: "y->z", uses: { app: "@w6w/script", action: "run" } },
       { id: "x:error->y", uses: { app: "@w6w/script", action: "run" } },
@@ -892,7 +892,7 @@ test("idClashMessage — the same lane on both edges is never blamed on the erro
   // And that advice resolves it, by the real rule.
   const renamed = workflowToFlow({
     ...wf,
-    steps: wf.steps.map((s) => (s.id === "y->z" ? { ...s, id: "yz" } : s)),
+    nodes: wf.nodes.map((s) => (s.id === "y->z" ? { ...s, id: "yz" } : s)),
   });
   assert.equal(connectConflict("x:error", "yz", renamed.nodes, renamed.edges), null);
 });

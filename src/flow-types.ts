@@ -169,7 +169,7 @@ export interface FlowWorkflow {
   displayName?: string;
   description?: string;
   variables?: Array<{ key: string; type?: string; required?: boolean; default?: unknown }>;
-  steps: FlowStep[];
+  nodes: FlowStep[];
   edges?: FlowEdge[];
   canvas?: FlowCanvas;
   /**
@@ -224,6 +224,13 @@ export interface FlowWorkflow {
     viewport?: { x: number; y: number; zoom: number };
   };
 }
+
+/**
+ * What `workflowToFlow` accepts: a definition in either shape — the canonical
+ * `nodes[]` or the legacy `steps[]`. Both present is refused at read time.
+ */
+export type FlowWorkflowInput = Omit<FlowWorkflow, "nodes"> &
+  ({ nodes: FlowStep[] } | { steps: FlowStep[] });
 
 import type { ActionParam } from "./types.ts";
 

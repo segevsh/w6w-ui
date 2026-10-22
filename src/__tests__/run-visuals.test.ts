@@ -166,7 +166,7 @@ const WF: FlowWorkflow = {
   manifestVersion: "2",
   id: "wf_test",
   name: "test",
-  steps: [
+  nodes: [
     { id: "a", uses: { app: "@w6w/script", action: "run" } },
     { id: "b", uses: { app: "@w6w/script", action: "run" } },
   ],
@@ -186,7 +186,7 @@ test("M2 — flowToWorkflow(nodes-with-run-state) deepEquals flowToWorkflow(node
   const { nodes, edges } = workflowToFlow(WF);
   const withoutRun = flowToWorkflow(WF, nodes, edges);
   const withRun = flowToWorkflow(WF, withRunVisualsStamped(nodes), edges);
-  assert.deepEqual(withRun.steps, withoutRun.steps);
+  assert.deepEqual(withRun.nodes, withoutRun.nodes);
   assert.deepEqual(withRun, withoutRun);
 });
 

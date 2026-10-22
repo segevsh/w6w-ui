@@ -69,6 +69,7 @@ export function partsToValue(parts: ExprPart[]): ExprValue | string {
 interface LocalRunScope {
   vars: unknown;
   steps: unknown;
+  nodes?: unknown;
   trigger: unknown;
   foreach?: unknown;
   inputs?: unknown;
@@ -86,6 +87,7 @@ interface LocalRunScope {
 const RUN_SCOPE_ROOTS: Record<keyof LocalRunScope, true> = {
   vars: true,
   steps: true,
+  nodes: true,
   trigger: true,
   foreach: true,
   inputs: true,

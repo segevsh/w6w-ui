@@ -159,7 +159,7 @@ test("a declared nested path field inserts steps.<id>.output.<path>", async () =
     subs[0].parentElement?.querySelector('[data-testid="expr-copy-to-editor"]') as Element,
   );
   const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
-  assert.equal(chip.getAttribute("data-ref"), "steps.ev.output.start.utc");
+  assert.equal(chip.getAttribute("data-ref"), "nodes.ev.output.start.utc");
 });
 
 test("a dotted key WITHOUT path stays a literal key and is dropped, as before", async () => {
@@ -195,6 +195,6 @@ test("a step with no known shape tells the author to run a test, and still offer
   );
   assert.equal(
     (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
-    "steps.ev.output",
+    "nodes.ev.output",
   );
 });
