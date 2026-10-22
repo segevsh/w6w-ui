@@ -165,9 +165,9 @@ import { useSeedSources } from "./use-seed-sources.ts";
  * occupied re-points the incumbent (the deliberate single-slot UX).
  */
 const LANE_HINT =
-  "Which outcome of the source step this edge carries. An error edge is drawn by dragging " +
-  "from the step's error exit port; use this control to re-lane an edge already drawn. " +
-  "An error edge overrides the step’s “On error” policy.";
+  "Which outcome of the source node this edge carries. An error edge is drawn by dragging " +
+  "from the node's error exit port; use this control to re-lane an edge already drawn. " +
+  "An error edge overrides the node’s “On error” policy.";
 
 /**
  * The step ids the refused edge id is minted from: the endpoints of the edge being

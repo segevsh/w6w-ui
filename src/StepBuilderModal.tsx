@@ -1034,7 +1034,7 @@ export function ControlStepConfig({
               readOnly
               minHeight="240px"
               height="100%"
-              aria-label="Step JSON"
+              aria-label="Node JSON"
               copyable
             />
           ) : configView === "params-code" ? (
@@ -2692,7 +2692,7 @@ export function AppStepConfig({
               readOnly
               minHeight="240px"
               height="100%"
-              aria-label="Step JSON"
+              aria-label="Node JSON"
               copyable
             />
           ) : configView === "params-code" ? (
