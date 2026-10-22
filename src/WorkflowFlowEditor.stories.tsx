@@ -11,7 +11,7 @@ const SAMPLE_WORKFLOW: FlowWorkflow = {
   id: "wf_demo",
   name: "onboarding",
   displayName: "Onboarding email",
-  steps: [
+  nodes: [
     { id: "trigger", uses: { app: "@w6w/webhook", action: "receive" } },
     {
       id: "send",
@@ -30,7 +30,7 @@ const EMPTY_WORKFLOW: FlowWorkflow = {
   manifestVersion: "2",
   id: "wf_empty",
   name: "empty",
-  steps: [],
+  nodes: [],
 };
 
 /** A step that already failed, one that already succeeded, one not yet reached. */
@@ -93,10 +93,10 @@ export const ParallelFanOut: Story = {
   args: {
     value: {
       ...SAMPLE_WORKFLOW,
-      steps: [
-        SAMPLE_WORKFLOW.steps[0],
-        { ...SAMPLE_WORKFLOW.steps[1], fanOut: "parallel" },
-        SAMPLE_WORKFLOW.steps[2],
+      nodes: [
+        SAMPLE_WORKFLOW.nodes[0],
+        { ...SAMPLE_WORKFLOW.nodes[1], fanOut: "parallel" },
+        SAMPLE_WORKFLOW.nodes[2],
         { id: "log", uses: { app: "slack", action: "post-message" } },
       ],
       edges: [

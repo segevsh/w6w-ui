@@ -35,7 +35,7 @@ test("A2 setFanOut + round trip", () => {
   assert.equal(p.fanOut, "parallel");
   const s = setFanOut(p, "sequential");
   assert.equal("fanOut" in s, false);
-  const wf = { id: "w", name: "w", steps: [step], edges: [] } as unknown as FlowWorkflow;
+  const wf = { id: "w", name: "w", nodes: [step], edges: [] } as unknown as FlowWorkflow;
   const nd = (st: FlowStep): StepNode =>
     ({
       id: "a",
@@ -43,8 +43,8 @@ test("A2 setFanOut + round trip", () => {
       position: { x: 0, y: 0 },
       data: { step: st, isInternal: false },
     }) as StepNode;
-  assert.equal(flowToWorkflow(wf, [nd(p)], []).steps[0].fanOut, "parallel");
-  assert.equal("fanOut" in flowToWorkflow(wf, [nd(s)], []).steps[0], false);
+  assert.equal(flowToWorkflow(wf, [nd(p)], []).nodes[0].fanOut, "parallel");
+  assert.equal("fanOut" in flowToWorkflow(wf, [nd(s)], []).nodes[0], false);
 });
 
 test("A3 fanOutLabel wording is pinned", () => {
