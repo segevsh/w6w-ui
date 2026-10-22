@@ -184,3 +184,351 @@ test("B2: after selecting and dragging the note, the layer order still holds", a
     await page.close();
   }
 });
+
+// ───────────────────────── B3: flows, checked against the emitted definition ─────────────────────────
+//
+// Every flow drives the real UI (toolbar buttons, pointer drags, the Modal) and then
+// asserts on the LAST `onChange` definition the editor emitted (`window.__changes`) —
+// the contract the host persists — plus, where it matters, the live render.
+
+const lastChange = (page) => page.evaluate(() => window.__changes[window.__changes.length - 1]);
+const changeCount = (page) => page.evaluate(() => window.__changes.length);
+const waitForChange = (page, n, what = "an onChange emission") =>
+  page
+    .waitForFunction((k) => window.__changes.length > k, n, { timeout: 5000 })
+    .catch(() => {
+      throw new Error(`timed out waiting for ${what}`);
+    });
+// The editor can emit a trailing, content-identical definition after a selection change;
+// take the emission baseline only once the count has stopped moving.
+async function quiesce(page) {
+  let prev = -1;
+  for (let i = 0; i < 20; i++) {
+    const cur = await changeCount(page);
+    if (cur === prev) return cur;
+    prev = cur;
+    await page.waitForTimeout(250);
+  }
+  throw new Error("emissions never settled");
+}
+const zoomOf = (page) =>
+  page.evaluate(
+    () =>
+      new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")).transform).a,
+  );
+const nodeById = (def, id) => def.nodes.find((n) => n.id === id);
+
+// Press at (x, y), drag by (dx, dy) in screen px, release. Moves in steps so the
+// drag threshold of both d3-drag (nodes) and the layer's pointermove listener fire.
+async function dragBy(page, from, dx, dy) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + dx / 2, from.y + dy / 2, { steps: 6 });
+  await page.mouse.move(from.x + dx, from.y + dy, { steps: 6 });
+  await page.mouse.up();
+}
+
+// A point on `sel` whose top hit is `sel` itself (edges draw above notes, so part of a
+// strip can be covered by one) — scanned along the middle of the element.
+async function uncoveredPoint(page, sel) {
+  const p = await page.evaluate((q) => {
+    const el = document.querySelector(q);
+    const r = el.getBoundingClientRect();
+    const y = r.y + r.height / 2;
+    const seen = [];
+    for (let x = r.x + 4; x < r.x + r.width - 4; x += 4) {
+      const top = document.elementsFromPoint(x, y)[0];
+      if (top && el.contains(top) && !top.closest("button,input")) return { x, y };
+      seen.push(top?.getAttribute("class"));
+    }
+    return { x: NaN, y, seen: seen.slice(0, 6) };
+  }, sel);
+  assert.ok(Number.isFinite(p.x), `no uncovered point on ${sel}: ${JSON.stringify(p)}`);
+  return p;
+}
+
+// Click the empty top-right of the pane (nothing sits there in the "flows" fixture).
+const clickEmptyPane = async (page) => {
+  await page.mouse.click(1150, 60);
+  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node.selected").length === 0);
+};
+
+async function confirmDialog(page) {
+  const btn = page.locator("dialog[open] .w6w-modal-actions .w6w-btn-danger");
+  await btn.waitFor({ state: "visible", timeout: 5000 });
+  return btn;
+}
+
+// Select a and b with ctrl+click, press "Group into section"; returns the emitted def.
+async function groupAB(page) {
+  const a = centre(await rectOf(page, '.react-flow__node[data-id="a"]'));
+  const b = centre(await rectOf(page, '.react-flow__node[data-id="b"]'));
+  await page.mouse.click(a.x, a.y);
+  await page.keyboard.down("Control");
+  await page.mouse.click(b.x, b.y);
+  await page.keyboard.up("Control");
+  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node.selected").length === 2);
+  const n = await changeCount(page);
+  const group = page.locator('[data-testid="group-section"]');
+  assert.equal(await group.isEnabled(), true, "Group into section must be enabled with 2 nodes selected");
+  await group.click();
+  await waitForChange(page, n);
+  const def = await lastChange(page);
+  assert.equal(def.canvas.sections.length, 1, "one section emitted");
+  assert.deepEqual([...def.canvas.sections[0].nodes].sort(), ["a", "b"], "section members are the selected nodes");
+  await clickEmptyPane(page);
+  await quiesce(page);
+  return await lastChange(page);
+}
+
+test("B3 note: add -> edit content -> recolor -> resize -> delete via the Modal", async () => {
+  const page = await open({ q: "fixture=flows" });
+  try {
+    // Group into section is disabled with nothing selected.
+    assert.equal(await page.locator('[data-testid="group-section"]').isEnabled(), false);
+
+    // add
+    let n = await changeCount(page);
+    await page.locator('[data-testid="add-note"]').click();
+    await waitForChange(page, n);
+    let def = await lastChange(page);
+    assert.equal(def.canvas.notes.length, 1, "Add note emits one note");
+    const id = def.canvas.notes[0].id;
+    const sel = `[data-note-id="${id}"]`;
+    await page.waitForSelector(sel);
+
+    // edit content (Markdown): open the editor, type, blur commits
+    n = await changeCount(page);
+    await page.locator(`${sel} [data-testid="note-edit"]`).click();
+    const ta = page.locator(`${sel} [data-testid="note-content"]`);
+    await ta.fill("**bold** text");
+    await ta.evaluate((el) => el.blur());
+    await waitForChange(page, n, "the edited-content emission");
+    def = await lastChange(page);
+    assert.equal(def.canvas.notes[0].content, "**bold** text", "edited content emitted");
+    await page.waitForSelector(`${sel} strong`);
+
+    // recolor
+    n = await changeCount(page);
+    await page.locator(`${sel} [data-testid="note-color"]`).fill("#ff0000");
+    await waitForChange(page, n, "the recolor emission");
+    def = await lastChange(page);
+    assert.equal(def.canvas.notes[0].color, "#ff0000", "recolor emitted");
+    assert.equal(def.canvas.notes[0].content, "**bold** text", "recolor keeps the content");
+
+    const z = await zoomOf(page);
+    const pos0 = def.canvas.notes[0].position;
+    // move: drag the note's strip so its resize handle lands in the empty band below every
+    // node and between the two columns (clear of nodes, edges, the minimap and the controls)
+    const gripAt = await uncoveredPoint(page, `${sel} [data-testid="note-drag"]`);
+    const h0 = centre(await rectOf(page, `${sel} [data-testid="note-resize"]`));
+    const nodeRects = await page.evaluate(() =>
+      [...document.querySelectorAll(".react-flow__node")].map((e) => {
+        const r = e.getBoundingClientRect();
+        return { id: e.getAttribute("data-id"), x: r.x, y: r.y, width: r.width, height: r.height };
+      }),
+    );
+    const colA = nodeRects.find((r) => r.id === "a");
+    const colC = nodeRects.find((r) => r.id === "c");
+    const target = {
+      x: (colA.x + colA.width + colC.x) / 2,
+      y: Math.max(...nodeRects.map((r) => r.y + r.height)) + 50,
+    };
+    const mdx = target.x - h0.x;
+    const mdy = target.y - h0.y;
+    n = await changeCount(page);
+    await dragBy(page, gripAt, mdx, mdy);
+    await waitForChange(page, n, "the note-move emission");
+    def = await lastChange(page);
+    const pos1 = def.canvas.notes[0].position;
+    assert.ok(
+      Math.abs(pos1.x - (pos0.x + mdx / z)) < 2 && Math.abs(pos1.y - (pos0.y + mdy / z)) < 2,
+      `note moved by the drag delta: ${JSON.stringify(pos0)} -> ${JSON.stringify(pos1)} (zoom ${z})`,
+    );
+    assert.equal(def.canvas.notes[0].content, "**bold** text", "move keeps the content");
+    assert.equal(def.canvas.notes[0].color, "#ff0000", "move keeps the colour");
+
+    // resize: drag the bottom-right handle; the size grows by the drag delta / zoom
+    const before = def.canvas.notes[0].size;
+    const handle = centre(await rectOf(page, `${sel} [data-testid="note-resize"]`));
+    const top = await page.evaluate(
+      (p) => {
+        const el = document.elementsFromPoint(p.x, p.y)[0];
+        const chain = [];
+        for (let e = el; e && chain.length < 5; e = e.parentElement) chain.push(`${e.tagName}.${e.getAttribute("class")}`);
+        return `${chain.join(" < ")} in-resize=${!!el?.closest('[data-testid="note-resize"]')} at ${p.x},${p.y}`;
+      },
+      handle,
+    );
+    assert.ok(top.includes("in-resize=true"), `the resize handle must be the top hit (not covered by a node): ${top}`);
+    n = await changeCount(page);
+    await dragBy(page, handle, 60, 40);
+    await waitForChange(page, n, "the resize emission");
+    def = await lastChange(page);
+    const size = def.canvas.notes[0].size;
+    assert.ok(
+      Math.abs(size.width - (before.width + 60 / z)) < 2 && Math.abs(size.height - (before.height + 40 / z)) < 2,
+      `size ${JSON.stringify(before)} -> ${JSON.stringify(size)} should grow by (60,40)/${z}`,
+    );
+
+    // delete: asks through the Modal first — nothing is emitted until Confirm
+    n = await changeCount(page);
+    await page.locator(`${sel} [data-testid="note-delete"]`).click();
+    const confirm = await confirmDialog(page);
+    assert.equal(await changeCount(page), n, "no emission before the Modal is confirmed");
+    // Cancel keeps the note...
+    await page.locator("dialog[open] .w6w-modal-actions .w6w-btn-ghost").click();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    assert.equal(await changeCount(page), n, "cancel emits nothing");
+    assert.ok(await page.$(sel), "cancel keeps the note");
+    // ...Confirm deletes it.
+    await page.locator(`${sel} [data-testid="note-delete"]`).click();
+    await (await confirmDialog(page)).click();
+    await waitForChange(page, n, "the note-delete emission");
+    def = await lastChange(page);
+    assert.ok(!(def.canvas?.notes ?? []).some((x) => x.id === id), "note gone from the emitted canvas");
+    assert.equal(def.nodes.length, 4, "deleting a note never touches nodes");
+    void confirm;
+  } finally {
+    await page.close();
+  }
+});
+
+test("B3 section: select 2 nodes -> Group into section -> drag the section; both members move by the delta, one emission", async () => {
+  const page = await open({ q: "fixture=flows" });
+  try {
+    const grouped = await groupAB(page);
+    const sec0 = grouped.canvas.sections[0];
+    const aBefore = nodeById(grouped, "a").position;
+    const bBefore = nodeById(grouped, "b").position;
+    const cBefore = nodeById(grouped, "c").position;
+    const z = await zoomOf(page);
+
+    const bar = await rectOf(page, `[data-section-id="${sec0.id}"] [data-testid="section-drag"]`);
+    const from = { x: bar.x + bar.width - 6, y: bar.y + bar.height / 2 };
+    const n = await changeCount(page);
+    await dragBy(page, from, 90, 60);
+    await waitForChange(page, n);
+    await page.waitForTimeout(200);
+    const emitted = (await page.evaluate((k) => window.__changes.slice(k), n)).map(
+      (d) => `a=${JSON.stringify(nodeById(d, "a").position)} sec=${JSON.stringify(d.canvas.sections[0].position)}`,
+    );
+    assert.equal(emitted.length, 1, `exactly ONE emission per section drop, got: ${emitted.join(" ;; ")}`);
+    const def = await lastChange(page);
+    const dx = 90 / z;
+    const dy = 60 / z;
+    for (const [id, p0] of [["a", aBefore], ["b", bBefore]]) {
+      const p = nodeById(def, id).position;
+      assert.ok(
+        Math.abs(p.x - (p0.x + dx)) < 2 && Math.abs(p.y - (p0.y + dy)) < 2,
+        `member ${id} moved by the drag delta: ${JSON.stringify(p0)} -> ${JSON.stringify(p)} (want +${dx.toFixed(1)},+${dy.toFixed(1)})`,
+      );
+    }
+    assert.deepEqual(nodeById(def, "c").position, cBefore, "a non-member does not move");
+    const sec = def.canvas.sections[0];
+    assert.ok(
+      Math.abs(sec.position.x - (sec0.position.x + dx)) < 2 && Math.abs(sec.position.y - (sec0.position.y + dy)) < 2,
+      `section frame moved by the same delta: ${JSON.stringify(sec0.position)} -> ${JSON.stringify(sec.position)}`,
+    );
+    assert.deepEqual([...sec.nodes].sort(), ["a", "b"], "membership unchanged by a section drag");
+  } finally {
+    await page.close();
+  }
+});
+
+test("B3 membership: dragging a member node out of its section removes it from the section's nodes[]", async () => {
+  const page = await open({ q: "fixture=flows" });
+  try {
+    await groupAB(page);
+    const a = centre(await rectOf(page, '.react-flow__node[data-id="a"]'));
+    const n = await changeCount(page);
+    await dragBy(page, a, 330, -70);
+    await waitForChange(page, n);
+    const def = await lastChange(page);
+    assert.deepEqual(def.canvas.sections[0].nodes, ["b"], "a left the section; b stays");
+    assert.ok(nodeById(def, "a"), "dragging out never deletes the node");
+  } finally {
+    await page.close();
+  }
+});
+
+test("B3 prune: deleting a member node removes it from the section (the frame and the other member stay)", async () => {
+  const page = await open({ q: "fixture=flows" });
+  try {
+    await groupAB(page);
+    const b = centre(await rectOf(page, '.react-flow__node[data-id="b"]'));
+    await page.mouse.click(b.x, b.y);
+    await page.waitForSelector('.react-flow__node[data-id="b"].selected');
+    const n = await changeCount(page);
+    await page.locator('button[aria-label="Delete node"]').click();
+    await (await confirmDialog(page)).click();
+    await waitForChange(page, n);
+    const def = await lastChange(page);
+    assert.ok(!nodeById(def, "b"), "b deleted");
+    assert.equal(def.canvas.sections.length, 1, "the section frame survives");
+    assert.deepEqual(def.canvas.sections[0].nodes, ["a"], "b pruned from the section");
+  } finally {
+    await page.close();
+  }
+});
+
+test("B3 rename: renaming a member node remaps it inside the section", async () => {
+  const page = await open({ q: "fixture=flows" });
+  try {
+    await groupAB(page);
+    const b = centre(await rectOf(page, '.react-flow__node[data-id="b"]'));
+    await page.mouse.dblclick(b.x, b.y);
+    await page.locator('button[aria-label="Rename node"]').click();
+    const n = await changeCount(page);
+    const input = page.locator(".w6w-step-rename input");
+    await input.fill("b_renamed");
+    await input.press("Enter");
+    await waitForChange(page, n);
+    const def = await lastChange(page);
+    assert.ok(nodeById(def, "b_renamed") && !nodeById(def, "b"), "node renamed");
+    assert.deepEqual([...def.canvas.sections[0].nodes].sort(), ["a", "b_renamed"], "section member remapped");
+    assert.ok(
+      def.edges.every((e) => e.from !== "b" && e.to !== "b"),
+      "edges re-pointed too",
+    );
+  } finally {
+    await page.close();
+  }
+});
+
+test("B3 savePosition:false: a moved note renders live but its stored position is unchanged in the emitted definition", async () => {
+  const page = await open({ q: "save=0" });
+  try {
+    const noteBefore = await rectOf(page, '[data-note-id="n1"]');
+    const grip = await rectOf(page, '[data-note-id="n1"] [data-testid="note-drag"]');
+    const n = await changeCount(page);
+    await dragBy(page, { x: grip.x + 8, y: grip.y + grip.height / 2 }, 60, 30);
+    await page.waitForTimeout(300);
+    const noteAfter = await rectOf(page, '[data-note-id="n1"]');
+    assert.ok(
+      noteAfter.x > noteBefore.x + 20 && noteAfter.y > noteBefore.y + 10,
+      `the note renders at its live position: ${JSON.stringify(noteBefore)} -> ${JSON.stringify(noteAfter)}`,
+    );
+    // Whether or not an emission happened, every emitted definition keeps the stored geometry.
+    const all = await page.evaluate((k) => window.__changes.slice(k), n);
+    for (const d of all) {
+      const n1 = d.canvas.notes.find((x) => x.id === "n1");
+      assert.deepEqual(n1.position, { x: 260, y: -40 }, "stored note position unchanged");
+      assert.deepEqual(n1.size, { width: 320, height: 160 }, "stored note size unchanged");
+    }
+    // Control: the same drag with savePosition on DOES persist (so the check above can fail).
+    const page2 = await open();
+    try {
+      const g2 = await rectOf(page2, '[data-note-id="n1"] [data-testid="note-drag"]');
+      const n2 = await changeCount(page2);
+      await dragBy(page2, { x: g2.x + 8, y: g2.y + g2.height / 2 }, 60, 30);
+      await waitForChange(page2, n2);
+      const d2 = await lastChange(page2);
+      assert.ok(d2.canvas.notes.find((x) => x.id === "n1").position.x > 260, "control: position persists when savePosition is on");
+    } finally {
+      await page2.close();
+    }
+  } finally {
+    await page.close();
+  }
+});
