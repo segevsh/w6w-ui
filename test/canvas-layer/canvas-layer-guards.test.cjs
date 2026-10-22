@@ -532,3 +532,27 @@ test("B3 savePosition:false: a moved note renders live but its stored position i
     await page.close();
   }
 });
+
+test("B4 settles: a host that feeds onChange back into value stops committing once idle (no render loop)", async () => {
+  const page = await open({ q: "fixture=flows" });
+  try {
+    // An idle editor must go quiet. A render loop (e.g. a selection handler that sets a fresh
+    // array each call, which React Flow re-invokes after every render) keeps committing forever —
+    // a plain page merely burns CPU, but Storybook's act()-wrapped renderer freezes on it.
+    const quiet = async (label) => {
+      const a = await page.evaluate(() => window.__commits);
+      await page.waitForTimeout(800);
+      const b = await page.evaluate(() => window.__commits);
+      assert.ok(a > 0, `${label}: the commit counter is live (control), got ${a}`);
+      assert.ok(b - a <= 2, `${label}: ${b - a} commits in 800ms of idle — the editor is re-rendering in a loop`);
+    };
+    await quiet("after mount");
+    // The same through the selection path: click a node, then idle again.
+    const node = await rectOf(page, '.react-flow__node[data-id="a"]');
+    await page.mouse.click(node.x + node.width / 2, node.y + node.height / 2);
+    await page.waitForTimeout(300);
+    await quiet("after selecting a node");
+  } finally {
+    await page.close();
+  }
+});
