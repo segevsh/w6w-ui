@@ -121,7 +121,10 @@ async function render(
     return React.createElement(
       ExpressionOptionsProvider,
       {
-        value: opts.options ?? { steps: STEPS, sampleValues: { "steps.a.output": SAMPLE } },
+        value: opts.options ?? {
+          steps: STEPS,
+          sampleValues: { "steps.a.output": SAMPLE, "nodes.a.output": SAMPLE },
+        },
         children: null,
       },
       React.createElement(ParamsForm, {
@@ -204,7 +207,7 @@ test("Acc1 - one fx on a json and on a childless group; Entire output per step; 
   await click(rows.find((r) => r.getAttribute("aria-label") === "Entire output of Step B"));
   assert.equal(box.calls, 1);
   const v = box.current.cfg as Record<string, unknown>;
-  assert.deepEqual(v, { $: "steps.b.output" });
+  assert.deepEqual(v, { $: "nodes.b.output" });
   assert.deepEqual(Object.keys(v), ["$"]);
   assert.equal(typeof v.$, "string");
   assert.ok(!("type" in v) && !("parts" in v));
@@ -218,7 +221,7 @@ test("Acc1 - a field leaf binds steps.<id>.output.<key>", async () => {
   await click(doc().querySelector('[data-testid="expr-caret-fields"]') ?? undefined);
   const leaf = buttons().find((b) => b.textContent?.includes("a.id"));
   await click(leaf);
-  assert.deepEqual(box.current.cfg, { $: "steps.a.output.id" });
+  assert.deepEqual(box.current.cfg, { $: "nodes.a.output.id" });
   await unmount(root);
 });
 
@@ -242,11 +245,11 @@ test("Acc2 - Cancel from fx and from Edit writes nothing; invalid draft is byte-
 
   // Edit -> Cancel on a bound value
   await unmount(root);
-  const r2 = await render([JSON_PARAM], { cfg: { $: "steps.a.output" } });
+  const r2 = await render([JSON_PARAM], { cfg: { $: "nodes.a.output" } });
   await click(byText("Edit")[0]);
   await click(byText("Cancel")[0]);
   assert.equal(r2.box.calls, 0);
-  assert.deepEqual(r2.box.current.cfg, { $: "steps.a.output" });
+  assert.deepEqual(r2.box.current.cfg, { $: "nodes.a.output" });
   await unmount(r2.root);
 });
 
@@ -255,8 +258,8 @@ test("Acc3 - bound row: ref, Edit, Clear, preview, no editor; Edit rebinds; Clea
   await typeDraft(container, "cfg", '{"keep": [1, 2]}');
   await click(fxButtons()[0]);
   await click(entireRows()[0]);
-  assert.deepEqual(box.current.cfg, { $: "steps.a.output" });
-  assert.ok((container.textContent ?? "").includes("steps.a.output"));
+  assert.deepEqual(box.current.cfg, { $: "nodes.a.output" });
+  assert.ok((container.textContent ?? "").includes("nodes.a.output"));
   assert.equal(byText("Edit").length, 1);
   assert.equal(byText("Clear").length, 1);
   assert.equal(fxButtons().length, 0, "Edit replaces fx");
@@ -266,10 +269,10 @@ test("Acc3 - bound row: ref, Edit, Clear, preview, no editor; Edit rebinds; Clea
 
   await click(byText("Edit")[0]);
   await click(entireRows().find((r) => r.getAttribute("aria-label") === "Entire output of Step B"));
-  assert.deepEqual(box.current.cfg, { $: "steps.b.output" });
+  assert.deepEqual(box.current.cfg, { $: "nodes.b.output" });
   assert.equal(
     container.querySelector('[data-testid="json-binding-preview"]')?.textContent,
-    JSON.stringify("<unresolved: steps.b.output>"),
+    JSON.stringify("<unresolved: nodes.b.output>"),
   );
 
   const callsBefore = box.calls;
@@ -286,7 +289,7 @@ test("Acc3 - no sample -> unresolved token; Clear with an empty draft -> undefin
   await click(entireRows().find((r) => r.getAttribute("aria-label") === "Entire output of Step C"));
   assert.ok(
     (container.querySelector('[data-testid="json-binding-preview"]')?.textContent ?? "").includes(
-      "<unresolved: steps.c.output>",
+      "<unresolved: nodes.c.output>",
     ),
   );
   await click(byText("Clear")[0]);
@@ -295,7 +298,7 @@ test("Acc3 - no sample -> unresolved token; Clear with an empty draft -> undefin
 });
 
 test("Acc4 - saved + reloaded bound value renders bound, fires nothing, Clear -> undefined", async () => {
-  const saved = { cfg: { $: "steps.a.output" } };
+  const saved = { cfg: { $: "nodes.a.output" } };
   for (const clone of [
     JSON.parse(JSON.stringify(saved)) as Record<string, unknown>,
     structuredClone(saved),
@@ -314,11 +317,11 @@ test("Acc5 - readOnly: no fx/Edit/Clear in either state; bound row and preview s
   const a = await render([JSON_PARAM], {}, { readOnly: true });
   assert.equal(fxButtons().length, 0);
   await unmount(a.root);
-  const b = await render([JSON_PARAM], { cfg: { $: "steps.a.output" } }, { readOnly: true });
+  const b = await render([JSON_PARAM], { cfg: { $: "nodes.a.output" } }, { readOnly: true });
   assert.equal(fxButtons().length, 0);
   assert.equal(byText("Edit").length, 0);
   assert.equal(byText("Clear").length, 0);
-  assert.ok((b.container.textContent ?? "").includes("steps.a.output"));
+  assert.ok((b.container.textContent ?? "").includes("nodes.a.output"));
   assert.ok(b.container.querySelector('[data-testid="json-binding-preview"]'));
   await unmount(b.root);
 });
@@ -328,7 +331,7 @@ test("Acc5 - literal edit still pushes the parsed object; nested {$} stays liter
   await typeDraft(container, "cfg", '{"x": 1}');
   assert.deepEqual(box.current.cfg, { x: 1 });
   await unmount(root);
-  const nested = await render([JSON_PARAM], { cfg: { outer: { $: "steps.a.output" } } });
+  const nested = await render([JSON_PARAM], { cfg: { outer: { $: "nodes.a.output" } } });
   assert.equal(hasEditor(nested.container, "cfg"), true, "editor stays mounted");
   assert.equal(byText("Clear").length, 0);
   assert.equal(fxButtons().length, 1);
@@ -336,12 +339,12 @@ test("Acc5 - literal edit still pushes the parsed object; nested {$} stays liter
 });
 
 test("C2 - a bound NESTED path resolves from the whole-output sample", async () => {
-  const { container, root } = await render([JSON_PARAM], { cfg: { $: "steps.a.output.id" } });
+  const { container, root } = await render([JSON_PARAM], { cfg: { $: "nodes.a.output.id" } });
   assert.equal(byText("Clear").length, 1, "rendered as bound");
   assert.equal(
     container.querySelector('[data-testid="json-binding-preview"]')?.textContent,
     JSON.stringify("123"),
-    "steps.a.output.id walks the sample of steps.a.output",
+    "nodes.a.output.id walks the sample of nodes.a.output",
   );
   await unmount(root);
 });
@@ -358,7 +361,7 @@ test("C4 - a childless group binds, shows the bound row, and Clear returns to th
   const { container, root, box } = await render([GROUP_PARAM]);
   await click(fxButtons()[0]);
   await click(entireRows()[0]);
-  assert.deepEqual(box.current.grp, { $: "steps.a.output" });
+  assert.deepEqual(box.current.grp, { $: "nodes.a.output" });
   assert.equal(byText("Clear").length, 1, "bound row renders");
   assert.equal(hasEditor(container, "grp"), false);
   await click(byText("Clear")[0]);
