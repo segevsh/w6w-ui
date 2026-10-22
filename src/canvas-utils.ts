@@ -126,3 +126,32 @@ export function clampCanvas(canvas: FlowCanvas): FlowCanvas {
   if (canvas.sections) out.sections = canvas.sections.slice(0, MAX_SECTIONS);
   return out;
 }
+
+/**
+ * The canvas to emit. Geometry is stamped (rounded) from the live canvas when `savePosition` is
+ * on; when off, every item already in `stored` keeps its STORED position/size (live edits render
+ * but are not written — mirrors node positions). Items new this session keep their live geometry.
+ */
+export function persistCanvas(
+  canvas: FlowCanvas,
+  stored: FlowCanvas | undefined,
+  savePosition: boolean,
+): FlowCanvas {
+  const live: LiveGeometry = {};
+  for (const it of [...(canvas.notes ?? []), ...(canvas.sections ?? [])]) {
+    live[it.id] = { position: it.position, size: it.size };
+  }
+  const pin = <T extends { id: string; position: Pos; size: Size }>(items?: T[], old?: T[]) =>
+    items?.map((it) => {
+      const s = old?.find((o) => o.id === it.id);
+      return s ? { ...it, position: s.position, size: s.size } : it;
+    });
+  const base: FlowCanvas = savePosition
+    ? canvas
+    : {
+        ...canvas,
+        ...(canvas.notes ? { notes: pin(canvas.notes, stored?.notes) } : {}),
+        ...(canvas.sections ? { sections: pin(canvas.sections, stored?.sections) } : {}),
+      };
+  return withCanvasGeometry(base, savePosition, live);
+}

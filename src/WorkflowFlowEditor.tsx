@@ -38,6 +38,7 @@ import {
 import { createPortal } from "react-dom";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
+import { CanvasLayer } from "./CanvasLayer.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
@@ -53,6 +54,15 @@ import {
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
+import type { FlowCanvas } from "./canvas-types.ts";
+import {
+  assignMembership,
+  clampCanvas,
+  persistCanvas,
+  pruneSectionMembers,
+  renameSectionMember,
+  sectionsContaining,
+} from "./canvas-utils.ts";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
@@ -347,6 +357,20 @@ interface StepRunState {
   logs?: string[];
 }
 
+function nextCanvasId(prefix: string, taken: string[]) {
+  let i = taken.length + 1;
+  while (taken.includes(`${prefix}-${i}`)) i++;
+  return `${prefix}-${i}`;
+}
+function nodeRect(n: StepNode) {
+  return {
+    x: n.position.x,
+    y: n.position.y,
+    w: n.measured?.width ?? n.width ?? 200,
+    h: n.measured?.height ?? n.height ?? 64,
+  };
+}
+
 function Inner({
   value,
   onChange,
@@ -425,6 +449,17 @@ function Inner({
     );
   }, [runState, setNodes, setEdges]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Every selected node (selectedId keeps only the first) — "Group into section" needs them all.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Notes + sections: live canvas state (geometry renders live; persistCanvas decides what is
+  // written). Re-seeded only on workflow identity change, like nodes/edges.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed on workflow identity change only
+  const initialCanvas = useMemo<FlowCanvas>(() => value.canvas ?? {}, [value.id]);
+  const [canvas, setCanvas] = useState<FlowCanvas>(initialCanvas);
+  const [pendingCanvasDelete, setPendingCanvasDelete] = useState<{
+    kind: "note" | "section";
+    id: string;
+  } | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -468,13 +503,25 @@ function Inner({
     setEdges(initial.edges);
     setSelectedId(null);
     setEditingId(null);
-  }, [initial, setNodes, setEdges]);
+    setCanvas(initialCanvas);
+  }, [initial, initialCanvas, setNodes, setEdges]);
+
+  // Stamp the `canvas` key onto an outgoing workflow. Omitted entirely when there is nothing to
+  // keep (no notes, no sections), so a workflow that never used the feature round-trips unchanged.
+  const withCanvas = useCallback(
+    (wf: FlowWorkflow, c: FlowCanvas): FlowWorkflow => {
+      const { canvas: _drop, ...rest } = wf;
+      if (!c.notes?.length && !c.sections?.length) return rest as FlowWorkflow;
+      return { ...rest, canvas: persistCanvas(c, value.canvas, savePosition) };
+    },
+    [value.canvas, savePosition],
+  );
 
   const emitChange = useCallback(
-    (nextNodes: StepNode[], nextEdges: Edge[]) => {
-      onChange(flowToWorkflow(value, nextNodes, nextEdges));
+    (nextNodes: StepNode[], nextEdges: Edge[], canvasOverride?: FlowCanvas) => {
+      onChange(withCanvas(flowToWorkflow(value, nextNodes, nextEdges), canvasOverride ?? canvas));
     },
-    [value, onChange],
+    [value, onChange, canvas, withCanvas],
   );
 
   // Live gate while dragging a connection — React Flow marks the drop invalid
@@ -616,13 +663,15 @@ function Inner({
       if (readOnly) return;
       const nextNodes = nodes.filter((n) => n.id !== id);
       const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
+      const nextCanvas = pruneSectionMembers(canvas, id);
       setNodes(nextNodes);
       setEdges(nextEdges);
+      setCanvas(nextCanvas);
       if (selectedId === id) setSelectedId(null);
       if (editingId === id) setEditingId(null);
-      emitChange(nextNodes, nextEdges);
+      emitChange(nextNodes, nextEdges, nextCanvas);
     },
-    [nodes, edges, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
+    [nodes, edges, canvas, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
   );
 
   // ── Auto-layout (the fourth control button) ─────────────────────────────────
@@ -878,18 +927,150 @@ function Inner({
         // `flow-connect.ts` and mints ids through the one shared `flowEdgeId`
         // helper — never a second copy of the template.
         const nextEdges = renameStepInEdges(edges, prevId, next.id);
+        const nextCanvas = renameSectionMember(canvas, prevId, next.id);
         setNodes(nextNodes);
         setEdges(nextEdges);
+        setCanvas(nextCanvas);
         if (selectedId === prevId) setSelectedId(next.id);
         if (editingId === prevId) setEditingId(next.id);
-        emitChange(nextNodes, nextEdges);
+        emitChange(nextNodes, nextEdges, nextCanvas);
         return;
       }
       setNodes(nextNodes);
       emitChange(nextNodes, edges);
     },
-    [nodes, edges, setNodes, setEdges, selectedId, editingId, emitChange],
+    [nodes, edges, canvas, setNodes, setEdges, selectedId, editingId, emitChange],
   );
+
+  // ── Notes & sections ────────────────────────────────────────────────────────
+  const onCanvasChange = useCallback(
+    (next: FlowCanvas) => {
+      if (readOnly) return;
+      setCanvas(next);
+      emitChange(nodes, edges, next);
+    },
+    [readOnly, nodes, edges, emitChange],
+  );
+
+  const addNote = useCallback(() => {
+    if (readOnly) return;
+    const box = flowContainerRef.current?.getBoundingClientRect();
+    const at = box
+      ? screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
+      : { x: 0, y: 0 };
+    const notes = canvas.notes ?? [];
+    const note = {
+      id: nextCanvasId(
+        "note",
+        notes.map((n) => n.id),
+      ),
+      color: "#facc15",
+      position: { x: Math.round(at.x - 100), y: Math.round(at.y - 60) },
+      size: { width: 200, height: 120 },
+      content: "New note",
+    };
+    onCanvasChange(clampCanvas({ ...canvas, notes: [...notes, note] }));
+  }, [readOnly, canvas, screenToFlowPosition, onCanvasChange]);
+
+  const groupIntoSection = useCallback(() => {
+    if (readOnly) return;
+    const picked = nodes.filter((n) => selectedIds.includes(n.id));
+    if (picked.length === 0) return;
+    const pad = 32;
+    const rects = picked.map(nodeRect);
+    const x0 = Math.min(...rects.map((r) => r.x)) - pad;
+    const y0 = Math.min(...rects.map((r) => r.y)) - pad;
+    const x1 = Math.max(...rects.map((r) => r.x + r.w)) + pad;
+    const y1 = Math.max(...rects.map((r) => r.y + r.h)) + pad;
+    const sections = canvas.sections ?? [];
+    const id = nextCanvasId(
+      "section",
+      sections.map((x) => x.id),
+    );
+    const section = {
+      id,
+      title: "Section",
+      color: "#6366f1",
+      position: { x: Math.round(x0), y: Math.round(y0) },
+      size: { width: Math.round(x1 - x0), height: Math.round(y1 - y0) },
+      nodes: [] as string[],
+    };
+    const withNew = { ...canvas, sections: [...sections, section] };
+    onCanvasChange(
+      clampCanvas(
+        assignMembership(
+          withNew,
+          id,
+          picked.map((n) => n.id),
+        ),
+      ),
+    );
+  }, [readOnly, nodes, selectedIds, canvas, onCanvasChange]);
+
+  // Dropping a section moves its members by the same delta: ONE emission, on drop.
+  const onSectionDrop = useCallback(
+    (id: string, d: { dx: number; dy: number }) => {
+      if (readOnly) return;
+      const sec = canvas.sections?.find((x) => x.id === id);
+      if (!sec) return;
+      const members = new Set(sec.nodes);
+      const nextNodes = nodes.map((n) =>
+        members.has(n.id)
+          ? { ...n, position: { x: n.position.x + d.dx, y: n.position.y + d.dy } }
+          : n,
+      );
+      const nextCanvas: FlowCanvas = {
+        ...canvas,
+        sections: (canvas.sections ?? []).map((x) =>
+          x.id === id ? { ...x, position: { x: x.position.x + d.dx, y: x.position.y + d.dy } } : x,
+        ),
+      };
+      setNodes(nextNodes);
+      setCanvas(nextCanvas);
+      emitChange(nextNodes, edges, nextCanvas);
+    },
+    [readOnly, canvas, nodes, edges, setNodes, emitChange],
+  );
+
+  const performCanvasDelete = useCallback(
+    (kind: "note" | "section", id: string) => {
+      if (readOnly) return;
+      // Deleting a section deletes the frame, never its nodes.
+      const next: FlowCanvas =
+        kind === "note"
+          ? { ...canvas, notes: (canvas.notes ?? []).filter((n) => n.id !== id) }
+          : { ...canvas, sections: (canvas.sections ?? []).filter((x) => x.id !== id) };
+      onCanvasChange(next);
+    },
+    [readOnly, canvas, onCanvasChange],
+  );
+
+  // After a node drag: membership follows the node CENTRE (inside a section ⇒ joins it,
+  // leaving any other; outside every section ⇒ leaves). Returns the canvas to emit.
+  const membershipAfterDrag = (dragged: StepNode[]): FlowCanvas => {
+    let next = canvas;
+    for (const d of dragged) {
+      const r = nodeRect(d);
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const target = (next.sections ?? []).find(
+        (sec) =>
+          cx >= sec.position.x &&
+          cx <= sec.position.x + sec.size.width &&
+          cy >= sec.position.y &&
+          cy <= sec.position.y + sec.size.height,
+      );
+      const current = sectionsContaining(next, d.id);
+      if (target) {
+        if (current.length !== 1 || current[0] !== target.id) {
+          next = assignMembership(next, target.id, [d.id]);
+        }
+      } else if (current.length > 0) {
+        next = pruneSectionMembers(next, d.id);
+      }
+    }
+    return next;
+  };
 
   // Remember the values a Run was made with, then record the run AGAINST that
   // fixture — the same two-call sequence the Test path uses (`StepTestRun` in
@@ -1310,9 +1491,12 @@ function Inner({
                     // means React Flow never starts the drag, so this cannot fire at all
                     // in a read-only editor. Measured, not assumed — the probe's readOnly
                     // fixture asserts the node does not move (F4-V1).
-                    onNodeDragStop={() => {
-                      if (!savePosition) return;
-                      emitChange(nodes, edges);
+                    onNodeDragStop={(_e, _n, dragged) => {
+                      const nextCanvas = membershipAfterDrag(dragged as StepNode[]);
+                      const membershipChanged = nextCanvas !== canvas;
+                      if (membershipChanged) setCanvas(nextCanvas);
+                      if (!savePosition && !membershipChanged) return;
+                      emitChange(nodes, edges, nextCanvas);
                     }}
                     onMoveEnd={(event, viewport) => {
                       // FIRST statement, and load-bearing. React Flow passes
@@ -1347,6 +1531,7 @@ function Inner({
                     }}
                     onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
                       setSelectedId(sel[0]?.id ?? null);
+                      setSelectedIds(sel.map((n) => n.id));
                       setSelectedEdgeId(edgeSel[0]?.id ?? null);
                       // Deliberately NOT clearing `laneError` here — see its declaration.
                     }}
@@ -1407,6 +1592,23 @@ function Inner({
                         >
                           + Node
                         </button>
+                        <button
+                          type="button"
+                          className="w6w-btn"
+                          data-testid="add-note"
+                          onClick={addNote}
+                        >
+                          Add note
+                        </button>
+                        <button
+                          type="button"
+                          className="w6w-btn"
+                          data-testid="group-section"
+                          disabled={selectedIds.length < 1}
+                          onClick={groupIntoSection}
+                        >
+                          Group into section
+                        </button>
                       </Panel>
                     )}
                     {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
@@ -1444,7 +1646,33 @@ function Inner({
                         </div>
                       </Panel>
                     )}
+                    <CanvasLayer
+                      canvas={canvas}
+                      readOnly={readOnly}
+                      savePosition={savePosition}
+                      onChange={onCanvasChange}
+                      onSectionDrop={onSectionDrop}
+                      onRequestDelete={(kind, id) =>
+                        !readOnly && setPendingCanvasDelete({ kind, id })
+                      }
+                    />
                   </ReactFlow>
+                  {pendingCanvasDelete && (
+                    <ConfirmModal
+                      title={pendingCanvasDelete.kind === "note" ? "Delete note" : "Delete section"}
+                      message={
+                        pendingCanvasDelete.kind === "note"
+                          ? "Delete this note?"
+                          : "Delete this section? Its nodes are kept."
+                      }
+                      confirmLabel="Delete"
+                      onConfirm={() => {
+                        performCanvasDelete(pendingCanvasDelete.kind, pendingCanvasDelete.id);
+                        setPendingCanvasDelete(null);
+                      }}
+                      onClose={() => setPendingCanvasDelete(null)}
+                    />
+                  )}
 
                   {builderOpen && (
                     <StepBuilderModal
