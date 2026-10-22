@@ -31,7 +31,14 @@ export interface StepExecution {
  *  as the engine's own `RunState.steps`. */
 export interface RunState {
   status: RunStatus;
-  steps: Record<string, StepExecution>;
+  /** Canonical per-node records (D2). */
+  nodes?: Record<string, StepExecution>;
+  /** Legacy alias of `nodes`; read as `nodes ?? steps` (un-upgraded server). */
+  steps?: Record<string, StepExecution>;
+}
+
+function execOf(runState: RunState, id: string): StepExecution | undefined {
+  return (runState.nodes ?? runState.steps)?.[id];
 }
 
 const RUN_ENDED: ReadonlySet<RunStatus> = new Set(["succeeded", "failed", "canceled"]);
@@ -54,7 +61,7 @@ export type StepVisualState = "no-run" | StepStatus;
  */
 export function stepVisualState(runState: RunState | undefined, stepId: string): StepVisualState {
   if (!runState) return "no-run";
-  return runState.steps[stepId]?.status ?? "pending";
+  return execOf(runState, stepId)?.status ?? "pending";
 }
 
 /** One node's non-persisted, run-aware look. Colour is never the only signal
@@ -148,7 +155,7 @@ export function edgeRunState(
   when: "success" | "error" | undefined,
 ): EdgeRunState | undefined {
   if (!runState) return undefined;
-  const exec = runState.steps[from];
+  const exec = execOf(runState, from);
   if (!exec) return undefined;
   const lane = when ?? "success";
   if (exec.status === "succeeded") return lane === "success" ? "taken" : "skipped";
