@@ -1921,8 +1921,8 @@ function StepRunCollect({
           ) : (
             <>
               <p className="w6w-muted w6w-small">
-                Runs <code>{step.uses.action}</code> with the configuration saved on this step —
-                only the incoming state changes per run. Edit the step to change how it is
+                Runs <code>{step.uses.action}</code> with the configuration saved on this node —
+                only the incoming state changes per run. Edit the node to change how it is
                 configured.
               </p>
               <IncomingStateField text={stateText} onChange={setStateText} seeds={seeds} />
