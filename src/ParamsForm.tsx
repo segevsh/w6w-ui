@@ -383,7 +383,7 @@ function RepeatField({
 /** The Python default snippet for a `code` param when its sibling `language`
  *  resolves to `"python"` (D-3) — a working `return input`-equivalent, same
  *  shape/intent as `SCRIPT_APP`'s JS default in `flow-types.ts`. */
-const PYTHON_CODE_DEFAULT = "# Runs as a function body. Return the node's output.\nreturn input";
+const PYTHON_CODE_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
 
 function ParamField({
   param,
