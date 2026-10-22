@@ -1531,7 +1531,19 @@ function Inner({
                     }}
                     onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
                       setSelectedId(sel[0]?.id ?? null);
-                      setSelectedIds(sel.map((n) => n.id));
+                      // ⚠️ LOAD-BEARING: keep the SAME array when the ids are unchanged.
+                      // React Flow re-invokes this (inline) handler after every re-render of
+                      // this component; a fresh `sel.map(...)` array on each call defeats
+                      // React's `Object.is` bail-out, so the setState re-renders, which
+                      // re-invokes the handler, which ... — a perpetual loop that is only a
+                      // silent CPU burn in a plain page but freezes the main thread under
+                      // Storybook's `act()`-wrapped renderer (the story never paints).
+                      setSelectedIds((prev) => {
+                        const ids = sel.map((n) => n.id);
+                        return prev.length === ids.length && prev.every((id, i) => id === ids[i])
+                          ? prev
+                          : ids;
+                      });
                       setSelectedEdgeId(edgeSel[0]?.id ?? null);
                       // Deliberately NOT clearing `laneError` here — see its declaration.
                     }}
