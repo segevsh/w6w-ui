@@ -108,9 +108,12 @@ export const ParallelFanOut: Story = {
   },
 };
 
-/** Notes and sections on the canvas: a section framing two nodes, plus a Markdown note. */
+/** Notes and sections on the canvas: a section framing two nodes, plus a Markdown note.
+ *  `fitView` frames the NODES only, so the section hugs them (a frame hanging far outside the
+ *  nodes' bounds is clipped by the pane) and the note sits just below, inside the taller pane. */
 export const WithNotesAndSections: Story = {
   args: {
+    height: 640,
     value: {
       ...SAMPLE_WORKFLOW,
       canvas: {
@@ -119,8 +122,8 @@ export const WithNotesAndSections: Story = {
             id: "sec_delivery",
             title: "Delivery",
             color: "#6366f1",
-            position: { x: -40, y: -40 },
-            size: { width: 560, height: 220 },
+            position: { x: 16, y: -24 },
+            size: { width: 720, height: 150 },
             nodes: ["send", "notify"],
           },
         ],
@@ -128,8 +131,8 @@ export const WithNotesAndSections: Story = {
           {
             id: "note_1",
             color: "#facc15",
-            position: { x: 0, y: 260 },
-            size: { width: 240, height: 120 },
+            position: { x: 40, y: 170 },
+            size: { width: 260, height: 90 },
             content: "**Heads up:** the email is sent before Slack is notified.",
           },
         ],

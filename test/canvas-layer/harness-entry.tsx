@@ -4,7 +4,7 @@
 // `window.__changes` so the tests can assert against the emitted definition.
 // Copied into `<tree>/src/__canvas_layer_entry.tsx` and bundled by run.sh; the
 // relative imports resolve against the tree under test ($UI_SRC).
-import { useState } from "react";
+import { Profiler, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { WorkflowFlowEditor } from "./WorkflowFlowEditor.tsx";
 import type { FlowWorkflow } from "./flow-types.ts";
@@ -80,8 +80,16 @@ const initial: FlowWorkflow = SAVE_POSITION
   ? base
   : { ...base, settings: { ...(base.settings ?? {}), savePosition: false } };
 
-const w = window as unknown as { __changes: FlowWorkflow[]; __mounted: boolean };
+const w = window as unknown as {
+  __changes: FlowWorkflow[];
+  __mounted: boolean;
+  __commits: number;
+};
 w.__changes = [];
+// Every commit of the editor tree. A host that feeds `onChange` straight back into `value` (this
+// one, and Studio) must SETTLE: a render loop shows up here as a count that keeps climbing while
+// nothing is being done to the page.
+w.__commits = 0;
 
 function Harness() {
   const [value, setValue] = useState<FlowWorkflow>(initial);
@@ -106,7 +114,14 @@ if (!mount) throw new Error("no #root to mount into");
 const api: any = new Proxy({}, { get: () => () => Promise.resolve([]) });
 createRoot(mount).render(
   <W6WUIProvider api={api}>
-    <Harness />
+    <Profiler
+      id="editor"
+      onRender={() => {
+        w.__commits++;
+      }}
+    >
+      <Harness />
+    </Profiler>
   </W6WUIProvider>,
 );
 w.__mounted = true;
