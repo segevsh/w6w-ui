@@ -78,7 +78,7 @@ type Story = StoryObj<typeof meta>;
 /** 3 steps, 2 edges — a small representative graph. */
 export const Populated: Story = {};
 
-/** No steps at all — the canvas's empty state. */
+/** No nodes at all — the canvas's empty state. */
 export const Empty: Story = {
   args: { value: EMPTY_WORKFLOW },
 };
@@ -88,7 +88,7 @@ export const ReadOnly: Story = {
   args: { readOnly: true },
 };
 
-/** One step fanning out to two: the badge shows on the card, and "Run next steps" is enabled. */
+/** One node fanning out to two: the badge shows on the card, and "Run next nodes" is enabled. */
 export const ParallelFanOut: Story = {
   args: {
     value: {

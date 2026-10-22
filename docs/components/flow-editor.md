@@ -18,13 +18,13 @@ updatedAt: null
 
 # Workflow canvas
 
-`WorkflowFlowEditor` is a drag-and-drop canvas for one workflow: steps as cards, edges between them,
-and editing, testing, duplicating and deleting a step from its card. New steps come from the
-[step builder](/reference-packages/components/modals/#stepbuildermodal-provider).
+`WorkflowFlowEditor` is a drag-and-drop canvas for one workflow: nodes as cards, edges between them,
+and editing, testing, duplicating and deleting a node from its card. New nodes come from the
+[node builder](/reference-packages/components/modals/#stepbuildermodal-provider).
 
 It lives in its own entrypoint, `@w6w/ui/flow`, so apps that don't use it don't bundle React Flow
 (`@xyflow/react`, installed with `@w6w/ui`). It calls your server through
-[`W6WUIProvider`](/reference-packages/components/providers/) to list connections and run step tests.
+[`W6WUIProvider`](/reference-packages/components/providers/) to list connections and run node tests.
 
 ## Set it up
 
@@ -56,14 +56,14 @@ your own client.
 | Prop | Type | Default | What it does |
 | --- | --- | --- | --- |
 | `value` | `FlowWorkflow` | Required | The workflow. A new object identity re-derives the layout. |
-| `onChange` | `(next: FlowWorkflow) => void` | Required | Every graph or step edit. |
+| `onChange` | `(next: FlowWorkflow) => void` | Required | Every graph or node edit. |
 | `readOnly` | `boolean` | `false` | No edits. Pan and zoom still work. |
 | `height` | `string \| number` | `480px` | Viewport height. |
 | `apps` | `AppSummary[]` | None | Lets each card show its app's icon, name and version. Unknown apps get an initials tile. |
 | `exprOptions` | `ExpressionOptions` | None | Extra scope for the expression pickers, on top of any `ExpressionOptionsProvider` above. |
-| `project` | `string` | None | Project id for step tests, so `documents.*` references resolve against that project. |
+| `project` | `string` | None | Project id for node tests, so `documents.*` references resolve against that project. |
 | `runState` | `{ status, steps }` | None | A run to paint on the canvas. See below. |
-| `onTestRun` | `() => void` | None | Fired as a step test starts, so you can clear a stale `runState`. |
+| `onTestRun` | `() => void` | None | Fired as a node test starts, so you can clear a stale `runState`. |
 | `fitViewKey` | `string \| number \| boolean` | None | Change it to re-fit the view, for example when a side panel opens beside the canvas. |
 
 ## The workflow shape
@@ -77,7 +77,7 @@ const workflow: FlowWorkflow = {
   id: "wf_demo",
   name: "onboarding",
   displayName: "Onboarding email",
-  steps: [
+  nodes: [
     { id: "trigger", uses: { app: "@w6w/webhook", action: "receive" } },
     {
       id: "send",
@@ -93,66 +93,67 @@ const workflow: FlowWorkflow = {
 };
 ```
 
-- **`steps[]`**: `id`, `uses: { app, action, connection? }`, and optionally `with`, `retry`,
+- **`nodes[]`**: `id`, `uses: { app, action, connection? }`, and optionally `with`, `retry`,
   `onError` and `notes`. The settings are the ones in
-  [`NodeConfigForm`](/reference-packages/components/forms/#nodeconfigform).
+  [`NodeConfigForm`](/reference-packages/components/forms/#nodeconfigform). A workflow read in the
+  older `steps[]` shape is still accepted; carrying both keys is refused.
 - **`edges[]`**: `{ from, to, when? }`, where `when` is `"success"` or `"error"`. Leave `edges` out
-  and the steps run in order, one after another.
-- **`ports`** (optional, on a step): `{ in?, out? }`, how many edges may enter and leave the step.
+  and the nodes run in order, one after another.
+- **`ports`** (optional, on a node): `{ in?, out? }`, how many edges may enter and leave the node.
   A count is a number, or `"many"` for no limit.
-- **`fanOut`** (optional, on a step): `"parallel"` runs a step's next steps at the same time. Leave it
+- **`fanOut`** (optional, on a node): `"parallel"` runs a node's next nodes at the same time. Leave it
   out and they run one after another. Only `"parallel"` is ever written; `"sequential"` is the
   absence of the key.
 
-## How many edges a step can have
+## How many edges a node can have
 
-The canvas works out each step's `in` and `out` one field at a time. For each field it takes the
+The canvas works out each node's `in` and `out` one field at a time. For each field it takes the
 first value declared, in this order:
 
-1. the step's own `ports`;
+1. the node's own `ports`;
 2. the action's `ports` in the app catalog (an app's defaults are already folded into its actions);
 3. the built-in definition for the control and trigger nodes;
 4. the default: `in: 1`, `out: "many"`.
 
-So a step with `ports: { in: 0 }` on an action that declares `{ out: 2 }` gets `in: 0` and `out: 2`.
+So a node with `ports: { in: 0 }` on an action that declares `{ out: 2 }` gets `in: 0` and `out: 2`.
 `"many"` at any level means no limit. Catalog ports are only read to draw the canvas; they are
-never copied onto the step, so a saved workflow has a `ports` key only where you wrote one.
+never copied onto the node, so a saved workflow has a `ports` key only where you wrote one.
 
-A step with `out` above 1 draws a tall, multi-connection handle. Drawing an edge from a step that
+A node with `out` above 1 draws a tall, multi-connection handle. Drawing an edge from a node that
 already has as many as its finite `out` allows in that lane (`success` and `error` are counted
 separately) is refused: no existing edge is removed, and the editor shows a message naming the cap.
-Switching an edge to the other lane is refused the same way. A step with `"many"` never refuses.
+Switching an edge to the other lane is refused the same way. A node with `"many"` never refuses.
 
-## Merge several branches into one step
+## Merge several branches into one node
 
 The **Merge** control node (`@w6w/control`, action `merge`) joins parallel branches. Its built-in
 definition declares `in: "many"`, so any number of edges may enter it, and `out: 1`. Its params are:
 
 - **`mode`**: `array` or `object`, the shape of the merged result.
 - **`entries`**: a list of `{ key, value }` rows. `key` is a plain string; `value` is a field with
-  the expression (ƒx) toggle, so it can reference the output of any upstream step. A merge with
-  inbound edges from A and B offers both A and B in the ƒx step list.
+  the expression (ƒx) toggle, so it can reference the output of any upstream node. A merge with
+  inbound edges from A and B offers both A and B in the ƒx node list.
 
 The builder's control list shows **Merge**. The older **Aggregate** node is hidden from the palette
 (`hidden: true` on its definition in `INTERNAL_NODES`) but is not removed: a workflow that already
 uses it still renders and edits, and `internalNodeDef("@w6w/control", "aggregate")` still resolves.
 
-## Run next steps in parallel
+## Run next nodes in parallel
 
-When a step has two or more edges leaving it in one lane, its settings show a **Run next steps**
+When a node has two or more edges leaving it in one lane, its settings show a **Run next nodes**
 control: **In sequence** (the default) or **In parallel**. Below two edges the control is disabled
-and says why. Choosing **In parallel** writes `fanOut: "parallel"` on the step; choosing **In
+and says why. Choosing **In parallel** writes `fanOut: "parallel"` on the node; choosing **In
 sequence** removes the key.
 
-The same step's card carries a small badge, in edit and read-only mode alike, once it has two or
+The same node's card carries a small badge, in edit and read-only mode alike, once it has two or
 more edges in a lane. The glyph shows the mode (`⇉` parallel, `→` sequence), followed by the count.
-Its label reads `Runs these N steps in parallel` or `Runs these N steps in sequence`, where N is
-the largest number of edges leaving the step in either lane.
+Its label reads `Runs these N nodes in parallel` or `Runs these N nodes in sequence`, where N is
+the largest number of edges leaving the node in either lane.
 
 ## Show a run on the canvas
 
 The canvas doesn't fetch runs. Poll the run yourself (`GET /runs/:id`) and pass each result as
-`runState`: each step's card shows its status, and the edges show which way the run went.
+`runState`: each node's card shows its status, and the edges show which way the run went.
 
 ```tsx
 <WorkflowFlowEditor
@@ -163,9 +164,9 @@ The canvas doesn't fetch runs. Poll the run yourself (`GET /runs/:id`) and pass 
 />
 ```
 
-Run statuses are `queued`, `running`, `succeeded`, `failed` and `canceled`. Step statuses are
-`pending`, `running`, `succeeded`, `failed` and `skipped`. A step missing from `steps` hasn't been
-reached. `runState` is never written back into the workflow.
+Run statuses are `queued`, `running`, `succeeded`, `failed` and `canceled`. Node statuses are
+`pending`, `running`, `succeeded`, `failed` and `skipped`. A node missing from the run's `steps`
+map hasn't been reached. `runState` is never written back into the workflow.
 
 ## Helpers
 
@@ -177,12 +178,12 @@ yourself:
 - **Built-in app ids**: `TRIGGER_APP`, `WEBHOOK_APP`, `SCHEDULER_APP`, `CONTROL_APP`, `SCRIPT_APP`,
   `DATA_APP` and `CALL_APP`, with `isInternalApp(app)`, `isTriggerApp(app)` and
   `isControlApp(app)`.
-- **`INTERNAL_NODES`**: the built-in steps the builder offers (triggers, control flow, script,
+- **`INTERNAL_NODES`**: the built-in nodes the builder offers (triggers, control flow, script,
   data and so on), with `internalNodeLabel`, `internalNodeIcon`, `internalNodeParams` and
   `internalNodeDefaults` to look one up by app and action.
 - **`ExpressionOptionsProvider`**: re-exported here for convenience.
 
 ## Where to next
 
-- **[Modals](/reference-packages/components/modals/)**: the step builder the canvas opens.
+- **[Modals](/reference-packages/components/modals/)**: the node builder the canvas opens.
 - **[Executions](/reference-packages/components/executions/)**: list and inspect past runs beside the canvas.

@@ -135,7 +135,7 @@ const renameInput = (c: Element) =>
 const alerts = (c: Element) => Array.from(c.querySelectorAll('[role="alert"]'));
 
 async function openRename(c: Element) {
-  const btn = c.querySelector('button[aria-label="Rename step"]') as HTMLButtonElement | null;
+  const btn = c.querySelector('button[aria-label="Rename node"]') as HTMLButtonElement | null;
   assert.ok(btn, "rename button");
   await act(async () => {
     btn.click();

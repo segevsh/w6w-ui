@@ -52,7 +52,7 @@ export const Empty: Story = {
   args: { steps: [] },
 };
 
-/** `emptyLabel` overrides the default "No steps have run yet." text. */
+/** `emptyLabel` overrides the default "No nodes have run yet." text. */
 export const CustomEmptyLabel: Story = {
   args: { steps: [], emptyLabel: "This workflow hasn't run yet." },
 };

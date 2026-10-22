@@ -1,4 +1,4 @@
-// Pure fan-out decisions for the "Run next steps" control and card badge.
+// Pure fan-out decisions for the "Run next nodes" control and card badge.
 import type { Edge } from "@xyflow/react";
 import { edgeLane } from "./flow-connect.ts";
 import type { FlowStep } from "./flow-types.ts";
@@ -6,7 +6,7 @@ import type { FlowStep } from "./flow-types.ts";
 export type FanOutMode = "sequential" | "parallel";
 
 /**
- * `count` is the largest number of outgoing edges the step has in any ONE lane
+ * `count` is the largest number of outgoing edges the node has in any ONE lane
  * (success / error); fan-out only means something at `count >= 2`.
  */
 export function fanOutState(
@@ -25,7 +25,7 @@ export function setFanOut(step: FlowStep, mode: FanOutMode): FlowStep {
   return mode === "parallel" ? { ...rest, fanOut: "parallel" } : rest;
 }
 
-/** Card-badge wording: how many next steps run, and in which mode. */
+/** Card-badge wording: how many next nodes run, and in which mode. */
 export function fanOutLabel(count: number, mode: FanOutMode): string {
-  return `Runs these ${count} steps in ${mode === "parallel" ? "parallel" : "sequence"}`;
+  return `Runs these ${count} nodes in ${mode === "parallel" ? "parallel" : "sequence"}`;
 }
