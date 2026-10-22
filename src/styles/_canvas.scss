@@ -1,0 +1,33 @@
+.w6w-canvas-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.w6w-canvas-section,
+.w6w-canvas-note {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--w6w-canvas-color, var(--w6w-border));
+  border-radius: var(--w6w-radius, 6px);
+  background: color-mix(in srgb, var(--w6w-canvas-color, var(--w6w-panel)) 14%, transparent);
+  pointer-events: none;
+}
+.w6w-canvas-section-title,
+.w6w-canvas-note-body {
+  pointer-events: auto;
+  color: var(--w6w-text);
+}
+.w6w-canvas-section-title {
+  display: inline-block;
+  padding: var(--w6w-sp-1, 4px) var(--w6w-sp-2, 8px);
+  font-weight: 600;
+}
+.w6w-canvas-note-body {
+  height: 100%;
+  overflow: auto;
+  padding: var(--w6w-sp-2, 8px);
+}
