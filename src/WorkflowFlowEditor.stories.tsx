@@ -108,6 +108,36 @@ export const ParallelFanOut: Story = {
   },
 };
 
+/** Notes and sections on the canvas: a section framing two nodes, plus a Markdown note. */
+export const WithNotesAndSections: Story = {
+  args: {
+    value: {
+      ...SAMPLE_WORKFLOW,
+      canvas: {
+        sections: [
+          {
+            id: "sec_delivery",
+            title: "Delivery",
+            color: "#6366f1",
+            position: { x: -40, y: -40 },
+            size: { width: 560, height: 220 },
+            nodes: ["send", "notify"],
+          },
+        ],
+        notes: [
+          {
+            id: "note_1",
+            color: "#facc15",
+            position: { x: 0, y: 260 },
+            size: { width: 240, height: 120 },
+            content: "**Heads up:** the email is sent before Slack is notified.",
+          },
+        ],
+      },
+    },
+  },
+};
+
 /** A live run's per-step state, including a failed step. */
 export const WithRunState: Story = {
   args: { runState: SAMPLE_RUN_STATE },
