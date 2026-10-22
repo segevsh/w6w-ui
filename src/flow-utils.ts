@@ -9,6 +9,7 @@ import {
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
+  type FlowWorkflowInput,
   edgeVisuals,
   isInternalApp,
   sourceHandleForLane,
@@ -295,6 +296,16 @@ function storedPosition(step: FlowStep): { x: number; y: number } | undefined {
   return { x: p.x, y: p.y };
 }
 
+/** Read a definition in either shape into the canonical `nodes[]` form. */
+function normalizeInput(input: FlowWorkflowInput): FlowWorkflow {
+  const o = input as { nodes?: FlowStep[]; steps?: FlowStep[] };
+  if (o.nodes !== undefined && o.steps !== undefined) {
+    throw new Error("workflow carries both nodes and steps");
+  }
+  const { steps: _s, ...rest } = input as FlowWorkflow & { steps?: unknown };
+  return { ...rest, nodes: o.nodes ?? o.steps ?? [] } as FlowWorkflow;
+}
+
 /**
  * Turn a Workflow into (nodes, edges) with an auto-layout when no positions are
  * known.
@@ -310,12 +321,14 @@ function storedPosition(step: FlowStep): { x: number; y: number } | undefined {
  * does not shift depending on which of its neighbours happen to carry a
  * coordinate.
  */
-export function workflowToFlow(wf: FlowWorkflow): { nodes: StepNode[]; edges: Edge[] } {
-  const edges: FlowEdge[] = wf.edges ?? implicitChain(wf.steps);
-  const layer = computeLayers(wf.steps, edges);
+export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; edges: Edge[] } {
+  const wf = normalizeInput(input);
+  const defs = wf.nodes;
+  const edges: FlowEdge[] = wf.edges ?? implicitChain(defs);
+  const layer = computeLayers(defs, edges);
   const rowsInLayer = new Map<number, number>();
 
-  const nodes: StepNode[] = wf.steps.map((step) => {
+  const nodes: StepNode[] = defs.map((step) => {
     const isInternal = isInternalApp(step.uses.app);
     const col = layer.get(step.id) ?? 0;
     const row = rowsInLayer.get(col) ?? 0;
@@ -429,11 +442,12 @@ export function relayoutNodes(nodes: StepNode[], edges: Edge[]): StepNode[] {
  * carrying `position` on every step the first time it is saved.**
  */
 export function flowToWorkflow(
-  original: FlowWorkflow,
+  originalInput: FlowWorkflowInput,
   nodes: StepNode[],
   edges: Edge[],
 ): FlowWorkflow {
   // `!== false`, never `?? false` and never `=== true`: omitted ⇒ ON.
+  const original = normalizeInput(originalInput);
   const savePosition = original.settings?.savePosition !== false;
   const nodeById = new Map<string, StepNode>(nodes.map((n) => [n.id, n]));
 
@@ -459,12 +473,12 @@ export function flowToWorkflow(
 
   // Preserve original step order where possible; append new nodes at the end.
   const stepById = new Map<string, FlowStep>();
-  for (const s of original.steps) stepById.set(s.id, s);
+  for (const s of original.nodes) stepById.set(s.id, s);
   for (const n of nodes) if (n.data?.step) stepById.set(n.id, n.data.step);
 
   const nextSteps: FlowStep[] = [];
   const seen = new Set<string>();
-  for (const s of original.steps) {
+  for (const s of original.nodes) {
     const current = stepById.get(s.id);
     if (current && nodes.some((n) => n.id === s.id)) {
       nextSteps.push(withPosition(current));
@@ -488,7 +502,7 @@ export function flowToWorkflow(
       : { from: e.source, to: e.target };
   });
 
-  return { ...original, steps: nextSteps, edges: nextEdges };
+  return { ...original, nodes: nextSteps, edges: nextEdges };
 }
 
 /** The workflow's stored camera, as `settings.viewport` declares it. */
