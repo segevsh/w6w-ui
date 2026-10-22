@@ -314,7 +314,7 @@ const StepControlsCtx = createContext<StepControls | null>(null);
  *   - Auto-layouted on load (topological columns + sibling rows).
  *   - Nodes render differently for action steps vs. control steps
  *     (`uses.app === "@w6w/control"`).
- *   - `+ Step` opens a guided builder (pick app → connection → action → params,
+ *   - `+ Node` opens a guided builder (pick app → connection → action → params,
  *     or a flow control). Drag nodes to reposition; connect handles to add edges.
  *   - Selecting a node reveals a toolbar above it: Edit / Duplicate / Delete.
  *   - Edit opens a modal with a Form ⇄ JSON toggle for that step.
@@ -817,7 +817,7 @@ function Inner({
         nextEdges =
           applyConnect(source, target, nextNodes, edges, pendingConnect.lane, portsLookup) ?? edges;
       } else {
-        // "+ Step" (no drag) — human override, 2026-08-30. A trigger
+        // "+ Node" (no drag) — human override, 2026-08-30. A trigger
         // auto-wires to the CURRENT chain root, but ONLY when no trigger
         // exists yet anywhere in the graph; a second trigger is left
         // floating on purpose (nothing to sensibly guess — the author
@@ -1405,14 +1405,14 @@ function Inner({
                           className="w6w-btn"
                           onClick={() => setBuilderOpen(true)}
                         >
-                          + Step
+                          + Node
                         </button>
                       </Panel>
                     )}
                     {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
                     `Edge.when`). Revealed only when exactly ONE edge is selected —
                     `selectedEdgeId` is already `edgeSel[0]`, so selecting a node or
-                    nothing hides it. top-left is `+ Step`, Controls are bottom-left,
+                    nothing hides it. top-left is `+ Node`, Controls are bottom-left,
                     the MiniMap bottom-right. D-T1-7 SUPERSEDED (T1.1.1): id'd source
                     handles now exist (the error exit port), so a fresh edge's lane IS
                     chosen by which handle it was dragged from — this panel keeps its
@@ -1460,7 +1460,7 @@ function Inner({
                       }}
                       // Progressive commit (T4.1.1): once `addBuiltStep` has minted
                       // the step's id, every subsequent field change updates that
-                      // same node instead of waiting for a final "Add step" click.
+                      // same node instead of waiting for a final "Add node" click.
                       onDraftChange={(id, next) => updateStep(id, { id, ...next })}
                       workflowId={value.id}
                       // The new step's known upstream ancestors, from the handle a
@@ -1493,7 +1493,7 @@ function Inner({
 
                   {runResult && (
                     <Modal
-                      title={`${collecting ? "Run step" : "Test run"}: ${runResult.stepId}`}
+                      title={`${collecting ? "Run node" : "Test run"}: ${runResult.stepId}`}
                       onClose={() => setRunResult(null)}
                     >
                       {collecting && runningStep && (
@@ -1526,7 +1526,7 @@ function Inner({
                                     <code>{runResult.errorCode}</code>
                                   </div>
                                 )}
-                                {runResult.error || "The step failed with no error message."}
+                                {runResult.error || "The node failed with no error message."}
                               </div>
                             )}
                             {runResult.status === "done" && (
@@ -1606,8 +1606,8 @@ function Inner({
 
                   {pendingDelete !== null && (
                     <ConfirmModal
-                      title="Delete step"
-                      message={`Delete step "${pendingDelete}"? Its connections are removed too.`}
+                      title="Delete node"
+                      message={`Delete node "${pendingDelete}"? Its connections are removed too.`}
                       confirmLabel="Delete"
                       onConfirm={() => {
                         performDeleteStep(pendingDelete);
@@ -2022,8 +2022,8 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         <button
           type="button"
           className="w6w-node-toolbar-btn"
-          title="Test-run this step"
-          aria-label="Test-run this step"
+          title="Test-run this node"
+          aria-label="Test-run this node"
           onClick={() => ctrl.onRun(id)}
         >
           <Icon name="run" size={15} />
@@ -2033,7 +2033,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         type="button"
         className="w6w-node-toolbar-btn"
         title="Edit"
-        aria-label="Edit step"
+        aria-label="Edit node"
         onClick={() => ctrl.onEdit(id)}
       >
         <Icon name="edit" size={15} />
@@ -2042,7 +2042,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         type="button"
         className="w6w-node-toolbar-btn"
         title="Duplicate"
-        aria-label="Duplicate step"
+        aria-label="Duplicate node"
         onClick={() => ctrl.onDuplicate(id)}
       >
         <Icon name="copy" size={15} />
@@ -2051,7 +2051,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         type="button"
         className="w6w-node-toolbar-btn danger"
         title="Delete"
-        aria-label="Delete step"
+        aria-label="Delete node"
         onClick={() => ctrl.onDelete(id)}
       >
         <Icon name="trash" size={15} />
@@ -2269,7 +2269,7 @@ export function StepEditModal({
   onClose: () => void;
   readOnly?: boolean;
   initialView?: EditView;
-  /** Most outgoing edges this step has in one lane; "Run next steps" needs >= 2. */
+  /** Most outgoing edges this node has in one lane; "Run next nodes" needs >= 2. */
   fanOutCount?: number;
   /** Fired the instant the footer Test button is clicked, before the test runs (T1.1.1). */
   onTestRun?: () => void;
@@ -2490,8 +2490,8 @@ export function StepEditModal({
                 <button
                   type="button"
                   className="w6w-icon-btn w6w-btn-sm"
-                  title="Rename step"
-                  aria-label="Rename step"
+                  title="Rename node"
+                  aria-label="Rename node"
                   onClick={() => {
                     setDraftId(step.id);
                     setRenaming(true);
@@ -2608,7 +2608,7 @@ export function StepEditModal({
                   readOnly
                   minHeight="260px"
                   height="100%"
-                  aria-label={`Step ${step.id} JSON`}
+                  aria-label={`Node ${step.id} JSON`}
                   copyable
                 />
               ) : configView === "params-code" ? (
@@ -2618,7 +2618,7 @@ export function StepEditModal({
                   readOnly={readOnly}
                   minHeight="260px"
                   height="100%"
-                  aria-label={`Step ${step.id} params JSON`}
+                  aria-label={`Node ${step.id} params JSON`}
                   copyable
                   onValidChange={(p) =>
                     p &&
@@ -2801,7 +2801,7 @@ function StepPortsControl({
   );
 }
 
-/** "Run next steps: In sequence / In parallel" — only meaningful with 2+ outgoing edges in a lane. */
+/** "Run next nodes: In sequence / In parallel" — only meaningful with 2+ outgoing edges in a lane. */
 function StepFanOutControl({
   step,
   count,
@@ -2817,9 +2817,9 @@ function StepFanOutControl({
   const mode = step.fanOut === "parallel" ? "parallel" : "sequential";
   return (
     <label className="w6w-field">
-      <span>Run next steps</span>
+      <span>Run next nodes</span>
       <select
-        aria-label="Run next steps"
+        aria-label="Run next nodes"
         value={mode}
         disabled={readOnly || !enabled}
         onChange={(e) => onChange(setFanOut(step, e.target.value as "sequential" | "parallel"))}

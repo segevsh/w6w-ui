@@ -112,7 +112,7 @@ export function ExecutionLogPanel({
   stepErrors,
 }: ExecutionLogPanelProps) {
   // Rendered by BOTH branches below, deliberately: the reported repro (T-1) is
-  // a canvas whose log panel shows "No steps have run yet." — a header mounted
+  // a canvas whose log panel shows "No nodes have run yet." — a header mounted
   // only above the `<ol>` would be invisible in exactly that state, and that is
   // the state the dismiss control exists to get the user out of.
   const head = onDismiss ? (
@@ -147,7 +147,7 @@ export function ExecutionLogPanel({
         {head}
         {errors}
         <div className="w6w-execution-log-empty">
-          <p className="w6w-muted w6w-small">{emptyLabel ?? "No steps have run yet."}</p>
+          <p className="w6w-muted w6w-small">{emptyLabel ?? "No nodes have run yet."}</p>
         </div>
       </>
     );

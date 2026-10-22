@@ -71,7 +71,7 @@ export interface StepBuilderModalProps {
    * `onAdd` — keeps the already-added node current without minting a second
    * one. `id` is the id `onAdd` returned. Progressive commit (mint-then-update)
    * only engages when this is supplied; omitted callers (the Functions/
-   * Endpoints pickers) keep the original one-shot "Add step" behavior.
+   * Endpoints pickers) keep the original one-shot "Add node" behavior.
    */
   onDraftChange?: (id: string, step: BuiltStep) => void;
   theme?: ThemeMode;
@@ -104,7 +104,7 @@ export interface StepBuilderModalProps {
    */
   initialTab?: "connected" | "functions" | "workflows";
 
-  /** Modal heading. Defaults to "Add a step". */
+  /** Modal heading. Defaults to "Add a node". */
   title?: string;
   /**
    * Workflow-step context, when the builder is opened for a step that already
@@ -454,7 +454,7 @@ export function StepBuilderModal({
   }
 
   return (
-    <Modal title={title ?? "Add a step"} onClose={onClose} size="xl">
+    <Modal title={title ?? "Add a node"} onClose={onClose} size="xl">
       <div className="w6w-stepbuilder">
         <nav className="w6w-stepbuilder-sidebar">
           {/* F-2.0's homepage, and the order it asks for:
@@ -955,7 +955,7 @@ export function ControlStepConfig({
   // The id `onAdd` minted at commit time, once a control node's identity has
   // been committed to the graph this session. `null` until then (and forever,
   // for a caller that doesn't supply `onDraftChange` — the original one-shot
-  // "Add step" behavior).
+  // "Add node" behavior).
   const [committedId, setCommittedId] = useState<string | null>(null);
   const buildStep = (): BuiltStep => ({
     uses: { app: node.app, action: node.action },
@@ -1095,7 +1095,7 @@ export function ControlStepConfig({
           </button>
         ) : (
           <button type="button" className="w6w-btn" onClick={committedId !== null ? onClose : add}>
-            {committedId !== null ? "Done" : "Add step"}
+            {committedId !== null ? "Done" : "Add node"}
           </button>
         )}
       </div>
@@ -1387,7 +1387,7 @@ export function CallableStepConfig({
           </button>
         ) : (
           <button type="button" className="w6w-btn" onClick={committedId !== null ? onClose : add}>
-            {committedId !== null ? "Done" : "Add step"}
+            {committedId !== null ? "Done" : "Add node"}
           </button>
         )}
       </div>
@@ -2439,7 +2439,7 @@ export function AppStepConfig({
 
   // The id `onAdd` minted at commit time, once Setup has completed this
   // session. `null` until then (and forever, for a caller that doesn't supply
-  // `onDraftChange` — the original one-shot "Add step" behavior).
+  // `onDraftChange` — the original one-shot "Add node" behavior).
   const [committedId, setCommittedId] = useState<string | null>(null);
 
   // Mint — the moment Setup first completes (action + connection, if needed),
@@ -2762,7 +2762,7 @@ export function AppStepConfig({
             disabled={committedId === null && !canAdd}
             onClick={committedId !== null ? onClose : add}
           >
-            {committedId !== null ? "Done" : "Add step"}
+            {committedId !== null ? "Done" : "Add node"}
           </button>
         ) : (
           <button

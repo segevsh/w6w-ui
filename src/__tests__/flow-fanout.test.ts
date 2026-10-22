@@ -48,6 +48,6 @@ test("A2 setFanOut + round trip", () => {
 });
 
 test("A3 fanOutLabel wording is pinned", () => {
-  assert.equal(fanOutLabel(3, "parallel"), "Runs these 3 steps in parallel");
-  assert.equal(fanOutLabel(2, "sequential"), "Runs these 2 steps in sequence");
+  assert.equal(fanOutLabel(3, "parallel"), "Runs these 3 nodes in parallel");
+  assert.equal(fanOutLabel(2, "sequential"), "Runs these 2 nodes in sequence");
 });
