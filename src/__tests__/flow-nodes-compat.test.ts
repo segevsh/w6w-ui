@@ -70,3 +70,19 @@ test("A3 step-preview-state start state is independent of wire shape", () => {
   ] as never;
   assert.deepEqual(startStateFromSeeds(seeds), { steps: { a: { output: { x: 1 } } } });
 });
+
+test("A4 — nodes.x.output.f and steps.x.output.f resolve to the same value in resolve-params", async () => {
+  const { buildResolveScope, resolveParamValue } = (await import("../resolve-params.ts")) as any;
+  const scope = buildResolveScope(undefined, {
+    steps: { x: { output: { f: 7 } } },
+    trigger: {},
+  } as any);
+  const r = (ref: string) =>
+    resolveParamValue({ type: "expr", parts: [{ kind: "var", ref }] }, scope);
+  assert.deepEqual(r("nodes.x.output.f"), [
+    { status: "resolved", ref: "nodes.x.output.f", value: 7 },
+  ]);
+  assert.deepEqual(r("steps.x.output.f"), [
+    { status: "resolved", ref: "steps.x.output.f", value: 7 },
+  ]);
+});
