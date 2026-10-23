@@ -18,13 +18,13 @@ updatedAt: null
 
 # Forms
 
-The pieces you use to collect input for an app, an action or a step. `AppPicker` and
+The pieces you use to collect input for an app, an action or a node. `AppPicker` and
 `ActionTestForm` call your server through [`W6WUIProvider`](/reference-packages/components/providers/); the rest
 are props-only and controlled: you hold the value, they call `onChange` with the next one.
 
 ## `AppPicker` (provider)
 
-A searchable grid of app cards. The same picker the connection modal and the step builder use.
+A searchable grid of app cards. The same picker the connection modal and the node builder use.
 
 | Prop | Type | Default | What it does |
 | --- | --- | --- | --- |
@@ -95,7 +95,7 @@ and `section`. It also honours `showIf`, `row`, `repeat` and `options` on the pa
 | Prop | Type | What it does |
 | --- | --- | --- |
 | `params` | `ActionParam[]` | Required. The parameters to render, usually `action.params`. |
-| `values` | `Record<string, unknown>` | Required. Current values, keyed by parameter `key`. This becomes a step's `with`. |
+| `values` | `Record<string, unknown>` | Required. Current values, keyed by parameter `key`. This becomes a node's `with`. |
 | `onChange` | `(values) => void` | Required. Fired with the whole next object. |
 | `readOnly` | `boolean` | Shows the values without editing. |
 
@@ -107,12 +107,14 @@ const [values, setValues] = useState<Record<string, unknown>>({});
 <ParamsForm params={action.params ?? []} values={values} onChange={setValues} />
 ```
 
-Text fields accept expressions (`vars.region`, `steps.fetch.output.id` and so on), with a picker fed
+Text fields accept expressions (`vars.region`, `nodes.fetch.output.id` and so on), with a picker fed
 by [`ExpressionOptionsProvider`](/reference-packages/components/providers/#expressionoptionsprovider).
+The older `steps.fetch.output.id` spelling still resolves: it is the same scope root under another
+name, kept so references written before the rename keep working.
 
 A `json` parameter, or a `group` parameter shown as JSON, has a ƒx button too. It opens the picker
-with each upstream step's **Entire output** (and its fields) and, on a pick, stores exactly
-`{ "$": "steps.<id>.output" }` as the value. The field then shows that reference with **Edit**,
+with each upstream node's **Entire output** (and its fields) and, on a pick, stores exactly
+`{ "$": "nodes.<id>.output" }` as the value. The field then shows that reference with **Edit**,
 **Clear** and a preview of the resolved JSON. **Clear** goes back to the JSON you had typed. In
 `readOnly` mode the reference and preview show, without the buttons.
 
@@ -166,7 +168,8 @@ don't offer to save the credential. A method with no fields shows a short note i
 ## `ExpressionInput`
 
 One field that mixes literal text with references such as `vars.region` or
-`steps.fetch.output.id`. References show as chips, and the picker offers what's in scope.
+`nodes.fetch.output.id` (or the older `steps.fetch.output.id`). References show as chips, and the
+picker offers what's in scope.
 
 | Prop | Type | What it does |
 | --- | --- | --- |
@@ -192,7 +195,7 @@ Use `isExprValue(v)` and `isSecretValue(v)` to tell the shapes apart when you re
 
 ## `NodeConfigForm`
 
-The settings every step shares, independent of its action: retry, what to do on error, and notes.
+The settings every node shares, independent of its action: retry, what to do on error, and notes.
 
 | Prop | Type | Default | What it does |
 | --- | --- | --- | --- |

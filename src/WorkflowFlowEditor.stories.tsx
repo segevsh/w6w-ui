@@ -11,7 +11,7 @@ const SAMPLE_WORKFLOW: FlowWorkflow = {
   id: "wf_demo",
   name: "onboarding",
   displayName: "Onboarding email",
-  steps: [
+  nodes: [
     { id: "trigger", uses: { app: "@w6w/webhook", action: "receive" } },
     {
       id: "send",
@@ -30,7 +30,7 @@ const EMPTY_WORKFLOW: FlowWorkflow = {
   manifestVersion: "2",
   id: "wf_empty",
   name: "empty",
-  steps: [],
+  nodes: [],
 };
 
 /** A step that already failed, one that already succeeded, one not yet reached. */
@@ -78,7 +78,7 @@ type Story = StoryObj<typeof meta>;
 /** 3 steps, 2 edges — a small representative graph. */
 export const Populated: Story = {};
 
-/** No steps at all — the canvas's empty state. */
+/** No nodes at all — the canvas's empty state. */
 export const Empty: Story = {
   args: { value: EMPTY_WORKFLOW },
 };
@@ -88,15 +88,15 @@ export const ReadOnly: Story = {
   args: { readOnly: true },
 };
 
-/** One step fanning out to two: the badge shows on the card, and "Run next steps" is enabled. */
+/** One node fanning out to two: the badge shows on the card, and "Run next nodes" is enabled. */
 export const ParallelFanOut: Story = {
   args: {
     value: {
       ...SAMPLE_WORKFLOW,
-      steps: [
-        SAMPLE_WORKFLOW.steps[0],
-        { ...SAMPLE_WORKFLOW.steps[1], fanOut: "parallel" },
-        SAMPLE_WORKFLOW.steps[2],
+      nodes: [
+        SAMPLE_WORKFLOW.nodes[0],
+        { ...SAMPLE_WORKFLOW.nodes[1], fanOut: "parallel" },
+        SAMPLE_WORKFLOW.nodes[2],
         { id: "log", uses: { app: "slack", action: "post-message" } },
       ],
       edges: [
@@ -104,6 +104,39 @@ export const ParallelFanOut: Story = {
         { from: "send", to: "notify" },
         { from: "send", to: "log" },
       ],
+    },
+  },
+};
+
+/** Notes and sections on the canvas: a section framing two nodes, plus a Markdown note.
+ *  `fitView` frames the NODES only, so the section hugs them (a frame hanging far outside the
+ *  nodes' bounds is clipped by the pane) and the note sits just below, inside the taller pane. */
+export const WithNotesAndSections: Story = {
+  args: {
+    height: 640,
+    value: {
+      ...SAMPLE_WORKFLOW,
+      canvas: {
+        sections: [
+          {
+            id: "sec_delivery",
+            title: "Delivery",
+            color: "#6366f1",
+            position: { x: 16, y: -24 },
+            size: { width: 720, height: 150 },
+            nodes: ["send", "notify"],
+          },
+        ],
+        notes: [
+          {
+            id: "note_1",
+            color: "#facc15",
+            position: { x: 40, y: 170 },
+            size: { width: 260, height: 90 },
+            content: "**Heads up:** the email is sent before Slack is notified.",
+          },
+        ],
+      },
     },
   },
 };

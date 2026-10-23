@@ -776,7 +776,7 @@ test("A3 — steps render through ExecutionLogPanel, gated on `undefined`", asyn
   );
   try {
     const section = byTestId(empty.container, "execution-detail-steps");
-    assert.ok(text(section).includes("No steps ran."), "emptyLabel is passed down to the panel");
+    assert.ok(text(section).includes("No nodes ran."), "emptyLabel is passed down to the panel");
     assert.equal(section.querySelectorAll(".w6w-execution-log-row").length, 0);
   } finally {
     await act(async () => empty.root.unmount());

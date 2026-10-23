@@ -228,7 +228,7 @@ test("A3 — collapse, step: the SAME mechanism reaches the steps loop independe
   await click(copyOf(outputBtn as Element));
   const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
   assert.ok(chip, "clicking a step output button must insert a chip");
-  assert.equal(chip.getAttribute("data-ref"), "steps.st1.output.o1");
+  assert.equal(chip.getAttribute("data-ref"), "nodes.st1.output.o1");
 });
 
 // ── A3 — no toggle without surviving children ───────────────────────────────
@@ -260,7 +260,7 @@ test("A3 — no toggle without children: a document with no fields and a step wi
   const refs = Array.from(editor.querySelectorAll(".w6w-expr-chip"))
     .map((el) => el.getAttribute("data-ref"))
     .sort();
-  assert.deepEqual(refs, ["documents.doc1", "steps.st1.output"]);
+  assert.deepEqual(refs, ["documents.doc1", "nodes.st1.output"]);
 });
 
 // ── T-2 — leaf row click = save + close; icon = insert only ────────────────
@@ -310,7 +310,7 @@ test("T-2 — a composite row (step with fields) keeps click = insert, no save",
   await click(whole);
   assert.equal(
     (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
-    "steps.st1.output",
+    "nodes.st1.output",
   );
   assert.equal(onSaveCalls.length, 0);
   assert.equal(onCloseCalls.length, 0);

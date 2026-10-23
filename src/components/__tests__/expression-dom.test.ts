@@ -580,3 +580,9 @@ test("isRefSafeKey — every safe key survives the full ref round trip", () => {
     assert.equal(varLabel(ref), `gate_1.${k}`, k);
   }
 });
+
+test("varLabel — nodes.<id> refs label the same as steps.<id> refs", () => {
+  assert.equal(varLabel("nodes.gate_1.output"), "gate_1");
+  assert.equal(varLabel("nodes.gate_1.output.email"), varLabel("steps.gate_1.output.email"));
+  assert.equal(varLabel("nodes.gate_1.meta.version"), "gate_1 meta · version");
+});

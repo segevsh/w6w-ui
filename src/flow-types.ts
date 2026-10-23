@@ -5,6 +5,7 @@
  * `@w6w/workflow-types` are structurally compatible.
  */
 
+import type { FlowCanvas } from "./canvas-types.ts";
 // T1.1.1 — `edgeVisuals`'s run-state argument; see `run-visuals.ts`.
 import type { EdgeRunState } from "./run-visuals.ts";
 
@@ -168,8 +169,9 @@ export interface FlowWorkflow {
   displayName?: string;
   description?: string;
   variables?: Array<{ key: string; type?: string; required?: boolean; default?: unknown }>;
-  steps: FlowStep[];
+  nodes: FlowStep[];
   edges?: FlowEdge[];
+  canvas?: FlowCanvas;
   /**
    * Authoring-time presentation and preferences for this workflow (core
    * `rfcs/workflow.md` · "Amendment — 2026-07-29: authoring presentation
@@ -222,6 +224,13 @@ export interface FlowWorkflow {
     viewport?: { x: number; y: number; zoom: number };
   };
 }
+
+/**
+ * What `workflowToFlow` accepts: a definition in either shape — the canonical
+ * `nodes[]` or the legacy `steps[]`. Both present is refused at read time.
+ */
+export type FlowWorkflowInput = Omit<FlowWorkflow, "nodes"> &
+  ({ nodes: FlowStep[] } | { steps: FlowStep[] });
 
 import type { ActionParam } from "./types.ts";
 

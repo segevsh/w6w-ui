@@ -16,10 +16,10 @@ import { parseRootAnchoredTemplate, serializeTemplate } from "./expression-templ
  * dotted ref such as `steps.my.step.output.email` is NOT a step ref and falls
  * through to {@link varLabel}'s verbatim branch.
  */
-const STEP_OUTPUT_REF = /^steps\.([^.]+)\.output(?:\.(.+))?$/;
+const STEP_OUTPUT_REF = /^(?:nodes|steps)\.([^.]+)\.output(?:\.(.+))?$/;
 
 /** `steps.<id>.meta.<key>` for exactly the four metadata keys; the output form is tried first. */
-const STEP_META_REF = /^steps\.([^.]+)\.meta\.(app|version|action|connectionId)$/;
+const STEP_META_REF = /^(?:nodes|steps)\.([^.]+)\.meta\.(app|version|action|connectionId)$/;
 
 /**
  * The name a source or chip DISPLAYS. Never the ref it SAVES.

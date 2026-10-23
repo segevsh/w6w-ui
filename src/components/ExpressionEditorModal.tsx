@@ -387,7 +387,7 @@ export function ExpressionEditorModal({
                 // inside the chip it inserted the whole output instead.
                 const wholeBtn = source(
                   st.label ?? st.id,
-                  { kind: "var", ref: `steps.${st.id}.output` },
+                  { kind: "var", ref: `nodes.${st.id}.output` },
                   "w6w-expr-chip-var",
                   fields.length > 0 ? null : "▸",
                   fields.length > 0,
@@ -398,7 +398,7 @@ export function ExpressionEditorModal({
                       <span className="w6w-exprmodal-shape-note">{st.label ?? st.id}</span>
                       {source(
                         "Entire output",
-                        { kind: "var", ref: `steps.${st.id}.output` },
+                        { kind: "var", ref: `nodes.${st.id}.output` },
                         "w6w-expr-chip-var",
                         "▸",
                         false,
@@ -434,7 +434,7 @@ export function ExpressionEditorModal({
                           {isOpen && (
                             <div className="w6w-exprmodal-subsources">
                               {fields.map((o) => {
-                                const ref = `steps.${st.id}.output.${o.key}`;
+                                const ref = `nodes.${st.id}.output.${o.key}`;
                                 return source(
                                   varLabel(ref),
                                   { kind: "var", ref },
@@ -489,7 +489,7 @@ export function ExpressionEditorModal({
                     )}
                     {/* …and one source per DECLARED output field, nested under
                         it, collapsed until the toggle above is expanded. Each
-                        SAVES the canonical `steps.<id>.output.<key>` (the only
+                        SAVES the canonical `nodes.<id>.output.<key>` (the only
                         form the engine resolves) and SHOWS `varLabel(ref)`,
                         i.e. the short `<id>.<key>`. The key goes into the ref
                         VERBATIM — `o.label` is display data and must never be
@@ -505,7 +505,7 @@ export function ExpressionEditorModal({
                           </span>
                         )}
                         {fields.map((o) => {
-                          const ref = `steps.${st.id}.output.${o.key}`;
+                          const ref = `nodes.${st.id}.output.${o.key}`;
                           return source(
                             varLabel(ref),
                             { kind: "var", ref },
@@ -530,7 +530,7 @@ export function ExpressionEditorModal({
                             {META_LEAVES.map(([key, label]) =>
                               source(
                                 label,
-                                { kind: "var", ref: `steps.${st.id}.meta.${key}` },
+                                { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
                                 "w6w-expr-chip-var",
                                 "·",
                               ),

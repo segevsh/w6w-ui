@@ -47,3 +47,20 @@ export type { TriggerFieldDef } from "./trigger-fields.ts";
 
 export { flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 export type { StepNode, StepNodeData } from "./flow-utils.ts";
+
+export { CanvasLayer } from "./CanvasLayer.tsx";
+export type { CanvasLayerProps } from "./CanvasLayer.tsx";
+export { Markdown } from "./Markdown.tsx";
+export type { MarkdownProps } from "./Markdown.tsx";
+export { MAX_NOTE_BYTES, MAX_NOTES, MAX_SECTIONS } from "./canvas-types.ts";
+export type { CanvasNote, CanvasSection, FlowCanvas } from "./canvas-types.ts";
+export {
+  assignMembership,
+  clampCanvas,
+  pruneSectionMembers,
+  renameSectionMember,
+  roundGeometry,
+  sectionsContaining,
+  withCanvasGeometry,
+} from "./canvas-utils.ts";
+export type { LiveGeometry } from "./canvas-utils.ts";
