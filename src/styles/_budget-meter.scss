@@ -1,0 +1,46 @@
+/* BudgetMeter — usage-vs-limit bar with a reserved segment.
+ *
+ * Token-only: every colour is a --w6w-* custom property, so a host restyles
+ * the meter (including the over-limit state) by overriding tokens, never by
+ * targeting a hex value here. */
+.w6w-budget-meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+}
+.w6w-budget-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--w6w-sp-2);
+  color: var(--w6w-muted);
+}
+.w6w-budget-meter-label {
+  color: var(--w6w-text);
+}
+.w6w-budget-meter-value {
+  font-variant-numeric: tabular-nums;
+}
+.w6w-budget-meter-track {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+}
+.w6w-budget-meter-used {
+  height: 100%;
+  background: var(--w6w-accent);
+}
+.w6w-budget-meter-reserved {
+  height: 100%;
+  background: var(--w6w-health-degraded);
+}
+.w6w-budget-meter-over .w6w-budget-meter-used {
+  background: var(--w6w-danger);
+}
+.w6w-budget-meter-over .w6w-budget-meter-value {
+  color: var(--w6w-danger);
+}
