@@ -9,6 +9,13 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- `WorkflowFlowEditor` takes an optional `stepProblems` map (`StepProblems`, exported from `./flow`)
+  and paints a missing-connection error ring and tooltip on each affected app step, repainting live
+  when the map changes. The host owns detection; omitted, the canvas renders as before.
+- The step panel's Setup tab labels a connection that is absent from the loaded list "Missing
+  connection — choose another", and a failed connections fetch "Couldn't load connections" instead
+  of treating it as missing.
+
 ## [0.2.0]
 
 - New presentational lists, props in and callbacks out, so a host can compose its own pages:
