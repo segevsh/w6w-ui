@@ -173,7 +173,7 @@ export function Combobox({
 
   const onBlur = () => {
     if (forceSelection) setText(selectedLabel);
-    else if (text !== value) onChange(text);
+    else if (text !== selectedLabel) onChange(text);
     close();
   };
 
