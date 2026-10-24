@@ -284,15 +284,16 @@ export const OrgToOrganizerStaleValueCleared: Story = {
 };
 
 /**
- * Org bound to an expression: the org is `{ $: … }`, so it cannot be sent as a
- * literal (D-5) — the organizer is never requested and falls back to free text
- * with "Options unavailable while Organisation is an expression". It stays
- * `ƒx`-bindable, so the author can still wire it to a step output.
+ * Org bound to an expression: the org holds an `ExprValue` envelope, so it
+ * cannot be sent as a literal (D-5) — the organizer is never requested and
+ * falls back to free text with "Options unavailable while Organisation is an
+ * expression". It stays `ƒx`-bindable, so the author can still wire it to a step
+ * output.
  */
 export const OrganizerWithOrgExpression: Story = {
   args: {
     params: ORG_PARAMS,
-    values: { org: { $: "steps.eventbrite-connection.output.orgId" } },
+    values: { org: { type: "expr", parts: [{ kind: "var", ref: "eventbriteOrgId" }] } },
     dynamic: EVENTBRITE,
   },
   render: (args) => <DynamicDemo {...args} api={EVENTBRITE_API} />,
