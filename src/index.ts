@@ -224,5 +224,7 @@ export { EmptyState } from "./components/EmptyState.tsx";
 export type { EmptyStateProps } from "./components/EmptyState.tsx";
 export { CanvasLayer } from "./CanvasLayer.tsx";
 export type { CanvasLayerProps } from "./CanvasLayer.tsx";
+export { BudgetMeter } from "./components/BudgetMeter.tsx";
+export type { BudgetMeterProps } from "./components/BudgetMeter.tsx";
 export { Markdown } from "./Markdown.tsx";
 export type { MarkdownProps } from "./Markdown.tsx";

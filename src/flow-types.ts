@@ -275,6 +275,12 @@ export const CALL_APP = "@w6w/call";
  */
 export const DOCUMENT_APP = "@w6w/document";
 /**
+ * Call a model through a named route / read a connection's models and
+ * allowance. Host node, like {@link DOCUMENT_APP}; the params mirror the
+ * `@w6w/model` internal-app manifest (pinned by `model-node-parity.test.ts`).
+ */
+export const MODEL_APP = "@w6w/model";
+/**
  * Compile a Handlebars `template` string against a resolved `values` object
  * (core rfcs/node-types.md · F-3 amendment, "the `@w6w/template` host node").
  * Host node: `runInternalNode` short-circuits this id before the registry
@@ -445,6 +451,9 @@ const ICON_CALL =
 /** Dog-eared page with lines — a stored JSON document. */
 const ICON_DOCUMENT =
   '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />';
+/** Chip — a model. */
+const ICON_MODEL =
+  '<rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />';
 /** Braces — a compiled placeholder template. */
 const ICON_TEMPLATE =
   '<path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1" /><path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1" />';
@@ -1066,6 +1075,114 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         required: true,
         default: "",
         hint: "Document key to read — may be an expression, e.g. a step output.",
+      },
+    ],
+  },
+  {
+    app: MODEL_APP,
+    action: "complete",
+    label: "Complete with model",
+    displayName: "Model",
+    group: "compute",
+    icon: ICON_MODEL,
+    // Host node: one completion through a named model route (or a direct
+    // connection + model). `route` is `type: "string"` in the manifest (core
+    // `ParamType` has no `model-route`); the ui renders it as a route picker —
+    // the same ui-only precedent as `vars` <-> `json`.
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "route",
+        label: "Route",
+        type: "model-route",
+        default: "",
+        hint: "Model route name — may be an expression.",
+      },
+      {
+        key: "model",
+        label: "Model",
+        type: "string",
+        default: "",
+        advanced: true,
+        hint: "Model id, when calling a connection directly instead of a route.",
+      },
+      {
+        key: "connection",
+        label: "Connection",
+        type: "string",
+        default: "",
+        advanced: true,
+        hint: "Connection id, when calling a provider directly instead of a route.",
+      },
+      {
+        key: "input",
+        label: "Input",
+        type: "json",
+        required: true,
+        hint: "The request body, in the chosen dialect.",
+      },
+      {
+        key: "dialect",
+        label: "Dialect",
+        type: "select",
+        advanced: true,
+        options: [
+          { value: "openai", label: "openai" },
+          { value: "anthropic", label: "anthropic" },
+          { value: "ollama", label: "ollama" },
+          { value: "structured", label: "structured" },
+        ],
+        default: "openai",
+      },
+      {
+        key: "response",
+        label: "Response",
+        type: "select",
+        advanced: true,
+        options: [
+          { value: "both", label: "both" },
+          { value: "output", label: "output" },
+          { value: "raw", label: "raw" },
+        ],
+        default: "both",
+      },
+    ],
+  },
+  {
+    app: MODEL_APP,
+    action: "list-models",
+    label: "List models",
+    displayName: "Model",
+    group: "compute",
+    icon: ICON_MODEL,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "connection",
+        label: "Connection",
+        type: "string",
+        required: true,
+        default: "",
+        hint: "Connection id of the provider to list models for.",
+      },
+    ],
+  },
+  {
+    app: MODEL_APP,
+    action: "allowance",
+    label: "Model allowance",
+    displayName: "Model",
+    group: "compute",
+    icon: ICON_MODEL,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "connection",
+        label: "Connection",
+        type: "string",
+        required: true,
+        default: "",
+        hint: "Connection id of the provider to read the allowance of.",
       },
     ],
   },
