@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, createContext, useContext, useEffect, useId, useState } from "react";
 import { CodeEditor, type ScriptLanguage } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { Combobox } from "./components/Combobox.tsx";
@@ -7,10 +7,12 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { type DynamicContext, allowCustomOf } from "./dynamic-fields.ts";
 import { useOptionalW6WApi, useWorkflowProject } from "./provider.tsx";
 import { buildResolveScope, isDollarPath } from "./resolve-params.ts";
 import { resolveParamJson } from "./resolved-json.ts";
 import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
+import { type UseDynamicFields, useDynamicFields } from "./use-dynamic-fields.ts";
 
 /**
  * Evaluate a param's `showIf` predicate. `getValue` resolves a sibling field's
@@ -135,6 +137,9 @@ function makeRenderOne(
   return renderOne;
 }
 
+/** Dynamic-field state for the top-level form; `null` inside group/repeat (untouched there). */
+const DynamicFieldsCtx = createContext<UseDynamicFields | null>(null);
+
 export interface ParamsFormProps {
   /** Declared params of the selected action. */
   params: ActionParam[];
@@ -143,6 +148,11 @@ export interface ParamsFormProps {
   /** Fired with the next values object on every edit. */
   onChange: (values: Record<string, unknown>) => void;
   readOnly?: boolean;
+  /**
+   * Opt-in context for `options: { source: "resolveFields" }` params. Absent (or
+   * the host has no `resolveActionFields`) = those params render as plain inputs.
+   */
+  dynamic?: DynamicContext;
 }
 
 /**
@@ -155,7 +165,8 @@ export interface ParamsFormProps {
  * expression bindings (`{ $: "steps.x.output.y" }`) authors drop to the JSON
  * view; this form deals in literals.
  */
-export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormProps) {
+export function ParamsForm({ params, values, onChange, readOnly, dynamic }: ParamsFormProps) {
+  const dyn = useDynamicFields(params, values, dynamic, onChange);
   // Effective value of a field for `showIf` checks: the entered value, else the
   // field's declared default (so conditions hold before the user touches it).
   // Section/group children write flat at the enclosing level, so flatten them
@@ -208,19 +219,21 @@ export function ParamsForm({ params, values, onChange, readOnly }: ParamsFormPro
   const renderOne = makeRenderOne(values, set, effective, readOnly);
 
   return (
-    <div className="w6w-stack">
-      {renderFieldRows(main, renderOne)}
-      {additional.length > 0 && (
-        <details className="w6w-params-optional">
-          <summary className="w6w-muted w6w-small">
-            Additional parameters ({additional.length})
-          </summary>
-          <div className="w6w-stack" style={{ marginTop: 8 }}>
-            {renderFieldRows(additional, renderOne)}
-          </div>
-        </details>
-      )}
-    </div>
+    <DynamicFieldsCtx.Provider value={dyn}>
+      <div className="w6w-stack">
+        {renderFieldRows(main, renderOne)}
+        {additional.length > 0 && (
+          <details className="w6w-params-optional">
+            <summary className="w6w-muted w6w-small">
+              Additional parameters ({additional.length})
+            </summary>
+            <div className="w6w-stack" style={{ marginTop: 8 }}>
+              {renderFieldRows(additional, renderOne)}
+            </div>
+          </details>
+        )}
+      </div>
+    </DynamicFieldsCtx.Provider>
   );
 }
 
@@ -334,12 +347,14 @@ function GroupField({
   const groupRenderOne = makeRenderOne(groupValue, groupSet, groupEffective, readOnly);
 
   return (
-    <div className="w6w-stack">
-      <span className="w6w-section-title">{param.label ?? param.key}</span>
-      <div className="w6w-stack w6w-section-body">
-        {renderFieldRows(visibleChildren, groupRenderOne)}
+    <DynamicFieldsCtx.Provider value={null}>
+      <div className="w6w-stack">
+        <span className="w6w-section-title">{param.label ?? param.key}</span>
+        <div className="w6w-stack w6w-section-body">
+          {renderFieldRows(visibleChildren, groupRenderOne)}
+        </div>
       </div>
-    </div>
+    </DynamicFieldsCtx.Provider>
   );
 }
 
@@ -405,6 +420,8 @@ function ParamField({
 }) {
   const listModelRoutes = useOptionalW6WApi()?.listModelRoutes;
   const workflowProject = useWorkflowProject();
+  const dyn = useContext(DynamicFieldsCtx);
+  const dynState = dyn?.fields[param.key];
   const label = param.label ?? param.key;
   // A checkbox always carries a value (true/false), so "required" has no meaning
   // for it — don't decorate booleans with the required asterisk.
@@ -545,6 +562,37 @@ function ParamField({
     return <ArrayField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
   }
 
+  // Form-resolved options (host fetch) or static options + `allowCustom`: a
+  // Combobox inside FxField. A no-fetch state (`hint`) falls through to the
+  // plain input below, which shows the hint.
+  if (dyn && dynState && !dynState.hint) {
+    return (
+      <ChoiceField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        state={dynState}
+        retry={() => dyn.retry(param.key)}
+      />
+    );
+  }
+  if (Array.isArray(param.options) && param.options.length > 0 && allowCustomOf(param)) {
+    return (
+      <ChoiceField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        state={{ loading: false, options: param.options }}
+      />
+    );
+  }
+
   // A constrained set of choices renders as a dropdown — even for a `string`
   // param (e.g. an HTTP method). Driven by `param.options` in the config.
   if (Array.isArray(param.options) && param.options.length > 0) {
@@ -652,6 +700,69 @@ function ParamField({
           onChange(param.key, param.type === "number" ? Number(e.target.value) : e.target.value)
         }
       />
+      {dynState?.hint && <span className="w6w-hint">{dynState.hint}</span>}
+    </FxField>
+  );
+}
+
+/**
+ * A Combobox of host-resolved (or static + `allowCustom`) choices. Free text is a
+ * value only with `allowCustom`; `aria-busy` while a request is in flight; a failed
+ * request shows an alert line with a per-field Retry.
+ */
+function ChoiceField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  state,
+  retry,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  state: import("./use-dynamic-fields.ts").DynamicFieldState;
+  retry?: () => void;
+}) {
+  const raw = value ?? param.default ?? "";
+  const current = typeof raw === "string" || typeof raw === "number" ? String(raw) : "";
+  return (
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
+      <div aria-busy={state.loading ? "true" : "false"}>
+        <Combobox
+          mode="combobox"
+          forceSelection={!allowCustomOf(param)}
+          aria-label={label}
+          disabled={readOnly}
+          value={current}
+          placeholder={state.loading ? "Loading…" : (param.placeholder as string | undefined)}
+          options={(state.options ?? []).map((o) => ({ value: String(o.value), label: o.label }))}
+          onChange={(next) => onChange(param.key, next)}
+        />
+      </div>
+      {state.notInList && <span className="w6w-hint">{state.notInList}</span>}
+      {state.error && (
+        <span role="alert" className="w6w-hint">
+          {state.error}
+          {retry && (
+            <button type="button" onClick={retry}>
+              Retry
+            </button>
+          )}
+        </span>
+      )}
     </FxField>
   );
 }
