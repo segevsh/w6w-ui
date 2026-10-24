@@ -4,6 +4,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { useMemo } from "react";
 import { CheckGlyph, CopyGlyph } from "./components/Copyable.tsx";
 import { useCopyToClipboard } from "./components/use-copy.ts";
+import { EDITOR_THEME_SPEC } from "./editor-theme.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import type { ThemeMode } from "./types.ts";
 
@@ -63,30 +64,7 @@ export function YamlEditor(props: YamlEditorProps) {
   // unconditionally (Rules of Hooks) — it is inert (no button, no listener)
   // until `copy()` is actually invoked from the button below.
   const { copied, copy } = useCopyToClipboard(props.value);
-  const extensions = useMemo(
-    () => [
-      yaml(),
-      EditorView.theme({
-        "&": {
-          fontSize: "13px",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-          backgroundColor: "var(--w6w-panel-2)",
-          color: "var(--w6w-text)",
-          border: "1px solid var(--w6w-border)",
-          borderRadius: "8px",
-        },
-        "&.cm-focused": { outline: "2px solid var(--w6w-accent)" },
-        ".cm-gutters": {
-          backgroundColor: "var(--w6w-panel)",
-          color: "var(--w6w-muted)",
-          border: "none",
-          borderRight: "1px solid var(--w6w-border)",
-        },
-        ".cm-scroller": { overflow: "auto" },
-      }),
-    ],
-    [],
-  );
+  const extensions = useMemo(() => [yaml(), EditorView.theme(EDITOR_THEME_SPEC)], []);
 
   function handleChange(next: string) {
     props.onChange(next);

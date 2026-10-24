@@ -152,6 +152,12 @@ import {
   stepMetaSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
+import {
+  type StepProblems,
+  applyStepProblems,
+  connectionButtonLabel,
+  stepProblemTooltip,
+} from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type {
@@ -259,6 +265,14 @@ export interface WorkflowFlowEditorProps {
    * back off a node.
    */
   runState?: RunState;
+  /**
+   * Host-detected per-step problems, keyed by step id — an app step whose bound
+   * connection no longer exists gets an error ring + tooltip. Omitted ⇒ the
+   * canvas renders exactly as today. The host owns detection; this editor never
+   * infers a problem itself. Repaints live (same `value.id`) and is never
+   * persisted: `flowToWorkflow` never reads `data.stepProblem`.
+   */
+  stepProblems?: StepProblems;
   /**
    * Fired the instant a step test starts — the ▶ collect form's Run button, or
    * `StepEditModal`'s footer Test button — before the invoke goes out, so a host
@@ -387,6 +401,7 @@ function Inner({
   exprOptions,
   project,
   runState,
+  stepProblems,
   onTestRun,
   fitViewKey,
 }: WorkflowFlowEditorProps) {
@@ -455,6 +470,11 @@ function Inner({
       }),
     );
   }, [runState, setNodes, setEdges]);
+  // Host-supplied step problems — same live-repaint mechanism as runState above:
+  // stamps/clears `data.stepProblem` only, never `data.step`.
+  useEffect(() => {
+    setNodes((nds) => applyStepProblems(nds, stepProblems));
+  }, [stepProblems, setNodes]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Notes + sections: live canvas state (geometry renders live; persistCanvas decides what is
   // written). Re-seeded only on workflow identity change, like nodes/edges.
@@ -2441,10 +2461,14 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
       <NodeControls id={id} runnable />
       <div
         data-run-status={data.stepStatus ?? "no-run"}
+        data-step-problem={data.stepProblem?.code}
+        title={data.stepProblem ? stepProblemTooltip(data.stepProblem) : undefined}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node
           // (which also spans the meta line below) — keeps ports vertically centered.
           position: "relative",
+          // Missing-connection ring; the border stays the run-status visual.
+          ...(data.stepProblem ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
           // Selection always wins the BORDER COLOUR (unchanged from before
           // T1.1.1 — the ternary this extends); width/style/opacity keep
           // reflecting the run status underneath so a selected running/failed
@@ -2660,6 +2684,7 @@ export function StepEditModal({
   const [params, setParams] = useState<ActionParam[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
+  const [connsFailed, setConnsFailed] = useState(false);
   const isInternal = isInternalApp(step.uses.app);
 
   // Refetch actions + params whenever the app/action identity changes. P-3:
@@ -2698,8 +2723,11 @@ export function StepEditModal({
     if (isInternal || !step.uses.app) return;
     api
       .listConnectionsForApp(step.uses.app)
-      .then((c) => setConns(c))
-      .catch(() => setConns([]));
+      .then((c) => {
+        setConns(c);
+        setConnsFailed(false);
+      })
+      .catch(() => setConnsFailed(true));
   }, [api, step.uses.app, isInternal]);
 
   useEffect(() => {
@@ -2707,8 +2735,12 @@ export function StepEditModal({
     let canceled = false;
     api
       .listConnectionsForApp(step.uses.app)
-      .then((c) => !canceled && setConns(c))
-      .catch(() => !canceled && setConns([]));
+      .then((c) => {
+        if (canceled) return;
+        setConns(c);
+        setConnsFailed(false);
+      })
+      .catch(() => !canceled && setConnsFailed(true));
     return () => {
       canceled = true;
     };
@@ -2900,6 +2932,7 @@ export function StepEditModal({
               app={app}
               actions={actions}
               conns={conns}
+              connsFailed={connsFailed}
               isInternal={isInternal}
               readOnly={readOnly}
               onChangeAction={(action) =>
@@ -3377,6 +3410,7 @@ function SetupTab({
   app,
   actions,
   conns,
+  connsFailed,
   isInternal,
   readOnly,
   onChangeAction,
@@ -3388,6 +3422,8 @@ function SetupTab({
   app: AppSummary | undefined;
   actions: ActionDef[] | null;
   conns: ConnectionSummary[] | null;
+  /** The connections fetch rejected — a distinct state, never "missing". */
+  connsFailed: boolean;
   isInternal: boolean;
   readOnly?: boolean;
   onChangeAction: (action: string) => void;
@@ -3409,10 +3445,7 @@ function SetupTab({
   const [showConnModal, setShowConnModal] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
-  const connName = step.uses.connection
-    ? ((conns ?? []).find((c) => c.id === step.uses.connection)?.displayName ??
-      step.uses.connection)
-    : "No connection";
+  const connName = connectionButtonLabel(step.uses.connection, conns, connsFailed);
 
   return (
     <div className="w6w-stack">
