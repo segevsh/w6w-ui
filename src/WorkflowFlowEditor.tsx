@@ -152,7 +152,12 @@ import {
 // own header). This file is the one production caller that turns it into
 // pixels: a live-run repaint effect (in `Inner`) feeds the results into
 // `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
-import { type StepProblems, applyStepProblems, stepProblemTooltip } from "./step-problems.ts";
+import {
+  type StepProblems,
+  applyStepProblems,
+  connectionButtonLabel,
+  stepProblemTooltip,
+} from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type {
@@ -2679,6 +2684,7 @@ export function StepEditModal({
   const [params, setParams] = useState<ActionParam[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
+  const [connsFailed, setConnsFailed] = useState(false);
   const isInternal = isInternalApp(step.uses.app);
 
   // Refetch actions + params whenever the app/action identity changes. P-3:
@@ -2717,8 +2723,11 @@ export function StepEditModal({
     if (isInternal || !step.uses.app) return;
     api
       .listConnectionsForApp(step.uses.app)
-      .then((c) => setConns(c))
-      .catch(() => setConns([]));
+      .then((c) => {
+        setConns(c);
+        setConnsFailed(false);
+      })
+      .catch(() => setConnsFailed(true));
   }, [api, step.uses.app, isInternal]);
 
   useEffect(() => {
@@ -2726,8 +2735,12 @@ export function StepEditModal({
     let canceled = false;
     api
       .listConnectionsForApp(step.uses.app)
-      .then((c) => !canceled && setConns(c))
-      .catch(() => !canceled && setConns([]));
+      .then((c) => {
+        if (canceled) return;
+        setConns(c);
+        setConnsFailed(false);
+      })
+      .catch(() => !canceled && setConnsFailed(true));
     return () => {
       canceled = true;
     };
@@ -2919,6 +2932,7 @@ export function StepEditModal({
               app={app}
               actions={actions}
               conns={conns}
+              connsFailed={connsFailed}
               isInternal={isInternal}
               readOnly={readOnly}
               onChangeAction={(action) =>
@@ -3396,6 +3410,7 @@ function SetupTab({
   app,
   actions,
   conns,
+  connsFailed,
   isInternal,
   readOnly,
   onChangeAction,
@@ -3407,6 +3422,8 @@ function SetupTab({
   app: AppSummary | undefined;
   actions: ActionDef[] | null;
   conns: ConnectionSummary[] | null;
+  /** The connections fetch rejected — a distinct state, never "missing". */
+  connsFailed: boolean;
   isInternal: boolean;
   readOnly?: boolean;
   onChangeAction: (action: string) => void;
@@ -3428,10 +3445,7 @@ function SetupTab({
   const [showConnModal, setShowConnModal] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
-  const connName = step.uses.connection
-    ? ((conns ?? []).find((c) => c.id === step.uses.connection)?.displayName ??
-      step.uses.connection)
-    : "No connection";
+  const connName = connectionButtonLabel(step.uses.connection, conns, connsFailed);
 
   return (
     <div className="w6w-stack">

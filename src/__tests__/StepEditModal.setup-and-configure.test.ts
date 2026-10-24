@@ -745,3 +745,64 @@ test("U-D3b — a @w6w/call step shows no Retry on failure, still shows On error
     root.unmount();
   });
 });
+
+const MISSING_STEP: FlowStep = {
+  id: "mail_1",
+  uses: { app: "sendgrid", action: "send", connection: "conn_gone" },
+  with: { subject: "Hello" },
+};
+
+test('S1 — a settled list without the bound connection labels it "Missing connection — choose another"; the flyout opens and a pick commits ONLY uses.connection', async () => {
+  const { container, root, changes } = await mountOnSetupTab(MISSING_STEP);
+  assert.equal(
+    connButton(container).textContent?.includes("Missing connection — choose another"),
+    true,
+  );
+  await act(async () => {
+    connButton(container).click();
+  });
+  await flush();
+  assert.ok(
+    connItems(container).some((b) => (b.textContent ?? "").includes("prod")),
+    "the existing flyout lists the app's connections",
+  );
+  await act(async () => {
+    clickConnItem(container, "prod");
+  });
+  assert.equal(changes.length, 1);
+  const payload = changes[0] as { uses: Record<string, string>; with: unknown };
+  assert.deepStrictEqual(payload.uses, { app: "sendgrid", action: "send", connection: "conn_1" });
+  assert.deepStrictEqual(payload.with, { subject: "Hello" });
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test('S2 — a rejected listConnectionsForApp shows "Couldn\'t load connections", never the missing label', async () => {
+  const { container, root } = await mountOnSetupTab(MISSING_STEP, {
+    apiOverrides: {
+      listConnectionsForApp: async () => {
+        throw new Error("boom");
+      },
+    },
+  });
+  const text = connButton(container).textContent ?? "";
+  assert.equal(text.includes("Couldn't load connections"), true);
+  assert.equal(text.includes("Missing connection"), false);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("S3 — while connections are still loading the button shows the raw id, not missing/failed", async () => {
+  const { container, root } = await mountOnSetupTab(MISSING_STEP, {
+    apiOverrides: { listConnectionsForApp: () => new Promise(() => {}) },
+  });
+  const text = connButton(container).textContent ?? "";
+  assert.equal(text.includes("conn_gone"), true);
+  assert.equal(text.includes("Missing connection"), false);
+  assert.equal(text.includes("Couldn't load"), false);
+  await act(async () => {
+    root.unmount();
+  });
+});
