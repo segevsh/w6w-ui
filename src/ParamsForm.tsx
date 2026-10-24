@@ -7,7 +7,7 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
-import { useOptionalW6WApi } from "./provider.tsx";
+import { useOptionalW6WApi, useWorkflowProject } from "./provider.tsx";
 import { buildResolveScope, isDollarPath } from "./resolve-params.ts";
 import { resolveParamJson } from "./resolved-json.ts";
 import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
@@ -404,6 +404,7 @@ function ParamField({
   readOnly?: boolean;
 }) {
   const listModelRoutes = useOptionalW6WApi()?.listModelRoutes;
+  const workflowProject = useWorkflowProject();
   const label = param.label ?? param.key;
   // A checkbox always carries a value (true/false), so "required" has no meaning
   // for it — don't decorate booleans with the required asterisk.
@@ -498,6 +499,7 @@ function ParamField({
         label={label}
         req={req}
         listModelRoutes={listModelRoutes}
+        project={workflowProject}
       />
     );
   }
@@ -652,6 +654,7 @@ function ModelRouteField({
   label,
   req,
   listModelRoutes,
+  project,
 }: {
   param: ActionParam;
   value: unknown;
@@ -660,18 +663,20 @@ function ModelRouteField({
   label: string;
   req: string;
   listModelRoutes: ModelRouteList;
+  /** The editor's project (`WorkflowProjectProvider`) — the routes listed are THIS project's. */
+  project: string | undefined;
 }) {
   const [routes, setRoutes] = useState<Awaited<ReturnType<ModelRouteList>>>([]);
   useEffect(() => {
     let live = true;
     Promise.resolve()
-      .then(() => listModelRoutes())
+      .then(() => listModelRoutes(project))
       .then((r) => live && setRoutes(Array.isArray(r) ? r : []))
       .catch(() => live && setRoutes([]));
     return () => {
       live = false;
     };
-  }, [listModelRoutes]);
+  }, [listModelRoutes, project]);
   const raw = value ?? param.default ?? "";
   const current = typeof raw === "string" ? raw : "";
   return (

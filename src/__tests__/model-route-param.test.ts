@@ -84,7 +84,7 @@ const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { ParamsForm } = await import("../ParamsForm.tsx");
 const { ExpressionOptionsProvider } = await import("../components/ExpressionOptions.tsx");
-const { W6WUIProvider } = await import("../provider.tsx");
+const { W6WUIProvider, WorkflowProjectProvider } = await import("../provider.tsx");
 type ActionParam = import("../types.ts").ActionParam;
 
 const PARAM: ActionParam = { key: "route", label: "Route", type: "model-route" };
@@ -95,7 +95,11 @@ async function settle(ms = 0) {
   });
 }
 
-async function render(api: unknown | null, initial: Record<string, unknown> = {}) {
+async function render(
+  api: unknown | null,
+  initial: Record<string, unknown> = {},
+  project?: string,
+) {
   const container = document.getElementById("root");
   assert.ok(container);
   container.innerHTML = "";
@@ -115,7 +119,12 @@ async function render(api: unknown | null, initial: Record<string, unknown> = {}
         },
       }),
     );
-    return api ? React.createElement(W6WUIProvider, { api: api as never, children: form }) : form;
+    const scoped = project
+      ? React.createElement(WorkflowProjectProvider, { project, children: form })
+      : form;
+    return api
+      ? React.createElement(W6WUIProvider, { api: api as never, children: scoped })
+      : scoped;
   }
   await act(async () => {
     root.render(React.createElement(Harness));
@@ -187,5 +196,31 @@ test("a saved expression value still renders without throwing (member present)",
     { route: expr },
   );
   assert.ok(container.querySelector("input, button"));
+  await act(async () => root.unmount());
+});
+
+test("the editor's project is handed to listModelRoutes, and its routes are what the picker lists", async () => {
+  const seen: (string | undefined)[] = [];
+  const byProject: Record<string, typeof ROUTES> = {
+    p1: [{ name: "p1-route", model: "m", status: "active" }],
+    p2: [{ name: "p2-route", model: "m", status: "active" }],
+  };
+  const api = {
+    listModelRoutes: async (project?: string) => {
+      seen.push(project);
+      return byProject[project ?? ""] ?? [];
+    },
+  };
+  const { container, root } = await render(api, {}, "p2");
+  const input = container.querySelector("input[role=combobox]") as HTMLInputElement | null;
+  assert.ok(input, "combobox renders inside the editor's project scope");
+  await act(async () => {
+    input.focus();
+    input.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+    input.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+  assert.deepEqual(seen, ["p2"]);
+  const options = Array.from(document.querySelectorAll("[role=option]")).map((o) => o.textContent);
+  assert.deepEqual(options, ["p2-route"]);
   await act(async () => root.unmount());
 });
