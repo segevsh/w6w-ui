@@ -153,9 +153,11 @@ import {
   upstreamStateSources,
 } from "./step-preview-state.ts";
 import {
+  type StepProblem,
   type StepProblems,
   applyStepProblems,
   connectionButtonLabel,
+  isConnectionBlocked,
   stepProblemTooltip,
 } from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
@@ -1333,7 +1335,8 @@ function Inner({
     return () => div.removeEventListener("dblclick", handler, true);
   }, [controls]);
 
-  const editingStep = nodes.find((n) => n.id === editingId)?.data.step ?? null;
+  const editingNode = nodes.find((n) => n.id === editingId);
+  const editingStep = editingNode?.data.step ?? null;
   // The step the run modal is open on, resolved live so the collect phase reads
   // the current `with` (a trigger's declared `fields`) rather than a snapshot.
   const runningStep = runResult
@@ -1841,6 +1844,7 @@ function Inner({
                       readOnly={readOnly}
                       fanOutCount={fanOutCounts.get(editingId) ?? 0}
                       initialView={editView}
+                      stepProblem={editingNode?.data.stepProblem}
                       onChange={(next) => updateStep(editingId, next)}
                       onClose={() => setEditingId(null)}
                       onTestRun={onTestRun}
@@ -2488,6 +2492,29 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
+        {data.stepProblem && (
+          <span
+            data-step-problem-badge=""
+            role="img"
+            aria-label={stepProblemTooltip(data.stepProblem)}
+            title={stepProblemTooltip(data.stepProblem)}
+            style={{
+              position: "absolute",
+              top: -9,
+              right: -9,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--w6w-danger)",
+              color: "#fff",
+            }}
+          >
+            <Icon name="warning" size={12} />
+          </span>
+        )}
         {ports.in > 0 && (
           <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
         )}
@@ -2636,6 +2663,7 @@ export function StepEditModal({
   initialView = "props",
   fanOutCount = 0,
   onTestRun,
+  stepProblem,
 }: {
   workflowId: string;
   step: FlowStep;
@@ -2649,15 +2677,19 @@ export function StepEditModal({
   fanOutCount?: number;
   /** Fired the instant the footer Test button is clicked, before the test runs (T1.1.1). */
   onTestRun?: () => void;
+  /** Host-supplied problem for this step; a dangling connection locks Configure/Test. */
+  stepProblem?: StepProblem;
 }) {
   const api = useW6WApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
+  // Checked against the LOCAL step so choosing another connection unblocks at once.
+  const blocked = isConnectionBlocked(step, stepProblem);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
   // tab showing form (props) / full-step JSON (code) / params JSON
   // (params-code) / node settings (config).
   const [tab, setTab] = useState<"setup" | "configure" | "test">(
-    initialView === "json" ? "configure" : initialView === "settings" ? "configure" : "configure",
+    isConnectionBlocked(initialStep, stepProblem) ? "setup" : "configure",
   );
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
@@ -2904,6 +2936,7 @@ export function StepEditModal({
                 key={t}
                 type="button"
                 className={`w6w-subtab${tab === t ? " active" : ""}`}
+                disabled={blocked && t !== "setup"}
                 onClick={() => setTab(t)}
               >
                 {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
@@ -2925,6 +2958,11 @@ export function StepEditModal({
           )}
         </div>
 
+        {blocked && stepProblem && (
+          <div role="alert" className="w6w-field-error">
+            Connection {stepProblem.connection} no longer exists — choose another to continue.
+          </div>
+        )}
         <div className="w6w-stepconfig-body">
           {tab === "setup" && (
             <SetupTab
@@ -3106,6 +3144,7 @@ export function StepEditModal({
             <button
               type="button"
               className="w6w-btn"
+              disabled={blocked}
               onClick={() => setTab(tab === "setup" ? "configure" : "test")}
             >
               Next →
