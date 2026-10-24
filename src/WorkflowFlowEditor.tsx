@@ -139,10 +139,6 @@ import {
   WorkflowProjectProvider,
   useW6WApi,
 } from "./provider.tsx";
-// T1.1.1 — the pure run-visual derivation, no React import (`run-visuals.ts`'s
-// own header). This file is the one production caller that turns it into
-// pixels: a live-run repaint effect (in `Inner`) feeds the results into
-// `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
 import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./run-visuals.ts";
 import {
   type SeedSource,
@@ -152,6 +148,11 @@ import {
   stepMetaSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
+// T1.1.1 — the pure run-visual derivation, no React import (`run-visuals.ts`'s
+// own header). This file is the one production caller that turns it into
+// pixels: a live-run repaint effect (in `Inner`) feeds the results into
+// `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
+import { type StepProblems, applyStepProblems, stepProblemTooltip } from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 import type {
@@ -259,6 +260,14 @@ export interface WorkflowFlowEditorProps {
    * back off a node.
    */
   runState?: RunState;
+  /**
+   * Host-detected per-step problems, keyed by step id — an app step whose bound
+   * connection no longer exists gets an error ring + tooltip. Omitted ⇒ the
+   * canvas renders exactly as today. The host owns detection; this editor never
+   * infers a problem itself. Repaints live (same `value.id`) and is never
+   * persisted: `flowToWorkflow` never reads `data.stepProblem`.
+   */
+  stepProblems?: StepProblems;
   /**
    * Fired the instant a step test starts — the ▶ collect form's Run button, or
    * `StepEditModal`'s footer Test button — before the invoke goes out, so a host
@@ -387,6 +396,7 @@ function Inner({
   exprOptions,
   project,
   runState,
+  stepProblems,
   onTestRun,
   fitViewKey,
 }: WorkflowFlowEditorProps) {
@@ -455,6 +465,11 @@ function Inner({
       }),
     );
   }, [runState, setNodes, setEdges]);
+  // Host-supplied step problems — same live-repaint mechanism as runState above:
+  // stamps/clears `data.stepProblem` only, never `data.step`.
+  useEffect(() => {
+    setNodes((nds) => applyStepProblems(nds, stepProblems));
+  }, [stepProblems, setNodes]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Notes + sections: live canvas state (geometry renders live; persistCanvas decides what is
   // written). Re-seeded only on workflow identity change, like nodes/edges.
@@ -2441,10 +2456,14 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
       <NodeControls id={id} runnable />
       <div
         data-run-status={data.stepStatus ?? "no-run"}
+        data-step-problem={data.stepProblem?.code}
+        title={data.stepProblem ? stepProblemTooltip(data.stepProblem) : undefined}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node
           // (which also spans the meta line below) — keeps ports vertically centered.
           position: "relative",
+          // Missing-connection ring; the border stays the run-status visual.
+          ...(data.stepProblem ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
           // Selection always wins the BORDER COLOUR (unchanged from before
           // T1.1.1 — the ternary this extends); width/style/opacity keep
           // reflecting the run status underneath so a selected running/failed
