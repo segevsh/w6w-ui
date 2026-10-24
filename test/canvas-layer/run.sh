@@ -42,10 +42,10 @@ PW_IMAGE="${PW_IMAGE:-mcr.microsoft.com/playwright:v${PW_VERSION}-noble}"
 HOST_BROWSER="${HOST_BROWSER:-0}"
 # One top-level test() per entry: B1 (layer order + pane click-through),
 # B2 (order holds after selecting and dragging the note), plus the B3 flow
-# tests added alongside. The verdict below is REFUSED unless exactly this many
+# tests added alongside and B5 (adding a step from each port). The verdict below is REFUSED unless exactly this many
 # ran: a tree that fails to bundle, or a run that dies half-way, reports
 # DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-9}"
+EXPECTED_TESTS="${EXPECTED_TESTS:-11}"
 
 fatal() {
   echo "FATAL: $*"

@@ -8,6 +8,9 @@
 //     `elementsFromPoint` lists node, edge, note, section, pane top -> bottom,
 //     and a pane click through an EMPTY part of a section's interior deselects.
 // B2: selecting and then dragging the note leaves that order intact.
+// B3: notes and sections — every control lives on a toolbar ABOVE the box, never inside it.
+// B5: a connection dragged out of any port and dropped on empty canvas (or a click
+//     on the port) opens the node builder, and the step added is wired to that port.
 //
 // Every assertion is a RELATION between live measurements (indexes in the
 // hit-test stack, rect containment), never a pixel literal.
@@ -93,7 +96,7 @@ async function stack(page, p) {
       if (el.closest(".react-flow__node")) return "node";
       if (el.closest(".react-flow__edge")) return "edge";
       if (el.closest('[data-testid="note"]')) return "note";
-      if (el.closest('[data-testid="section"]')) return "section";
+      if (el.closest('[data-testid="section"], [data-section-label]')) return "section";
       if (el.classList.contains("react-flow__pane")) return "pane";
       return "other";
     };
@@ -118,14 +121,14 @@ function assertOrder(s, where) {
 }
 
 // The one overlap point of the "overlap" fixture: node c's centre. The a->b edge
-// runs through it, note n1 covers it, and section s_over's title covers it.
+// runs through it, note n1 covers it, and section s_over's label (above its frame) covers it.
 async function overlapPoint(page) {
   const c = await rectOf(page, '.react-flow__node[data-id="c"]');
   const p = centre(c);
   const note = await rectOf(page, '[data-note-id="n1"] [data-testid="note-content"], [data-note-id="n1"] .w6w-canvas-note-body');
-  const title = await rectOf(page, '[data-section-id="s_over"] [data-testid="section-drag"]');
+  const title = await rectOf(page, '[data-section-label="s_over"]');
   assert.ok(inside(note, p), `fixture: note body ${JSON.stringify(note)} must cover ${JSON.stringify(p)}`);
-  assert.ok(inside(title, p), `fixture: section title ${JSON.stringify(title)} must cover ${JSON.stringify(p)}`);
+  assert.ok(inside(title, p), `fixture: section label ${JSON.stringify(title)} must cover ${JSON.stringify(p)}`);
   return p;
 }
 
@@ -160,9 +163,8 @@ test("B2: after selecting and dragging the note, the layer order still holds", a
   try {
     const before = await page.evaluate(() => window.__changes.length);
     const noteBefore = await rectOf(page, '[data-note-id="n1"]');
-    const grip = await rectOf(page, '[data-note-id="n1"] [data-testid="note-drag"]');
-    // Press on the note's drag strip (selects/grabs it), move, release.
-    const g = { x: grip.x + 8, y: grip.y + grip.height / 2 };
+    // Press on the note's body (selects/grabs it), move, release.
+    const g = await uncoveredPoint(page, '[data-note-id="n1"] [data-testid="note-view"]');
     await page.mouse.move(g.x, g.y);
     await page.mouse.down();
     await page.mouse.move(g.x + 12, g.y + 6, { steps: 4 });
@@ -259,34 +261,33 @@ async function confirmDialog(page) {
   return btn;
 }
 
-// Select a and b with ctrl+click, press "Group into section"; returns the emitted def.
-async function groupAB(page) {
-  const a = centre(await rectOf(page, '.react-flow__node[data-id="a"]'));
-  const b = centre(await rectOf(page, '.react-flow__node[data-id="b"]'));
-  await page.mouse.click(a.x, a.y);
-  await page.keyboard.down("Control");
-  await page.mouse.click(b.x, b.y);
-  await page.keyboard.up("Control");
-  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node.selected").length === 2);
+// Arm "Draw section" and drag a frame around nodes a and b; returns the emitted def.
+async function drawAB(page) {
+  const a = await rectOf(page, '.react-flow__node[data-id="a"]');
+  const b = await rectOf(page, '.react-flow__node[data-id="b"]');
+  const pad = 24;
+  const from = { x: Math.min(a.x, b.x) - pad, y: Math.min(a.y, b.y) - pad };
+  const to = {
+    x: Math.max(a.x + a.width, b.x + b.width) + pad,
+    y: Math.max(a.y + a.height, b.y + b.height) + pad,
+  };
   const n = await changeCount(page);
-  const group = page.locator('[data-testid="group-section"]');
-  assert.equal(await group.isEnabled(), true, "Group into section must be enabled with 2 nodes selected");
-  await group.click();
-  await waitForChange(page, n);
+  await page.locator('[data-testid="draw-section"]').click();
+  await page.waitForSelector('[data-testid="section-draw-surface"]');
+  await dragBy(page, from, to.x - from.x, to.y - from.y);
+  await waitForChange(page, n, "the drawn-section emission");
+  assert.equal(await page.$('[data-testid="section-draw-surface"]'), null, "the tool disarms after one frame");
   const def = await lastChange(page);
   assert.equal(def.canvas.sections.length, 1, "one section emitted");
-  assert.deepEqual([...def.canvas.sections[0].nodes].sort(), ["a", "b"], "section members are the selected nodes");
+  assert.deepEqual([...def.canvas.sections[0].nodes].sort(), ["a", "b"], "members are the enclosed nodes");
   await clickEmptyPane(page);
   await quiesce(page);
   return await lastChange(page);
 }
 
-test("B3 note: add -> edit content -> recolor -> resize -> delete via the Modal", async () => {
+test("B3 note: add -> edit in place -> toolbar bold/title/colour -> move -> resize -> delete via the Modal", async () => {
   const page = await open({ q: "fixture=flows" });
   try {
-    // Group into section is disabled with nothing selected.
-    assert.equal(await page.locator('[data-testid="group-section"]').isEnabled(), false);
-
     // add
     let n = await changeCount(page);
     await page.locator('[data-testid="add-note"]').click();
@@ -295,32 +296,61 @@ test("B3 note: add -> edit content -> recolor -> resize -> delete via the Modal"
     assert.equal(def.canvas.notes.length, 1, "Add note emits one note");
     const id = def.canvas.notes[0].id;
     const sel = `[data-note-id="${id}"]`;
+    const bar = `[data-note-toolbar="${id}"]`;
     await page.waitForSelector(sel);
 
-    // edit content (Markdown): open the editor, type, blur commits
+    // edit in place: double-click the note, type, click away commits the Markdown
+    const body = await uncoveredPoint(page, `${sel} [data-testid="note-view"]`);
+    await page.mouse.dblclick(body.x, body.y);
+    await page.waitForSelector(`${sel} [data-testid="note-content"][contenteditable]`);
+    assert.equal(await page.$(`${sel} textarea`), null, "no textarea editor");
     n = await changeCount(page);
-    await page.locator(`${sel} [data-testid="note-edit"]`).click();
-    const ta = page.locator(`${sel} [data-testid="note-content"]`);
-    await ta.fill("**bold** text");
-    await ta.evaluate((el) => el.blur());
+    await page.keyboard.type("Hello world");
+    await clickEmptyPane(page);
     await waitForChange(page, n, "the edited-content emission");
     def = await lastChange(page);
-    assert.equal(def.canvas.notes[0].content, "**bold** text", "edited content emitted");
-    await page.waitForSelector(`${sel} strong`);
+    assert.equal(def.canvas.notes[0].content, "Hello world", "typed content emitted");
 
-    // recolor
+    // the toolbar floats ABOVE the note (not inside it) once the note is selected
+    assert.equal(await page.$(bar), null, "no toolbar while unselected");
+    await page.mouse.click(body.x, body.y);
+    await page.waitForSelector(bar);
+    const tb = await rectOf(page, bar);
+    const box = await rectOf(page, sel);
+    assert.ok(tb.y + tb.height <= box.y, `toolbar ${JSON.stringify(tb)} sits above the note ${JSON.stringify(box)}`);
+    assert.equal(await page.$(`${sel} [data-testid="note-delete"]`), null, "no controls inside the note");
+
+    // bold, then a title size: each writes Markdown
     n = await changeCount(page);
-    await page.locator(`${sel} [data-testid="note-color"]`).fill("#ff0000");
+    await page.locator(`${bar} [data-testid="note-bold"]`).click();
+    await waitForChange(page, n, "the bold emission");
+    def = await lastChange(page);
+    assert.equal(def.canvas.notes[0].content, "**Hello world**", "bold writes **…**");
+    n = await changeCount(page);
+    await page.locator(`${bar} [data-testid="note-size"]`).click();
+    await page.locator(`${bar} [data-testid="note-size-1"]`).click();
+    await waitForChange(page, n, "the title emission");
+    def = await lastChange(page);
+    assert.equal(def.canvas.notes[0].content, "# **Hello world**", "Title writes a level-1 heading");
+    await clickEmptyPane(page);
+    await page.waitForSelector(`${sel} h1 strong`);
+
+    // recolor from the palette
+    await page.mouse.click(body.x, body.y);
+    await page.waitForSelector(bar);
+    n = await changeCount(page);
+    await page.locator(`${bar} [data-testid="note-color"]`).click();
+    await page.locator(`${bar} [data-testid="note-color-option"][data-color="#f87171"]`).click();
     await waitForChange(page, n, "the recolor emission");
     def = await lastChange(page);
-    assert.equal(def.canvas.notes[0].color, "#ff0000", "recolor emitted");
-    assert.equal(def.canvas.notes[0].content, "**bold** text", "recolor keeps the content");
+    assert.equal(def.canvas.notes[0].color, "#f87171", "recolor emitted");
+    assert.equal(def.canvas.notes[0].content, "# **Hello world**", "recolor keeps the content");
 
     const z = await zoomOf(page);
     const pos0 = def.canvas.notes[0].position;
     // move: drag the note's strip so its resize handle lands in the empty band below every
     // node and between the two columns (clear of nodes, edges, the minimap and the controls)
-    const gripAt = await uncoveredPoint(page, `${sel} [data-testid="note-drag"]`);
+    const gripAt = centre(await rectOf(page, `${bar} [data-testid="note-drag"]`));
     const h0 = centre(await rectOf(page, `${sel} [data-testid="note-resize"]`));
     const nodeRects = await page.evaluate(() =>
       [...document.querySelectorAll(".react-flow__node")].map((e) => {
@@ -345,8 +375,8 @@ test("B3 note: add -> edit content -> recolor -> resize -> delete via the Modal"
       Math.abs(pos1.x - (pos0.x + mdx / z)) < 2 && Math.abs(pos1.y - (pos0.y + mdy / z)) < 2,
       `note moved by the drag delta: ${JSON.stringify(pos0)} -> ${JSON.stringify(pos1)} (zoom ${z})`,
     );
-    assert.equal(def.canvas.notes[0].content, "**bold** text", "move keeps the content");
-    assert.equal(def.canvas.notes[0].color, "#ff0000", "move keeps the colour");
+    assert.equal(def.canvas.notes[0].content, "# **Hello world**", "move keeps the content");
+    assert.equal(def.canvas.notes[0].color, "#f87171", "move keeps the colour");
 
     // resize: drag the bottom-right handle; the size grows by the drag delta / zoom
     const before = def.canvas.notes[0].size;
@@ -373,7 +403,8 @@ test("B3 note: add -> edit content -> recolor -> resize -> delete via the Modal"
 
     // delete: asks through the Modal first — nothing is emitted until Confirm
     n = await changeCount(page);
-    await page.locator(`${sel} [data-testid="note-delete"]`).click();
+    await page.waitForSelector(bar);
+    await page.locator(`${bar} [data-testid="note-delete"]`).click();
     const confirm = await confirmDialog(page);
     assert.equal(await changeCount(page), n, "no emission before the Modal is confirmed");
     // Cancel keeps the note...
@@ -382,7 +413,9 @@ test("B3 note: add -> edit content -> recolor -> resize -> delete via the Modal"
     assert.equal(await changeCount(page), n, "cancel emits nothing");
     assert.ok(await page.$(sel), "cancel keeps the note");
     // ...Confirm deletes it.
-    await page.locator(`${sel} [data-testid="note-delete"]`).click();
+    const again = await uncoveredPoint(page, `${sel} [data-testid="note-view"]`);
+    await page.mouse.click(again.x, again.y);
+    await page.locator(`${bar} [data-testid="note-delete"]`).click();
     await (await confirmDialog(page)).click();
     await waitForChange(page, n, "the note-delete emission");
     def = await lastChange(page);
@@ -394,18 +427,17 @@ test("B3 note: add -> edit content -> recolor -> resize -> delete via the Modal"
   }
 });
 
-test("B3 section: select 2 nodes -> Group into section -> drag the section; both members move by the delta, one emission", async () => {
+test("B3 section: draw a frame around 2 nodes -> drag the section; both members move by the delta, one emission", async () => {
   const page = await open({ q: "fixture=flows" });
   try {
-    const grouped = await groupAB(page);
+    const grouped = await drawAB(page);
     const sec0 = grouped.canvas.sections[0];
     const aBefore = nodeById(grouped, "a").position;
     const bBefore = nodeById(grouped, "b").position;
     const cBefore = nodeById(grouped, "c").position;
     const z = await zoomOf(page);
 
-    const bar = await rectOf(page, `[data-section-id="${sec0.id}"] [data-testid="section-drag"]`);
-    const from = { x: bar.x + bar.width - 6, y: bar.y + bar.height / 2 };
+    const from = await uncoveredPoint(page, `[data-section-label="${sec0.id}"]`);
     const n = await changeCount(page);
     await dragBy(page, from, 90, 60);
     await waitForChange(page, n);
@@ -436,10 +468,102 @@ test("B3 section: select 2 nodes -> Group into section -> drag the section; both
   }
 });
 
+test("B3 section toolbar: label above the frame -> select -> toolbar above it (anchor, label, colour, delete) -> rename, recolor, move", async () => {
+  const page = await open({ q: "fixture=flows" });
+  try {
+    const grouped = await drawAB(page);
+    const id = grouped.canvas.sections[0].id;
+    const sel = `[data-section-id="${id}"]`;
+    const label = `[data-section-label="${id}"]`;
+    const bar = `[data-section-toolbar="${id}"]`;
+
+    // nothing inside the frame but the resize corner; the label sits above it
+    assert.equal(await page.$(`${sel} input, ${sel} button`), null, "no controls inside the frame");
+    assert.equal(await page.$(bar), null, "no toolbar while unselected");
+    let box = await rectOf(page, sel);
+    const lr = await rectOf(page, label);
+    assert.ok(lr.y + lr.height <= box.y + 1, `label ${JSON.stringify(lr)} sits above the frame ${JSON.stringify(box)}`);
+    assert.equal(await page.locator(label).textContent(), "Section");
+
+    // a click on the label selects: the toolbar takes the label's place, above the frame
+    const at = await uncoveredPoint(page, label);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForSelector(bar);
+    assert.equal(await page.$(label), null, "the toolbar replaces the label");
+    const tb = await rectOf(page, bar);
+    assert.ok(tb.y + tb.height <= box.y, `toolbar ${JSON.stringify(tb)} sits above the frame ${JSON.stringify(box)}`);
+    for (const t of ["section-drag", "section-title", "section-color", "section-delete"]) {
+      assert.ok(await page.$(`${bar} [data-testid="${t}"]`), `${t} is on the toolbar`);
+    }
+    assert.equal(await page.locator(`${bar} [data-testid="section-title"]`).inputValue(), "Section");
+    // a host's global `input[type="text"] { width: 100% }` (Studio has one) must not collapse
+    // the label field inside the toolbar's flex row
+    await page.addStyleTag({ content: 'input[type="text"] { width: 100%; margin-top: 4px; }' });
+    const field = await page.locator(`${bar} [data-testid="section-title"]`).evaluate((el) => ({
+      width: el.getBoundingClientRect().width,
+      text: el.scrollWidth,
+    }));
+    assert.ok(field.width >= 60 && field.width + 1 >= field.text, `label field is readable: ${JSON.stringify(field)}`);
+
+    // rename: one emission, on Enter
+    let n = await changeCount(page);
+    await page.locator(`${bar} [data-testid="section-title"]`).fill("Intake");
+    assert.equal(await changeCount(page), n, "typing does not emit");
+    await page.keyboard.press("Enter");
+    await waitForChange(page, n, "the rename emission");
+    let def = await lastChange(page);
+    assert.equal(def.canvas.sections[0].title, "Intake");
+
+    // recolor from the palette
+    n = await changeCount(page);
+    await page.locator(`${bar} [data-testid="section-color"]`).click();
+    await page.locator(`${bar} [data-testid="section-color-option"][data-color="#60a5fa"]`).click();
+    await waitForChange(page, n, "the recolor emission");
+    def = await lastChange(page);
+    assert.equal(def.canvas.sections[0].color, "#60a5fa");
+
+    // the anchor moves the section and its members
+    const z = await zoomOf(page);
+    const a0 = nodeById(def, "a").position;
+    const s0 = def.canvas.sections[0].position;
+    const grip = centre(await rectOf(page, `${bar} [data-testid="section-drag"]`));
+    n = await changeCount(page);
+    await dragBy(page, grip, 80, 50);
+    await waitForChange(page, n, "the anchor-move emission");
+    def = await lastChange(page);
+    const s1 = def.canvas.sections[0].position;
+    const a1 = nodeById(def, "a").position;
+    assert.ok(Math.abs(s1.x - (s0.x + 80 / z)) < 2 && Math.abs(s1.y - (s0.y + 50 / z)) < 2, `frame moved ${JSON.stringify(s0)} -> ${JSON.stringify(s1)}`);
+    assert.ok(Math.abs(a1.x - (a0.x + 80 / z)) < 2 && Math.abs(a1.y - (a0.y + 50 / z)) < 2, `member moved ${JSON.stringify(a0)} -> ${JSON.stringify(a1)}`);
+    box = await rectOf(page, sel);
+    const tb2 = await rectOf(page, bar);
+    assert.ok(tb2.y + tb2.height <= box.y && Math.abs(tb2.x - box.x) < 2, "the toolbar follows the frame");
+
+    // a press outside deselects; the label returns with the new title
+    await clickEmptyPane(page);
+    await page.waitForSelector(label);
+    assert.equal(await page.$(bar), null);
+    assert.equal(await page.locator(label).textContent(), "Intake");
+
+    // delete via the toolbar, confirmed through the Modal
+    const at2 = await uncoveredPoint(page, label);
+    await page.mouse.click(at2.x, at2.y);
+    n = await changeCount(page);
+    await page.locator(`${bar} [data-testid="section-delete"]`).click();
+    await (await confirmDialog(page)).click();
+    await waitForChange(page, n, "the section-delete emission");
+    def = await lastChange(page);
+    assert.equal((def.canvas?.sections ?? []).length, 0, "section gone");
+    assert.equal(def.nodes.length, 4, "deleting a section never touches nodes");
+  } finally {
+    await page.close();
+  }
+});
+
 test("B3 membership: dragging a member node out of its section removes it from the section's nodes[]", async () => {
   const page = await open({ q: "fixture=flows" });
   try {
-    await groupAB(page);
+    await drawAB(page);
     const a = centre(await rectOf(page, '.react-flow__node[data-id="a"]'));
     const n = await changeCount(page);
     await dragBy(page, a, 330, -70);
@@ -455,7 +579,7 @@ test("B3 membership: dragging a member node out of its section removes it from t
 test("B3 prune: deleting a member node removes it from the section (the frame and the other member stay)", async () => {
   const page = await open({ q: "fixture=flows" });
   try {
-    await groupAB(page);
+    await drawAB(page);
     const b = centre(await rectOf(page, '.react-flow__node[data-id="b"]'));
     await page.mouse.click(b.x, b.y);
     await page.waitForSelector('.react-flow__node[data-id="b"].selected');
@@ -475,7 +599,7 @@ test("B3 prune: deleting a member node removes it from the section (the frame an
 test("B3 rename: renaming a member node remaps it inside the section", async () => {
   const page = await open({ q: "fixture=flows" });
   try {
-    await groupAB(page);
+    await drawAB(page);
     const b = centre(await rectOf(page, '.react-flow__node[data-id="b"]'));
     await page.mouse.dblclick(b.x, b.y);
     await page.locator('button[aria-label="Rename node"]').click();
@@ -500,9 +624,9 @@ test("B3 savePosition:false: a moved note renders live but its stored position i
   const page = await open({ q: "save=0" });
   try {
     const noteBefore = await rectOf(page, '[data-note-id="n1"]');
-    const grip = await rectOf(page, '[data-note-id="n1"] [data-testid="note-drag"]');
+    const grip = await uncoveredPoint(page, '[data-note-id="n1"] [data-testid="note-view"]');
     const n = await changeCount(page);
-    await dragBy(page, { x: grip.x + 8, y: grip.y + grip.height / 2 }, 60, 30);
+    await dragBy(page, grip, 60, 30);
     await page.waitForTimeout(300);
     const noteAfter = await rectOf(page, '[data-note-id="n1"]');
     assert.ok(
@@ -519,9 +643,9 @@ test("B3 savePosition:false: a moved note renders live but its stored position i
     // Control: the same drag with savePosition on DOES persist (so the check above can fail).
     const page2 = await open();
     try {
-      const g2 = await rectOf(page2, '[data-note-id="n1"] [data-testid="note-drag"]');
+      const g2 = await uncoveredPoint(page2, '[data-note-id="n1"] [data-testid="note-view"]');
       const n2 = await changeCount(page2);
-      await dragBy(page2, { x: g2.x + 8, y: g2.y + g2.height / 2 }, 60, 30);
+      await dragBy(page2, g2, 60, 30);
       await waitForChange(page2, n2);
       const d2 = await lastChange(page2);
       assert.ok(d2.canvas.notes.find((x) => x.id === "n1").position.x > 260, "control: position persists when savePosition is on");
@@ -555,4 +679,78 @@ test("B4 settles: a host that feeds onChange back into value stops committing on
   } finally {
     await page.close();
   }
+});
+
+// B5: every port adds a step. The "app" fixture is one lone registry-app step `p` —
+// the state a freshly added catalog action is in.
+const pickerOpen = (page) =>
+  page.evaluate(() => [...document.querySelectorAll("h1,h2,h3")].some((h) => h.textContent === "Add a node"));
+const portOf = async (page, side) =>
+  centre(await rectOf(page, `.react-flow__node[data-id="p"] .react-flow__handle-${side}`));
+
+// Drag out of p's `side` port and let go on empty canvas, `dx`/`dy` away.
+async function dragOut(page, side, dx, dy) {
+  const from = await portOf(page, side);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + dx / 3, from.y + dy / 3, { steps: 6 });
+  await page.mouse.move(from.x + dx, from.y + dy, { steps: 6 });
+  await page.mouse.up();
+}
+
+async function addMerge(page, gesture) {
+  const before = await page.evaluate(() => window.__changes.length);
+  await gesture();
+  assert.ok(await pickerOpen(page), "the gesture opens the step picker");
+  await page.getByRole("button", { name: "Controls", exact: true }).click();
+  await page.getByRole("button", { name: /Merge/ }).click();
+  await page.waitForFunction((n) => window.__changes.length > n, before);
+  const wf = await page.evaluate(() => window.__changes[window.__changes.length - 1]);
+  // The new step opens on its config modal; close it to get back to the canvas.
+  await page.waitForSelector('dialog[aria-label="Merge"]');
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("dialog[open]", { state: "detached" });
+  return wf;
+}
+
+test("B5 ports: dragging any port to empty canvas (or clicking it) adds a step wired to that port", async () => {
+  const page = await open({ q: "fixture=app" });
+  const ids = new Set(["p"]);
+  const fresh = (wf) => {
+    const n = wf.nodes.find((x) => !ids.has(x.id));
+    assert.ok(n, `a step was added: ${JSON.stringify(wf.nodes)}`);
+    ids.add(n.id);
+    return n;
+  };
+
+  // Exit → the next step, wired p -> new on the success lane, at the drop point.
+  let wf = await addMerge(page, () => dragOut(page, "right", 240, 40));
+  let added = fresh(wf);
+  assert.deepEqual(
+    wf.edges.map((e) => [e.from, e.to, e.when ?? "success"]),
+    [["p", added.id, "success"]],
+  );
+  assert.ok(added.position.x > wf.nodes.find((n) => n.id === "p").position.x, "dropped right of p");
+  await page.waitForSelector(`.react-flow__edge[data-id="p->${added.id}"]`);
+
+  // Entry → a step before p.
+  wf = await addMerge(page, () => dragOut(page, "left", -260, 120));
+  added = fresh(wf);
+  assert.ok(wf.edges.some((e) => e.from === added.id && e.to === "p"), JSON.stringify(wf.edges));
+  await page.waitForSelector(`.react-flow__edge[data-id="${added.id}->p"]`);
+
+  // Error exit → a step on p's error lane.
+  wf = await addMerge(page, () => dragOut(page, "bottom", 60, 260));
+  added = fresh(wf);
+  assert.ok(
+    wf.edges.some((e) => e.from === "p" && e.to === added.id && e.when === "error"),
+    JSON.stringify(wf.edges),
+  );
+
+  // A plain click on a port (no drag) opens the picker too — never the library's
+  // silent click-to-connect mode.
+  const right = await portOf(page, "right");
+  await page.mouse.click(right.x, right.y);
+  assert.ok(await pickerOpen(page), "a click on the exit port opens the picker");
+  await page.keyboard.press("Escape");
 });

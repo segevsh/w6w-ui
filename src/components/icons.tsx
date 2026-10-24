@@ -13,6 +13,9 @@
  * `circle-half`): their source draws text characters (`◐`/`☀︎`/`☾`), which have
  * no path data to copy, so those three are drawn here in the same Feather idiom
  * the rest of the set's outlines follow. They say so in their own comment too.
+ * The canvas glyphs at the end (`sticky-note`, `frame`, `bold`, `grip`,
+ * `chevron-down`) are the same case: their first user is the workflow canvas
+ * itself, so there was no studio site to copy from.
  *
  * Colour is always `currentColor` — the glyph inherits it from its context, and
  * the entry decides only WHICH paint it is drawn with (see `IconVariant`).
@@ -77,7 +80,12 @@ export type IconName =
   | "maximize"
   | "form"
   | "braces"
-  | "settings-2";
+  | "settings-2"
+  | "sticky-note"
+  | "frame"
+  | "bold"
+  | "grip"
+  | "chevron-down";
 
 /**
  * Which attributes the shared `<svg>` root carries — i.e. how the glyph is
@@ -919,6 +927,86 @@ export const icons: Record<IconName, IconDef> = {
       <>
         <circle cx="12" cy="12" r="3" />
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/WorkflowFlowEditor.tsx's "Add note" canvas button — a sheet with a
+   * folded corner (Lucide `sticky-note`). Drawn here, not copied from a studio
+   * site: the canvas toolbar is its first and only user.
+   */
+  "sticky-note": {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z" />
+        <path d="M15 3v4a2 2 0 0 0 2 2h4" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/WorkflowFlowEditor.tsx's "Draw section" canvas tool — four crossing
+   * lines marking out a frame (Feather/Lucide `frame`). Drawn here; first user.
+   */
+  frame: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <line x1="22" y1="6" x2="2" y2="6" />
+        <line x1="22" y1="18" x2="2" y2="18" />
+        <line x1="6" y1="2" x2="6" y2="22" />
+        <line x1="18" y1="2" x2="18" y2="22" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/CanvasLayer.tsx's note toolbar — Feather `bold`. Drawn here; first user.
+   */
+  bold: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2.5,
+    body: (
+      <>
+        <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
+        <path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/CanvasLayer.tsx's note drag handle — two columns of three dots
+   * (Lucide `grip-vertical`). Drawn here; first user.
+   */
+  grip: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <circle cx="9" cy="12" r="1" />
+        <circle cx="9" cy="5" r="1" />
+        <circle cx="9" cy="19" r="1" />
+        <circle cx="15" cy="12" r="1" />
+        <circle cx="15" cy="5" r="1" />
+        <circle cx="15" cy="19" r="1" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/CanvasLayer.tsx's note toolbar menus — Feather `chevron-down`.
+   * Drawn here; first user.
+   */
+  "chevron-down": {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <polyline points="6 9 12 15 18 9" />
       </>
     ),
   },

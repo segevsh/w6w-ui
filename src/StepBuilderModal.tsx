@@ -1206,8 +1206,8 @@ function CallableList({
  */
 const TRIGGER_FIELD_TYPES: readonly string[] = ["string", "number", "boolean", "json"];
 
-function triggerFieldsOf(wf: WorkflowDetail): ActionParam[] {
-  const step = wf.steps.find((s) => isTriggerApp(s.uses.app));
+export function triggerFieldsOf(wf: WorkflowDetail): ActionParam[] {
+  const step = (wf.nodes ?? wf.steps ?? []).find((s) => isTriggerApp(s.uses.app));
   const raw = step?.with?.fields;
   if (!Array.isArray(raw)) return [];
   const out: ActionParam[] = [];

@@ -696,11 +696,20 @@ verified: 2026-10-17 · against `proj/26-10-16-00-pinned-pagination` @ `f0cf816`
   from `src/index.ts`. The engine ignores `canvas`. Limits (`MAX_NOTES`/`MAX_SECTIONS` 200,
   `MAX_NOTE_BYTES` 10240) mirror server `bll/workflow-definition.ts`.
 - **Trap: an inline `onSelectionChange` that sets a fresh array re-renders React Flow forever.** React
-  Flow re-invokes the handler after every re-render; `WorkflowFlowEditor.tsx:1532-1545` keeps the SAME
-  array when ids are unchanged. Guard B4 in `test/canvas-layer/canvas-layer-guards.test.cjs` pins it.
+  Flow re-invokes the handler after every re-render; `WorkflowFlowEditor.tsx` stores only primitive
+  selected node and edge ids in `onSelectionChange`. Guard B4 in `test/canvas-layer/canvas-layer-guards.test.cjs` pins it.
 - **Trap: the canvas-layer browser gate needs a playwright-core whose browser build is installed.**
   `test/canvas-layer/run.sh` takes `HOST_BROWSER=1 PW_CORE=<playwright-core 1.62.x path>`; this
   lane's `node_modules` carries only `playwright-core@1.60.0` (`ls node_modules/.pnpm | grep
   playwright-core`) whose chromium build 1223 is absent from `~/.cache/ms-playwright`, so point
   `PW_CORE` at a 1.62.x playwright-core (`ls ~/.cache/ms-playwright` lists chromium-1234/1243 only) when
   running it on the host; layer order is a stacking fact jsdom cannot test.
+
+## Canvas editing refinements (2026-10-24)
+
+Verified against the pending canvas diff based on `e7bb08c`: `docs/components/flow-editor.md`,
+`src/CanvasLayer.tsx`, `src/WorkflowFlowEditor.tsx`, and `src/note-markdown.ts`. Notes edit in place
+and expose color, heading and bold controls in a floating toolbar; section labels and their toolbar
+sit outside the frame. Draw section selects members by enclosed node centers. Clicking a port or
+dropping a connection on empty canvas opens the node builder. `triggerFieldsOf` reads canonical
+`nodes[]` and falls back to legacy `steps[]` (`src/StepBuilderModal.tsx`).

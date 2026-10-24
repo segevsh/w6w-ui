@@ -16,18 +16,303 @@
   background: color-mix(in srgb, var(--w6w-canvas-color, var(--w6w-panel)) 14%, transparent);
   pointer-events: none;
 }
-.w6w-canvas-section-title,
+// A note reads as a sticky: an opaque tint of its colour over the panel, so it stays legible in
+// both themes and over a section or the grid.
+.w6w-canvas-note {
+  border-color: color-mix(in srgb, var(--w6w-canvas-color, var(--w6w-border)) 55%, var(--w6w-panel));
+  background: color-mix(in srgb, var(--w6w-canvas-color, var(--w6w-panel)) 32%, var(--w6w-panel));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+.w6w-canvas-note.selected,
+.w6w-canvas-section.selected {
+  outline: 2px solid var(--w6w-accent);
+  outline-offset: 2px;
+}
 .w6w-canvas-note-body {
   pointer-events: auto;
   color: var(--w6w-text);
 }
+// A section's label sits above its frame's top-left corner, never inside the frame.
 .w6w-canvas-section-title {
-  display: inline-block;
-  padding: var(--w6w-sp-1, 4px) var(--w6w-sp-2, 8px);
-  font-weight: 600;
+  position: absolute;
+  max-width: 320px;
+  overflow: hidden;
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-1-5);
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--w6w-canvas-color, var(--w6w-text)) 55%, var(--w6w-text));
+  font-size: var(--w6w-fs-sm);
+  font-weight: var(--w6w-fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w6w-canvas-section-title.editable {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.w6w-canvas-section-title.editable:hover {
+  background: color-mix(in srgb, var(--w6w-canvas-color, var(--w6w-panel)) 18%, transparent);
 }
 .w6w-canvas-note-body {
+  box-sizing: border-box;
   height: 100%;
   overflow: auto;
-  padding: var(--w6w-sp-2, 8px);
+  padding: var(--w6w-sp-3) var(--w6w-sp-3);
+  font-size: var(--w6w-fs-sm);
+  line-height: var(--w6w-lh-normal);
+  overflow-wrap: anywhere;
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  ul,
+  ol {
+    margin: 0 0 var(--w6w-sp-1);
+  }
+  h1 {
+    font-size: var(--w6w-fs-2xl);
+    line-height: var(--w6w-lh-tight);
+  }
+  h2 {
+    font-size: var(--w6w-fs-xl);
+    line-height: var(--w6w-lh-tight);
+  }
+  h3 {
+    font-size: var(--w6w-fs-lg);
+    line-height: var(--w6w-lh-tight);
+  }
+  h4,
+  h5,
+  h6 {
+    font-size: var(--w6w-fs-base);
+  }
+}
+// The in-place editor shares the view's box and type, so editing does not shift the text.
+.w6w-canvas-note-editor {
+  outline: none;
+  cursor: text;
+  > div,
+  > h1,
+  > h2,
+  > h3,
+  > h4,
+  > h5,
+  > h6 {
+    margin: 0;
+  }
+}
+// The note's corner resize grip: two diagonal strokes, shown on hover or when selected.
+.w6w-note-resize {
+  position: absolute;
+  right: var(--w6w-sp-0-5);
+  bottom: var(--w6w-sp-0-5);
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  touch-action: none;
+  opacity: 0;
+  background: linear-gradient(
+    135deg,
+    transparent 45%,
+    var(--w6w-muted) 45% 52%,
+    transparent 52% 70%,
+    var(--w6w-muted) 70% 77%,
+    transparent 77%
+  );
+}
+.w6w-canvas-note:hover .w6w-note-resize,
+.w6w-canvas-note.selected .w6w-note-resize,
+.w6w-canvas-section.selected .w6w-note-resize {
+  opacity: 1;
+}
+.w6w-canvas-note-empty {
+  color: var(--w6w-muted);
+  font-style: italic;
+}
+
+// The selected note's floating toolbar.
+.w6w-note-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-0-5);
+  padding: var(--w6w-sp-1);
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  border: 1px solid var(--w6w-border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+  font-size: var(--w6w-fs-sm);
+  white-space: nowrap;
+  pointer-events: auto;
+  .w6w-icon-btn {
+    gap: var(--w6w-sp-1);
+    padding: var(--w6w-sp-1-5);
+    color: var(--w6w-text);
+  }
+}
+.w6w-note-toolbar-group {
+  position: relative;
+  display: inline-flex;
+}
+.w6w-note-toolbar-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--w6w-sp-0-5) var(--w6w-sp-0-5);
+  background: var(--w6w-border);
+}
+.w6w-note-grip {
+  cursor: grab;
+  touch-action: none;
+}
+.w6w-note-grip:active {
+  cursor: grabbing;
+}
+// The section toolbar's label field reads as the label until focused. Sized by its `size`
+// attribute, so a host's global `input { width: 100% }` must not collapse it inside the flex row.
+.w6w-note-toolbar .w6w-section-title-input {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: var(--w6w-sp-1) var(--w6w-sp-1-5);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--w6w-fw-semibold);
+}
+.w6w-note-toolbar .w6w-section-title-input:hover {
+  border-color: var(--w6w-border);
+}
+.w6w-note-toolbar .w6w-section-title-input:focus {
+  border-color: var(--w6w-accent);
+  outline: none;
+}
+.w6w-note-size-btn {
+  font-weight: var(--w6w-fw-semibold);
+}
+.w6w-note-delete:hover {
+  color: var(--w6w-danger);
+}
+.w6w-note-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--w6w-canvas-color);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%);
+}
+.w6w-note-menu {
+  position: absolute;
+  top: calc(100% + var(--w6w-sp-2));
+  left: 0;
+  z-index: 1;
+  display: flex;
+  padding: var(--w6w-sp-1);
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+.w6w-note-menu-colors {
+  display: grid;
+  grid-template-columns: repeat(5, 24px);
+  gap: var(--w6w-sp-1-5);
+  padding: var(--w6w-sp-2);
+}
+.w6w-note-swatch-btn {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--w6w-canvas-color);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%);
+  cursor: pointer;
+}
+.w6w-note-swatch-btn.active {
+  border-color: var(--w6w-panel);
+  box-shadow: 0 0 0 2px var(--w6w-accent);
+}
+.w6w-note-swatch-custom {
+  overflow: hidden;
+  background: conic-gradient(#f87171, #facc15, #4ade80, #60a5fa, #a78bfa, #f87171);
+  input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+}
+.w6w-note-menu-sizes {
+  flex-direction: column;
+  min-width: 150px;
+}
+.w6w-note-menu-item {
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-weight: var(--w6w-fw-semibold);
+  cursor: pointer;
+}
+.w6w-note-menu-item:hover {
+  background: var(--w6w-panel-2);
+}
+.w6w-note-size-1 {
+  font-size: var(--w6w-fs-xl);
+}
+.w6w-note-size-2 {
+  font-size: var(--w6w-fs-lg);
+}
+.w6w-note-size-3 {
+  font-size: var(--w6w-fs-base);
+}
+.w6w-note-size-0 {
+  font-size: var(--w6w-fs-sm);
+  font-weight: var(--w6w-fw-regular);
+}
+
+// The editor's top-left tool strip: "+ Node", then the canvas tools as icon buttons.
+.w6w-flow-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1-5);
+}
+.w6w-flow-tool {
+  padding: var(--w6w-sp-2);
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+  border: 1px solid var(--w6w-border);
+}
+.w6w-flow-tool.active {
+  border-color: var(--w6w-accent);
+  color: var(--w6w-accent);
+  background: color-mix(in srgb, var(--w6w-accent) 12%, var(--w6w-panel));
+}
+
+// The draw-section surface and the frame being dragged on it.
+.w6w-section-draw {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+  touch-action: none;
+}
+.w6w-section-draw-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed var(--w6w-accent);
+  border-radius: var(--w6w-radius, 6px);
+  background: color-mix(in srgb, var(--w6w-accent) 10%, transparent);
+  pointer-events: none;
 }

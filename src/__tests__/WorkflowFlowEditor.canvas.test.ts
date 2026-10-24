@@ -74,12 +74,25 @@ test("deleting a note or section is confirmed through ConfirmModal, never window
 test("readOnly hides the toolbar controls and gates every canvas mutation", () => {
   const panel = source.indexOf("{!readOnly && (\n                      <Panel");
   assert.ok(panel > 0, "toolbar Panel must sit under !readOnly");
-  const after = source.slice(panel, panel + 1400);
+  const after = source.slice(panel, panel + 1600);
   assert.match(after, /data-testid="add-note"/);
-  assert.match(after, /data-testid="group-section"/);
-  assert.match(after, /selectedIds\.length < 1/);
-  for (const name of ["addNote", "groupIntoSection", "onSectionDrop", "performCanvasDelete"]) {
+  assert.match(after, /data-testid="draw-section"/);
+  assert.match(source, /\{!readOnly && drawingSection && \(/, "the draw surface is gated");
+  for (const name of [
+    "addNote",
+    "addSectionAt",
+    "onSectionDrop",
+    "performCanvasDelete",
+    "addFromPort",
+  ]) {
     assert.match(callback(name), /if \(readOnly\) return;/, `${name} must guard readOnly`);
   }
   assert.match(source, /<CanvasLayer[\s\S]{0,200}readOnly=\{readOnly\}/);
+});
+
+test("a drawn section takes the nodes whose centre it encloses, never the selection", () => {
+  const body = callback("addSectionAt");
+  assert.match(body, /assignMembership\(withNew, id, members\)/);
+  assert.match(body, /nodeRect\(n\)/);
+  assert.doesNotMatch(body, /selected/i);
 });

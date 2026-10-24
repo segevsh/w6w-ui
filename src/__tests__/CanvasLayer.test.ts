@@ -72,6 +72,42 @@ test("section title is plain text, never HTML", async () => {
   assert.equal(title?.querySelector("b"), null);
 });
 
+test("a section keeps no controls in its frame; selecting its label opens the toolbar above it", async () => {
+  const vp = document.createElement("div");
+  document.body.appendChild(vp);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const changes: FlowCanvas[] = [];
+  await act(async () => {
+    createRoot(host).render(
+      createElement(CanvasLayer, { canvas, viewport: vp, onChange: (c) => changes.push(c) }),
+    );
+  });
+  const frame = vp.querySelector('[data-section-id="s1"]');
+  assert.ok(frame);
+  assert.equal(frame.querySelector("input, button, [data-testid=section-label]"), null);
+  const label = vp.querySelector<HTMLElement>('[data-section-label="s1"]');
+  assert.equal(label?.textContent, "<b>T</b>");
+  await act(async () => {
+    label?.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+  });
+  const bar = vp.querySelector('[data-section-toolbar="s1"]');
+  assert.ok(bar, "the toolbar replaces the label");
+  assert.equal(vp.querySelector('[data-section-label="s1"]'), null);
+  assert.equal(
+    frame.querySelector('[data-testid="section-toolbar"]'),
+    null,
+    "toolbar is outside the frame",
+  );
+  const title = bar.querySelector<HTMLInputElement>('[data-testid="section-title"]');
+  assert.equal(title?.value, "<b>T</b>");
+  for (const id of ["section-drag", "section-color", "section-delete"]) {
+    assert.ok(bar.querySelector(`[data-testid="${id}"]`), `${id} is on the toolbar`);
+  }
+  assert.ok(frame.classList.contains("selected"));
+  assert.equal(changes.length, 0, "selecting is not an edit");
+});
+
 test("renders nothing, without throwing, when the viewport is absent", async () => {
   const { host } = await mount(null);
   assert.equal(host.innerHTML, "");

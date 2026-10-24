@@ -19,6 +19,7 @@ import {
   // only borrows its parameter type for the `onConnect` handler.
   type addEdge,
   useEdgesState,
+  useNodeId,
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
@@ -75,6 +76,7 @@ import {
   useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
+import { IconButton } from "./components/IconButton.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ResolvedParams } from "./components/ResolvedParams.tsx";
@@ -314,6 +316,11 @@ interface StepControls {
   onRun: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  /**
+   * Open the step builder for a new step wired to this port — a plain click on the
+   * port. Same path as dropping a dragged connection on empty canvas.
+   */
+  onAddFromPort: (id: string, handleType: "source" | "target", handleId?: string) => void;
   readOnly?: boolean;
 }
 const StepControlsCtx = createContext<StepControls | null>(null);
@@ -449,13 +456,19 @@ function Inner({
     );
   }, [runState, setNodes, setEdges]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Every selected node (selectedId keeps only the first) — "Group into section" needs them all.
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   // Notes + sections: live canvas state (geometry renders live; persistCanvas decides what is
   // written). Re-seeded only on workflow identity change, like nodes/edges.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed on workflow identity change only
   const initialCanvas = useMemo<FlowCanvas>(() => value.canvas ?? {}, [value.id]);
   const [canvas, setCanvas] = useState<FlowCanvas>(initialCanvas);
+  // The draw-section tool, and the rectangle being dragged (client px) while it is armed.
+  const [drawingSection, setDrawingSection] = useState(false);
+  const [sectionDraft, setSectionDraft] = useState<{
+    sx: number;
+    sy: number;
+    ex: number;
+    ey: number;
+  } | null>(null);
   const [pendingCanvasDelete, setPendingCanvasDelete] = useState<{
     kind: "note" | "section";
     id: string;
@@ -643,6 +656,29 @@ function Inner({
       setBuilderOpen(true);
     },
     [readOnly, screenToFlowPosition, nodes, portsLookup],
+  );
+
+  // A plain click on a port: the same "new step wired to this port" as a drag
+  // dropped on empty canvas, with no drop point — the new step is placed one
+  // step-width out from the port's side of the node instead.
+  const addFromPort = useCallback(
+    (nodeId: string, handleType: "source" | "target", handleId?: string) => {
+      if (readOnly) return;
+      const n = nodes.find((x) => x.id === nodeId);
+      if (!n) return;
+      const r = nodeRect(n);
+      const lane = laneForSourceHandle(handleId);
+      const gap = 120;
+      const position =
+        handleType === "target"
+          ? { x: r.x - r.w - gap, y: r.y }
+          : lane === "error"
+            ? { x: r.x, y: r.y + r.h + gap }
+            : { x: r.x + r.w + gap, y: r.y };
+      setPendingConnect({ nodeId, handleType, position, lane });
+      setBuilderOpen(true);
+    },
+    [readOnly, nodes],
   );
 
   // Deleting a step is confirmed by an in-app modal, never a blocking browser
@@ -967,45 +1003,59 @@ function Inner({
       color: "#facc15",
       position: { x: Math.round(at.x - 100), y: Math.round(at.y - 60) },
       size: { width: 200, height: 120 },
-      content: "New note",
+      content: "",
     };
     onCanvasChange(clampCanvas({ ...canvas, notes: [...notes, note] }));
   }, [readOnly, canvas, screenToFlowPosition, onCanvasChange]);
 
-  const groupIntoSection = useCallback(() => {
-    if (readOnly) return;
-    const picked = nodes.filter((n) => selectedIds.includes(n.id));
-    if (picked.length === 0) return;
-    const pad = 32;
-    const rects = picked.map(nodeRect);
-    const x0 = Math.min(...rects.map((r) => r.x)) - pad;
-    const y0 = Math.min(...rects.map((r) => r.y)) - pad;
-    const x1 = Math.max(...rects.map((r) => r.x + r.w)) + pad;
-    const y1 = Math.max(...rects.map((r) => r.y + r.h)) + pad;
-    const sections = canvas.sections ?? [];
-    const id = nextCanvasId(
-      "section",
-      sections.map((x) => x.id),
-    );
-    const section = {
-      id,
-      title: "Section",
-      color: "#6366f1",
-      position: { x: Math.round(x0), y: Math.round(y0) },
-      size: { width: Math.round(x1 - x0), height: Math.round(y1 - y0) },
-      nodes: [] as string[],
+  // "Draw section" tool: the author drags a rectangle anywhere on the canvas (corners in flow
+  // units). The frame owns the nodes whose centre falls inside it — the same rule a node drag
+  // uses — so dragging the section carries them. A click without a drag drops a default frame.
+  const addSectionAt = useCallback(
+    (a: { x: number; y: number }, b: { x: number; y: number } | null) => {
+      if (readOnly) return;
+      const x0 = b ? Math.min(a.x, b.x) : a.x;
+      const y0 = b ? Math.min(a.y, b.y) : a.y;
+      const w = b ? Math.abs(b.x - a.x) : 360;
+      const h = b ? Math.abs(b.y - a.y) : 240;
+      const members = nodes
+        .filter((n) => {
+          const r = nodeRect(n);
+          const cx = r.x + r.w / 2;
+          const cy = r.y + r.h / 2;
+          return cx >= x0 && cx <= x0 + w && cy >= y0 && cy <= y0 + h;
+        })
+        .map((n) => n.id);
+      const sections = canvas.sections ?? [];
+      const id = nextCanvasId(
+        "section",
+        sections.map((x) => x.id),
+      );
+      const section = {
+        id,
+        title: "Section",
+        color: "#6366f1",
+        position: { x: Math.round(x0), y: Math.round(y0) },
+        size: { width: Math.round(w), height: Math.round(h) },
+        nodes: [] as string[],
+      };
+      const withNew = { ...canvas, sections: [...sections, section] };
+      onCanvasChange(clampCanvas(assignMembership(withNew, id, members)));
+    },
+    [readOnly, nodes, canvas, onCanvasChange],
+  );
+
+  // Esc leaves the draw-section tool without drawing.
+  useEffect(() => {
+    if (!drawingSection) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setDrawingSection(false);
+      setSectionDraft(null);
     };
-    const withNew = { ...canvas, sections: [...sections, section] };
-    onCanvasChange(
-      clampCanvas(
-        assignMembership(
-          withNew,
-          id,
-          picked.map((n) => n.id),
-        ),
-      ),
-    );
-  }, [readOnly, nodes, selectedIds, canvas, onCanvasChange]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawingSection]);
 
   // Dropping a section moves its members by the same delta: ONE emission, on drop.
   const onSectionDrop = useCallback(
@@ -1223,9 +1273,10 @@ function Inner({
       onRun: runStep,
       onDuplicate: duplicateStep,
       onDelete: deleteStep,
+      onAddFromPort: addFromPort,
       readOnly,
     }),
-    [runStep, duplicateStep, deleteStep, readOnly],
+    [runStep, duplicateStep, deleteStep, addFromPort, readOnly],
   );
 
   // Opens the step editor on a canvas node double-click — deliberately NOT
@@ -1530,26 +1581,21 @@ function Inner({
                       if (next !== base) onChange(next);
                     }}
                     onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
+                      // ⚠️ Only primitives are stored from this handler: React Flow re-invokes
+                      // it (inline) after every re-render of this component, so storing a
+                      // fresh array here defeats React's `Object.is` bail-out and loops —
+                      // a silent CPU burn in a page, a frozen main thread under Storybook.
                       setSelectedId(sel[0]?.id ?? null);
-                      // ⚠️ LOAD-BEARING: keep the SAME array when the ids are unchanged.
-                      // React Flow re-invokes this (inline) handler after every re-render of
-                      // this component; a fresh `sel.map(...)` array on each call defeats
-                      // React's `Object.is` bail-out, so the setState re-renders, which
-                      // re-invokes the handler, which ... — a perpetual loop that is only a
-                      // silent CPU burn in a plain page but freezes the main thread under
-                      // Storybook's `act()`-wrapped renderer (the story never paints).
-                      setSelectedIds((prev) => {
-                        const ids = sel.map((n) => n.id);
-                        return prev.length === ids.length && prev.every((id, i) => id === ids[i])
-                          ? prev
-                          : ids;
-                      });
                       setSelectedEdgeId(edgeSel[0]?.id ?? null);
                       // Deliberately NOT clearing `laneError` here — see its declaration.
                     }}
                     nodeTypes={nodeTypes}
                     nodesDraggable={!readOnly}
                     nodesConnectable={!readOnly}
+                    // A click on a port adds a step from it (PortHandle) — not the library's
+                    // click-a-port-then-click-another connect mode, which shows nothing
+                    // after the first click and reads as a dead port.
+                    connectOnClick={false}
                     elementsSelectable
                     // Reopen at the camera the author left, when the workflow stores one;
                     // otherwise fit the graph exactly as before. The two props are spread
@@ -1596,7 +1642,7 @@ function Inner({
                     </Controls>
                     <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
                     {!readOnly && (
-                      <Panel position="top-left">
+                      <Panel position="top-left" className="w6w-flow-tools">
                         <button
                           type="button"
                           className="w6w-btn"
@@ -1604,24 +1650,74 @@ function Inner({
                         >
                           + Node
                         </button>
-                        <button
-                          type="button"
-                          className="w6w-btn"
+                        <IconButton
+                          label="Add note"
+                          icon="sticky-note"
+                          className="w6w-flow-tool"
                           data-testid="add-note"
                           onClick={addNote}
-                        >
-                          Add note
-                        </button>
-                        <button
-                          type="button"
-                          className="w6w-btn"
-                          data-testid="group-section"
-                          disabled={selectedIds.length < 1}
-                          onClick={groupIntoSection}
-                        >
-                          Group into section
-                        </button>
+                        />
+                        <IconButton
+                          label="Draw section"
+                          title="Draw section — drag a frame on the canvas (Esc cancels)"
+                          icon="frame"
+                          className={`w6w-flow-tool${drawingSection ? " active" : ""}`}
+                          aria-pressed={drawingSection}
+                          data-testid="draw-section"
+                          onClick={() => {
+                            setDrawingSection(!drawingSection);
+                            setSectionDraft(null);
+                          }}
+                        />
                       </Panel>
+                    )}
+                    {/* The draw-section surface: above the graph (z 4, after the renderer)
+                    and below the panels (z 5), so the tool button stays clickable. */}
+                    {!readOnly && drawingSection && (
+                      <div
+                        className="w6w-section-draw nopan nodrag nowheel"
+                        data-testid="section-draw-surface"
+                        onPointerDown={(e) => {
+                          if (e.button !== 0) return;
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          const { clientX: x, clientY: y } = e;
+                          setSectionDraft({ sx: x, sy: y, ex: x, ey: y });
+                        }}
+                        onPointerMove={(e) => {
+                          const { clientX: x, clientY: y } = e;
+                          setSectionDraft((d) => d && { ...d, ex: x, ey: y });
+                        }}
+                        onPointerUp={() => {
+                          const d = sectionDraft;
+                          setSectionDraft(null);
+                          setDrawingSection(false);
+                          if (!d) return;
+                          const a = screenToFlowPosition({ x: d.sx, y: d.sy });
+                          const dragged = Math.abs(d.ex - d.sx) > 6 || Math.abs(d.ey - d.sy) > 6;
+                          addSectionAt(
+                            a,
+                            dragged ? screenToFlowPosition({ x: d.ex, y: d.ey }) : null,
+                          );
+                        }}
+                      >
+                        {sectionDraft &&
+                          (() => {
+                            const box = flowContainerRef.current?.getBoundingClientRect();
+                            const ox = box?.left ?? 0;
+                            const oy = box?.top ?? 0;
+                            return (
+                              <div
+                                className="w6w-section-draw-rect"
+                                style={{
+                                  left: Math.min(sectionDraft.sx, sectionDraft.ex) - ox,
+                                  top: Math.min(sectionDraft.sy, sectionDraft.ey) - oy,
+                                  width: Math.abs(sectionDraft.ex - sectionDraft.sx),
+                                  height: Math.abs(sectionDraft.ey - sectionDraft.sy),
+                                }}
+                              />
+                            );
+                          })()}
+                      </div>
                     )}
                     {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
                     `Edge.when`). Revealed only when exactly ONE edge is selected —
@@ -2231,6 +2327,18 @@ function PortHandle({
   id?: string;
   variant?: "error";
 }) {
+  const nodeId = useNodeId();
+  const ctrl = useContext(StepControlsCtx);
+  const canAdd = !!nodeId && !!ctrl && !ctrl.readOnly;
+  const add = () => {
+    if (canAdd && nodeId) ctrl.onAddFromPort(nodeId, type, id);
+  };
+  const what =
+    variant === "error"
+      ? "a step that handles this step's failure"
+      : type === "target"
+        ? "a step before this one"
+        : "the next step";
   return (
     <Handle
       type={type}
@@ -2240,14 +2348,18 @@ function PortHandle({
         variant === "error" ? "w6w-handle-error" : multiple ? "w6w-handle-multi" : undefined
       }
       style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
+      // A click (no drag) adds a step from this port; a drag still draws a connection.
+      onClick={canAdd ? add : undefined}
       title={
-        variant === "error"
-          ? "On error — drag to route this step's failure separately"
-          : multiple
-            ? type === "target"
-              ? "Accepts multiple incoming connections"
-              : "Multiple outgoing connections"
-            : undefined
+        canAdd
+          ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
+          : variant === "error"
+            ? "On error — drag to route this step's failure separately"
+            : multiple
+              ? type === "target"
+                ? "Accepts multiple incoming connections"
+                : "Multiple outgoing connections"
+              : undefined
       }
     />
   );

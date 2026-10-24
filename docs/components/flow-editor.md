@@ -151,15 +151,39 @@ const workflow: FlowWorkflow = {
 
 ### Making them on the canvas
 
-**Add note** and **Group into section** sit in the editor toolbar beside **+ Node**. The second one
-is disabled until at least one node is selected; it frames every selected node with 32px of padding
-and makes those nodes its members.
+Two icon buttons sit in the editor toolbar beside **+ Node**: **Add note** (the sticky-note icon)
+and **Draw section** (the frame icon).
 
-A note and a section are moved and resized the same way: drag its title strip to move it, drag its
-corner to resize it. Each carries its own controls — a color swatch, **Delete**, and a pencil that
-turns a note's body into a Markdown textarea (the text is kept when you click away). A section's
-title strip holds a text input: type into it and press Enter to rename the section.
-**Delete** asks first, in a modal; deleting a section removes the frame and keeps every node in it.
+**Draw section** is a tool, not an action on the selection: press it, then drag a rectangle anywhere
+on the canvas. The frame you draw becomes the section, and every node whose center falls inside it
+becomes a member. A click without a drag drops a 360×240 frame at that point. The tool disarms after
+one frame; Esc, or pressing the button again, cancels it.
+
+A note is edited in place. Click it to select it, drag its body to move it, and double-click it to
+type straight into it — there is no separate text box. Clicking away writes the note back as
+Markdown. Selecting a note opens a toolbar that floats above it, at a constant screen size at any
+zoom:
+
+- a **grip** that moves the note, which also works while you are typing in it
+- **Color**, a palette of note colors plus a custom picker
+- **Text size** (**Title**, **Heading**, **Subheading**, **Body**), which writes `#`, `##`, `###`
+  or no prefix on the lines it covers
+- **Bold**, which writes `**…**` around the selected text
+- **Delete**
+
+A format applies to the selected text while you are typing, or to the whole note when you are not.
+Each format is written to the note's Markdown as soon as it is applied. Pasted text arrives as plain
+text. Drag a note's corner to resize it.
+
+A section keeps nothing inside its frame except the resize corner. Its label sits just above the
+frame's top-left corner; drag the label to move the section, or click it to select the section.
+Selecting a section swaps the label for a toolbar in the same spot, at a constant screen size:
+
+- a **grip** that moves the section
+- the **label**, as a text field: type into it and press Enter (or click away) to rename the section
+- **Color**, the same palette as notes plus a custom picker
+- **Delete**, which asks first, in a modal; deleting a section removes the frame and keeps every
+  node in it
 
 Dragging a section carries its member nodes along by the same offset, and emits one `onChange` on
 drop rather than one per animation frame. Drag a node until its center sits inside a section and it
@@ -187,8 +211,8 @@ The drawing order is background, sections, notes, edges, then nodes. Notes and s
 below the graph, so selecting or dragging one never lifts it over an edge or a node. A click that
 passes through the empty part of a section still reaches the canvas and clears the selection.
 
-`readOnly` hides **Add note**, **Group into section** and every control on a note or section, and
-turns their drag off. Panning and zooming still work.
+`readOnly` hides **Add note**, **Draw section** and both toolbars, leaving a section's label as plain
+text, and turns off dragging and editing. Panning and zooming still work.
 
 ### Notes when `savePosition` is off
 
@@ -196,6 +220,16 @@ With `settings.savePosition: false` a note or section still moves and resizes li
 but the position and size that persist are the stored ones — the same rule node positions follow.
 A note or section created in that session keeps the geometry it was given, because there is no
 stored value to hold it at.
+
+## Add a step from a port
+
+Drag a connection out of any port on a node and let go on empty canvas: the node builder opens,
+and the step you pick is placed where you let go and connected to that port. The left port is the
+entry, the right port is the exit, and the red port underneath is the error exit. From the exit
+the new step comes next; from the entry it comes before this node; from the error exit it runs on
+the `error` lane. A plain click on a port does the same, placing the step beside that side of the
+node. It goes in by the same rules as an edge you draw by hand, which are set out below. With
+`readOnly`, ports do nothing.
 
 ## How many edges a node can have
 

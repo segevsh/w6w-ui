@@ -287,7 +287,10 @@ export interface WorkflowDetail {
   name: string;
   displayName?: string;
   description?: string;
-  steps: WorkflowStepSummary[];
+  /** The canonical (manifest v2) step list. */
+  nodes?: WorkflowStepSummary[];
+  /** The legacy (v1) step list; a definition carries one or the other. */
+  steps?: WorkflowStepSummary[];
 }
 
 /** Auth method declaration as exposed by an app's manifest. */

@@ -22,9 +22,9 @@ const step = (id: string, x: number, y: number) => ({
 });
 
 // "overlap": node c sits between a and b on the a->b edge (its line runs through
-// c's centre); note n1 covers c's centre; section s_over's title (top-left of the
-// frame) also covers c's centre. s_empty is a member-less frame whose interior
-// (below its title) must let a pane click through.
+// c's centre); note n1 covers c's centre; section s_over's label (above the frame's
+// top-left corner) also covers c's centre. s_empty is a member-less frame whose
+// interior must let a pane click through.
 const overlap: FlowWorkflow = {
   manifestVersion: "2",
   id: "wf_canvas",
@@ -35,9 +35,9 @@ const overlap: FlowWorkflow = {
     sections: [
       {
         id: "s_over",
-        title: "Over",
+        title: "Overlapping section",
         color: "#6366f1",
-        position: { x: 330, y: 10 },
+        position: { x: 330, y: 40 },
         size: { width: 400, height: 160 },
         nodes: [],
       },
@@ -75,7 +75,19 @@ const flows: FlowWorkflow = {
   ],
 };
 
-const base = FIXTURE === "flows" ? flows : overlap;
+// "app": one lone registry-app step (not an internal @w6w/* node), the shape a
+// freshly added catalog action takes — the port drag-out flows run against it.
+const app: FlowWorkflow = {
+  manifestVersion: "2",
+  id: "wf_app",
+  name: "app",
+  nodes: [
+    { id: "p", uses: { app: "notion", action: "admin-create-permission-group" }, position: { x: 0, y: 0 } },
+  ],
+  edges: [],
+};
+
+const base = FIXTURE === "flows" ? flows : FIXTURE === "app" ? app : overlap;
 const initial: FlowWorkflow = SAVE_POSITION
   ? base
   : { ...base, settings: { ...(base.settings ?? {}), savePosition: false } };

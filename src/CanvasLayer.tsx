@@ -2,17 +2,20 @@ import { useStore } from "@xyflow/react";
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  useEffect,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { Markdown } from "./Markdown.tsx";
 import type { CanvasNote, CanvasSection, FlowCanvas } from "./canvas-types.ts";
+import { Icon } from "./components/Icon.tsx";
+import { editableToMarkdown, noteDisplayMarkdown, renderEditable } from "./note-markdown.ts";
 
 export interface CanvasLayerProps {
   canvas: FlowCanvas;
   savePosition?: boolean;
-  /** Fired ONCE per finished edit (drop / blur / colour pick), never per frame. */
+  /** Fired ONCE per finished edit (drop / blur / colour pick / format), never per frame. */
   onChange?: (canvas: FlowCanvas) => void;
   /**
    * Fired once when a section is dropped after a drag, so the host can move the members by the
@@ -35,11 +38,35 @@ export interface CanvasLayerProps {
 
 export const SECTIONS_Z_INDEX = -2;
 export const NOTES_Z_INDEX = -1;
+/** The selected note's or section's toolbar sits above nodes and edges, unlike the box itself. */
+export const NOTE_TOOLBAR_Z_INDEX = 1000;
+
+/** The note colour palette offered by the toolbar (a custom colour is still accepted). */
+export const NOTE_COLORS = [
+  "#facc15",
+  "#fb923c",
+  "#f87171",
+  "#f472b6",
+  "#a78bfa",
+  "#60a5fa",
+  "#2dd4bf",
+  "#4ade80",
+  "#9ca3af",
+];
+
+/** Text sizes the toolbar writes, as Markdown heading levels (0 = body text). */
+const TEXT_SIZES = [
+  { level: 1, label: "Title" },
+  { level: 2, label: "Heading" },
+  { level: 3, label: "Subheading" },
+  { level: 0, label: "Body" },
+];
 
 const MIN_W = 80;
 const MIN_H = 48;
+const TOOLBAR_GAP = 10;
+const LABEL_GAP = 4;
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
-const ctl: CSSProperties = { pointerEvents: "auto", cursor: "pointer", marginLeft: 4 };
 
 type Geo = { x: number; y: number; w: number; h: number };
 type Drag = {
@@ -53,6 +80,26 @@ type Drag = {
   dy: number;
 };
 
+/** Select the whole editable so a toolbar format applies to the entire note. */
+function selectAll(el: HTMLElement) {
+  const sel = el.ownerDocument.getSelection();
+  if (!sel) return;
+  const range = el.ownerDocument.createRange();
+  range.selectNodeContents(el);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function caretToEnd(el: HTMLElement) {
+  const sel = el.ownerDocument.getSelection();
+  if (!sel) return;
+  const range = el.ownerDocument.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function Layers({
   canvas,
   className,
@@ -64,8 +111,35 @@ function Layers({
   onRequestDelete,
 }: CanvasLayerProps & { viewport: Element | null }) {
   const [live, setLive] = useState<Record<string, Geo>>({});
+  const [selectedNote, setSelectedNote] = useState<string | null>(null);
+  const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState<string | null>(null);
+  const [menu, setMenu] = useState<"color" | "size" | null>(null);
   const drag = useRef<Drag | null>(null);
+  const editor = useRef<HTMLElement | null>(null);
+  // A format picked while NOT editing: run once the editor has mounted, over the whole note.
+  const pendingFormat = useRef<(() => void) | null>(null);
+
+  // A press anywhere outside the selected note or section and its toolbar deselects it.
+  useEffect(() => {
+    if (!selectedNote && !selectedSection) return;
+    const inside = selectedNote
+      ? `[data-note-id="${selectedNote}"], [data-note-toolbar="${selectedNote}"]`
+      : `[data-section-label="${selectedSection}"], [data-section-toolbar="${selectedSection}"]`;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest?.(inside)) return;
+      // The toolbar unmounts before focus moves, so commit a title being typed first.
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.closest?.("[data-section-toolbar]")) active.blur();
+      setSelectedNote(null);
+      setSelectedSection(null);
+      setMenu(null);
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [selectedNote, selectedSection]);
+
   if (!viewport) return null;
   const editable = !readOnly && !!onChange;
   const sections: CanvasSection[] = canvas.sections ?? [];
@@ -89,6 +163,54 @@ function Layers({
       ...canvas,
       sections: sections.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     });
+
+  // Write the editor's Markdown back, when it differs from what is stored.
+  const commitNote = (id: string) => {
+    const el = editor.current;
+    const note = notes.find((n) => n.id === id);
+    if (!el?.isConnected || !note) return;
+    const md = editableToMarkdown(el);
+    if (md !== note.content) patchNote(id, { content: md });
+  };
+  const selectNote = (id: string) => {
+    setSelectedSection(null);
+    setSelectedNote(id);
+  };
+  const selectSection = (id: string) => {
+    setSelectedNote(null);
+    setSelectedSection(id);
+  };
+  const startEdit = (id: string, then?: () => void) => {
+    pendingFormat.current = then ?? null;
+    selectNote(id);
+    setEditingNote(id);
+    setMenu(null);
+  };
+  // Mounts the editable once per edit session: the DOM is owned by the browser while editing,
+  // so React renders the element empty and never reconciles its children.
+  const editorRef = (n: CanvasNote) => (el: HTMLDivElement | null) => {
+    if (!el || el.dataset.ready === "1") return;
+    el.dataset.ready = "1";
+    editor.current = el;
+    renderEditable(el, n.content);
+    el.focus();
+    const then = pendingFormat.current;
+    pendingFormat.current = null;
+    if (then) {
+      selectAll(el);
+      then();
+      commitNote(n.id);
+    } else caretToEnd(el);
+  };
+  /** Apply a `document.execCommand` format to the note — its selection, or all of it. */
+  const format = (id: string, command: string, arg?: string) => {
+    setMenu(null);
+    const run = () => document.execCommand(command, false, arg);
+    if (editingNote === id && editor.current?.isConnected) {
+      run();
+      commitNote(id);
+    } else startEdit(id, run);
+  };
 
   const frame = (d: Drag): Geo =>
     d.mode === "move"
@@ -145,6 +267,74 @@ function Layers({
 
   const cls = className ? ` ${className}` : "";
   const noInteract = "nopan nodrag nowheel";
+  const toolbarNote = editable ? notes.find((n) => n.id === selectedNote) : undefined;
+  const toolbarSection = editable ? sections.find((s) => s.id === selectedSection) : undefined;
+  const z = zoom || 1;
+  const toolbarStyle = (n: CanvasNote): CSSProperties => {
+    const g = geoOf(n);
+    // Anchored at the note's top-centre in flow units, then counter-scaled so the toolbar keeps
+    // its screen size at every zoom (scaling about its own bottom-centre keeps it anchored).
+    return {
+      left: g.x + g.w / 2,
+      top: g.y,
+      transform: `translate(-50%, calc(-100% - ${TOOLBAR_GAP / z}px)) scale(${1 / z})`,
+      transformOrigin: "50% 100%",
+      ["--w6w-canvas-color" as string]: n.color,
+    };
+  };
+  // A section's label and its toolbar share one spot: just above the frame's top-left corner,
+  // counter-scaled the same way about their bottom-left.
+  const aboveFrame = (s: CanvasSection, gap: number): CSSProperties => {
+    const g = geoOf(s);
+    return {
+      left: g.x,
+      top: g.y,
+      transform: `translate(0, calc(-100% - ${gap / z}px)) scale(${1 / z})`,
+      transformOrigin: "0 100%",
+      ["--w6w-canvas-color" as string]: s.color,
+    };
+  };
+  const colorMenu = (
+    current: string,
+    label: string,
+    testid: string,
+    pick: (color: string) => void,
+  ) => (
+    <div className="w6w-note-menu w6w-note-menu-colors" role="menu">
+      {NOTE_COLORS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          role="menuitemradio"
+          aria-checked={c === current}
+          aria-label={`Colour ${c}`}
+          title={c}
+          className={`w6w-note-swatch-btn${c === current ? " active" : ""}`}
+          style={{ ["--w6w-canvas-color" as string]: c }}
+          data-testid={`${testid}-option`}
+          data-color={c}
+          onClick={() => {
+            setMenu(null);
+            if (c !== current) pick(c);
+          }}
+        />
+      ))}
+      <label className="w6w-note-swatch-btn w6w-note-swatch-custom" title="Custom">
+        <input
+          type="color"
+          aria-label={`Custom ${label} colour`}
+          data-testid={`${testid}-input`}
+          value={current}
+          onChange={(e) => pick(e.currentTarget.value)}
+        />
+      </label>
+    </div>
+  );
+  // Every press on a toolbar is kept from taking focus (so a note format applies to the editor's
+  // own selection instead of blurring it away), except in its inputs.
+  const keepFocus = (e: { target: EventTarget; preventDefault: () => void }) => {
+    if (!(e.target as Element).closest("input")) e.preventDefault();
+  };
   return createPortal(
     <>
       <div
@@ -155,175 +345,315 @@ function Layers({
         {sections.map((s) => (
           <div
             key={s.id}
-            className="w6w-canvas-section"
+            className={`w6w-canvas-section${selectedSection === s.id ? " selected" : ""}`}
             style={boxStyle(s)}
             data-section-id={s.id}
             data-testid="section"
           >
-            <div
-              className={`w6w-canvas-section-title ${noInteract}`}
-              data-testid="section-drag"
-              style={editable ? { cursor: "grab", touchAction: "none" } : undefined}
-              onPointerDown={editable ? (e) => begin(e, s, "section", "move") : undefined}
-            >
-              {editable ? (
-                <input
-                  type="text"
-                  aria-label="Section title"
-                  data-testid="section-title"
-                  defaultValue={s.title}
-                  key={`${s.id}:${s.title}`}
-                  style={{ pointerEvents: "auto", font: "inherit", width: "10em" }}
-                  onPointerDown={stop}
-                  onBlur={(e) => {
-                    const v = e.currentTarget.value;
-                    if (v !== s.title) patchSection(s.id, { title: v });
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") e.currentTarget.blur();
-                  }}
-                />
-              ) : (
-                s.title
-              )}
-              {editable && (
-                <>
-                  <input
-                    type="color"
-                    aria-label="Section colour"
-                    data-testid="section-color"
-                    value={s.color}
-                    style={ctl}
-                    onPointerDown={stop}
-                    onChange={(e) => patchSection(s.id, { color: e.currentTarget.value })}
-                  />
-                  <button
-                    type="button"
-                    aria-label="Delete section"
-                    data-testid="section-delete"
-                    style={ctl}
-                    onPointerDown={stop}
-                    onClick={() => onRequestDelete?.("section", s.id)}
-                  >
-                    ×
-                  </button>
-                </>
-              )}
-            </div>
             {editable && (
               <div
-                className={noInteract}
+                className={`w6w-note-resize ${noInteract}`}
                 data-testid="section-resize"
-                style={resizeHandle}
                 onPointerDown={(e) => begin(e, s, "section", "resize")}
               />
             )}
           </div>
         ))}
+        {/* The label sits outside its frame, above the top-left corner; the toolbar takes its
+        place while the section is selected. */}
+        {sections.map((s) =>
+          toolbarSection?.id === s.id ? null : (
+            <div
+              key={s.id}
+              className={`w6w-canvas-section-title${editable ? ` editable ${noInteract}` : ""}`}
+              style={aboveFrame(s, LABEL_GAP)}
+              data-section-label={s.id}
+              data-testid="section-label"
+              title={editable ? "Click to edit · drag to move" : undefined}
+              onPointerDown={
+                editable
+                  ? (e) => {
+                      selectSection(s.id);
+                      begin(e, s, "section", "move");
+                    }
+                  : undefined
+              }
+            >
+              {s.title || (editable ? "Untitled section" : "")}
+            </div>
+          ),
+        )}
       </div>
       <div
         className={`w6w-canvas-layer w6w-canvas-notes${cls}`}
         style={{ zIndex: NOTES_Z_INDEX }}
         data-testid="w6w-canvas-notes"
       >
-        {notes.map((n) => (
-          <div
-            key={n.id}
-            className="w6w-canvas-note"
-            style={boxStyle(n)}
-            data-note-id={n.id}
-            data-testid="note"
-          >
-            {editable && (
-              <div
-                className={noInteract}
-                data-testid="note-drag"
-                style={{
-                  pointerEvents: "auto",
-                  cursor: "grab",
-                  touchAction: "none",
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  padding: "2px 4px",
-                }}
-                onPointerDown={(e) => begin(e, n, "note", "move")}
-              >
-                <button
-                  type="button"
-                  aria-label="Edit note"
-                  data-testid="note-edit"
-                  style={ctl}
-                  onPointerDown={stop}
-                  onClick={() => setEditingNote(editingNote === n.id ? null : n.id)}
-                >
-                  ✎
-                </button>
-                <input
-                  type="color"
-                  aria-label="Note colour"
-                  data-testid="note-color"
-                  value={n.color}
-                  style={ctl}
-                  onPointerDown={stop}
-                  onChange={(e) => patchNote(n.id, { color: e.currentTarget.value })}
-                />
-                <button
-                  type="button"
-                  aria-label="Delete note"
-                  data-testid="note-delete"
-                  style={ctl}
-                  onPointerDown={stop}
-                  onClick={() => onRequestDelete?.("note", n.id)}
-                >
-                  ×
-                </button>
-              </div>
-            )}
-            <div className={`w6w-canvas-note-body ${noInteract}`}>
-              {editable && editingNote === n.id ? (
-                <textarea
+        {notes.map((n) => {
+          const editing = editable && editingNote === n.id;
+          return (
+            <div
+              key={n.id}
+              className={`w6w-canvas-note${selectedNote === n.id ? " selected" : ""}`}
+              style={boxStyle(n)}
+              data-note-id={n.id}
+              data-testid="note"
+            >
+              {/* Distinct keys: the editor's DOM is browser-owned, so it must never be a node React
+              reuses for the rendered view (or the other way round). */}
+              {editing ? (
+                <div
+                  key="editor"
+                  ref={editorRef(n)}
+                  className={`w6w-canvas-note-body w6w-canvas-note-editor ${noInteract}`}
+                  contentEditable
+                  suppressContentEditableWarning
+                  role="textbox"
+                  tabIndex={0}
+                  aria-multiline="true"
                   aria-label="Note content"
                   data-testid="note-content"
-                  defaultValue={n.content}
-                  style={{ width: "100%", height: "100%", boxSizing: "border-box" }}
-                  onBlur={(e) => {
-                    const v = e.currentTarget.value;
+                  onPointerDown={stop}
+                  onBlur={() => {
+                    commitNote(n.id);
+                    editor.current = null;
                     setEditingNote(null);
-                    if (v !== n.content) patchNote(n.id, { content: v });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") e.currentTarget.blur();
+                  }}
+                  onPaste={(e) => {
+                    // Plain text only: pasted HTML would bring markup the Markdown can't hold.
+                    e.preventDefault();
+                    document.execCommand(
+                      "insertText",
+                      false,
+                      e.clipboardData.getData("text/plain"),
+                    );
                   }}
                 />
               ) : (
-                <Markdown content={n.content} />
+                <div
+                  key="view"
+                  className={`w6w-canvas-note-body ${noInteract}`}
+                  data-testid="note-view"
+                  style={editable ? { cursor: "grab", touchAction: "none" } : undefined}
+                  onPointerDown={
+                    editable
+                      ? (e) => {
+                          selectNote(n.id);
+                          begin(e, n, "note", "move");
+                        }
+                      : undefined
+                  }
+                  onDoubleClick={editable ? () => startEdit(n.id) : undefined}
+                >
+                  {n.content.trim() ? (
+                    <Markdown content={noteDisplayMarkdown(n.content)} />
+                  ) : (
+                    editable && <span className="w6w-canvas-note-empty">Double-click to write</span>
+                  )}
+                </div>
+              )}
+              {editable && (
+                <div
+                  className={`w6w-note-resize ${noInteract}`}
+                  data-testid="note-resize"
+                  onPointerDown={(e) => begin(e, n, "note", "resize")}
+                />
               )}
             </div>
-            {editable && (
-              <div
-                className={noInteract}
-                data-testid="note-resize"
-                style={resizeHandle}
-                onPointerDown={(e) => begin(e, n, "note", "resize")}
-              />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
+      {toolbarSection && (
+        <div
+          className={`w6w-canvas-layer${cls}`}
+          style={{ zIndex: NOTE_TOOLBAR_Z_INDEX }}
+          data-testid="w6w-canvas-overlay"
+        >
+          <div
+            className={`w6w-note-toolbar w6w-section-toolbar ${noInteract}`}
+            role="toolbar"
+            aria-label="Section"
+            data-testid="section-toolbar"
+            data-section-toolbar={toolbarSection.id}
+            style={aboveFrame(toolbarSection, TOOLBAR_GAP)}
+            onPointerDown={stop}
+            onMouseDown={keepFocus}
+          >
+            <button
+              type="button"
+              className="w6w-icon-btn w6w-note-grip"
+              aria-label="Move section"
+              title="Drag to move"
+              data-testid="section-drag"
+              onPointerDown={(e) => begin(e, toolbarSection, "section", "move")}
+            >
+              <Icon name="grip" />
+            </button>
+            <input
+              type="text"
+              className="w6w-section-title-input"
+              aria-label="Section title"
+              placeholder="Untitled section"
+              data-testid="section-title"
+              defaultValue={toolbarSection.title}
+              key={`${toolbarSection.id}:${toolbarSection.title}`}
+              size={Math.max(8, Math.min(32, toolbarSection.title.length + 1))}
+              onBlur={(e) => {
+                const v = e.currentTarget.value;
+                if (v !== toolbarSection.title) patchSection(toolbarSection.id, { title: v });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+              }}
+            />
+            <span className="w6w-note-toolbar-sep" />
+            <div className="w6w-note-toolbar-group">
+              <button
+                type="button"
+                className={`w6w-icon-btn${menu === "color" ? " active" : ""}`}
+                aria-label="Section colour"
+                aria-expanded={menu === "color"}
+                title="Colour"
+                data-testid="section-color"
+                onClick={() => setMenu(menu === "color" ? null : "color")}
+              >
+                <span className="w6w-note-swatch" />
+                <Icon name="chevron-down" size={12} />
+              </button>
+              {menu === "color" &&
+                colorMenu(toolbarSection.color, "section", "section-color", (c) =>
+                  patchSection(toolbarSection.id, { color: c }),
+                )}
+            </div>
+            <span className="w6w-note-toolbar-sep" />
+            <button
+              type="button"
+              className="w6w-icon-btn w6w-note-delete"
+              aria-label="Delete section"
+              title="Delete section"
+              data-testid="section-delete"
+              onClick={() => {
+                setMenu(null);
+                onRequestDelete?.("section", toolbarSection.id);
+              }}
+            >
+              <Icon name="trash" />
+            </button>
+          </div>
+        </div>
+      )}
+      {toolbarNote && (
+        <div
+          className={`w6w-canvas-layer${cls}`}
+          style={{ zIndex: NOTE_TOOLBAR_Z_INDEX }}
+          data-testid="w6w-canvas-overlay"
+        >
+          <div
+            className={`w6w-note-toolbar ${noInteract}`}
+            role="toolbar"
+            aria-label="Note"
+            data-testid="note-toolbar"
+            data-note-toolbar={toolbarNote.id}
+            style={toolbarStyle(toolbarNote)}
+            onPointerDown={stop}
+            onMouseDown={keepFocus}
+          >
+            <button
+              type="button"
+              className="w6w-icon-btn w6w-note-grip"
+              aria-label="Move note"
+              title="Drag to move"
+              data-testid="note-drag"
+              onPointerDown={(e) => begin(e, toolbarNote, "note", "move")}
+            >
+              <Icon name="grip" />
+            </button>
+            <span className="w6w-note-toolbar-sep" />
+            <div className="w6w-note-toolbar-group">
+              <button
+                type="button"
+                className={`w6w-icon-btn${menu === "color" ? " active" : ""}`}
+                aria-label="Note colour"
+                aria-expanded={menu === "color"}
+                title="Colour"
+                data-testid="note-color"
+                onClick={() => setMenu(menu === "color" ? null : "color")}
+              >
+                <span className="w6w-note-swatch" />
+                <Icon name="chevron-down" size={12} />
+              </button>
+              {menu === "color" &&
+                colorMenu(toolbarNote.color, "note", "note-color", (c) =>
+                  patchNote(toolbarNote.id, { color: c }),
+                )}
+            </div>
+            <span className="w6w-note-toolbar-sep" />
+            <div className="w6w-note-toolbar-group">
+              <button
+                type="button"
+                className={`w6w-icon-btn w6w-note-size-btn${menu === "size" ? " active" : ""}`}
+                aria-label="Text size"
+                aria-expanded={menu === "size"}
+                title="Text size"
+                data-testid="note-size"
+                onClick={() => setMenu(menu === "size" ? null : "size")}
+              >
+                Aa
+                <Icon name="chevron-down" size={12} />
+              </button>
+              {menu === "size" && (
+                <div className="w6w-note-menu w6w-note-menu-sizes" role="menu">
+                  {TEXT_SIZES.map((s) => (
+                    <button
+                      key={s.level}
+                      type="button"
+                      role="menuitem"
+                      className={`w6w-note-menu-item w6w-note-size-${s.level}`}
+                      data-testid={`note-size-${s.level}`}
+                      onClick={() =>
+                        format(toolbarNote.id, "formatBlock", s.level ? `<h${s.level}>` : "<div>")
+                      }
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className="w6w-icon-btn"
+              aria-label="Bold"
+              title="Bold"
+              data-testid="note-bold"
+              onClick={() => format(toolbarNote.id, "bold")}
+            >
+              <Icon name="bold" />
+            </button>
+            <span className="w6w-note-toolbar-sep" />
+            <button
+              type="button"
+              className="w6w-icon-btn w6w-note-delete"
+              aria-label="Delete note"
+              title="Delete note"
+              data-testid="note-delete"
+              onClick={() => {
+                setMenu(null);
+                onRequestDelete?.("note", toolbarNote.id);
+              }}
+            >
+              <Icon name="trash" />
+            </button>
+          </div>
+        </div>
+      )}
     </>,
     viewport,
   );
 }
-
-const resizeHandle: CSSProperties = {
-  position: "absolute",
-  right: 0,
-  bottom: 0,
-  width: 12,
-  height: 12,
-  cursor: "nwse-resize",
-  pointerEvents: "auto",
-  touchAction: "none",
-  background: "var(--w6w-canvas-color, currentColor)",
-  opacity: 0.6,
-};
 
 function FlowResolved(props: CanvasLayerProps) {
   const viewport = useStore((s) => s.domNode?.querySelector(".react-flow__viewport") ?? null);
@@ -331,7 +661,10 @@ function FlowResolved(props: CanvasLayerProps) {
   return <Layers {...props} zoom={props.zoom ?? zoom} viewport={viewport} />;
 }
 
-/** Sections (z -2) and notes (z -1) rendered behind edges/nodes, inside the flow viewport. */
+/**
+ * Sections (z -2) and notes (z -1) rendered behind edges/nodes, inside the flow viewport; the
+ * selected note's or section's toolbar floats above everything.
+ */
 export function CanvasLayer(props: CanvasLayerProps) {
   if (props.viewport !== undefined) {
     return <Layers {...props} viewport={props.viewport} />;
