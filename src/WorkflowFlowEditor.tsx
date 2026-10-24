@@ -3144,6 +3144,7 @@ export function StepEditModal({
             <button
               type="button"
               className="w6w-btn"
+              disabled={blocked}
               onClick={() => setTab(tab === "setup" ? "configure" : "test")}
             >
               Next →

@@ -74,6 +74,10 @@ test("W3b — StepNodeCard badge: role=img, aria-label+title tooltip, warning Ic
   assert.match(text, /data\.stepProblem && \(\s*<span/);
   assert.match(text, /role="img"/);
   assert.match(text, /aria-label=\{stepProblemTooltip\(data\.stepProblem\)\}/);
+  assert.match(
+    text,
+    /title=\{stepProblemTooltip\(data\.stepProblem\)\}[\s\S]*?<Icon name="warning"/,
+  );
   assert.match(text, /<Icon name="warning"/);
 });
 

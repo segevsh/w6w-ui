@@ -210,6 +210,18 @@ test("A4: Configure/Test disabled, clicks stay on Setup, alert names the id", as
   await act(async () => root.unmount());
 });
 
+test("A4: footer Next is disabled while blocked and clicking leaves Setup active", async () => {
+  const { container, root } = await mount(STEP, PROBLEM);
+  const next = Array.from(container.querySelectorAll(".w6w-stepconfig-footer button")).find((b) =>
+    b.textContent?.includes("Next"),
+  ) as HTMLButtonElement | undefined;
+  assert.ok(next);
+  assert.equal(next.disabled, true);
+  await act(async () => next.click());
+  assert.equal(active(container), "Setup");
+  await act(async () => root.unmount());
+});
+
 test("A5: picking another connection unblocks; onChange differs only in uses.connection", async () => {
   const { container, root, changes } = await mount(STEP, PROBLEM, "props", [
     { id: "conn_1", appId: "sendgrid", authKey: "apiKey", displayName: "prod" },
@@ -232,6 +244,10 @@ test("A5: picking another connection unblocks; onChange differs only in uses.con
   const t = tabs(container);
   assert.equal(t.Configure.disabled, false);
   assert.equal(t.Test.disabled, false);
+  const next = Array.from(container.querySelectorAll(".w6w-stepconfig-footer button")).find((b) =>
+    b.textContent?.includes("Next"),
+  ) as HTMLButtonElement | undefined;
+  assert.equal(next?.disabled, false);
   assert.equal(container.querySelector('[role="alert"]'), null);
   await act(async () => root.unmount());
 });
