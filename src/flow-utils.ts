@@ -19,6 +19,7 @@ import {
 // here: `workflowToFlow` is memoized on workflow identity alone (Trap 1), so
 // threading run state through it would repaint nothing on a poll tick.
 import type { RunStatus, StepVisualState } from "./run-visuals.ts";
+import type { StepProblem } from "./step-problems.ts";
 
 export interface StepNodeData extends Record<string, unknown> {
   step: FlowStep;
@@ -40,6 +41,12 @@ export interface StepNodeData extends Record<string, unknown> {
    * provenance/persistence rules as `stepStatus`.
    */
   runStatus?: RunStatus;
+  /**
+   * A host-supplied problem with this step (e.g. a dangling connection).
+   * Patched in by `WorkflowFlowEditor.tsx`'s `stepProblems` effect — never set
+   * here and never read by {@link flowToWorkflow} (not persisted).
+   */
+  stepProblem?: StepProblem;
 }
 
 export type StepNode = Node<StepNodeData>;
