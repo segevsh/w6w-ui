@@ -27,8 +27,12 @@ export interface DynamicFieldState {
 
 export interface UseDynamicFields {
   fields: Record<string, DynamicFieldState>;
-  /** Call when a key is committed (select/pick/blur). */
-  commit(key: string, previous: Record<string, unknown>): void;
+  /** A pick committed `value` for `key` (select/Combobox/checkbox): one change call if any field refreshes on it. */
+  commit(key: string, value: unknown): void;
+  /** Focus entered `key`: remember the pre-edit form (the `previous` of a later blur commit). */
+  focus(key: string): void;
+  /** Focus left `key`: commit a text edit made since focus (never per keystroke). */
+  blur(key: string): void;
   retry(key: string): void;
 }
 
@@ -64,8 +68,10 @@ export function useDynamicFields(
       changed?: string[],
       previous?: Record<string, unknown>,
       only?: string,
+      next?: Record<string, unknown>,
     ) => {
-      const { params: ps, values: vs, dynamic: ctx, resolve: call } = latest.current;
+      const { params: ps, values: cur, dynamic: ctx, resolve: call } = latest.current;
+      const vs = next ?? cur;
       if (!ctx || !call || !ctx.connectionId) return;
       const plan = planRequests(ps, vs, reason, changed, previous);
       if (!plan) return;
@@ -77,7 +83,7 @@ export function useDynamicFields(
       const apply = (key: string, options: ParamOption[]) => {
         const p = byKey.get(key);
         if (!p) return;
-        const r = reconcileValue(latest.current.values[key], options, {
+        const r = reconcileValue(vs[key], options, {
           allowCustom: allowCustomOf(p),
           reason,
           appLabel,
@@ -97,15 +103,16 @@ export function useDynamicFields(
           apply(key, hit);
         } else fields.push(key);
       }
-      const flush = () => {
+      const flush = (sync = false) => {
         if (cleared.length === 0) return;
-        const next = { ...latest.current.values };
-        for (const k of cleared) delete next[k];
-        latest.current.onChange(next);
+        // Sync (cache) path clears against the just-committed form; async against the live one.
+        const out = { ...(sync ? vs : latest.current.values) };
+        for (const k of cleared) delete out[k];
+        latest.current.onChange(out);
       };
       if (Object.keys(cached).length > 0) setRemote((r) => ({ ...r, ...cached }));
       if (fields.length === 0) {
-        flush();
+        flush(true);
         return;
       }
       for (const f of inflight.current) {
@@ -176,8 +183,28 @@ export function useDynamicFields(
     };
   }, [ctxKey, active, run]);
 
+  // Pre-edit form per focused key (a text edit commits on blur, against this).
+  const snaps = useRef(new Map<string, Record<string, unknown>>());
   const commit = useCallback(
-    (key: string, previous: Record<string, unknown>) => run("change", [key], previous),
+    (key: string, value: unknown) => {
+      const previous = snaps.current.get(key) ?? latest.current.values;
+      snaps.current.delete(key);
+      run("change", [key], previous, undefined, { ...latest.current.values, [key]: value });
+    },
+    [run],
+  );
+  const focus = useCallback((key: string) => {
+    if (!snaps.current.has(key)) snaps.current.set(key, latest.current.values);
+  }, []);
+  const blur = useCallback(
+    (key: string) => {
+      const previous = snaps.current.get(key);
+      snaps.current.delete(key);
+      if (!previous) return;
+      const now = latest.current.values;
+      if (JSON.stringify(previous[key]) === JSON.stringify(now[key])) return;
+      run("change", [key], previous);
+    },
     [run],
   );
   const retry = useCallback((key: string) => run("init", undefined, undefined, key), [run]);
@@ -207,5 +234,5 @@ export function useDynamicFields(
     return out;
   }, [active, dynamic, params, values, remote]);
 
-  return { fields, commit, retry };
+  return { fields, commit, focus, blur, retry };
 }

@@ -402,10 +402,33 @@ function RepeatField({
  *  shape/intent as `SCRIPT_APP`'s JS default in `flow-types.ts`. */
 const PYTHON_CODE_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
 
-function ParamField({
+function ParamField(props: ParamFieldProps) {
+  const dyn = useContext(DynamicFieldsCtx);
+  const key = props.param.key;
+  // A text edit commits on blur (never per keystroke); picks commit in ParamFieldBody.
+  return (
+    <div
+      style={{ display: "contents" }}
+      onFocusCapture={dyn ? () => dyn.focus(key) : undefined}
+      onBlurCapture={dyn ? () => dyn.blur(key) : undefined}
+    >
+      <ParamFieldBody {...props} />
+    </div>
+  );
+}
+
+interface ParamFieldProps {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  effective?: (key: string) => unknown;
+  readOnly?: boolean;
+}
+
+function ParamFieldBody({
   param,
   value,
-  onChange,
+  onChange: rawOnChange,
   effective,
   readOnly,
 }: {
@@ -422,6 +445,12 @@ function ParamField({
   const workflowProject = useWorkflowProject();
   const dyn = useContext(DynamicFieldsCtx);
   const dynState = dyn?.fields[param.key];
+  // A pick (select / Combobox / checkbox / multiselect) is a commit; a text edit is not.
+  const pick = (k: string, v: unknown) => {
+    rawOnChange(k, v);
+    dyn?.commit(k, v);
+  };
+  const onChange = rawOnChange;
   const label = param.label ?? param.key;
   // A checkbox always carries a value (true/false), so "required" has no meaning
   // for it — don't decorate booleans with the required asterisk.
@@ -452,7 +481,7 @@ function ParamField({
           type="checkbox"
           checked={current}
           disabled={readOnly}
-          onChange={(e) => onChange(param.key, e.target.checked)}
+          onChange={(e) => pick(param.key, e.target.checked)}
         />
       </FxField>
     );
@@ -553,7 +582,7 @@ function ParamField({
   // Multi-select: pick several options from a dropdown; each becomes a removable
   // pill. Value is an array of the chosen option values.
   if (param.type === "multiselect") {
-    return <MultiSelectField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
+    return <MultiSelectField param={param} value={value} onChange={pick} readOnly={readOnly} />;
   }
 
   // `array` — a list control: a row per item (a scalar input, or an object's
@@ -570,7 +599,7 @@ function ParamField({
       <ChoiceField
         param={param}
         value={value}
-        onChange={onChange}
+        onChange={pick}
         readOnly={readOnly}
         label={label}
         req={req}
@@ -584,7 +613,7 @@ function ParamField({
       <ChoiceField
         param={param}
         value={value}
-        onChange={onChange}
+        onChange={pick}
         readOnly={readOnly}
         label={label}
         req={req}
@@ -625,8 +654,8 @@ function ParamField({
           aria-label={label}
           onChange={(e) => {
             const v = e.target.value;
-            if (unsetLabel !== undefined && v === "") onChange(param.key, undefined);
-            else onChange(param.key, isNumber ? Number(v) : v);
+            if (unsetLabel !== undefined && v === "") pick(param.key, undefined);
+            else pick(param.key, isNumber ? Number(v) : v);
           }}
         >
           {unsetLabel !== undefined && <option value="">{unsetLabel}</option>}
