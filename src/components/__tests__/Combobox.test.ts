@@ -352,3 +352,120 @@ test("R10 — the open list is height-bounded: 240px by default, per instance vi
     "a host inside a scrolling container passes its own cap",
   );
 });
+
+test("R11 — allowCustom: pick an option whose label differs from its value, then blur commits the VALUE only", async () => {
+  const calls: string[] = [];
+  const opts = [
+    { value: "claude-fake-sonnet-9", label: "Fake Haiku 9" },
+    { value: "other", label: "Other" },
+  ];
+  function Host() {
+    const [v, setV] = React.useState("");
+    return React.createElement(Combobox, {
+      options: opts,
+      value: v,
+      mode: "combobox",
+      forceSelection: false,
+      onChange: (x: string) => {
+        calls.push(x);
+        setV(x);
+      },
+    });
+  }
+  const { container, root } = await render(React.createElement(Host));
+  const input = container.querySelector("input");
+  assert.ok(input);
+  await act(async () => {
+    input.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+  });
+  const option = container.querySelector('[role="option"]');
+  assert.ok(option);
+  await act(async () => {
+    option.dispatchEvent(
+      new dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+  });
+  assert.deepEqual(calls, ["claude-fake-sonnet-9"]);
+  assert.equal(input.value, "Fake Haiku 9");
+  await blur(input);
+  assert.deepEqual(calls, ["claude-fake-sonnet-9"]);
+  await unmount(root);
+});
+
+test("R12 — allowCustom: typing text equal to an option label then blur commits the typed text (unchanged)", async () => {
+  const calls: string[] = [];
+  const { container, root } = await render(
+    React.createElement(Combobox, {
+      options: OPTIONS,
+      value: "",
+      mode: "combobox",
+      forceSelection: false,
+      onChange: (v: string) => calls.push(v),
+    }),
+  );
+  const input = container.querySelector("input");
+  assert.ok(input);
+  await typeInto(input, "Banana");
+  await blur(input);
+  assert.deepEqual(calls, ["Banana"]);
+  await unmount(root);
+});
+
+test("R13 — allowCustom: pick (label != value), then Enter with the list closed never commits the label", async () => {
+  const calls: string[] = [];
+  const opts = [
+    { value: "claude-fake-sonnet-9", label: "Fake Haiku 9" },
+    { value: "other", label: "Other" },
+  ];
+  function Host() {
+    const [v, setV] = React.useState("");
+    return React.createElement(Combobox, {
+      options: opts,
+      value: v,
+      mode: "combobox",
+      forceSelection: false,
+      onChange: (x: string) => {
+        calls.push(x);
+        setV(x);
+      },
+    });
+  }
+  const { container, root } = await render(React.createElement(Host));
+  const input = container.querySelector("input");
+  assert.ok(input);
+  await act(async () => {
+    input.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+  });
+  const option = container.querySelector('[role="option"]');
+  assert.ok(option);
+  await act(async () => {
+    option.dispatchEvent(
+      new dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+  });
+  assert.equal(container.querySelector('[role="option"]'), null, "list closed after pick");
+  await press(input, "Enter");
+  assert.deepEqual(calls, ["claude-fake-sonnet-9"]);
+  await unmount(root);
+});
+
+test("R14 — allowCustom: type custom text, Enter commits the text", async () => {
+  const calls: string[] = [];
+  const { container, root } = await render(
+    React.createElement(Combobox, {
+      options: OPTIONS,
+      value: "",
+      mode: "combobox",
+      forceSelection: false,
+      onChange: (v: string) => calls.push(v),
+    }),
+  );
+  const input = container.querySelector("input");
+  assert.ok(input);
+  await typeInto(input, "zzz-custom");
+  await press(input, "Escape");
+  await typeInto(input, "zzz-custom");
+  await press(input, "Enter");
+  assert.deepEqual(calls.at(-1), "zzz-custom");
+  await unmount(root);
+});
