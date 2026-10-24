@@ -161,7 +161,7 @@ export function Combobox({
         e.preventDefault();
         pick(shown[active]);
       } else if (!forceSelection) {
-        onChange(text);
+        if (text !== selectedLabel) onChange(text);
         close();
       }
     } else if (e.key === "Escape") {
