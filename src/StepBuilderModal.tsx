@@ -2682,6 +2682,12 @@ export function AppStepConfig({
               params={selectedAction.params ?? []}
               values={withValues}
               onChange={setWithValues}
+              dynamic={{
+                appId,
+                actionKey: selectedAction.key,
+                connectionId: connectionId || undefined,
+                appName: app?.displayName,
+              }}
             />
           ) : configView === "code" ? (
             // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,

@@ -3020,6 +3020,16 @@ export function StepEditModal({
                     values={step.with ?? {}}
                     readOnly={readOnly}
                     onChange={(w) => commit({ ...step, with: w })}
+                    dynamic={
+                      isInternal || !step.uses.action
+                        ? undefined
+                        : {
+                            appId: step.uses.app,
+                            actionKey: step.uses.action,
+                            connectionId: blocked ? undefined : (step.uses.connection ?? undefined),
+                            appName: app?.displayName,
+                          }
+                    }
                   />
                 )
               ) : configView === "code" ? (
