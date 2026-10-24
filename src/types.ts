@@ -23,6 +23,8 @@ export interface AppSummary {
   maturity?: string;
   visibility?: string;
   successor?: string;
+  /** Model-provider designation; absent when the app does not declare one. */
+  modelProvider?: { modelTypes: string[]; modelFamilies?: string[] };
   /**
    * True when the calling tenant has zero-credential access flagged for this
    * app — usable with no connection step at all (server-computed per caller;
