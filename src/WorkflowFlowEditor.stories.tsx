@@ -146,6 +146,11 @@ export const WithRunState: Story = {
   args: { runState: SAMPLE_RUN_STATE },
 };
 
+/** A step whose bound connection no longer exists, as the host reports it. */
+export const WithMissingConnection: Story = {
+  args: { stepProblems: { send: { code: "unknown_connection", connection: "conn_deleted" } } },
+};
+
 /** A run panel docking beside the canvas, as studio's run log does: the toggle
  *  narrows the editor's pane by 360px and changes `fitViewKey`, so the graph
  *  re-frames into the narrower pane instead of sliding behind the panel. */
