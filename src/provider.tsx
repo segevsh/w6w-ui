@@ -205,6 +205,18 @@ export interface W6WApi {
    */
   listAppsByIds?(ids: readonly string[], options?: { signal?: AbortSignal }): Promise<AppSummary[]>;
 
+  /**
+   * OPTIONAL: the tenant's model routes, for the `model-route` step-param
+   * picker (`@w6w/model` `complete`). Absent, the param renders as a plain text
+   * input and this is never called. A `broken` route is still selectable.
+   * `project` is the editor's own project (`WorkflowProjectProvider`) when it
+   * has one — a host should list THAT project's routes, not guess one from its
+   * URL; `undefined` leaves the choice to the host.
+   */
+  listModelRoutes?(
+    project?: string,
+  ): Promise<{ name: string; model: string; status: "active" | "broken" }[]>;
+
   /** Load auth methods declared by an app's manifest, with availability flags. */
   getAppAuth(appId: string): Promise<AuthDef[]>;
 
@@ -532,6 +544,14 @@ export function useW6WApi(): W6WApi {
     );
   }
   return api;
+}
+
+/**
+ * Like {@link useW6WApi} but returns `undefined` outside a provider instead of
+ * throwing — for optional enhancements (e.g. the `model-route` picker).
+ */
+export function useOptionalW6WApi(): W6WApi | undefined {
+  return useContext(Ctx) ?? undefined;
 }
 
 /**

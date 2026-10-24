@@ -1,11 +1,13 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { CodeEditor, type ScriptLanguage } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
+import { Combobox } from "./components/Combobox.tsx";
 import { ExpressionEditorModal } from "./components/ExpressionEditorModal.tsx";
 import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { useOptionalW6WApi, useWorkflowProject } from "./provider.tsx";
 import { buildResolveScope, isDollarPath } from "./resolve-params.ts";
 import { resolveParamJson } from "./resolved-json.ts";
 import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
@@ -401,6 +403,8 @@ function ParamField({
   effective?: (key: string) => unknown;
   readOnly?: boolean;
 }) {
+  const listModelRoutes = useOptionalW6WApi()?.listModelRoutes;
+  const workflowProject = useWorkflowProject();
   const label = param.label ?? param.key;
   // A checkbox always carries a value (true/false), so "required" has no meaning
   // for it — don't decorate booleans with the required asterisk.
@@ -483,6 +487,23 @@ function ParamField({
     );
   }
 
+  // `model-route` — a route picker when the host supplies `listModelRoutes`;
+  // otherwise it falls through to the plain text input below (like `string`).
+  if (param.type === "model-route" && listModelRoutes) {
+    return (
+      <ModelRouteField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        listModelRoutes={listModelRoutes}
+        project={workflowProject}
+      />
+    );
+  }
+
   // `vars` — a dynamic table of typed key/value variables.
   if (param.type === "vars") {
     return <VarsField param={param} value={value} onChange={onChange} readOnly={readOnly} />;
@@ -527,7 +548,19 @@ function ParamField({
   // A constrained set of choices renders as a dropdown — even for a `string`
   // param (e.g. an HTTP method). Driven by `param.options` in the config.
   if (Array.isArray(param.options) && param.options.length > 0) {
-    const current = value ?? param.default ?? param.options[0]?.value ?? "";
+    // An optional select with no default whose `placeholder` names the unset
+    // state (e.g. "Provider native") gets a leading empty choice, so "leave it
+    // unset" is selectable and shown — rather than displaying the first option
+    // while nothing is actually stored.
+    const unsetLabel =
+      !param.required &&
+      param.default === undefined &&
+      typeof param.placeholder === "string" &&
+      param.placeholder
+        ? param.placeholder
+        : undefined;
+    const current =
+      value ?? param.default ?? (unsetLabel !== undefined ? "" : param.options[0]?.value) ?? "";
     const isNumber = param.type === "number";
     return (
       <FxField
@@ -542,8 +575,13 @@ function ParamField({
           value={String(current)}
           disabled={readOnly}
           aria-label={label}
-          onChange={(e) => onChange(param.key, isNumber ? Number(e.target.value) : e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (unsetLabel !== undefined && v === "") onChange(param.key, undefined);
+            else onChange(param.key, isNumber ? Number(v) : v);
+          }}
         >
+          {unsetLabel !== undefined && <option value="">{unsetLabel}</option>}
           {param.options.map((o) => (
             <option key={String(o.value)} value={String(o.value)}>
               {o.label}
@@ -613,6 +651,72 @@ function ParamField({
         onChange={(e) =>
           onChange(param.key, param.type === "number" ? Number(e.target.value) : e.target.value)
         }
+      />
+    </FxField>
+  );
+}
+
+type ModelRouteList = NonNullable<import("./provider.tsx").W6WApi["listModelRoutes"]>;
+
+/**
+ * The `model-route` picker: route NAMES in a {@link Combobox}. Free text is a
+ * value (`forceSelection={false}`), a `broken` route is marked but selectable,
+ * and an expression binds through the same {@link FxField} a `string` uses.
+ */
+function ModelRouteField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  listModelRoutes,
+  project,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  listModelRoutes: ModelRouteList;
+  /** The editor's project (`WorkflowProjectProvider`) — the routes listed are THIS project's. */
+  project: string | undefined;
+}) {
+  const [routes, setRoutes] = useState<Awaited<ReturnType<ModelRouteList>>>([]);
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => listModelRoutes(project))
+      .then((r) => live && setRoutes(Array.isArray(r) ? r : []))
+      .catch(() => live && setRoutes([]));
+    return () => {
+      live = false;
+    };
+  }, [listModelRoutes, project]);
+  const raw = value ?? param.default ?? "";
+  const current = typeof raw === "string" ? raw : "";
+  return (
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
+      <Combobox
+        mode="combobox"
+        forceSelection={false}
+        aria-label={label}
+        disabled={readOnly}
+        value={current}
+        placeholder="Select a route…"
+        options={routes.map((r) => ({
+          value: r.name,
+          label: r.status === "broken" ? `${r.name} (broken)` : r.name,
+        }))}
+        onChange={(next) => onChange(param.key, next)}
       />
     </FxField>
   );
