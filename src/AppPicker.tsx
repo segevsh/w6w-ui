@@ -27,6 +27,51 @@ const DEFAULT_PAGE_LIMIT = 60;
 /** How long to wait after the last keystroke before firing a server search. */
 const SEARCH_DEBOUNCE_MS = 300;
 
+/** Non-empty, trimmed strings only — a wire list may carry blanks or nulls. */
+function declaredValues(values: readonly string[] | undefined): string[] {
+  return (values ?? []).filter((value) => typeof value === "string" && value.trim() !== "");
+}
+
+/**
+ * The app's declared model-provider designation, or `null` when it declares
+ * none (A01). PRESENCE of `modelProvider` is the ONLY test — this never
+ * consults `categories`, so a category-`ai` app without a designation is not
+ * a provider and must never be surfaced as one.
+ */
+export function modelProviderOf(app: AppSummary): NonNullable<AppSummary["modelProvider"]> | null {
+  const provider = app.modelProvider;
+  if (!provider || typeof provider !== "object") return null;
+  return provider;
+}
+
+/**
+ * The card badge text for a designated app — its declared model types plus,
+ * when present, its declared families — or `null` for an undesignated one
+ * (which therefore renders no badge at all). A designation that declares
+ * neither still reads as "Model provider": the app IS one, it just did not
+ * enumerate what it serves.
+ *
+ * @example
+ * modelProviderBadge({ id, displayName, modelProvider: { modelTypes: ["chat"] } });
+ * // "Model provider — chat"
+ * modelProviderBadge({ id, displayName, modelProvider: {
+ *   modelTypes: ["chat"], modelFamilies: ["gpt-4"],
+ * } });
+ * // "Model provider — chat · families: gpt-4"
+ * modelProviderBadge({ id, displayName }); // null
+ */
+export function modelProviderBadge(app: AppSummary): string | null {
+  const provider = modelProviderOf(app);
+  if (!provider) return null;
+  const types = declaredValues(provider.modelTypes);
+  const families = declaredValues(provider.modelFamilies);
+  const parts = [
+    types.join(", "),
+    families.length > 0 ? `families: ${families.join(", ")}` : "",
+  ].filter((part) => part !== "");
+  return parts.length > 0 ? `Model provider — ${parts.join(" · ")}` : "Model provider";
+}
+
 export interface AppPickerProps {
   /** Fired when the user picks an app card. */
   onSelectApp: (app: AppSummary) => void;
@@ -62,6 +107,16 @@ export interface AppPickerProps {
    * would be redundant.
    */
   categoryFilter?: boolean;
+  /**
+   * Render an opt-in model-provider filter BESIDE the category chips (crit 1,
+   * A01/A02): one toggle that narrows the list to apps carrying a
+   * `modelProvider` designation. It filters on the PRESENCE of `modelProvider`
+   * only — never on categories — so an undesignated category-`ai` app is never
+   * surfaced by it. Defaults to `false`, so no existing call site's behavior
+   * changes; the toggle itself is hidden when nothing in the visible catalog
+   * declares a provider (no dead-end filter, same rule as the category chips).
+   */
+  providerFilter?: boolean;
   /**
    * Server-side `category` param for the bounded paged fetch (e.g. `"ai"` for
    * the AI tab) — sent to `W6WApi.listAppsPage`, never applied client-side.
@@ -115,6 +170,7 @@ export function AppPicker({
   emptyAction,
   apps: providedApps,
   categoryFilter = false,
+  providerFilter = false,
   category,
   pageLimit = DEFAULT_PAGE_LIMIT,
   loadPage,
@@ -303,6 +359,9 @@ export function AppPicker({
 
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [catsExpanded, setCatsExpanded] = useState(false);
+  // The model-provider filter is a single presence toggle (crit 1): on = show
+  // only apps that declare a `modelProvider`. Off by default.
+  const [onlyProviders, setOnlyProviders] = useState(false);
 
   // Single layout owner for all exits below, so the panel never resizes
   // between error/loading/empty and the loaded list — see `.w6w-apppicker-host`.
@@ -388,15 +447,29 @@ export function AppPicker({
     );
   const clearCats = () => setSelectedCats([]);
 
+  // Model-provider filter (crit 1, A01/A02): derived from `base`, the visible
+  // catalog post-`filter`, exactly like the category chips — and offered only
+  // when something in it actually declares a provider, so the toggle is never
+  // a dead end. Matching is on the PRESENCE of `modelProvider`, never on
+  // `categories`: a category-`ai` app with no designation is not a provider
+  // and never appears under this filter (nor carries a badge below).
+  const designatedCount = base.filter((a) => modelProviderOf(a) !== null).length;
+  const providerToggleVisible = providerFilter && designatedCount > 0;
+  // A selection that outlives its own apps (the catalog changed under a
+  // supplied list) falls back to "all" rather than stranding an empty list.
+  const providerActive = providerToggleVisible && onlyProviders;
+  const providerFiltered = providerActive ? base.filter((a) => modelProviderOf(a) !== null) : base;
+
   // Composition order (P4): the `filter` prop already ran (-> `base`); the
-  // category-chip selection composes next; the search query runs last —
+  // model-provider toggle and the category-chip selection compose next; the
+  // search query runs last —
   // except in paged mode, where the search already happened server-side and
   // re-filtering locally on the (possibly stale, mid-debounce) input value
   // would just hide correct results for a beat.
   const catFiltered =
     categoryFilter && selectedCats.length > 0
-      ? base.filter((a) => matchesCategories(a, selectedCats))
-      : base;
+      ? providerFiltered.filter((a) => matchesCategories(a, selectedCats))
+      : providerFiltered;
 
   const sorted = paged
     ? catFiltered
@@ -413,10 +486,17 @@ export function AppPicker({
         (a) => a.displayName.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
       )
     : sorted;
-  // A7: a category selection narrowed the list to nothing, distinct from the
-  // search-only empty state below (and distinct from either alone: the
-  // message names whichever of the two is actually active).
-  const categoryEmpty = categoryFilter && selectedCats.length > 0 && visible.length === 0;
+  // A7: a category and/or provider selection narrowed the list to nothing,
+  // distinct from the search-only empty state below (and distinct from either
+  // alone: the message names whichever of the two is actually active).
+  const filtersEmpty =
+    ((categoryFilter && selectedCats.length > 0) || providerActive) && visible.length === 0;
+  const onlyProviderFilterActive = providerActive && selectedCats.length === 0;
+  const clearAllFilters = () => {
+    setSelectedCats([]);
+    setOnlyProviders(false);
+    setInputValue("");
+  };
 
   return host(
     <div className="w6w-stepbuilder-apps">
@@ -430,42 +510,61 @@ export function AppPicker({
           aria-label="Search apps"
         />
       )}
-      {categoryFilter && chips.length > 0 && (
+      {(providerToggleVisible || (categoryFilter && chips.length > 0)) && (
         <div className="w6w-apppicker-cats">
-          {displayedChips.map((c) => (
-            <button
-              key={c.slug}
-              type="button"
-              className="w6w-apppicker-chip"
-              aria-pressed={selectedCats.includes(c.slug)}
-              aria-label={`Filter by ${c.label}`}
-              onClick={() => toggleCat(c.slug)}
-            >
-              {c.label} <span className="w6w-muted">({c.count})</span>
-            </button>
-          ))}
-          {!catsExpanded && hiddenChipCount > 0 && (
+          {providerToggleVisible && (
             <button
               type="button"
-              className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-              onClick={() => setCatsExpanded(true)}
+              className="w6w-apppicker-chip w6w-apppicker-provider-toggle"
+              aria-pressed={onlyProviders}
+              aria-label="Filter to model providers"
+              onClick={() => setOnlyProviders((prev) => !prev)}
             >
-              +{hiddenChipCount} more
+              Model providers <span className="w6w-muted">({designatedCount})</span>
             </button>
           )}
-          {catsExpanded && chips.length > CHIP_VISIBLE_BUDGET && (
-            <button
-              type="button"
-              className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-              onClick={() => setCatsExpanded(false)}
-            >
-              Show less
-            </button>
-          )}
-          {selectedCats.length > 0 && (
-            <button type="button" className="w6w-btn w6w-btn-ghost w6w-btn-sm" onClick={clearCats}>
-              Clear
-            </button>
+          {categoryFilter && chips.length > 0 && (
+            <>
+              {displayedChips.map((c) => (
+                <button
+                  key={c.slug}
+                  type="button"
+                  className="w6w-apppicker-chip"
+                  aria-pressed={selectedCats.includes(c.slug)}
+                  aria-label={`Filter by ${c.label}`}
+                  onClick={() => toggleCat(c.slug)}
+                >
+                  {c.label} <span className="w6w-muted">({c.count})</span>
+                </button>
+              ))}
+              {!catsExpanded && hiddenChipCount > 0 && (
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  onClick={() => setCatsExpanded(true)}
+                >
+                  +{hiddenChipCount} more
+                </button>
+              )}
+              {catsExpanded && chips.length > CHIP_VISIBLE_BUDGET && (
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  onClick={() => setCatsExpanded(false)}
+                >
+                  Show less
+                </button>
+              )}
+              {selectedCats.length > 0 && (
+                <button
+                  type="button"
+                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  onClick={clearCats}
+                >
+                  Clear
+                </button>
+              )}
+            </>
           )}
         </div>
       )}
@@ -479,20 +578,21 @@ export function AppPicker({
           </button>
         </div>
       ) : visible.length === 0 && !hasMore ? (
-        categoryEmpty ? (
+        filtersEmpty ? (
           <div className="w6w-stack">
             <p className="w6w-muted w6w-small">
-              {searchActive
-                ? `No apps match “${inputValue}” in the selected categories.`
-                : "No apps match the selected categories."}
+              {onlyProviderFilterActive
+                ? searchActive
+                  ? `No model providers match “${inputValue}”.`
+                  : "No apps declare a model provider."
+                : searchActive
+                  ? `No apps match “${inputValue}” in the selected categories.`
+                  : "No apps match the selected categories."}
             </p>
             <button
               type="button"
               className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-              onClick={() => {
-                setSelectedCats([]);
-                setInputValue("");
-              }}
+              onClick={clearAllFilters}
             >
               Clear filters
             </button>
@@ -525,33 +625,46 @@ export function AppPicker({
             </p>
           ) : (
             <div className="w6w-stepbuilder-list w6w-apppicker-grid w6w-stepbuilder-scroll">
-              {visible.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  className="w6w-stepbuilder-item w6w-apppicker-card"
-                  onClick={() => onSelectApp(a)}
-                >
-                  <AppIcon
-                    src={a.iconSvg}
-                    srcDark={a.iconSvgDark}
-                    brandColor={a.brandColor}
-                    name={a.displayName}
-                    theme={theme}
-                    size={24}
-                  />
-                  <span className="w6w-stepbuilder-item-main">
-                    <strong>{a.displayName}</strong>
-                    {/* The id is secondary metadata under the NAME, and it is the one
+              {visible.map((a) => {
+                const badge = modelProviderBadge(a);
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="w6w-stepbuilder-item w6w-apppicker-card"
+                    onClick={() => onSelectApp(a)}
+                  >
+                    <AppIcon
+                      src={a.iconSvg}
+                      srcDark={a.iconSvgDark}
+                      brandColor={a.brandColor}
+                      name={a.displayName}
+                      theme={theme}
+                      size={24}
+                    />
+                    <span className="w6w-stepbuilder-item-main">
+                      <strong>{a.displayName}</strong>
+                      {/* The id is secondary metadata under the NAME, and it is the one
                         field on this card with no length bound (`vendor-app-…`, a
                         `@`-scoped id, a long slug), so it truncates rather than
                         widening the card or wrapping to a second line — the tile's
                         geometry is fixed by the grid, not by its longest id. */}
-                    <code className="w6w-apppicker-card-id">{a.id}</code>
-                    {a.version && <span className="w6w-apppicker-card-version">v{a.version}</span>}
-                  </span>
-                </button>
-              ))}
+                      <code className="w6w-apppicker-card-id">{a.id}</code>
+                      {a.version && (
+                        <span className="w6w-apppicker-card-version">v{a.version}</span>
+                      )}
+                      {/* Model-provider badge (crit 1, A02): the declared types, plus
+                        the declared families when the app names them. Rendered ONLY
+                        for an app that carries a `modelProvider` designation — an
+                        undesignated app (however category-`ai` it looks) has no
+                        badge, because designation is never inferred from categories. */}
+                      {badge && (
+                        <span className="w6w-chip w6w-apppicker-card-provider">{badge}</span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
           {paged && typeof pageState.total === "number" && (
