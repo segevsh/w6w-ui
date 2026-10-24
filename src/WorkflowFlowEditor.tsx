@@ -2488,6 +2488,29 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
+        {data.stepProblem && (
+          <span
+            data-step-problem-badge=""
+            role="img"
+            aria-label={stepProblemTooltip(data.stepProblem)}
+            title={stepProblemTooltip(data.stepProblem)}
+            style={{
+              position: "absolute",
+              top: -9,
+              right: -9,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--w6w-danger)",
+              color: "#fff",
+            }}
+          >
+            <Icon name="warning" size={12} />
+          </span>
+        )}
         {ports.in > 0 && (
           <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
         )}

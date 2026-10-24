@@ -69,6 +69,14 @@ test("W3 — StepNodeCard stamps data-step-problem, title tooltip and an inline 
   assert.match(text, /visual\.borderColor/);
 });
 
+test("W3b — StepNodeCard badge: role=img, aria-label+title tooltip, warning Icon, only with a problem", () => {
+  const text = card.getText(sf);
+  assert.match(text, /data\.stepProblem && \(\s*<span/);
+  assert.match(text, /role="img"/);
+  assert.match(text, /aria-label=\{stepProblemTooltip\(data\.stepProblem\)\}/);
+  assert.match(text, /<Icon name="warning"/);
+});
+
 test("W5 — ControlNodeCard does not carry the problem stamp; prop is declared", () => {
   assert.doesNotMatch(findFunction("ControlNodeCard").getText(sf), /data-step-problem/);
   assert.match(source, /stepProblems\?: StepProblems;/);
