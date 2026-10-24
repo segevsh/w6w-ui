@@ -1095,56 +1095,64 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         key: "route",
         label: "Route",
         type: "model-route",
-        default: "",
-        hint: "Model route name — may be an expression.",
+        hint:
+          "Name of a model route (Models → Routes). Use this, or the model + connection pair " +
+          "below — never both.",
       },
       {
         key: "model",
         label: "Model",
         type: "string",
-        default: "",
         advanced: true,
-        hint: "Model id, when calling a connection directly instead of a route.",
+        hint:
+          "Catalog id of a model (`mdl_…`, Models → Catalog), called through `connection`. " +
+          "Ignored when `route` is set.",
       },
       {
         key: "connection",
         label: "Connection",
         type: "string",
-        default: "",
         advanced: true,
-        hint: "Connection id, when calling a provider directly instead of a route.",
+        hint:
+          "Id of a model-provider connection on this account. Required by `model`; ignored " +
+          "when `route` is set.",
       },
       {
         key: "input",
         label: "Input",
         type: "json",
         required: true,
-        hint: "The request body, in the chosen dialect.",
+        default: {},
+        hint:
+          'The request body handed to the provider — e.g. { "messages": [{ "role": "user", ' +
+          '"content": "hi" }] }, or the provider\'s native payload.',
       },
       {
         key: "dialect",
         label: "Dialect",
         type: "select",
         advanced: true,
+        hint: "Rewrite the result into this wire dialect. Leave unset to keep the provider's own.",
+        placeholder: "Provider native",
         options: [
-          { value: "openai", label: "openai" },
-          { value: "anthropic", label: "anthropic" },
-          { value: "ollama", label: "ollama" },
-          { value: "structured", label: "structured" },
+          { value: "openai", label: "OpenAI" },
+          { value: "anthropic", label: "Anthropic" },
+          { value: "ollama", label: "Ollama" },
         ],
-        default: "openai",
       },
       {
         key: "response",
         label: "Response",
         type: "select",
         advanced: true,
+        hint:
+          "Output: the dialect-shaped result. Raw: the provider's own response. Leave unset to " +
+          "carry both.",
+        placeholder: "Both",
         options: [
-          { value: "both", label: "both" },
-          { value: "output", label: "output" },
-          { value: "raw", label: "raw" },
+          { value: "output", label: "Output" },
+          { value: "raw", label: "Raw" },
         ],
-        default: "both",
       },
     ],
   },
@@ -1162,7 +1170,6 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Connection",
         type: "string",
         required: true,
-        default: "",
         hint: "Connection id of the provider to list models for.",
       },
     ],
@@ -1181,7 +1188,6 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Connection",
         type: "string",
         required: true,
-        default: "",
         hint: "Connection id of the provider to read the allowance of.",
       },
     ],

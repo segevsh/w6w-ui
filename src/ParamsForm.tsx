@@ -548,7 +548,19 @@ function ParamField({
   // A constrained set of choices renders as a dropdown — even for a `string`
   // param (e.g. an HTTP method). Driven by `param.options` in the config.
   if (Array.isArray(param.options) && param.options.length > 0) {
-    const current = value ?? param.default ?? param.options[0]?.value ?? "";
+    // An optional select with no default whose `placeholder` names the unset
+    // state (e.g. "Provider native") gets a leading empty choice, so "leave it
+    // unset" is selectable and shown — rather than displaying the first option
+    // while nothing is actually stored.
+    const unsetLabel =
+      !param.required &&
+      param.default === undefined &&
+      typeof param.placeholder === "string" &&
+      param.placeholder
+        ? param.placeholder
+        : undefined;
+    const current =
+      value ?? param.default ?? (unsetLabel !== undefined ? "" : param.options[0]?.value) ?? "";
     const isNumber = param.type === "number";
     return (
       <FxField
@@ -563,8 +575,13 @@ function ParamField({
           value={String(current)}
           disabled={readOnly}
           aria-label={label}
-          onChange={(e) => onChange(param.key, isNumber ? Number(e.target.value) : e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (unsetLabel !== undefined && v === "") onChange(param.key, undefined);
+            else onChange(param.key, isNumber ? Number(v) : v);
+          }}
         >
+          {unsetLabel !== undefined && <option value="">{unsetLabel}</option>}
           {param.options.map((o) => (
             <option key={String(o.value)} value={String(o.value)}>
               {o.label}
