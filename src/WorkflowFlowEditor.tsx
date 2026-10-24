@@ -139,6 +139,10 @@ import {
   WorkflowProjectProvider,
   useW6WApi,
 } from "./provider.tsx";
+// T1.1.1 — the pure run-visual derivation, no React import (`run-visuals.ts`'s
+// own header). This file is the one production caller that turns it into
+// pixels: a live-run repaint effect (in `Inner`) feeds the results into
+// `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
 import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./run-visuals.ts";
 import {
   type SeedSource,
@@ -148,10 +152,6 @@ import {
   stepMetaSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
-// T1.1.1 — the pure run-visual derivation, no React import (`run-visuals.ts`'s
-// own header). This file is the one production caller that turns it into
-// pixels: a live-run repaint effect (in `Inner`) feeds the results into
-// `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
 import {
   type StepProblems,
   applyStepProblems,

@@ -73,3 +73,9 @@ test("W5 — ControlNodeCard does not carry the problem stamp; prop is declared"
   assert.doesNotMatch(findFunction("ControlNodeCard").getText(sf), /data-step-problem/);
   assert.match(source, /stepProblems\?: StepProblems;/);
 });
+
+test("W4 — StepEditModal never empties the connection list (no setConns([]))", () => {
+  const text = findFunction("StepEditModal").getText(sf);
+  assert.match(text, /setConns\(/, "the rig must actually see the setConns calls");
+  assert.doesNotMatch(text, /setConns\(\s*\[\s*\]\s*\)/);
+});

@@ -806,3 +806,81 @@ test("S3 — while connections are still loading the button shows the raw id, no
     root.unmount();
   });
 });
+
+/** Opens the Connection flyout → "+ New connection" → AddConnectionModal and
+ *  submits the synthetic zero-credential auth, which calls `onCreated` and
+ *  so the modal's `refetchConns`. */
+async function createConnectionViaModal(container: Element): Promise<void> {
+  await act(async () => {
+    connButton(container).click();
+  });
+  await flush();
+  await act(async () => {
+    newConnectionButton(container)?.click();
+  });
+  await flush();
+  await flush();
+  const use = Array.from(container.querySelectorAll("dialog button")).find(
+    (b) => b.textContent === "Use this",
+  ) as HTMLButtonElement | undefined;
+  assert.ok(use, "AddConnectionModal offers the zero-credential submit");
+  await act(async () => {
+    use.click();
+  });
+  await flush();
+}
+
+const ZERO_CRED_AUTH = [{ key: "zero-credential", type: "custom", fields: [] }];
+
+test("S4 — a failed fetch recovers: a later successful refetch restores the normal displayName label", async () => {
+  let calls = 0;
+  const { container, root } = await mountOnSetupTab(MISSING_STEP, {
+    apiOverrides: {
+      getAppAuth: async () => ZERO_CRED_AUTH,
+      listConnectionsForApp: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("boom");
+        return [
+          {
+            id: "zerocred:sendgrid",
+            appId: "sendgrid",
+            authKey: "apiKey",
+            displayName: "Recovered",
+          },
+        ];
+      },
+    },
+  });
+  assert.equal(connButton(container).textContent?.includes("Couldn't load connections"), true);
+  await createConnectionViaModal(container);
+  assert.equal(calls >= 2, true, "the refetch ran");
+  const text = connButton(container).textContent ?? "";
+  assert.equal(text.includes("Recovered"), true);
+  assert.equal(text.includes("Couldn't load"), false);
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test('S5 — a rejected refetchConns shows "Couldn\'t load connections", not missing and not an emptied list', async () => {
+  let calls = 0;
+  const { container, root } = await mountOnSetupTab(STEP, {
+    apiOverrides: {
+      getAppAuth: async () => ZERO_CRED_AUTH,
+      listConnectionsForApp: async () => {
+        calls += 1;
+        if (calls > 1) throw new Error("boom");
+        return CONNS_BY_APP.sendgrid;
+      },
+    },
+  });
+  assert.equal(connButton(container).textContent?.includes("prod"), true);
+  await createConnectionViaModal(container);
+  assert.equal(calls >= 2, true, "the refetch ran");
+  const text = connButton(container).textContent ?? "";
+  assert.equal(text.includes("Couldn't load connections"), true);
+  assert.equal(text.includes("Missing connection"), false);
+  await act(async () => {
+    root.unmount();
+  });
+});
