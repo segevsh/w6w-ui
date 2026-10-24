@@ -3,7 +3,7 @@ id: null
 key: "components/executions"
 title: "Executions"
 section: "reference-packages"
-description: "Build an execution history view (list, filters, totals, detail, step log and vendor API calls) from @w6w/ui's execution components."
+description: "Build an execution history view (list, filters, totals, detail, node log and vendor API calls) from @w6w/ui's execution components."
 format: "markdown"
 shared: true
 sourceRepo: null
@@ -19,7 +19,7 @@ updatedAt: null
 # Executions
 
 The pieces of a run-history view: a filter bar, a totals strip, a paged list and a detail panel
-with the step log and the vendor calls each step made. All six are props-only. Fetch the runs with
+with the node log and the vendor calls each node made. All six are props-only. Fetch the runs with
 `@w6w/react` or your own client and pass them in. Filtering, paging and polling are yours to decide.
 
 An execution here is one run of a Function, an Endpoint or a Workflow, with a `kind` of
@@ -107,7 +107,7 @@ A row of totals for the current filter.
 
 ## `ExecutionDetail`
 
-One run: its status, timing, input, output, error and, for a workflow, the step log.
+One run: its status, timing, input, output, error and, for a workflow, the node log.
 
 | Prop | Type | What it does |
 | --- | --- | --- |
@@ -122,14 +122,14 @@ Leave `input` or `output` `undefined` to hide that section. Pass `null` to show 
 
 ## `ExecutionLogPanel`
 
-The step-by-step log of a workflow run. `ExecutionDetail` renders it for you; use it on its own
+The node-by-node log of a workflow run. `ExecutionDetail` renders it for you; use it on its own
 beside the [workflow canvas](/reference-packages/components/flow-editor/).
 
 | Prop | Type | What it does |
 | --- | --- | --- |
-| `steps` | `{ id, label?, status, startedAt?, finishedAt?, input?, output?, meta?, error? }[]` | Required. In run order. `status` is a step status (`pending`, `running`, `succeeded`, `failed` or `skipped`). `meta` (`{ app, version, action, connectionId }`) adds a Metadata block after Output; it is hidden when `meta` is absent. |
-| `runError` | `{ message, code?, phase?, retryable? }` | Why the run itself failed, shown above the steps. |
-| `stepErrors` | `{ stepId, label?, error }[]` | Failures the run recorded and continued past (a step with `onError: "continue-record"`). |
+| `steps` | `{ id, label?, status, startedAt?, finishedAt?, input?, output?, meta?, error? }[]` | Required. In run order. `status` is a node status (`pending`, `running`, `succeeded`, `failed` or `skipped`). `meta` (`{ app, version, action, connectionId }`) adds a Metadata block after Output; it is hidden when `meta` is absent. |
+| `runError` | `{ message, code?, phase?, retryable? }` | Why the run itself failed, shown above the nodes. |
+| `stepErrors` | `{ stepId, label?, error }[]` | Failures the run recorded and continued past (a node with `onError: "continue-record"`). |
 | `emptyLabel` | `ReactNode` | Shown when `steps` is empty. |
 | `onDismiss` | `() => void` | Adds a header row with a dismiss control. |
 

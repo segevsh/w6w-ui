@@ -182,8 +182,8 @@ function Body({
           className="w6w-execution-detail-section w6w-stack"
           data-testid="execution-detail-steps"
         >
-          <strong className="w6w-small">Steps</strong>
-          <ExecutionLogPanel steps={execution.steps} emptyLabel="No steps ran." />
+          <strong className="w6w-small">Nodes</strong>
+          <ExecutionLogPanel steps={execution.steps} emptyLabel="No nodes ran." />
         </section>
       )}
 

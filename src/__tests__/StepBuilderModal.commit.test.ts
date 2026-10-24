@@ -50,7 +50,9 @@ g.IS_REACT_ACT_ENVIRONMENT = true;
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
-const { AppStepConfig, ControlStepConfig } = await import("../StepBuilderModal.tsx");
+const { AppStepConfig, ControlStepConfig, StepBuilderModal } = await import(
+  "../StepBuilderModal.tsx"
+);
 const { W6WUIProvider } = await import("../provider.tsx");
 type W6WApi = Awaited<ReturnType<typeof import("../provider.tsx").useW6WApi>>;
 
@@ -339,6 +341,81 @@ test("C-D3b — ControlStepConfig on a @w6w/http node still shows Retry on failu
     container.textContent?.includes("Retry on failure"),
     "a @w6w/http node still offers a retry policy",
   );
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("node wording — default heading, 'Add node' footer button, 'Node JSON' label", async () => {
+  const container = document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+  const dlg = dom.window.HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  dlg.showModal ??= function (this: HTMLElement) {
+    this.setAttribute("open", "");
+  };
+  dlg.close ??= function (this: HTMLElement) {
+    this.removeAttribute("open");
+  };
+  g.Window ??= dom.window.Window;
+  const win = dom.window as unknown as Record<string, unknown>;
+  win.requestAnimationFrame ??= (cb: () => void) => setTimeout(cb, 0);
+  win.cancelAnimationFrame ??= (id: number) => clearTimeout(id);
+  const api = fakeApi({
+    listFunctions: async () => [],
+    listEndpoints: async () => [],
+    listWorkflows: async () => [],
+  });
+  const wrap = (child: unknown) =>
+    React.createElement(W6WUIProvider, { api, children: child as never });
+
+  // Default modal heading.
+  await act(async () => {
+    root.render(
+      wrap(React.createElement(StepBuilderModal, { onClose: () => {}, onAdd: () => "n1" })),
+    );
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  assert.ok(
+    (document.body.textContent ?? "").includes("Add a node"),
+    "default heading is 'Add a node'",
+  );
+
+  // Code view aria-label.
+  await act(async () => {
+    root.render(
+      wrap(
+        React.createElement(ControlStepConfig, {
+          node: {
+            app: "@w6w/control",
+            action: "if",
+            label: "If",
+            displayName: "If",
+            icon: "if",
+            group: "control" as const,
+            ports: { in: 1, out: 1 },
+            params: [],
+          },
+          // No id back ⇒ nothing committed ⇒ the footer offers the add action.
+          onAdd: () => undefined as unknown as string,
+          onClose: () => {},
+        }),
+      ),
+    );
+  });
+  assert.ok(
+    Array.from(document.body.querySelectorAll("button")).some((b) => b.textContent === "Add node"),
+    "footer button reads 'Add node'",
+  );
+  const jsonBtn = container.querySelector('button[aria-label="JSON"]') as HTMLElement | null;
+  assert.ok(jsonBtn, "JSON view toggle present");
+  await act(async () => {
+    jsonBtn.click();
+  });
+  assert.ok(container.querySelector('[aria-label="Node JSON"]'), "code view is 'Node JSON'");
 
   await act(async () => {
     root.unmount();

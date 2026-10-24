@@ -198,7 +198,17 @@ test("a vendor placeholder with a dot but no real root still stays literal (e.g.
 test("CA-3 — the root set is DERIVED (Record<keyof LocalRunScope, true>), not a hand-picked list: pins the concrete set so a silent narrowing reddens here", () => {
   assert.deepEqual(
     [...RUN_SCOPE_ROOT_NAMES].sort(),
-    ["documents", "foreach", "inputs", "output", "secrets", "steps", "trigger", "vars"].sort(),
+    [
+      "documents",
+      "foreach",
+      "inputs",
+      "nodes",
+      "output",
+      "secrets",
+      "steps",
+      "trigger",
+      "vars",
+    ].sort(),
   );
   // Every one of those names round-trips through valueToParts as a chip (a
   // `secret` chip for the "secrets" root — its own `secrets.` prefix takes

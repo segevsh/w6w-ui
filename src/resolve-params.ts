@@ -48,6 +48,8 @@ export interface ResolveScope {
   vars: Record<string, unknown>;
   documents: Record<string, unknown>;
   steps: Record<string, { output?: unknown; meta?: StepMeta }>;
+  /** `nodes.<id>…` root — the SAME object as `steps` (one state, two roots). */
+  nodes?: Record<string, { output?: unknown; meta?: StepMeta }>;
   trigger: { event?: unknown };
   /**
    * The original flat `sampleValues` map, keyed by full ref string — checked
@@ -103,10 +105,13 @@ export function buildResolveScope(
     else if (ref.startsWith(DOCUMENTS_PREFIX))
       documents[ref.slice(DOCUMENTS_PREFIX.length)] = value;
   }
+  const steps =
+    (testStartState?.steps as Record<string, { output?: unknown; meta?: StepMeta }>) ?? {};
   return {
     vars,
     documents,
-    steps: (testStartState?.steps as Record<string, { output?: unknown; meta?: StepMeta }>) ?? {},
+    steps,
+    nodes: steps,
     trigger: testStartState?.trigger ?? {},
     flat: sampleValues ?? {},
   };
@@ -147,7 +152,12 @@ function resolveRef(ref: string, scope: ResolveScope): ResolvedSegment {
   ) {
     return { status: "resolved", ref, value: scope.flat[ref] };
   }
-  const walked = walkPath(scope as unknown as Record<string, unknown>, ref);
+  // `nodes.<id>…` and `steps.<id>…` are two roots over one state object.
+  const root = scope as unknown as Record<string, unknown>;
+  const walked = walkPath(
+    ref.startsWith("nodes.") && !scope.nodes ? { ...root, nodes: scope.steps } : root,
+    ref,
+  );
   return walked.present
     ? { status: "resolved", ref, value: walked.value }
     : { status: "unresolved", ref };

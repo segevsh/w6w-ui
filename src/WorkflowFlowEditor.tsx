@@ -19,6 +19,7 @@ import {
   // only borrows its parameter type for the `onConnect` handler.
   type addEdge,
   useEdgesState,
+  useNodeId,
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
@@ -38,6 +39,7 @@ import {
 import { createPortal } from "react-dom";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
+import { CanvasLayer } from "./CanvasLayer.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
@@ -53,6 +55,15 @@ import {
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
+import type { FlowCanvas } from "./canvas-types.ts";
+import {
+  assignMembership,
+  clampCanvas,
+  persistCanvas,
+  pruneSectionMembers,
+  renameSectionMember,
+  sectionsContaining,
+} from "./canvas-utils.ts";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
@@ -65,6 +76,7 @@ import {
   useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
+import { IconButton } from "./components/IconButton.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ResolvedParams } from "./components/ResolvedParams.tsx";
@@ -165,9 +177,9 @@ import { useSeedSources } from "./use-seed-sources.ts";
  * occupied re-points the incumbent (the deliberate single-slot UX).
  */
 const LANE_HINT =
-  "Which outcome of the source step this edge carries. An error edge is drawn by dragging " +
-  "from the step's error exit port; use this control to re-lane an edge already drawn. " +
-  "An error edge overrides the step’s “On error” policy.";
+  "Which outcome of the source node this edge carries. An error edge is drawn by dragging " +
+  "from the node's error exit port; use this control to re-lane an edge already drawn. " +
+  "An error edge overrides the node’s “On error” policy.";
 
 /**
  * The step ids the refused edge id is minted from: the endpoints of the edge being
@@ -304,6 +316,11 @@ interface StepControls {
   onRun: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  /**
+   * Open the step builder for a new step wired to this port — a plain click on the
+   * port. Same path as dropping a dragged connection on empty canvas.
+   */
+  onAddFromPort: (id: string, handleType: "source" | "target", handleId?: string) => void;
   readOnly?: boolean;
 }
 const StepControlsCtx = createContext<StepControls | null>(null);
@@ -314,7 +331,7 @@ const StepControlsCtx = createContext<StepControls | null>(null);
  *   - Auto-layouted on load (topological columns + sibling rows).
  *   - Nodes render differently for action steps vs. control steps
  *     (`uses.app === "@w6w/control"`).
- *   - `+ Step` opens a guided builder (pick app → connection → action → params,
+ *   - `+ Node` opens a guided builder (pick app → connection → action → params,
  *     or a flow control). Drag nodes to reposition; connect handles to add edges.
  *   - Selecting a node reveals a toolbar above it: Edit / Duplicate / Delete.
  *   - Edit opens a modal with a Form ⇄ JSON toggle for that step.
@@ -345,6 +362,20 @@ interface StepRunState {
   errorCode?: string;
   /** console.* output captured from a script node run, if any. */
   logs?: string[];
+}
+
+function nextCanvasId(prefix: string, taken: string[]) {
+  let i = taken.length + 1;
+  while (taken.includes(`${prefix}-${i}`)) i++;
+  return `${prefix}-${i}`;
+}
+function nodeRect(n: StepNode) {
+  return {
+    x: n.position.x,
+    y: n.position.y,
+    w: n.measured?.width ?? n.width ?? 200,
+    h: n.measured?.height ?? n.height ?? 64,
+  };
 }
 
 function Inner({
@@ -425,6 +456,23 @@ function Inner({
     );
   }, [runState, setNodes, setEdges]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Notes + sections: live canvas state (geometry renders live; persistCanvas decides what is
+  // written). Re-seeded only on workflow identity change, like nodes/edges.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed on workflow identity change only
+  const initialCanvas = useMemo<FlowCanvas>(() => value.canvas ?? {}, [value.id]);
+  const [canvas, setCanvas] = useState<FlowCanvas>(initialCanvas);
+  // The draw-section tool, and the rectangle being dragged (client px) while it is armed.
+  const [drawingSection, setDrawingSection] = useState(false);
+  const [sectionDraft, setSectionDraft] = useState<{
+    sx: number;
+    sy: number;
+    ex: number;
+    ey: number;
+  } | null>(null);
+  const [pendingCanvasDelete, setPendingCanvasDelete] = useState<{
+    kind: "note" | "section";
+    id: string;
+  } | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -468,13 +516,25 @@ function Inner({
     setEdges(initial.edges);
     setSelectedId(null);
     setEditingId(null);
-  }, [initial, setNodes, setEdges]);
+    setCanvas(initialCanvas);
+  }, [initial, initialCanvas, setNodes, setEdges]);
+
+  // Stamp the `canvas` key onto an outgoing workflow. Omitted entirely when there is nothing to
+  // keep (no notes, no sections), so a workflow that never used the feature round-trips unchanged.
+  const withCanvas = useCallback(
+    (wf: FlowWorkflow, c: FlowCanvas): FlowWorkflow => {
+      const { canvas: _drop, ...rest } = wf;
+      if (!c.notes?.length && !c.sections?.length) return rest as FlowWorkflow;
+      return { ...rest, canvas: persistCanvas(c, value.canvas, savePosition) };
+    },
+    [value.canvas, savePosition],
+  );
 
   const emitChange = useCallback(
-    (nextNodes: StepNode[], nextEdges: Edge[]) => {
-      onChange(flowToWorkflow(value, nextNodes, nextEdges));
+    (nextNodes: StepNode[], nextEdges: Edge[], canvasOverride?: FlowCanvas) => {
+      onChange(withCanvas(flowToWorkflow(value, nextNodes, nextEdges), canvasOverride ?? canvas));
     },
-    [value, onChange],
+    [value, onChange, canvas, withCanvas],
   );
 
   // Live gate while dragging a connection — React Flow marks the drop invalid
@@ -598,6 +658,29 @@ function Inner({
     [readOnly, screenToFlowPosition, nodes, portsLookup],
   );
 
+  // A plain click on a port: the same "new step wired to this port" as a drag
+  // dropped on empty canvas, with no drop point — the new step is placed one
+  // step-width out from the port's side of the node instead.
+  const addFromPort = useCallback(
+    (nodeId: string, handleType: "source" | "target", handleId?: string) => {
+      if (readOnly) return;
+      const n = nodes.find((x) => x.id === nodeId);
+      if (!n) return;
+      const r = nodeRect(n);
+      const lane = laneForSourceHandle(handleId);
+      const gap = 120;
+      const position =
+        handleType === "target"
+          ? { x: r.x - r.w - gap, y: r.y }
+          : lane === "error"
+            ? { x: r.x, y: r.y + r.h + gap }
+            : { x: r.x + r.w + gap, y: r.y };
+      setPendingConnect({ nodeId, handleType, position, lane });
+      setBuilderOpen(true);
+    },
+    [readOnly, nodes],
+  );
+
   // Deleting a step is confirmed by an in-app modal, never a blocking browser
   // dialog: `deleteStep` is also reached from the canvas keydown handler
   // below, so the confirmation has to be state + a sibling modal.
@@ -616,13 +699,15 @@ function Inner({
       if (readOnly) return;
       const nextNodes = nodes.filter((n) => n.id !== id);
       const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
+      const nextCanvas = pruneSectionMembers(canvas, id);
       setNodes(nextNodes);
       setEdges(nextEdges);
+      setCanvas(nextCanvas);
       if (selectedId === id) setSelectedId(null);
       if (editingId === id) setEditingId(null);
-      emitChange(nextNodes, nextEdges);
+      emitChange(nextNodes, nextEdges, nextCanvas);
     },
-    [nodes, edges, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
+    [nodes, edges, canvas, setNodes, setEdges, emitChange, readOnly, selectedId, editingId],
   );
 
   // ── Auto-layout (the fourth control button) ─────────────────────────────────
@@ -817,7 +902,7 @@ function Inner({
         nextEdges =
           applyConnect(source, target, nextNodes, edges, pendingConnect.lane, portsLookup) ?? edges;
       } else {
-        // "+ Step" (no drag) — human override, 2026-08-30. A trigger
+        // "+ Node" (no drag) — human override, 2026-08-30. A trigger
         // auto-wires to the CURRENT chain root, but ONLY when no trigger
         // exists yet anywhere in the graph; a second trigger is left
         // floating on purpose (nothing to sensibly guess — the author
@@ -878,18 +963,164 @@ function Inner({
         // `flow-connect.ts` and mints ids through the one shared `flowEdgeId`
         // helper — never a second copy of the template.
         const nextEdges = renameStepInEdges(edges, prevId, next.id);
+        const nextCanvas = renameSectionMember(canvas, prevId, next.id);
         setNodes(nextNodes);
         setEdges(nextEdges);
+        setCanvas(nextCanvas);
         if (selectedId === prevId) setSelectedId(next.id);
         if (editingId === prevId) setEditingId(next.id);
-        emitChange(nextNodes, nextEdges);
+        emitChange(nextNodes, nextEdges, nextCanvas);
         return;
       }
       setNodes(nextNodes);
       emitChange(nextNodes, edges);
     },
-    [nodes, edges, setNodes, setEdges, selectedId, editingId, emitChange],
+    [nodes, edges, canvas, setNodes, setEdges, selectedId, editingId, emitChange],
   );
+
+  // ── Notes & sections ────────────────────────────────────────────────────────
+  const onCanvasChange = useCallback(
+    (next: FlowCanvas) => {
+      if (readOnly) return;
+      setCanvas(next);
+      emitChange(nodes, edges, next);
+    },
+    [readOnly, nodes, edges, emitChange],
+  );
+
+  const addNote = useCallback(() => {
+    if (readOnly) return;
+    const box = flowContainerRef.current?.getBoundingClientRect();
+    const at = box
+      ? screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
+      : { x: 0, y: 0 };
+    const notes = canvas.notes ?? [];
+    const note = {
+      id: nextCanvasId(
+        "note",
+        notes.map((n) => n.id),
+      ),
+      color: "#facc15",
+      position: { x: Math.round(at.x - 100), y: Math.round(at.y - 60) },
+      size: { width: 200, height: 120 },
+      content: "",
+    };
+    onCanvasChange(clampCanvas({ ...canvas, notes: [...notes, note] }));
+  }, [readOnly, canvas, screenToFlowPosition, onCanvasChange]);
+
+  // "Draw section" tool: the author drags a rectangle anywhere on the canvas (corners in flow
+  // units). The frame owns the nodes whose centre falls inside it — the same rule a node drag
+  // uses — so dragging the section carries them. A click without a drag drops a default frame.
+  const addSectionAt = useCallback(
+    (a: { x: number; y: number }, b: { x: number; y: number } | null) => {
+      if (readOnly) return;
+      const x0 = b ? Math.min(a.x, b.x) : a.x;
+      const y0 = b ? Math.min(a.y, b.y) : a.y;
+      const w = b ? Math.abs(b.x - a.x) : 360;
+      const h = b ? Math.abs(b.y - a.y) : 240;
+      const members = nodes
+        .filter((n) => {
+          const r = nodeRect(n);
+          const cx = r.x + r.w / 2;
+          const cy = r.y + r.h / 2;
+          return cx >= x0 && cx <= x0 + w && cy >= y0 && cy <= y0 + h;
+        })
+        .map((n) => n.id);
+      const sections = canvas.sections ?? [];
+      const id = nextCanvasId(
+        "section",
+        sections.map((x) => x.id),
+      );
+      const section = {
+        id,
+        title: "Section",
+        color: "#6366f1",
+        position: { x: Math.round(x0), y: Math.round(y0) },
+        size: { width: Math.round(w), height: Math.round(h) },
+        nodes: [] as string[],
+      };
+      const withNew = { ...canvas, sections: [...sections, section] };
+      onCanvasChange(clampCanvas(assignMembership(withNew, id, members)));
+    },
+    [readOnly, nodes, canvas, onCanvasChange],
+  );
+
+  // Esc leaves the draw-section tool without drawing.
+  useEffect(() => {
+    if (!drawingSection) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setDrawingSection(false);
+      setSectionDraft(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawingSection]);
+
+  // Dropping a section moves its members by the same delta: ONE emission, on drop.
+  const onSectionDrop = useCallback(
+    (id: string, d: { dx: number; dy: number }) => {
+      if (readOnly) return;
+      const sec = canvas.sections?.find((x) => x.id === id);
+      if (!sec) return;
+      const members = new Set(sec.nodes);
+      const nextNodes = nodes.map((n) =>
+        members.has(n.id)
+          ? { ...n, position: { x: n.position.x + d.dx, y: n.position.y + d.dy } }
+          : n,
+      );
+      const nextCanvas: FlowCanvas = {
+        ...canvas,
+        sections: (canvas.sections ?? []).map((x) =>
+          x.id === id ? { ...x, position: { x: x.position.x + d.dx, y: x.position.y + d.dy } } : x,
+        ),
+      };
+      setNodes(nextNodes);
+      setCanvas(nextCanvas);
+      emitChange(nextNodes, edges, nextCanvas);
+    },
+    [readOnly, canvas, nodes, edges, setNodes, emitChange],
+  );
+
+  const performCanvasDelete = useCallback(
+    (kind: "note" | "section", id: string) => {
+      if (readOnly) return;
+      // Deleting a section deletes the frame, never its nodes.
+      const next: FlowCanvas =
+        kind === "note"
+          ? { ...canvas, notes: (canvas.notes ?? []).filter((n) => n.id !== id) }
+          : { ...canvas, sections: (canvas.sections ?? []).filter((x) => x.id !== id) };
+      onCanvasChange(next);
+    },
+    [readOnly, canvas, onCanvasChange],
+  );
+
+  // After a node drag: membership follows the node CENTRE (inside a section ⇒ joins it,
+  // leaving any other; outside every section ⇒ leaves). Returns the canvas to emit.
+  const membershipAfterDrag = (dragged: StepNode[]): FlowCanvas => {
+    let next = canvas;
+    for (const d of dragged) {
+      const r = nodeRect(d);
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const target = (next.sections ?? []).find(
+        (sec) =>
+          cx >= sec.position.x &&
+          cx <= sec.position.x + sec.size.width &&
+          cy >= sec.position.y &&
+          cy <= sec.position.y + sec.size.height,
+      );
+      const current = sectionsContaining(next, d.id);
+      if (target) {
+        if (current.length !== 1 || current[0] !== target.id) {
+          next = assignMembership(next, target.id, [d.id]);
+        }
+      } else if (current.length > 0) {
+        next = pruneSectionMembers(next, d.id);
+      }
+    }
+    return next;
+  };
 
   // Remember the values a Run was made with, then record the run AGAINST that
   // fixture — the same two-call sequence the Test path uses (`StepTestRun` in
@@ -1042,9 +1273,10 @@ function Inner({
       onRun: runStep,
       onDuplicate: duplicateStep,
       onDelete: deleteStep,
+      onAddFromPort: addFromPort,
       readOnly,
     }),
-    [runStep, duplicateStep, deleteStep, readOnly],
+    [runStep, duplicateStep, deleteStep, addFromPort, readOnly],
   );
 
   // Opens the step editor on a canvas node double-click — deliberately NOT
@@ -1310,9 +1542,12 @@ function Inner({
                     // means React Flow never starts the drag, so this cannot fire at all
                     // in a read-only editor. Measured, not assumed — the probe's readOnly
                     // fixture asserts the node does not move (F4-V1).
-                    onNodeDragStop={() => {
-                      if (!savePosition) return;
-                      emitChange(nodes, edges);
+                    onNodeDragStop={(_e, _n, dragged) => {
+                      const nextCanvas = membershipAfterDrag(dragged as StepNode[]);
+                      const membershipChanged = nextCanvas !== canvas;
+                      if (membershipChanged) setCanvas(nextCanvas);
+                      if (!savePosition && !membershipChanged) return;
+                      emitChange(nodes, edges, nextCanvas);
                     }}
                     onMoveEnd={(event, viewport) => {
                       // FIRST statement, and load-bearing. React Flow passes
@@ -1346,6 +1581,10 @@ function Inner({
                       if (next !== base) onChange(next);
                     }}
                     onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
+                      // ⚠️ Only primitives are stored from this handler: React Flow re-invokes
+                      // it (inline) after every re-render of this component, so storing a
+                      // fresh array here defeats React's `Object.is` bail-out and loops —
+                      // a silent CPU burn in a page, a frozen main thread under Storybook.
                       setSelectedId(sel[0]?.id ?? null);
                       setSelectedEdgeId(edgeSel[0]?.id ?? null);
                       // Deliberately NOT clearing `laneError` here — see its declaration.
@@ -1353,6 +1592,10 @@ function Inner({
                     nodeTypes={nodeTypes}
                     nodesDraggable={!readOnly}
                     nodesConnectable={!readOnly}
+                    // A click on a port adds a step from it (PortHandle) — not the library's
+                    // click-a-port-then-click-another connect mode, which shows nothing
+                    // after the first click and reads as a dead port.
+                    connectOnClick={false}
                     elementsSelectable
                     // Reopen at the camera the author left, when the workflow stores one;
                     // otherwise fit the graph exactly as before. The two props are spread
@@ -1399,20 +1642,87 @@ function Inner({
                     </Controls>
                     <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
                     {!readOnly && (
-                      <Panel position="top-left">
+                      <Panel position="top-left" className="w6w-flow-tools">
                         <button
                           type="button"
                           className="w6w-btn"
                           onClick={() => setBuilderOpen(true)}
                         >
-                          + Step
+                          + Node
                         </button>
+                        <IconButton
+                          label="Add note"
+                          icon="sticky-note"
+                          className="w6w-flow-tool"
+                          data-testid="add-note"
+                          onClick={addNote}
+                        />
+                        <IconButton
+                          label="Draw section"
+                          title="Draw section — drag a frame on the canvas (Esc cancels)"
+                          icon="frame"
+                          className={`w6w-flow-tool${drawingSection ? " active" : ""}`}
+                          aria-pressed={drawingSection}
+                          data-testid="draw-section"
+                          onClick={() => {
+                            setDrawingSection(!drawingSection);
+                            setSectionDraft(null);
+                          }}
+                        />
                       </Panel>
+                    )}
+                    {/* The draw-section surface: above the graph (z 4, after the renderer)
+                    and below the panels (z 5), so the tool button stays clickable. */}
+                    {!readOnly && drawingSection && (
+                      <div
+                        className="w6w-section-draw nopan nodrag nowheel"
+                        data-testid="section-draw-surface"
+                        onPointerDown={(e) => {
+                          if (e.button !== 0) return;
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          const { clientX: x, clientY: y } = e;
+                          setSectionDraft({ sx: x, sy: y, ex: x, ey: y });
+                        }}
+                        onPointerMove={(e) => {
+                          const { clientX: x, clientY: y } = e;
+                          setSectionDraft((d) => d && { ...d, ex: x, ey: y });
+                        }}
+                        onPointerUp={() => {
+                          const d = sectionDraft;
+                          setSectionDraft(null);
+                          setDrawingSection(false);
+                          if (!d) return;
+                          const a = screenToFlowPosition({ x: d.sx, y: d.sy });
+                          const dragged = Math.abs(d.ex - d.sx) > 6 || Math.abs(d.ey - d.sy) > 6;
+                          addSectionAt(
+                            a,
+                            dragged ? screenToFlowPosition({ x: d.ex, y: d.ey }) : null,
+                          );
+                        }}
+                      >
+                        {sectionDraft &&
+                          (() => {
+                            const box = flowContainerRef.current?.getBoundingClientRect();
+                            const ox = box?.left ?? 0;
+                            const oy = box?.top ?? 0;
+                            return (
+                              <div
+                                className="w6w-section-draw-rect"
+                                style={{
+                                  left: Math.min(sectionDraft.sx, sectionDraft.ex) - ox,
+                                  top: Math.min(sectionDraft.sy, sectionDraft.ey) - oy,
+                                  width: Math.abs(sectionDraft.ex - sectionDraft.sx),
+                                  height: Math.abs(sectionDraft.ey - sectionDraft.sy),
+                                }}
+                              />
+                            );
+                          })()}
+                      </div>
                     )}
                     {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
                     `Edge.when`). Revealed only when exactly ONE edge is selected —
                     `selectedEdgeId` is already `edgeSel[0]`, so selecting a node or
-                    nothing hides it. top-left is `+ Step`, Controls are bottom-left,
+                    nothing hides it. top-left is `+ Node`, Controls are bottom-left,
                     the MiniMap bottom-right. D-T1-7 SUPERSEDED (T1.1.1): id'd source
                     handles now exist (the error exit port), so a fresh edge's lane IS
                     chosen by which handle it was dragged from — this panel keeps its
@@ -1444,7 +1754,33 @@ function Inner({
                         </div>
                       </Panel>
                     )}
+                    <CanvasLayer
+                      canvas={canvas}
+                      readOnly={readOnly}
+                      savePosition={savePosition}
+                      onChange={onCanvasChange}
+                      onSectionDrop={onSectionDrop}
+                      onRequestDelete={(kind, id) =>
+                        !readOnly && setPendingCanvasDelete({ kind, id })
+                      }
+                    />
                   </ReactFlow>
+                  {pendingCanvasDelete && (
+                    <ConfirmModal
+                      title={pendingCanvasDelete.kind === "note" ? "Delete note" : "Delete section"}
+                      message={
+                        pendingCanvasDelete.kind === "note"
+                          ? "Delete this note?"
+                          : "Delete this section? Its nodes are kept."
+                      }
+                      confirmLabel="Delete"
+                      onConfirm={() => {
+                        performCanvasDelete(pendingCanvasDelete.kind, pendingCanvasDelete.id);
+                        setPendingCanvasDelete(null);
+                      }}
+                      onClose={() => setPendingCanvasDelete(null)}
+                    />
+                  )}
 
                   {builderOpen && (
                     <StepBuilderModal
@@ -1460,7 +1796,7 @@ function Inner({
                       }}
                       // Progressive commit (T4.1.1): once `addBuiltStep` has minted
                       // the step's id, every subsequent field change updates that
-                      // same node instead of waiting for a final "Add step" click.
+                      // same node instead of waiting for a final "Add node" click.
                       onDraftChange={(id, next) => updateStep(id, { id, ...next })}
                       workflowId={value.id}
                       // The new step's known upstream ancestors, from the handle a
@@ -1493,7 +1829,7 @@ function Inner({
 
                   {runResult && (
                     <Modal
-                      title={`${collecting ? "Run step" : "Test run"}: ${runResult.stepId}`}
+                      title={`${collecting ? "Run node" : "Test run"}: ${runResult.stepId}`}
                       onClose={() => setRunResult(null)}
                     >
                       {collecting && runningStep && (
@@ -1526,7 +1862,7 @@ function Inner({
                                     <code>{runResult.errorCode}</code>
                                   </div>
                                 )}
-                                {runResult.error || "The step failed with no error message."}
+                                {runResult.error || "The node failed with no error message."}
                               </div>
                             )}
                             {runResult.status === "done" && (
@@ -1606,8 +1942,8 @@ function Inner({
 
                   {pendingDelete !== null && (
                     <ConfirmModal
-                      title="Delete step"
-                      message={`Delete step "${pendingDelete}"? Its connections are removed too.`}
+                      title="Delete node"
+                      message={`Delete node "${pendingDelete}"? Its connections are removed too.`}
                       confirmLabel="Delete"
                       onConfirm={() => {
                         performDeleteStep(pendingDelete);
@@ -1921,8 +2257,8 @@ function StepRunCollect({
           ) : (
             <>
               <p className="w6w-muted w6w-small">
-                Runs <code>{step.uses.action}</code> with the configuration saved on this step —
-                only the incoming state changes per run. Edit the step to change how it is
+                Runs <code>{step.uses.action}</code> with the configuration saved on this node —
+                only the incoming state changes per run. Edit the node to change how it is
                 configured.
               </p>
               <IncomingStateField text={stateText} onChange={setStateText} seeds={seeds} />
@@ -1991,6 +2327,18 @@ function PortHandle({
   id?: string;
   variant?: "error";
 }) {
+  const nodeId = useNodeId();
+  const ctrl = useContext(StepControlsCtx);
+  const canAdd = !!nodeId && !!ctrl && !ctrl.readOnly;
+  const add = () => {
+    if (canAdd && nodeId) ctrl.onAddFromPort(nodeId, type, id);
+  };
+  const what =
+    variant === "error"
+      ? "a step that handles this step's failure"
+      : type === "target"
+        ? "a step before this one"
+        : "the next step";
   return (
     <Handle
       type={type}
@@ -2000,14 +2348,18 @@ function PortHandle({
         variant === "error" ? "w6w-handle-error" : multiple ? "w6w-handle-multi" : undefined
       }
       style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
+      // A click (no drag) adds a step from this port; a drag still draws a connection.
+      onClick={canAdd ? add : undefined}
       title={
-        variant === "error"
-          ? "On error — drag to route this step's failure separately"
-          : multiple
-            ? type === "target"
-              ? "Accepts multiple incoming connections"
-              : "Multiple outgoing connections"
-            : undefined
+        canAdd
+          ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
+          : variant === "error"
+            ? "On error — drag to route this step's failure separately"
+            : multiple
+              ? type === "target"
+                ? "Accepts multiple incoming connections"
+                : "Multiple outgoing connections"
+              : undefined
       }
     />
   );
@@ -2022,8 +2374,8 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         <button
           type="button"
           className="w6w-node-toolbar-btn"
-          title="Test-run this step"
-          aria-label="Test-run this step"
+          title="Test-run this node"
+          aria-label="Test-run this node"
           onClick={() => ctrl.onRun(id)}
         >
           <Icon name="run" size={15} />
@@ -2033,7 +2385,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         type="button"
         className="w6w-node-toolbar-btn"
         title="Edit"
-        aria-label="Edit step"
+        aria-label="Edit node"
         onClick={() => ctrl.onEdit(id)}
       >
         <Icon name="edit" size={15} />
@@ -2042,7 +2394,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         type="button"
         className="w6w-node-toolbar-btn"
         title="Duplicate"
-        aria-label="Duplicate step"
+        aria-label="Duplicate node"
         onClick={() => ctrl.onDuplicate(id)}
       >
         <Icon name="copy" size={15} />
@@ -2051,7 +2403,7 @@ function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
         type="button"
         className="w6w-node-toolbar-btn danger"
         title="Delete"
-        aria-label="Delete step"
+        aria-label="Delete node"
         onClick={() => ctrl.onDelete(id)}
       >
         <Icon name="trash" size={15} />
@@ -2269,7 +2621,7 @@ export function StepEditModal({
   onClose: () => void;
   readOnly?: boolean;
   initialView?: EditView;
-  /** Most outgoing edges this step has in one lane; "Run next steps" needs >= 2. */
+  /** Most outgoing edges this node has in one lane; "Run next nodes" needs >= 2. */
   fanOutCount?: number;
   /** Fired the instant the footer Test button is clicked, before the test runs (T1.1.1). */
   onTestRun?: () => void;
@@ -2490,8 +2842,8 @@ export function StepEditModal({
                 <button
                   type="button"
                   className="w6w-icon-btn w6w-btn-sm"
-                  title="Rename step"
-                  aria-label="Rename step"
+                  title="Rename node"
+                  aria-label="Rename node"
                   onClick={() => {
                     setDraftId(step.id);
                     setRenaming(true);
@@ -2608,7 +2960,7 @@ export function StepEditModal({
                   readOnly
                   minHeight="260px"
                   height="100%"
-                  aria-label={`Step ${step.id} JSON`}
+                  aria-label={`Node ${step.id} JSON`}
                   copyable
                 />
               ) : configView === "params-code" ? (
@@ -2618,7 +2970,7 @@ export function StepEditModal({
                   readOnly={readOnly}
                   minHeight="260px"
                   height="100%"
-                  aria-label={`Step ${step.id} params JSON`}
+                  aria-label={`Node ${step.id} params JSON`}
                   copyable
                   onValidChange={(p) =>
                     p &&
@@ -2801,7 +3153,7 @@ function StepPortsControl({
   );
 }
 
-/** "Run next steps: In sequence / In parallel" — only meaningful with 2+ outgoing edges in a lane. */
+/** "Run next nodes: In sequence / In parallel" — only meaningful with 2+ outgoing edges in a lane. */
 function StepFanOutControl({
   step,
   count,
@@ -2817,9 +3169,9 @@ function StepFanOutControl({
   const mode = step.fanOut === "parallel" ? "parallel" : "sequential";
   return (
     <label className="w6w-field">
-      <span>Run next steps</span>
+      <span>Run next nodes</span>
       <select
-        aria-label="Run next steps"
+        aria-label="Run next nodes"
         value={mode}
         disabled={readOnly || !enabled}
         onChange={(e) => onChange(setFanOut(step, e.target.value as "sequential" | "parallel"))}

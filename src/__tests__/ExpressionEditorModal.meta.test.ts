@@ -138,16 +138,16 @@ test("M1 - composed projection, before any test: exactly one Metadata group, for
   const m = await mountModal({ options: { steps }, onSave: (v) => saved.push(v) });
   await click(toggles(m.container)[0]);
   await click(leafBtn(m.container, 0));
-  assert.deepEqual(saved, [{ type: "expr", parts: [{ kind: "var", ref: "steps.ev.meta.app" }] }]);
+  assert.deepEqual(saved, [{ type: "expr", parts: [{ kind: "var", ref: "nodes.ev.meta.app" }] }]);
 });
 
 for (const [i, k] of KEYS.entries()) {
-  test(`M2 - clicking the ${k} leaf saves steps.ev.meta.${k}`, async () => {
+  test(`M2 - clicking the ${k} leaf saves nodes.ev.meta.${k}`, async () => {
     const { container, onSaveCalls } = await mountExt();
     await click(toggles(container)[0]);
     await click(leafBtn(container, i));
     assert.deepEqual(onSaveCalls, [
-      { type: "expr", parts: [{ kind: "var", ref: `steps.ev.meta.${k}` }] },
+      { type: "expr", parts: [{ kind: "var", ref: `nodes.ev.meta.${k}` }] },
     ]);
   });
   test(`M3 - the copy icon on the ${k} leaf inserts a chip with that ref`, async () => {
@@ -156,7 +156,7 @@ for (const [i, k] of KEYS.entries()) {
     await click(copyBtn(container, i));
     const chips = q(container, ".w6w-exprmodal-chips .w6w-expr-chip");
     assert.equal(chips.length, 1);
-    assert.equal(chips[0].getAttribute("data-ref"), `steps.ev.meta.${k}`);
+    assert.equal(chips[0].getAttribute("data-ref"), `nodes.ev.meta.${k}`);
   });
 }
 
@@ -221,24 +221,24 @@ test("M5 - exactly the four labels, and no value, ever", async () => {
 
 test("M6 - save/reload: meta chips read readably; other values round-trip", async () => {
   for (const value of [
-    { type: "expr" as const, parts: [{ kind: "var" as const, ref: "steps.ev.meta.connectionId" }] },
-    "{{ steps.ev.meta.connectionId }}",
+    { type: "expr" as const, parts: [{ kind: "var" as const, ref: "nodes.ev.meta.connectionId" }] },
+    "{{ nodes.ev.meta.connectionId }}",
   ]) {
     const { container } = await mountExt({ value });
     const chips = q(container, ".w6w-exprmodal-chips .w6w-expr-chip");
     assert.equal(chips.length, 1);
-    assert.equal(chips[0].getAttribute("data-ref"), "steps.ev.meta.connectionId");
+    assert.equal(chips[0].getAttribute("data-ref"), "nodes.ev.meta.connectionId");
     assert.notEqual(
       chips[0].querySelector(".w6w-expr-chip-label")?.textContent,
-      "steps.ev.meta.connectionId",
+      "nodes.ev.meta.connectionId",
     );
   }
-  for (const text of ["{{ steps.ev.output.id }}", "{{ vars.x }}"]) {
+  for (const text of ["{{ nodes.ev.output.id }}", "{{ vars.x }}"]) {
     const { container, onSaveCalls } = await mountExt({ value: text });
     await click(q(container, "button").find((b) => b.textContent === "Save") as HTMLElement);
     assert.equal(onSaveCalls.length, 1);
     const saved = onSaveCalls[0];
-    const ref = text.includes("vars") ? "vars.x" : "steps.ev.output.id";
+    const ref = text.includes("vars") ? "vars.x" : "nodes.ev.output.id";
     assert.deepEqual(saved, { type: "expr", parts: [{ kind: "var", ref }] });
   }
 });
@@ -255,7 +255,7 @@ test("M7 - json-binding mode: no Metadata group; Entire output still binds", asy
   const entire = q(container, "button").find((b) => b.textContent?.includes("Entire output"));
   assert.ok(entire);
   await click(entire as HTMLElement);
-  assert.deepEqual(bound, [{ $: "steps.ev.output" }]);
+  assert.deepEqual(bound, [{ $: "nodes.ev.output" }]);
 });
 
 test("V0 - varLabel meta labels are exact for an id sharing no letters with any key", () => {

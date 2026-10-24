@@ -3,7 +3,7 @@ id: null
 key: "components/modals"
 title: "Modals"
 section: "reference-packages"
-description: "Open dialogs, confirm destructive actions, connect an app, and build a workflow step with @w6w/ui's modals."
+description: "Open dialogs, confirm destructive actions, connect an app, and build a workflow node with @w6w/ui's modals."
 format: "markdown"
 shared: true
 sourceRepo: null
@@ -126,26 +126,26 @@ fails with a message if the browser blocks it.
 
 ## `StepBuilderModal` (provider)
 
-Build one workflow step. The author picks what the step calls (a connected app's action, a
+Build one workflow node. The author picks what the node calls (a connected app's action, a
 Function, a Workflow, or a built-in node such as a trigger, an `if` or a `foreach`), chooses a connection,
 fills in the parameters, sets retry and error handling, and tests it. It's what
-[`WorkflowFlowEditor`](/reference-packages/components/flow-editor/) opens to add a step, and you can open it
-anywhere you need a step or a target.
+[`WorkflowFlowEditor`](/reference-packages/components/flow-editor/) opens to add a node, and you can open it
+anywhere you need a node or a target.
 
 | Prop | Type | What it does |
 | --- | --- | --- |
 | `onClose` | `() => void` | Required. |
-| `onAdd` | `(step: BuiltStep) => string \| void` | Required. Fired when the step is first complete. Return the id you gave it to receive later edits through `onDraftChange`. |
-| `onDraftChange` | `(id, step) => void` | Every edit after `onAdd`. Without it, the builder adds the step once, when the author finishes. |
-| `title` | `string` | Heading. Defaults to `"Add a step"`. |
+| `onAdd` | `(step: BuiltStep) => string \| void` | Required. Fired when the node is first complete. Return the id you gave it to receive later edits through `onDraftChange`. |
+| `onDraftChange` | `(id, step) => void` | Every edit after `onAdd`. Without it, the builder adds the node once, when the author finishes. |
+| `title` | `string` | Heading. Defaults to `"Add a node"`. |
 | `appsOnly` | `boolean` | Hide the workflow-only tabs (Triggers, Controls, Utilities, Data). For pickers that choose a target rather than add a canvas node. |
 | `callables` | `("function" \| "workflow")[]` | Which of the Functions and Workflows tabs to show. Defaults to both. |
 | `initialTab` | `"connected" \| "functions" \| "workflows"` | The tab that opens first. Defaults to `"connected"`. |
 | `appsFilter` | `(app) => boolean` | Limit which apps can be picked. |
-| `initialApp`, `initialAction`, `initialConnection`, `initialWith` | | Open on an existing step's settings, for editing. |
+| `initialApp`, `initialAction`, `initialConnection`, `initialWith` | | Open on an existing node's settings, for editing. |
 | `connectionOnly` | `boolean` | Stop once a connection is chosen, with no action or test. Pair it with `onConnected(connectionId, app)`. |
-| `workflowId`, `stepId` | `string` | The step's place in a saved workflow, so a previously saved passing test counts. |
-| `upstreamSteps` | `{ id, label? }[]` | Earlier steps, so `steps.<id>.output` references resolve in a test. |
+| `workflowId`, `stepId` | `string` | The node's place in a saved workflow, so a previously saved passing test counts. |
+| `upstreamSteps` | `{ id, label? }[]` | Earlier nodes, so `nodes.<id>.output` references resolve in a test. The older `steps.<id>.output` spelling still works. |
 | `theme` | `"light" \| "dark"` | |
 
 With a `workflowId`, the Triggers tab also lists app triggers. A webhook trigger is added with one
@@ -153,7 +153,7 @@ click. A poll trigger first asks "Check every … minutes" (default 5, or the tr
 `minIntervalMs` if higher) and creates the subscription with that interval sent as `intervalMs`, in
 milliseconds. The host enforces its own minimum and the picker shows its refusal as-is.
 
-`BuiltStep` is a step without its id: `{ uses: { app, action, connection? }, with?, retry?,
+`BuiltStep` is a node without its id: `{ uses: { app, action, connection? }, with?, retry?,
 onError?, notes? }`.
 
 ```tsx
@@ -163,15 +163,15 @@ import { StepBuilderModal, type BuiltStep } from "@w6w/ui";
   <StepBuilderModal
     onClose={() => setBuilding(false)}
     onAdd={(step: BuiltStep) => {
-      const id = `step_${workflow.steps.length + 1}`;
-      setWorkflow({ ...workflow, steps: [...workflow.steps, { id, ...step }] });
+      const id = `step_${workflow.nodes.length + 1}`;
+      setWorkflow({ ...workflow, nodes: [...workflow.nodes, { id, ...step }] });
       setBuilding(false);
     }}
   />
 )}
 ```
 
-By default, an app step can't be added until a test of it passes. That gate is what
+By default, an app node can't be added until a test of it passes. That gate is what
 `isTestRequired(surface)` reports: it's `true` unless the app or node says `testRequired: false`.
 `requiredParamsFilled(params, values)` is the other check the builder runs: whether every visible
 required parameter has a value. Both are exported for your own forms.

@@ -170,7 +170,7 @@ const RUN_SHORTER: ExecutionLogStep = { id: "a-step", label: "A step", status: "
 
 test("A2 — empty list renders without throwing, and shows an empty state, not a broken frame", async () => {
   const html = await renderPanel({ steps: [] });
-  assert.match(html, /No steps have run yet\./);
+  assert.match(html, /No nodes have run yet\./);
   assert.doesNotMatch(html, /w6w-execution-log-row/);
 });
 
@@ -370,7 +370,7 @@ test("A4/M1 — with onDismiss supplied, the EMPTY branch renders the dismiss co
     at(html, "w6w-execution-log-head") < at(html, "w6w-execution-log-empty"),
     `the head must render above the body, got: ${html}`,
   );
-  assert.match(html, /No steps have run yet\./, "the empty state itself is untouched");
+  assert.match(html, /No nodes have run yet\./, "the empty state itself is untouched");
 
   await act(async () => {
     dismiss.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -494,7 +494,7 @@ test("E4 — runError renders in the EMPTY branch, alongside the empty state", a
   });
   assert.match(html, /run-level-msg/, `the run error message must render: ${html}`);
   assert.match(html, /<code>plan_invalid<\/code>/, `the run error code must render: ${html}`);
-  assert.match(html, /No steps have run yet\./, "the empty state itself still renders");
+  assert.match(html, /No nodes have run yet\./, "the empty state itself still renders");
   assert.ok(
     at(html, "run-level-msg") < at(html, "w6w-execution-log-empty"),
     `the run error sits above the empty state: ${html}`,
