@@ -686,7 +686,14 @@ export function ActionTestForm({
       </div>
 
       {viewMode === "form" ? (
-        <ParamsForm params={selectedAction?.params ?? []} values={values} onChange={setValues} />
+        <ParamsForm
+          params={selectedAction?.params ?? []}
+          values={values}
+          onChange={setValues}
+          dynamic={
+            selectedAction ? { appId, actionKey: selectedAction.key, connectionId } : undefined
+          }
+        />
       ) : (
         <>
           <JsonEditor
