@@ -377,7 +377,7 @@ function RepeatField({
   }
   const synthesized: ActionParam = {
     ...param,
-    item: { type: param.type, options: param.options },
+    item: { type: param.type, options: Array.isArray(param.options) ? param.options : undefined },
   };
   return <ArrayField param={synthesized} value={value} onChange={onChange} readOnly={readOnly} />;
 }
