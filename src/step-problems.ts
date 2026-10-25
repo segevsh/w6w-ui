@@ -37,7 +37,15 @@ export function applyStepProblems<N extends ProblemNode>(
 }
 
 export function stepProblemTooltip(p: StepProblem): string {
-  return `Connection ${p.connection} no longer exists`;
+  return `Connection ${p.connection} no longer exists — open the step and choose another on the Setup tab`;
+}
+
+/** True while the step still points at the connection the host reports missing. */
+export function isConnectionBlocked(
+  step: { uses: { connection?: string | null } },
+  problem: StepProblem | undefined,
+): boolean {
+  return problem?.code === "unknown_connection" && step.uses.connection === problem.connection;
 }
 
 /** The Setup tab's Connection button label — exactly five outcomes. */

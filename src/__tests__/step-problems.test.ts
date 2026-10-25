@@ -6,6 +6,7 @@ import {
   type StepProblem,
   applyStepProblems,
   connectionButtonLabel,
+  isConnectionBlocked,
   stepProblemTooltip,
 } from "../step-problems.ts";
 
@@ -50,7 +51,15 @@ test("P5 undefined map clears; clean node untouched", () => {
   assert.equal("stepProblem" in applyStepProblems([mk("a", p)], undefined)[0].data, false);
 });
 test("P6 tooltip", () => {
-  assert.equal(stepProblemTooltip(p), "Connection c1 no longer exists");
+  assert.equal(
+    stepProblemTooltip(p),
+    "Connection c1 no longer exists — open the step and choose another on the Setup tab",
+  );
+});
+test("P6b isConnectionBlocked", () => {
+  assert.equal(isConnectionBlocked({ uses: { connection: "c1" } }, p), true);
+  assert.equal(isConnectionBlocked({ uses: { connection: "c2" } }, p), false);
+  assert.equal(isConnectionBlocked({ uses: { connection: "c1" } }, undefined), false);
 });
 test("P7 five label outcomes", () => {
   const conns = [{ id: "c1", displayName: "Main" }, { id: "c2" }];

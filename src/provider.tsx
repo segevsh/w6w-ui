@@ -20,6 +20,8 @@ import type {
   ConnectionSummary,
   FunctionDetail,
   FunctionSummary,
+  ResolveFieldsBody,
+  ResolveFieldsResult,
   SavedTest,
   SubscriptionSummary,
   ThemeMode,
@@ -216,6 +218,18 @@ export interface W6WApi {
   listModelRoutes?(
     project?: string,
   ): Promise<{ name: string; model: string; status: "active" | "broken" }[]>;
+
+  /**
+   * OPTIONAL: resolve the choices of `options: { source: "resolveFields" }`
+   * params from the current form (`POST` to the host). Absent, those params
+   * render as plain inputs and this is never called.
+   */
+  resolveActionFields?(
+    appId: string,
+    actionKey: string,
+    body: ResolveFieldsBody,
+    opts?: { signal?: AbortSignal },
+  ): Promise<ResolveFieldsResult>;
 
   /** Load auth methods declared by an app's manifest, with availability flags. */
   getAppAuth(appId: string): Promise<AuthDef[]>;
