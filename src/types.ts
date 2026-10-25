@@ -135,7 +135,7 @@ export interface ActionParam {
    * Constrained choices. Renders as a single-select dropdown for `select` (or any
    * param with options), and as a multi-select pill picker for `multiselect`.
    */
-  options?: ParamOption[];
+  options?: ParamOption[] | DynamicOptions;
   /** Type-specific render/behavior options. */
   config?: ParamConfig;
   /**
@@ -163,6 +163,42 @@ export interface ActionParam {
 export interface ParamOption {
   value: string | number;
   label: string;
+  description?: string;
+}
+
+/** Host-resolved options (mirrors @w6w/types `DynamicOptions`). */
+export interface DynamicOptions {
+  source: string;
+  searchable?: boolean;
+  cache?: "session" | "none";
+  refreshOn?: string[];
+}
+
+/** True for the form-resolved arm: a non-array object with `source === "resolveFields"`. */
+export function isFormResolvedOptions(o: unknown): o is DynamicOptions {
+  return (
+    typeof o === "object" &&
+    o !== null &&
+    !Array.isArray(o) &&
+    (o as { source?: unknown }).source === "resolveFields"
+  );
+}
+
+/** Body of `W6WApi.resolveActionFields`. */
+export interface ResolveFieldsBody {
+  connectionId: string;
+  version?: string;
+  reason: "init" | "change";
+  form: Record<string, unknown>;
+  previous?: Record<string, unknown>;
+  changed?: string[];
+  fields: string[];
+  unresolved: string[];
+}
+
+/** Result of `W6WApi.resolveActionFields`. */
+export interface ResolveFieldsResult {
+  fields: Record<string, { options?: ParamOption[]; error?: string }>;
 }
 
 /**
@@ -204,6 +240,8 @@ export interface ParamCondition {
 export interface ParamConfig {
   /** Render as a multi-line textarea. Implied by `type: "text"`. */
   multiline?: boolean;
+  /** With options: accept a value not in the list (Combobox `forceSelection` off). */
+  allowCustom?: boolean;
 }
 
 /** Summary of an action an app exposes, as returned by GET /apps/:id. */

@@ -107,6 +107,9 @@ export type { OAuthPopupResult } from "./oauth-popup.ts";
 export type {
   ActionDef,
   ActionParam,
+  DynamicOptions,
+  ResolveFieldsBody,
+  ResolveFieldsResult,
   ApiCallRecord,
   AppSummary,
   AuthDef,
@@ -125,7 +128,7 @@ export type {
   WorkflowDetail,
   WorkflowSummary,
 } from "./types.ts";
-export { isExprValue, isSecretValue } from "./types.ts";
+export { isExprValue, isFormResolvedOptions, isSecretValue } from "./types.ts";
 
 export { IconButton } from "./components/IconButton.tsx";
 export type { IconButtonProps } from "./components/IconButton.tsx";
