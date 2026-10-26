@@ -127,6 +127,17 @@ const badgeTexts = (container: Element) =>
     (n.textContent || "").trim(),
   );
 
+/** The bridge-support chips, per card, in DOM order — `text` is `""` when the card has none. */
+const bridgeChips = (container: Element) =>
+  Array.from(container.querySelectorAll(".w6w-apppicker-card")).map((card) => {
+    const chip = card.querySelector(".w6w-apppicker-card-bridge");
+    return {
+      id: (card.querySelector(".w6w-apppicker-card-id")?.textContent || "").trim(),
+      text: (chip?.textContent || "").trim(),
+      title: chip?.getAttribute("title") ?? null,
+    };
+  });
+
 const providerToggle = (container: Element) =>
   container.querySelector(".w6w-apppicker-provider-toggle") as HTMLElement | null;
 
@@ -177,6 +188,42 @@ test("cards show a badge only for designated apps; a category-ai undesignated fi
     0,
     "an undesignated category-ai app never shows the provider badge",
   );
+  await act(async () => h.root.unmount());
+});
+
+test("host-supplied bridgeSupport: 'Bridge supported' chip, and 'unsupported' with its reason as text and title", async () => {
+  const h = await render({
+    bridgeSupport: new Map<string, { supported: boolean; reason?: string }>([
+      ["multi", { supported: true }],
+      ["openai-chat", { supported: false, reason: "no_connection" }],
+    ]),
+  });
+  assert.deepEqual(
+    bridgeChips(h.container).filter((chip) => chip.text !== ""),
+    [
+      { id: "multi", text: "Bridge supported", title: "Bridge supported" },
+      { id: "openai-chat", text: "unsupported — no_connection", title: "no_connection" },
+    ],
+    "one chip per lookup entry, carrying the reason as its text AND its title",
+  );
+  // Beside, not instead of: the provider badge is still rendered on both cards.
+  assert.equal(badgeTexts(h.container).length, 2);
+  // Apps with no lookup entry stay bare — "unknown" is not "unsupported".
+  assert.deepEqual(
+    bridgeChips(h.container).filter((chip) => chip.id === "legacy-ai"),
+    [{ id: "legacy-ai", text: "", title: null }],
+  );
+  await act(async () => h.root.unmount());
+});
+
+test("no bridge chip at all without the prop (the pre-A6 render is unchanged)", async () => {
+  const h = await render({});
+  assert.deepEqual(
+    bridgeChips(h.container).map((chip) => chip.text),
+    ["", "", "", ""],
+    "no prop, no chip — every existing call site renders exactly as before",
+  );
+  assert.equal(h.container.querySelectorAll(".w6w-apppicker-card-bridge").length, 0);
   await act(async () => h.root.unmount());
 });
 

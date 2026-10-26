@@ -31,6 +31,25 @@ export const Preloaded: Story = {
   args: { apps: SAMPLE_APPS },
 };
 
+/**
+ * Host-supplied bridge support (`operations.complete` from the provider
+ * descriptor): the first app reads "Bridge supported", the second an
+ * "unsupported" chip whose `reason` is its text and title, every other app
+ * carries no chip at all. The picker never derives this itself.
+ */
+export const BridgeSupport: Story = {
+  args: {
+    apps: SAMPLE_APPS,
+    bridgeSupport: new Map<string, { supported: boolean; reason?: string }>(
+      SAMPLE_APPS.slice(0, 2).map((app, index) =>
+        index === 0
+          ? [app.id, { supported: true }]
+          : [app.id, { supported: false, reason: "no_connection" }],
+      ),
+    ),
+  },
+};
+
 /** An empty, resolved catalog with a custom empty message. */
 export const Empty: Story = {
   args: { apps: [], emptyMessage: "No apps registered yet." },
