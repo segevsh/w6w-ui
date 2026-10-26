@@ -72,6 +72,24 @@ export function modelProviderBadge(app: AppSummary): string | null {
   return parts.length > 0 ? `Model provider — ${parts.join(" · ")}` : "Model provider";
 }
 
+/**
+ * The bridge-support chip content for one card, or `null` when the host's
+ * lookup carries no entry for that app — "unknown" renders nothing rather
+ * than guessing, exactly like an undesignated app has no provider badge.
+ * A blank `reason` is treated as absent (a wire value may be `""`).
+ */
+function bridgeSupportChip(
+  entry: { supported: boolean; reason?: string } | undefined,
+): { text: string; title: string } | null {
+  if (!entry) return null;
+  if (entry.supported) return { text: "Bridge supported", title: "Bridge supported" };
+  const reason = typeof entry.reason === "string" ? entry.reason.trim() : "";
+  return {
+    text: reason === "" ? "unsupported" : `unsupported — ${reason}`,
+    title: reason === "" ? "Bridge not supported" : reason,
+  };
+}
+
 export interface AppPickerProps {
   /** Fired when the user picks an app card. */
   onSelectApp: (app: AppSummary) => void;
@@ -117,6 +135,17 @@ export interface AppPickerProps {
    * declares a provider (no dead-end filter, same rule as the category chips).
    */
   providerFilter?: boolean;
+  /**
+   * Opt-in bridge-support lookup, keyed by app id — the HOST passes this in,
+   * because this package never fetches (`GET /models/providers` carries
+   * `operations.complete` support and its `reasons`, and the host already
+   * holds that descriptor). Presence of an entry adds a chip beside the
+   * model-provider badge: "Bridge supported" when `supported`, else an
+   * "unsupported" chip carrying the entry's `reason` as both its text and its
+   * `title`. Omitting the prop (or an app having no entry) renders no chip at
+   * all, so every existing call site and snapshot is unchanged.
+   */
+  bridgeSupport?: ReadonlyMap<string, { supported: boolean; reason?: string }>;
   /**
    * Server-side `category` param for the bounded paged fetch (e.g. `"ai"` for
    * the AI tab) — sent to `W6WApi.listAppsPage`, never applied client-side.
@@ -171,6 +200,7 @@ export function AppPicker({
   apps: providedApps,
   categoryFilter = false,
   providerFilter = false,
+  bridgeSupport,
   category,
   pageLimit = DEFAULT_PAGE_LIMIT,
   loadPage,
@@ -627,6 +657,8 @@ export function AppPicker({
             <div className="w6w-stepbuilder-list w6w-apppicker-grid w6w-stepbuilder-scroll">
               {visible.map((a) => {
                 const badge = modelProviderBadge(a);
+                const bridgeEntry = bridgeSupport?.get(a.id);
+                const bridge = bridgeSupportChip(bridgeEntry);
                 return (
                   <button
                     key={a.id}
@@ -660,6 +692,22 @@ export function AppPicker({
                         badge, because designation is never inferred from categories. */}
                       {badge && (
                         <span className="w6w-chip w6w-apppicker-card-provider">{badge}</span>
+                      )}
+                      {/* Bridge-support chip (A6): host-supplied, one entry per
+                        app id — nothing is derived from `designation` or
+                        `adapter` here, because the host owns the descriptor
+                        and this package never fetches. No entry, no chip. */}
+                      {bridge && (
+                        <span
+                          className={
+                            bridgeEntry?.supported
+                              ? "w6w-chip w6w-apppicker-card-bridge"
+                              : "w6w-chip w6w-apppicker-card-bridge w6w-apppicker-card-bridge-unsupported"
+                          }
+                          title={bridge.title}
+                        >
+                          {bridge.text}
+                        </span>
                       )}
                     </span>
                   </button>
