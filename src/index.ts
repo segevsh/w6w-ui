@@ -229,5 +229,5 @@ export { CanvasLayer } from "./CanvasLayer.tsx";
 export type { CanvasLayerProps } from "./CanvasLayer.tsx";
 export { BudgetMeter } from "./components/BudgetMeter.tsx";
 export type { BudgetMeterProps } from "./components/BudgetMeter.tsx";
-export { Markdown } from "./Markdown.tsx";
+export { Markdown, splitFrontmatter } from "./Markdown.tsx";
 export type { MarkdownProps } from "./Markdown.tsx";

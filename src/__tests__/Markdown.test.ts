@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Markdown, safeUrl } from "../Markdown.tsx";
+import { Markdown, safeUrl, splitFrontmatter } from "../Markdown.tsx";
 
 const render = (content: string) => renderToStaticMarkup(createElement(Markdown, { content }));
 
@@ -102,4 +102,40 @@ test("ordinary markdown still renders", () => {
   assert.match(html, /<strong>bold<\/strong>/);
   assert.match(html, /<code>code<\/code>/);
   assert.match(html, /<li>a<\/li>/);
+});
+
+test("a leading frontmatter block is split off as text; anything else stays in the body", () => {
+  const md = "---\nname: gstack\nallowed-tools: [Bash, Read]\n---\n# Title\n";
+  assert.deepEqual(splitFrontmatter(md), {
+    frontmatter: "name: gstack\nallowed-tools: [Bash, Read]",
+    body: "# Title\n",
+  });
+  assert.deepEqual(splitFrontmatter("# No frontmatter"), {
+    frontmatter: null,
+    body: "# No frontmatter",
+  });
+  assert.equal(splitFrontmatter("text\n---\nkey: v\n---\n").frontmatter, null);
+});
+
+test("frontmatter renders as a collapsed section above the body, not as a rule and heading", () => {
+  const html = render("---\nname: gstack\n---\n# Title\n");
+  assert.match(
+    html,
+    /^<div><details class="w6w-md-frontmatter"[^>]*><summary>Frontmatter<\/summary>/,
+  );
+  assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
+  assert.doesNotMatch(html, /<hr/);
+  assert.match(html, /<pre><code>name: gstack<\/code><\/pre><\/details><h1>Title<\/h1>/);
+});
+
+test("an empty frontmatter block is dropped without a section", () => {
+  const html = render("---\n\n---\nbody");
+  assert.doesNotMatch(html, /<details/);
+  assert.match(html, /<p>body<\/p>/);
+});
+
+test("frontmatter is shown as text, never markup", () => {
+  const html = render("---\nname: <img src=x onerror=alert(1)>\n---\nbody");
+  assert.doesNotMatch(html, /<img/i);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
