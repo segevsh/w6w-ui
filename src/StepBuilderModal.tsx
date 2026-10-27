@@ -575,7 +575,7 @@ export function StepBuilderModal({
               // (A2); `filter` is the client-side backstop every mode still
               // applies — the only path that needs it end-to-end is a legacy
               // `listApps()`-only host, which never sees `category` at all.
-              category="ai"
+              category={hasAppsIds ? undefined : "ai"}
               ids={appsIds}
               // With `appsIds` the server-side id set IS the provider set, so
               // the client AI-category backstop is dropped (it would hide a

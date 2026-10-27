@@ -582,8 +582,9 @@ test("AI tab: fetch carries ids + paged, 70-app mock, footer equals card count",
   assert.ok(aiTab);
   await act(async () => aiTab.click());
   await flush();
-  const aiCall = calls.find((c) => c.category === "ai");
-  assert.ok(aiCall, "AI tab fetched with category=ai");
+  const aiCall = calls.find((c) => Array.isArray(c.ids) && c.ids.length === wanted.length);
+  assert.ok(aiCall, "AI tab fetched with the provider ids");
+  assert.equal(aiCall.category, undefined, "category is not sent with ids (providers may lack it)");
   assert.deepEqual(aiCall.ids, wanted);
   const cards = container.querySelectorAll(".w6w-apppicker-card-id").length;
   assert.equal(cards, 9);
