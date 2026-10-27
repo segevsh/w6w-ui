@@ -30,7 +30,8 @@ A searchable grid of app cards. The same picker the connection modal and the nod
 | --- | --- | --- | --- |
 | `onSelectApp` | `(app: AppSummary) => void` | Required | Fired when the user picks a card. |
 | `apps` | `AppSummary[] \| null` | None | Supply the catalog yourself. `null` shows the loading state. When set, the picker doesn't fetch. |
-| `filter` | `(app) => boolean` | None | Narrows what's shown, in the browser. Never widens a fetch. |
+| `filter` | `(app) => boolean` | None | Narrows what's shown, in the browser. Never widens a fetch. When it hides cards, the paged footer drops its total and reports the card count alone. |
+| `ids` | `string[]` | None | Server-side id allow-list for the paged fetch (`GET /apps?ids=a,b&paged=true`). The page's `total` is the filtered total, so the footer reads `N of N`. Prefer it over `filter` when the allowed ids are known up front. |
 | `search` | `boolean` | `true` | Show the search box. |
 | `searchPlaceholder` | `string` | `"Search apps…"` | |
 | `emptyMessage`, `emptyAction` | `string`, `ReactNode` | None | Empty-state text, and a control under it (such as a "Browse all apps" button). |
@@ -44,6 +45,17 @@ Without `apps`, the picker loads the catalog itself:
 - If your client implements `listAppsPage`, it pages from the server, one page per search, with a
   **Load more** button.
 - Otherwise it calls `listApps()` once and searches in the browser.
+
+In paged mode the footer under the grid reports what you are looking at. A server-side
+narrowing (`ids`, `category`, the search query) makes the page's `total` the filtered total, so
+the footer reads `9 of 9` for nine providers out of a seventy-app catalog. A client-side one —
+`filter`, `categoryFilter`'s chips, `providerFilter`'s toggle — is applied after the page was
+counted, so as soon as it hides a card the footer reports just `N apps`: it never claims a total
+the grid disagrees with. Pick `ids`/`category` when the server can do the narrowing.
+
+Each card shows its name, id and version, plus a **Bridge supported** chip when the host passes a
+`bridgeSupport` entry for that app (and an "unsupported" chip carrying the reason when it does
+not). The picker renders no model-provider text of its own.
 
 It reads the provider even when you pass `apps`, so mount it inside `W6WUIProvider` either way.
 

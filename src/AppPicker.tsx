@@ -61,7 +61,14 @@ export interface AppPickerProps {
   /** Fired when the user picks an app card. */
   onSelectApp: (app: AppSummary) => void;
   theme?: ThemeMode;
-  /** Optional pre-filter over the app list (e.g. only connectable apps). Applied CLIENT-side, on top of whatever page/list was fetched — never widens a fetch, only narrows what's shown. */
+  /**
+   * Optional pre-filter over the app list (e.g. only connectable apps).
+   * Applied CLIENT-side, on top of whatever page/list was fetched — never
+   * widens a fetch, only narrows what's shown. Because the server counted the
+   * apps this filter may then hide, a narrowing filter also removes the paged
+   * footer's denominator: the count reads `N apps`, never `N of total`.
+   * Prefer {@link ids} / {@link category} when the server can do the narrowing.
+   */
   filter?: (app: AppSummary) => boolean;
   /** Search-box placeholder. Defaults to "Search apps…". */
   searchPlaceholder?: string;
@@ -498,6 +505,25 @@ export function AppPicker({
         (a) => a.displayName.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
       )
     : sorted;
+  // A1 (U1/S3) — a CLIENT-side narrowing can drop cards the SERVER already
+  // counted in `total`. There are exactly three such narrowings: the `filter`
+  // prop, the model-provider toggle and a category-chip selection. None of
+  // them reach the fetch, so `pageState.total` still includes what they hide,
+  // and `N of total` would claim apps that are not on screen. When one of them
+  // actually drops a card from the loaded pages, the footer reports the card
+  // count alone — no denominator, no total that disagrees with the grid.
+  //
+  // Server-side narrowing (`ids`, `category`, `q`) needs none of this: the
+  // page arrives already filtered, so `total` is the filtered total and the
+  // footer reads `N of N`. The reserved-`@w6w/*` exclusion is deliberately not
+  // counted here either — the footer's numerator is pinned to the page's own
+  // app count (T3.1.1 A5), internal apps included.
+  const clientFilterDroppedCards =
+    (filter !== undefined && base.length !== connectable.length) ||
+    (providerActive && providerFiltered.length !== base.length) ||
+    (categoryFilter &&
+      selectedCats.length > 0 &&
+      catFiltered.length !== providerFiltered.length);
   // A7: a category and/or provider selection narrowed the list to nothing,
   // distinct from the search-only empty state below (and distinct from either
   // alone: the message names whichever of the two is actually active).
@@ -690,7 +716,9 @@ export function AppPicker({
           )}
           {paged && typeof pageState.total === "number" && (
             <div className="w6w-small w6w-apppicker-count">
-              {pageState.apps.length} of {pageState.total}
+              {clientFilterDroppedCards
+                ? `${visible.length} ${visible.length === 1 ? "app" : "apps"}`
+                : `${pageState.apps.length} of ${pageState.total}`}
             </div>
           )}
           {paged && pageError && (
