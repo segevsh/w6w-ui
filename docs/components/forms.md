@@ -177,6 +177,13 @@ const enter = useEnterSubmit(connect, { enabled: !saving });
 `secret` fields are masked with dots but aren't password inputs, so browsers and password managers
 don't offer to save the credential. A method with no fields shows a short note instead.
 
+A field of type `json` or `text` renders as a plain `<textarea>` with the same autofill opt-outs as
+the inputs, and it is masked when its type is `secret` or the field sets `secret: true` (a pasted
+key file, say). It is deliberately not `ParamsForm`'s JSON editor: that one offers expression
+bindings, and a credential must never be bound to a run-time value. The text is held as typed. Use
+the exported `parseJsonFields(fields, values)` at submit to turn `json` fields into objects; on a
+parse failure it returns an error that names the field and never quotes what was typed.
+
 ## `ExpressionInput`
 
 One field that mixes literal text with references such as `vars.region` or

@@ -22,6 +22,29 @@ interface Props {
 }
 
 /**
+ * Parses every filled `json` field of `values` (they are held as raw text while typing). Returns
+ * the values with those fields parsed, or an `error` naming the offending field by label. The
+ * error NEVER contains the typed text or the parser's message (which can quote it): a pasted key
+ * file that is almost valid must not be echoed back into the page.
+ */
+export function parseJsonFields(
+  fields: AuthField[],
+  values: Record<string, unknown>,
+): { values: Record<string, unknown> } | { error: string } {
+  const out: Record<string, unknown> = { ...values };
+  for (const f of fields) {
+    const v = values[f.key];
+    if (f.type !== "json" || typeof v !== "string" || v.trim() === "") continue;
+    try {
+      out[f.key] = JSON.parse(v);
+    } catch {
+      return { error: `${f.label} is not valid JSON. Check it and try again.` };
+    }
+  }
+  return { values: out };
+}
+
+/**
  * Renders the form for an Auth method's `fields` declaration. Field shape
  * comes from the app's manifest so no app-specific knowledge is needed here.
  */
@@ -65,7 +88,38 @@ export function AuthFieldsForm({
             </label>
           );
         }
-        const isSecret = field.type === "secret";
+        const isSecret = field.type === "secret" || field.secret === true;
+        if (field.type === "json" || field.type === "text") {
+          // A plain textarea, deliberately NOT the step builder's `JsonParamField`: that one offers
+          // expression bindings, and a credential must never be bound to a run-time value. The raw
+          // text is held as typed; callers parse `json` fields at submit (see `parseJsonFields`).
+          // Enter inserts a newline, so it is not wired to submit.
+          return (
+            <label key={field.key} className="w6w-field">
+              <span>
+                {field.label}
+                {field.required ? " *" : ""}
+              </span>
+              <textarea
+                className={isSecret ? "w6w-secret-input" : undefined}
+                rows={field.type === "json" ? 6 : 3}
+                value={String(value ?? "")}
+                placeholder={edit && isSecret ? "•••••• (unchanged)" : undefined}
+                onChange={(e) => update(field.key, e.target.value)}
+                name={`w6w-cred-${field.key}`}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+              />
+              {field.hint && <span className="w6w-hint">{field.hint}</span>}
+            </label>
+          );
+        }
         // Credentials (API keys, tokens) are NOT login passwords. Never use
         // `type="password"` — that's the sole trigger for the browser's
         // "save password?" prompt and for suggesting saved passwords. Secrets are

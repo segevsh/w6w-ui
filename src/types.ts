@@ -71,6 +71,8 @@ export interface AuthField {
   required?: boolean;
   default?: unknown;
   hint?: string;
+  /** Masks the input like a `secret` field whatever its `type` (e.g. a `json` key file). */
+  secret?: boolean;
 }
 
 /**
@@ -333,14 +335,96 @@ export interface WorkflowDetail {
   steps?: WorkflowStepSummary[];
 }
 
+/** A `serviceAccount` auth's declaration: the credential contract it accepts and its binding. */
+export interface ServiceAccountConfig {
+  /** Credential contract ids this auth accepts; the first one is used to list/create. */
+  accepts: string[];
+  /** Scopes the binding requests by default (shown read-only; the server applies them). */
+  scopes: string[];
+  /** Whether a connection must/may name an impersonated user (`delegatedUser`). */
+  impersonation: "none" | "optional" | "required";
+  /** Extra per-connection (binding) fields; each lands in `binding.settings`. */
+  bindingFields?: AuthField[];
+}
+
+export type CredentialStatus = "active" | "disabled" | "revoked";
+
+/** A stored credential as the API lists it. Never carries the secret payload. */
+export interface CredentialSummary {
+  id: string;
+  name: string;
+  contract: string;
+  status: CredentialStatus | string;
+  revision: number;
+  /** Non-secret display values (e.g. the service account's email). */
+  display: Record<string, string>;
+  private: boolean;
+  connectionCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The connections that use a credential. */
+export interface CredentialDependents {
+  connections: Array<{
+    id: string;
+    appId: string;
+    authKey: string;
+    displayName?: string | null;
+  }>;
+}
+
+export interface CredentialTestResult {
+  ok: boolean;
+  code?: string;
+  message?: string;
+}
+
+/** Per-connection settings applied on top of a shared credential. */
+export interface ConnectionBinding {
+  scopes?: string[];
+  /** The user the credential impersonates (Google domain-wide delegation). */
+  delegatedUser?: string;
+  settings?: Record<string, string | number | boolean>;
+}
+
+/** Body of `createConnection`: an inline credential XOR a reference to a stored one. */
+export type CreateConnectionBody =
+  | {
+      authKey: string;
+      credential: Record<string, unknown>;
+      credentialId?: never;
+      displayName?: string;
+      profile?: Record<string, unknown>;
+    }
+  | {
+      authKey: string;
+      credentialId: string;
+      credential?: never;
+      binding?: ConnectionBinding;
+      displayName?: string;
+      profile?: Record<string, unknown>;
+    };
+
 /** Auth method declaration as exposed by an app's manifest. */
 export interface AuthDef {
   key: string;
-  type: "oauth2" | "apiKey" | "basic" | "bearer" | "custom" | "tenantAuth" | "jit" | string;
+  type:
+    | "oauth2"
+    | "apiKey"
+    | "basic"
+    | "bearer"
+    | "custom"
+    | "tenantAuth"
+    | "jit"
+    | "serviceAccount"
+    | string;
   displayName?: string;
   description?: string;
   connectionLabel?: string;
   fields?: AuthField[];
+  /** Present when `type === "serviceAccount"`: what credential it accepts and how it binds. */
+  serviceAccount?: ServiceAccountConfig;
   /** OAuth2 endpoints (only present when type === "oauth2"). */
   oauth2?: Record<string, unknown>;
   /**
@@ -380,6 +464,8 @@ export interface ConnectionSummary {
   id: string;
   appId: string;
   authKey: string;
+  /** The stored credential this connection uses, when it has one. */
+  credentialId?: string | null;
   /** The owning tenant. The server sends `tenant`/`subject`, never `owner`. */
   tenant?: string;
   /** The owning subject (the partner's user id). */

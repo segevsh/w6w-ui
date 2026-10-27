@@ -62,6 +62,8 @@ export type { ListItemProps } from "./components/ListItem.tsx";
 export { HealthStatusPill } from "./components/HealthStatusPill.tsx";
 export type { HealthPillState, HealthStatusPillProps } from "./components/HealthStatusPill.tsx";
 export { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
+export { CredentialPicker } from "./components/CredentialPicker.tsx";
+export type { CredentialPickerProps } from "./components/CredentialPicker.tsx";
 export { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 export type { ApiCallsPanelProps } from "./components/ApiCallsPanel.tsx";
 export { UptimeStrip } from "./components/UptimeStrip.tsx";
@@ -115,7 +117,14 @@ export type {
   AuthDef,
   AuthField,
   ConnectionAppMeta,
+  ConnectionBinding,
   ConnectionSummary,
+  CreateConnectionBody,
+  CredentialDependents,
+  CredentialStatus,
+  CredentialSummary,
+  CredentialTestResult,
+  ServiceAccountConfig,
   ExprPart,
   ExprPartKind,
   ExprValue,
