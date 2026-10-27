@@ -27,6 +27,8 @@ export interface AppsPageQuery {
   q: string;
   /** Server-side category filter (e.g. `"ai"` for the AI tab), or absent. */
   category?: string;
+  /** Server-side id allow-list, or absent. */
+  ids?: string[];
 }
 
 /**
@@ -35,7 +37,8 @@ export interface AppsPageQuery {
  * would otherwise restart an identical in-flight query.
  */
 export function sameAppsPageQuery(a: AppsPageQuery, b: AppsPageQuery): boolean {
-  return a.q === b.q && (a.category ?? "") === (b.category ?? "");
+  return a.q === b.q && (a.category ?? "") === (b.category ?? "") &&
+    (a.ids ?? []).join(",") === (b.ids ?? []).join(",")
 }
 
 export type AppsPageStatus = "loading" | "loading-more" | "ready" | "error";
