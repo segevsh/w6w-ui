@@ -151,7 +151,23 @@ feature-detected: a component that finds one missing falls back or hides that fe
 | `saveStepTest`, `recordStepTestRun`, `listStepTests` | Yes | Step tests in `StepBuilderModal` and `WorkflowFlowEditor` |
 | `listFunctions`, `getFunction`, `invokeFunction` | Yes | The step builder's Functions tab |
 | `listWorkflows`, `getWorkflow`, `runWorkflow` | Yes | The step builder's Workflows tab |
+| `listCredentials(filter?)`, `createCredential(body)` | Optional | The Credential step of `AddConnectionModal`; the step shows only when an auth declares `serviceAccount` and both exist |
+| `getCredential(id)` | Optional | `EditConnectionModal`: the number of connections a rotation affects |
+| `rotateCredential(id, body)` | Optional | `EditConnectionModal`'s split: Rotate credential. Without it the modal is the plain edit form |
+| `testCredential(id)` | Optional | `EditConnectionModal`'s "Credential health" line |
+| `setCredentialStatus(id, status)`, `credentialDependents(id)`, `deleteCredential(id)` | Optional | Credential management screens in hosts (no `@w6w/ui` component calls them) |
 | `listTriggerApps`, `getAppTriggers`, `listSubscriptionsForWorkflow`, `createSubscription` | Optional | App triggers in the step builder and the canvas's webhook panel |
+
+**Credentials are optional end to end.** The eight credential members above use method syntax and
+are feature-detected, so an older client keeps compiling and keeps the inline-credential forms; a
+credential screen is hidden rather than broken when its method is absent. `createW6WApi`
+implements all eight (`/credentials`, `/credentials/:id/rotate`, `/disable`, `/enable`, `/test`,
+`/dependents`). `deleteCredential` rejects with an `ApiError` of code `credential_in_use` when
+connections still use the credential; the listed connections are at `err.body.error.dependents`.
+
+`createConnection(appId, body)` takes a `CreateConnectionBody`: either an inline `credential`
+or a `credentialId` (with an optional `binding`), never both; TypeScript rejects a body with
+both. `updateConnection` also accepts `binding` and `credentialId`.
 
 The parameter and return types are exported (`W6WApi`, `ListAppsPageOptions`, `AppsPageResult`,
 `StepTest`, `TestRunSummary`), so TypeScript checks your implementation.
