@@ -32,3 +32,21 @@ export const Default: Story = {};
 export const EditMode: Story = {
   args: { mode: "edit", values: {} },
 };
+
+/** A `json` secret field is a masked plain textarea (a pasted key file), never an expression editor. */
+export const JsonSecretTextarea: Story = {
+  args: {
+    fields: [
+      {
+        key: "serviceAccountKey",
+        label: "Service account key",
+        type: "json",
+        secret: true,
+        required: true,
+        hint: "Paste the downloaded JSON key file.",
+      },
+      { key: "notes", label: "Notes", type: "text" },
+    ],
+    values: { serviceAccountKey: '{"client_email":"sa@example.iam"}', notes: "Shared with ops" },
+  },
+};

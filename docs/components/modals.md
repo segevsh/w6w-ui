@@ -107,6 +107,23 @@ or complete OAuth in a popup.
 It reads everything else from your client: `listAppsPage` (or `listApps`), `getAppAuth`,
 `createConnection` and `startAppOAuthFlow`. The picker shows category chips.
 
+**Credential step.** An auth that declares `serviceAccount` (a credential shared by many
+connections, such as a Google service account) gets a Credential step between the auth method and
+its fields, when your client has both `listCredentials` and `createCredential`:
+
+- **Use existing** lists the stored active credentials of the auth's contract and creates the
+  connection with `{ authKey, credentialId, binding?, displayName? }`. It is the default when at
+  least one exists.
+- **Create new** asks for a credential name and the auth's fields, stores the credential, then
+  creates the connection from it. If the connection call fails, the stored credential is kept and
+  Save again attaches it instead of storing a second copy.
+- Binding fields come from the auth's declaration. An **Impersonated user** input (the person the
+  credential acts as) appears when the auth allows impersonation and is required when it demands
+  it. The auth's scopes are shown read-only.
+
+With either method missing, or for any auth that is not `serviceAccount`, nothing changes: the form
+is the plain one and the body is `{ authKey, credential, displayName? }`.
+
 ```tsx
 import { AddConnectionModal } from "@w6w/ui";
 
