@@ -75,7 +75,7 @@ test("unset select shows its placeholder choice and stores nothing", async () =>
   assert.equal(dialect.options[0]?.textContent, "Provider native");
   assert.deepEqual(
     [...dialect.options].map((o) => o.value),
-    ["", "openai", "anthropic", "ollama"],
+    ["", "bridge", "openai", "anthropic", "ollama"],
   );
   const response = container.querySelector('select[aria-label="Response"]') as HTMLSelectElement;
   assert.equal(response.value, "");

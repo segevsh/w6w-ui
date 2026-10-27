@@ -1132,9 +1132,10 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Dialect",
         type: "select",
         advanced: true,
-        hint: "Rewrite the result into this wire dialect. Leave unset to keep the provider's own.",
+        hint: "Rewrite the result into this wire dialect; bridge keeps the baseline unprojected. Leave unset to keep the provider's own.",
         placeholder: "Provider native",
         options: [
+          { value: "bridge", label: "Bridge (unprojected)" },
           { value: "openai", label: "OpenAI" },
           { value: "anthropic", label: "Anthropic" },
           { value: "ollama", label: "Ollama" },

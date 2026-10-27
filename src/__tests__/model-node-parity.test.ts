@@ -33,6 +33,9 @@ interface ParsedAction {
 
 /** Parse `{ key, params: [{ key, type, required }] }` actions out of the manifest source. */
 function parseManifest(src: string): Map<string, ParsedAction> {
+  const labels = new Map<string, string>();
+  const lb = /const DIALECT_LABELS[\s\S]*?= \{([\s\S]*?)\};/.exec(src)?.[1] ?? "";
+  for (const l of lb.matchAll(/(\w+): "([^"]*)"/g)) labels.set(l[1] ?? "", l[2] ?? "");
   const out = new Map<string, ParsedAction>();
   // Each action is a top-level `const x: ActionDefinition = { ... };` block.
   const blocks = src.match(/^const \w+: ActionDefinition = \{[\s\S]*?^\};/gm) ?? [];
@@ -49,9 +52,11 @@ function parseManifest(src: string): Map<string, ParsedAction> {
       params.set(pk, {
         type: /^ {6}type: "([^"]+)"/m.exec(body)?.[1] ?? "",
         required: /^ {6}required: true/m.test(body),
-        options: [...body.matchAll(/^ {8}\{ value: "([^"]*)", label: "([^"]*)" \},$/gm)].map(
-          (o): [string, string] => [o[1] ?? "", o[2] ?? ""],
-        ),
+        options: /^ {6}options: COMPLETION_OUTPUT_DIALECTS\.map\(/m.test(body)
+          ? coreDialects().map((v): [string, string] => [v, labels.get(v) ?? ""])
+          : [...body.matchAll(/^ {8}\{ value: "([^"]*)", label: "([^"]*)" \},$/gm)].map(
+              (o): [string, string] => [o[1] ?? "", o[2] ?? ""],
+            ),
         default: def === undefined ? undefined : JSON.parse(def),
         placeholder: /^ {6}placeholder: "([^"]*)"/m.exec(body)?.[1],
       });
@@ -59,6 +64,17 @@ function parseManifest(src: string): Map<string, ParsedAction> {
     out.set(key, { params });
   }
   return out;
+}
+
+const CORE_DIALECTS = fileURLToPath(
+  new URL("../../../core/packages/types/src/model-completion.ts", import.meta.url),
+);
+
+/** The dialect values, read from core's `COMPLETION_OUTPUT_DIALECTS` const (not hardcoded). */
+function coreDialects(): string[] {
+  const m = /COMPLETION_OUTPUT_DIALECTS = \[([^\]]*)\]/.exec(readFileSync(CORE_DIALECTS, "utf8"));
+  assert.ok(m, "COMPLETION_OUTPUT_DIALECTS found in core");
+  return [...(m[1] ?? "").matchAll(/"([^"]+)"/g)].map((x) => x[1] ?? "");
 }
 
 const sortSet = (xs: Iterable<string>) => [...xs].sort();
@@ -110,14 +126,14 @@ test("@w6w/model palette entries match the internal-app manifest", () => {
 });
 
 test("@w6w/model complete seeds only values the host accepts", () => {
-  // The host (`runInternalNode`, case MODEL_APP) takes dialect openai|anthropic|ollama
+  // The host (`runInternalNode`, case MODEL_APP) takes dialect bridge|openai|anthropic|ollama
   // and response output|raw, each optional — unset keeps the provider's shape / both.
   const node = internalNodeDef(MODEL_APP, "complete");
   const opt = (k: string) =>
     node?.params.find((p) => p.key === k)?.options as Array<{ value: string }> | undefined;
   assert.deepEqual(
     opt("dialect")?.map((o) => o.value),
-    ["openai", "anthropic", "ollama"],
+    coreDialects(),
   );
   assert.deepEqual(
     opt("response")?.map((o) => o.value),
