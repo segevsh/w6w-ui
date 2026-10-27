@@ -403,7 +403,7 @@ export type CreateConnectionBody =
       credential?: never;
       binding?: ConnectionBinding;
       displayName?: string;
-      profile?: Record<string, unknown>;
+      profile?: never;
     };
 
 /** Auth method declaration as exposed by an app's manifest. */

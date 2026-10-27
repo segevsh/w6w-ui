@@ -11,6 +11,11 @@ import type { CreateConnectionBody } from "../types.ts";
 const _bad: CreateConnectionBody = { authKey: "k", credential: {}, credentialId: "c" };
 void _bad;
 
+// The attach-by-id arm never carries a profile (R-26).
+// @ts-expect-error profile is not allowed with credentialId
+const _badProfile: CreateConnectionBody = { authKey: "k", credentialId: "c", profile: {} };
+void _badProfile;
+
 interface Seen {
   url: string;
   method?: string;
