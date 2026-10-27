@@ -521,9 +521,7 @@ export function AppPicker({
   const clientFilterDroppedCards =
     (filter !== undefined && base.length !== connectable.length) ||
     (providerActive && providerFiltered.length !== base.length) ||
-    (categoryFilter &&
-      selectedCats.length > 0 &&
-      catFiltered.length !== providerFiltered.length);
+    (categoryFilter && selectedCats.length > 0 && catFiltered.length !== providerFiltered.length);
   // A7: a category and/or provider selection narrowed the list to nothing,
   // distinct from the search-only empty state below (and distinct from either
   // alone: the message names whichever of the two is actually active).
