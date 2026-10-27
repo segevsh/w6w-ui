@@ -355,3 +355,10 @@ test("retry: no-op (same reference) outside the error status", () => {
     assert.equal(appsPageReducer(s, { type: "retry" }), s);
   }
 });
+
+test("sameAppsPageQuery: ids participate; absent equals empty", () => {
+  assert.equal(sameAppsPageQuery({ q: "", ids: ["a", "b"] }, { q: "", ids: ["a", "b"] }), true);
+  assert.equal(sameAppsPageQuery({ q: "", ids: ["a"] }, { q: "", ids: ["a", "b"] }), false);
+  assert.equal(sameAppsPageQuery({ q: "" }, { q: "", ids: ["a"] }), false);
+  assert.equal(sameAppsPageQuery({ q: "" }, { q: "", ids: [] }), true);
+});

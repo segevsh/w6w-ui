@@ -122,11 +122,6 @@ const cardIds = (container: Element) =>
     (n.textContent || "").trim(),
   );
 
-const badgeTexts = (container: Element) =>
-  Array.from(container.querySelectorAll(".w6w-apppicker-card-provider")).map((n) =>
-    (n.textContent || "").trim(),
-  );
-
 /** The bridge-support chips, per card, in DOM order — `text` is `""` when the card has none. */
 const bridgeChips = (container: Element) =>
   Array.from(container.querySelectorAll(".w6w-apppicker-card")).map((card) => {
@@ -158,7 +153,7 @@ test("cards render no model-provider badge text; designated and undesignated ali
   assert.deepEqual(cardIds(h.container).sort(), ["crm", "legacy-ai", "multi", "openai-chat"]);
   // The "Model provider — …" badge text is gone everywhere.
   assert.ok(!(h.container.textContent ?? "").includes("Model provider —"));
-  assert.deepEqual(badgeTexts(h.container), []);
+  assert.equal(h.container.querySelectorAll(".w6w-apppicker-card-provider").length, 0);
   const cards = Array.from(h.container.querySelectorAll(".w6w-apppicker-card"));
   const legacy = cards.find((c) =>
     (c.querySelector(".w6w-apppicker-card-id")?.textContent || "").includes("legacy-ai"),
@@ -187,8 +182,6 @@ test("host-supplied bridgeSupport: 'Bridge supported' chip, and 'unsupported' wi
     ],
     "one chip per lookup entry, carrying the reason as its text AND its title",
   );
-  // Beside, not instead of: the provider badge is still rendered on both cards.
-  assert.equal(badgeTexts(h.container).length, 2);
   // Apps with no lookup entry stay bare — "unknown" is not "unsupported".
   assert.deepEqual(
     bridgeChips(h.container).filter((chip) => chip.id === "legacy-ai"),
