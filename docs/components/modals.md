@@ -141,7 +141,8 @@ anywhere you need a node or a target.
 | `appsOnly` | `boolean` | Hide the workflow-only tabs (Triggers, Controls, Utilities, Data). For pickers that choose a target rather than add a canvas node. |
 | `callables` | `("function" \| "workflow")[]` | Which of the Functions and Workflows tabs to show. Defaults to both. |
 | `initialTab` | `"connected" \| "functions" \| "workflows"` | The tab that opens first. Defaults to `"connected"`. |
-| `appsFilter` | `(app) => boolean` | Limit which apps can be picked. |
+| `appsFilter` | `(app) => boolean` | Limit which apps can be picked. Applied in the browser, on the page as loaded — when it hides cards, the picker's footer drops its total and reports the card count alone. |
+| `appsIds` | `string[]` | Limit which apps can be picked, on the SERVER (`GET /apps?ids=…`), so the paged footer reads `N of N`. Preferred over `appsFilter` whenever the allowed ids are known up front (a repo source, a model-provider set). |
 | `initialApp`, `initialAction`, `initialConnection`, `initialWith` | | Open on an existing node's settings, for editing. |
 | `connectionOnly` | `boolean` | Stop once a connection is chosen, with no action or test. Pair it with `onConnected(connectionId, app)`. |
 | `workflowId`, `stepId` | `string` | The node's place in a saved workflow, so a previously saved passing test counts. |

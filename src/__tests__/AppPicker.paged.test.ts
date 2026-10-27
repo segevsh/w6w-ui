@@ -72,6 +72,7 @@ type ListAppsPageOptionsLike = {
   cursor?: string;
   limit?: number;
   compact?: boolean;
+  ids?: string[];
   signal?: AbortSignal;
 };
 
@@ -762,4 +763,34 @@ test("T3.1.1 A4 — query-changed resets total; a stale generation never writes 
   assert.equal(stale.total, 7);
   st = appsPageReducer(st, { type: "query-changed", query: { q: "x" }, generation: 2 });
   assert.equal(st.total, undefined);
+});
+
+test("server `ids` filter: 9 of a 70-app catalog -> footer '9 of 9', no 'Model provider' text", async () => {
+  const catalog = Array.from({ length: 70 }, (_, i) => ({ id: `app-${i}`, displayName: `App ${i}` }));
+  const wanted = catalog.slice(0, 9).map((a) => a.id);
+  const calls: ListAppsPageOptionsLike[] = [];
+  const api = {
+    listAppsPage: (o?: ListAppsPageOptionsLike) => {
+      calls.push(o ?? {});
+      const apps = o?.ids ? catalog.filter((a) => o.ids?.includes(a.id)) : catalog;
+      return Promise.resolve({ apps, total: apps.length });
+    },
+  };
+  const { container, root } = mount(React.createElement("div"));
+  await act(async () => {
+    root.render(
+      React.createElement(
+        W6WUIProvider,
+        { api, children: null } as never,
+        React.createElement(AppPicker, { onSelectApp: () => {}, ids: wanted } as never),
+      ),
+    );
+  });
+  await flush();
+  assert.deepEqual(calls[0].ids, wanted);
+  assert.equal(cardIds(container).length, 9);
+  const text = container.textContent ?? "";
+  assert.match(text, /9 of 9/);
+  assert.ok(!text.includes("Model provider"));
+  await act(async () => root.unmount());
 });
