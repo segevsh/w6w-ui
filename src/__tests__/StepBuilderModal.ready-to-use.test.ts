@@ -537,3 +537,56 @@ test("T-5 — non-inline first batch pending ⇒ state is loading, never empty",
   assert.equal(latest?.moreApps, false);
   await act(async () => root.unmount());
 });
+
+test("bounded: appsIds excludes connected apps outside the provider id set", async () => {
+  const api = {
+    listConnections: async () => [
+      { id: "c1", appId: "slack" },
+      { id: "c2", appId: "openai" },
+    ],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: async (ids: readonly string[]) =>
+      ids.map((id) => ({ id, displayName: id.toUpperCase() })),
+  };
+  const { container, root } = mount(api);
+  await render({ container, root, api, props: { appsIds: ["openai"] } });
+  assert.deepEqual(readConnectedAppIds(container), ["openai"]);
+  await act(async () => root.unmount());
+});
+
+test("AI tab: fetch carries ids + paged, 70-app mock, footer equals card count", async () => {
+  const catalog = Array.from({ length: 70 }, (_, i) => ({
+    id: `app-${i}`,
+    displayName: `App ${i}`,
+    categories: i < 9 ? [] : ["ai"], // providers carry no "ai" category: client filter must not hide them
+  }));
+  const wanted = catalog.slice(0, 9).map((a) => a.id);
+  const calls: Array<Record<string, unknown>> = [];
+  const api = {
+    listConnections: async () => [],
+    listFunctions: async () => [],
+    listWorkflows: async () => [],
+    listAppsByIds: async () => [],
+    listAppsPage: (o?: { ids?: string[]; category?: string }) => {
+      calls.push((o ?? {}) as Record<string, unknown>);
+      const apps = o?.ids ? catalog.filter((a) => o.ids?.includes(a.id)) : catalog;
+      return Promise.resolve({ apps, total: apps.length });
+    },
+  };
+  const { container, root } = mount(api);
+  await render({ container, root, api, props: { appsIds: wanted } });
+  const aiTab = Array.from(container.querySelectorAll(".w6w-stepbuilder-tab")).find(
+    (el) => (el.textContent || "").trim() === "AI",
+  ) as HTMLElement;
+  assert.ok(aiTab);
+  await act(async () => aiTab.click());
+  await flush();
+  const aiCall = calls.find((c) => c.category === "ai");
+  assert.ok(aiCall, "AI tab fetched with category=ai");
+  assert.deepEqual(aiCall.ids, wanted);
+  const cards = container.querySelectorAll(".w6w-apppicker-card-id").length;
+  assert.equal(cards, 9);
+  assert.match(container.textContent ?? "", /9 of 9/);
+  await act(async () => root.unmount());
+});

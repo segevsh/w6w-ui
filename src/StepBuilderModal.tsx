@@ -326,7 +326,8 @@ export function StepBuilderModal({
   // whether the TAB EXISTS depends on them: nothing connected and nothing
   // built ⇒ no "Ready to use" tab at all. Still `"loading"` counts as present,
   // so the sidebar does not shuffle a beat after it renders.
-  const readyToUse = useReadyToUse(callables, appsFilter, excludeCallableIds);
+  const hasAppsIds = !!appsIds && appsIds.length > 0;
+  const readyToUse = useReadyToUse(callables, appsFilter, excludeCallableIds, appsIds);
   const homeAvailable = readyToUse.state !== "empty";
   // If the home tab vanishes while it is the open one, fall to the catalogue
   // rather than rendering a tab body with no tab.
@@ -575,7 +576,14 @@ export function StepBuilderModal({
               // applies — the only path that needs it end-to-end is a legacy
               // `listApps()`-only host, which never sees `category` at all.
               category="ai"
-              filter={(a) => (appsFilter?.(a) ?? true) && (a.categories?.includes("ai") ?? false)}
+              ids={appsIds}
+              // With `appsIds` the server-side id set IS the provider set, so
+              // the client AI-category backstop is dropped (it would hide a
+              // provider and break "N of N"); `appsFilter` still applies.
+              filter={(a) =>
+                (appsFilter?.(a) ?? true) &&
+                (hasAppsIds || (a.categories?.includes("ai") ?? false))
+              }
               searchPlaceholder="Search AI apps…"
               emptyMessage="No AI apps registered yet."
             />
@@ -1870,7 +1878,11 @@ export function useReadyToUse(
   callables: readonly ("function" | "workflow")[],
   appsFilter?: (app: AppSummary) => boolean,
   excludeIds?: readonly string[],
+  appsIds?: readonly string[],
 ): ReadyToUse {
+  // When a provider-id allow-list is set, apps outside it are never offered.
+  const idSet = appsIds && appsIds.length > 0 ? new Set(appsIds) : null;
+  const allowed = (a: AppSummary) => (idSet ? idSet.has(a.id) : true) && (appsFilter?.(a) ?? true);
   const api = useW6WApi();
   const [connectedIds, setConnectedIds] = useState<string[] | null>(null);
   const [allApps, setAllApps] = useState<AppSummary[] | null>(null);
@@ -2035,7 +2047,7 @@ export function useReadyToUse(
     if (connectedIds.length > 0 && requestedIds.size === 0) {
       return { state: "loading", apps: [], fns, wfs, moreApps: false, loadMoreApps };
     }
-    const apps = mergeResolvedApps(connectedIds, resolved).filter((a) => appsFilter?.(a) ?? true);
+    const apps = mergeResolvedApps(connectedIds, resolved).filter(allowed);
     const moreApps =
       inFlightIds.size === 0 &&
       nextIdBatch(connectedIds, new Set([...requestedIds, ...inFlightIds]), 1).length > 0;
@@ -2061,7 +2073,7 @@ export function useReadyToUse(
   const apps = allApps.filter(
     (a) =>
       !isInternalApp(a.id) &&
-      (appsFilter?.(a) ?? true) &&
+      allowed(a) &&
       (connectedSet.has(a.id) || a.zeroCredential === true),
   );
   const empty = apps.length === 0 && fns.length === 0 && wfs.length === 0;
