@@ -160,6 +160,11 @@ export interface StepBuilderModalProps {
    */
   appsFilter?: (app: AppSummary) => boolean;
   /**
+   * Server-side id allow-list for the Apps-tab picker (forwarded as `ids` to the
+   * paged fetch), so the footer total equals the cards shown.
+   */
+  appsIds?: string[];
+  /**
    * Stop at "a connection is chosen" — no Action, no Configure/Test. Renders
    * {@link AppConnectionOnlyConfig} in place of the usual `AppStepConfig`
    * once an app is picked. Used by a caller that only needs a connection
@@ -293,6 +298,7 @@ export function StepBuilderModal({
   initialConnection,
   initialWith,
   appsFilter,
+  appsIds,
   connectionOnly,
   onConnected,
   excludeCallableIds,
@@ -559,7 +565,7 @@ export function StepBuilderModal({
               onSelect={(t) => setSelectedCallable({ family: "workflow", ...t })}
             />
           ) : tab === "apps" ? (
-            <AppPicker onSelectApp={setSelectedApp} theme={theme} filter={appsFilter} />
+            <AppPicker onSelectApp={setSelectedApp} theme={theme} filter={appsFilter} ids={appsIds} />
           ) : tab === "ai" ? (
             <AppPicker
               onSelectApp={setSelectedApp}

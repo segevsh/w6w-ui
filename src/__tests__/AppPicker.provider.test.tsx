@@ -47,7 +47,7 @@ g.IS_REACT_ACT_ENVIRONMENT = true;
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
-const { AppPicker, modelProviderBadge } = await import("../AppPicker.tsx");
+const { AppPicker } = await import("../AppPicker.tsx");
 const { W6WUIProvider } = await import("../provider.tsx");
 
 type FixtureApp = {
@@ -152,32 +152,13 @@ async function click(container: Element, selector: string, label: string) {
   });
 }
 
-test("badge text: declared types, plus families when the app names them — null when undesignated", () => {
-  assert.equal(
-    modelProviderBadge(FIXTURES[0] as never),
-    "Model provider — chat",
-    "types-only designation lists exactly its types",
-  );
-  assert.equal(
-    modelProviderBadge(FIXTURES[1] as never),
-    "Model provider — chat, embedding · families: gpt-4o, embed-3",
-    "families are appended when present",
-  );
-  // A01: presence is the only test — a category-`ai` app with no
-  // `modelProvider` is not a provider, so it has no badge text at all.
-  assert.equal(modelProviderBadge(FIXTURES[2] as never), null);
-  assert.equal(modelProviderBadge(FIXTURES[3] as never), null);
-});
-
-test("cards show a badge only for designated apps; a category-ai undesignated fixture shows none", async () => {
+test("cards render no model-provider badge text; designated and undesignated alike", async () => {
   const h = await render({});
   // All four cards render (the badge does not filter anything by itself).
   assert.deepEqual(cardIds(h.container).sort(), ["crm", "legacy-ai", "multi", "openai-chat"]);
-  // Sorted by displayName ("Multi Model" before "OpenAI Chat").
-  assert.deepEqual(badgeTexts(h.container), [
-    "Model provider — chat, embedding · families: gpt-4o, embed-3",
-    "Model provider — chat",
-  ]);
+  // The "Model provider — …" badge text is gone everywhere.
+  assert.ok(!(h.container.textContent ?? "").includes("Model provider —"));
+  assert.deepEqual(badgeTexts(h.container), []);
   const cards = Array.from(h.container.querySelectorAll(".w6w-apppicker-card"));
   const legacy = cards.find((c) =>
     (c.querySelector(".w6w-apppicker-card-id")?.textContent || "").includes("legacy-ai"),

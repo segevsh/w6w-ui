@@ -141,6 +141,8 @@ export interface ListAppsPageOptions {
   q?: string;
   /** Server-side category filter (e.g. `"ai"`). */
   category?: string;
+  /** Server-side id allow-list (`GET /apps?ids=a,b`); `total` is then the filtered total. */
+  ids?: string[];
   /** Opaque pagination cursor from a prior {@link AppsPageResult.nextCursor}. */
   cursor?: string;
   /** Page size; a host may clamp this to its own bounds. */
