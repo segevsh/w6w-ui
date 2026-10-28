@@ -239,8 +239,9 @@ import type { ActionParam } from "./types.ts";
 // A node's kind + processor are derived from `uses.app`. The reserved `@w6w/*`
 // namespace holds internal pseudo-apps the platform runs itself: `@w6w/control`
 // (engine-native flow control), `@w6w/script`/`@w6w/data` (host-run compute),
-// and `@w6w/trigger` (the entry node). They render as pill nodes and configure
-// through the same dynamic form as apps.
+// and `@w6w/trigger` (the entry node). They render as rounded-rect cards
+// (`ControlNodeCard`); a trigger renders as a half-pill (`.w6w-node-trigger`).
+// All configure through the same dynamic form as apps.
 
 /** Reserved namespace for internal pseudo-apps. */
 export const INTERNAL_APP_PREFIX = "@w6w/";
