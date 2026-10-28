@@ -964,7 +964,8 @@ function AddValueModal({ kind, onCreate, onClose }: AddValueModalProps) {
               autoFocus
             />
             <span className="w6w-muted w6w-small">
-              Lowercase letters, digits, and underscores. Must start with a letter or underscore.
+              Letters, digits, and underscores. Must start with a letter or underscore.
+              Case-sensitive.
             </span>
           </label>
 
