@@ -15,6 +15,7 @@ import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
+import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
@@ -38,6 +39,7 @@ import { startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
   ActionParam,
+  ApiCallRecord,
   AppSummary,
   AuthDef,
   ConnectionSummary,
@@ -566,7 +568,12 @@ export function StepBuilderModal({
               onSelect={(t) => setSelectedCallable({ family: "workflow", ...t })}
             />
           ) : tab === "apps" ? (
-            <AppPicker onSelectApp={setSelectedApp} theme={theme} filter={appsFilter} ids={appsIds} />
+            <AppPicker
+              onSelectApp={setSelectedApp}
+              theme={theme}
+              filter={appsFilter}
+              ids={appsIds}
+            />
           ) : tab === "ai" ? (
             <AppPicker
               onSelectApp={setSelectedApp}
@@ -581,8 +588,7 @@ export function StepBuilderModal({
               // the client AI-category backstop is dropped (it would hide a
               // provider and break "N of N"); `appsFilter` still applies.
               filter={(a) =>
-                (appsFilter?.(a) ?? true) &&
-                (hasAppsIds || (a.categories?.includes("ai") ?? false))
+                (appsFilter?.(a) ?? true) && (hasAppsIds || (a.categories?.includes("ai") ?? false))
               }
               searchPlaceholder="Search AI apps…"
               emptyMessage="No AI apps registered yet."
@@ -1601,6 +1607,79 @@ type TestState =
   | { status: "error"; error: string; errorCode?: string; logs?: string[] };
 
 /**
+ * The full account of one test run, for the Log view: the request the builder
+ * sent to the w6w invoke route, the server's complete answer (success body or
+ * error body), and the outbound vendor calls the server captured on the way.
+ * `apiCalls` is empty when the action threw before making any HTTP call.
+ */
+interface TestRunLog {
+  startedAt: string;
+  durationMs: number;
+  request: { method: "POST"; path: string; body: Record<string, unknown> };
+  response: { ok: boolean; status?: number; body: unknown };
+  apiCalls: ApiCallRecord[];
+}
+
+/** The parsed error body an invoke failure carries — ui's `ApiError` on `body`, `@w6w/sdk`'s on `raw`. */
+function errorBodyOf(e: unknown): unknown {
+  const err = e as { body?: unknown; raw?: unknown; message?: string; code?: string } | null;
+  return err?.body ?? err?.raw ?? { error: err?.code, message: err?.message ?? String(e) };
+}
+
+function apiCallsIn(body: unknown): ApiCallRecord[] {
+  const calls = (body as { apiCalls?: unknown } | null)?.apiCalls;
+  return Array.isArray(calls) ? (calls as ApiCallRecord[]) : [];
+}
+
+const LOG_PRE_STYLE = {
+  whiteSpace: "pre-wrap",
+  maxHeight: 320,
+  overflow: "auto",
+  margin: 0,
+} as const;
+
+/** Modal body for {@link TestRunLog} — the request, the response, then each vendor call. */
+function TestRunLogModal({ log, onClose }: { log: TestRunLog; onClose: () => void }) {
+  return (
+    <Modal title="Test run log" subtitle={log.startedAt} size="wide" onClose={onClose}>
+      <div className="w6w-modal-body w6w-stack" style={{ gap: 12 }}>
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">
+            Request to w6w · {log.request.method} {log.request.path}
+          </div>
+          <pre className="w6w-result" style={LOG_PRE_STYLE}>
+            {JSON.stringify(log.request.body, null, 2)}
+          </pre>
+        </div>
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">
+            Response from w6w ·{" "}
+            {log.response.ok
+              ? "ok"
+              : `failed${log.response.status ? ` (HTTP ${log.response.status})` : ""}`}{" "}
+            · {log.durationMs}ms
+          </div>
+          <pre className="w6w-result" style={LOG_PRE_STYLE}>
+            {JSON.stringify(log.response.body, null, 2)}
+          </pre>
+        </div>
+        <div className="w6w-testout">
+          <div className="w6w-testout-label">Outbound API calls ({log.apiCalls.length})</div>
+          {log.apiCalls.length > 0 ? (
+            <ApiCallsPanel calls={log.apiCalls} title={false} defaultOpen />
+          ) : (
+            <div className="w6w-muted w6w-small">
+              No HTTP request reached the vendor API — the action
+              {log.response.ok ? " made no outbound call" : " failed before sending one"}.
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
  * Where a test run should be persisted. When present, `StepTestRun` saves the
  * fixture (`saveStepTest`) and records the run's outcome (`recordStepTestRun`)
  * against the given workflow step after each invoke. `input` is the resolved
@@ -1676,12 +1755,34 @@ export const StepTestRun = forwardRef<
   // editor provides it; undefined outside the editor → server default project).
   const project = useWorkflowProject();
   const [state, setState] = useState<TestState | null>(null);
+  const [log, setLog] = useState<TestRunLog | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
 
   const run = async () => {
     if (!canRun || state?.status === "running") return;
     setState({ status: "running" });
     onBusyChange?.(true);
     let outcome: Exclude<TestState, { status: "running" }>;
+    const startedAt = new Date();
+    const request: TestRunLog["request"] = {
+      method: "POST",
+      path: `/apps/${encodeURIComponent(app)}/actions/${encodeURIComponent(action)}/invoke`,
+      // Mirrors the body `invokeAction` puts on the wire.
+      body: {
+        params: values,
+        ...(connectionId ? { connectionId } : {}),
+        ...(project ? { project } : {}),
+        ...(startState ? { state: startState } : {}),
+      },
+    };
+    const finishLog = (response: TestRunLog["response"]) =>
+      setLog({
+        startedAt: startedAt.toLocaleString(),
+        durationMs: Date.now() - startedAt.getTime(),
+        request,
+        response,
+        apiCalls: apiCallsIn(response.body),
+      });
     try {
       const result = await api.invokeAction(app, action, values, {
         ...(connectionId ? { connectionId } : {}),
@@ -1690,6 +1791,7 @@ export const StepTestRun = forwardRef<
         // is unchanged for every caller that never had one.
         ...(startState ? { state: startState } : {}),
       });
+      finishLog({ ok: true, body: result });
       outcome = {
         status: "done",
         value: result.value,
@@ -1697,7 +1799,12 @@ export const StepTestRun = forwardRef<
         ...(result.meta ? { meta: result.meta } : {}),
       };
     } catch (e) {
-      const err = e as { message?: string; code?: string; logs?: string[] };
+      const err = e as { message?: string; code?: string; logs?: string[]; status?: number };
+      finishLog({
+        ok: false,
+        ...(typeof err.status === "number" ? { status: err.status } : {}),
+        body: errorBodyOf(e),
+      });
       outcome = {
         status: "error",
         error: err.message ?? String(e),
@@ -1736,21 +1843,34 @@ export const StepTestRun = forwardRef<
 
   return (
     <div className="w6w-steptest">
-      {!hideRunButton && (
+      {(!hideRunButton || log) && (
         <div className="w6w-steptest-bar">
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-ghost"
-            disabled={!canRun || state?.status === "running"}
-            onClick={run}
-          >
-            {state?.status === "running" ? "Running…" : "▶ Test run"}
-          </button>
-          {!canRun && (
+          {!hideRunButton && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost"
+              disabled={!canRun || state?.status === "running"}
+              onClick={run}
+            >
+              {state?.status === "running" ? "Running…" : "▶ Test run"}
+            </button>
+          )}
+          {log && state?.status !== "running" && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost"
+              onClick={() => setLogOpen(true)}
+              title="The full request and response of the last test run"
+            >
+              Log{log.apiCalls.length > 0 ? ` (${log.apiCalls.length})` : ""}
+            </button>
+          )}
+          {!hideRunButton && !canRun && (
             <span className="w6w-muted w6w-small">Fill the required fields to test.</span>
           )}
         </div>
       )}
+      {logOpen && log && <TestRunLogModal log={log} onClose={() => setLogOpen(false)} />}
       {state?.status === "error" && (
         <div className="w6w-result w6w-error">
           {state.errorCode && (
@@ -2072,9 +2192,7 @@ export function useReadyToUse(
   const connectedSet = new Set(connectedIds ?? []);
   const apps = allApps.filter(
     (a) =>
-      !isInternalApp(a.id) &&
-      allowed(a) &&
-      (connectedSet.has(a.id) || a.zeroCredential === true),
+      !isInternalApp(a.id) && allowed(a) && (connectedSet.has(a.id) || a.zeroCredential === true),
   );
   const empty = apps.length === 0 && fns.length === 0 && wfs.length === 0;
   return { state: empty ? "empty" : "ready", apps, fns, wfs, moreApps: false, loadMoreApps };
