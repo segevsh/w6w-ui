@@ -94,7 +94,7 @@ import { createRoot } from "react-dom/client";
 
 // Touch every entry so neither tsc nor Rollup can drop an import.
 export const probe = { ConfirmModal, W6WUIProvider, evaluate };
-const workflow = { manifestVersion: "1", id: "smoke", name: "smoke", steps: [], edges: [] };
+const workflow = { manifestVersion: "1", id: "smoke", name: "smoke", nodes: [], edges: [] };
 const el = document.getElementById("root");
 if (el)
   createRoot(el).render(
@@ -211,7 +211,7 @@ import { CodeBlock } from "@w6w/ui/code";
 import type { ComponentProps } from "react";
 import { WorkflowFlowEditor, type WorkflowFlowEditorProps } from "@w6w/ui/flow";
 
-const workflow = { manifestVersion: "1", id: "smoke", name: "smoke", steps: [], edges: [] };
+const workflow = { manifestVersion: "1", id: "smoke", name: "smoke", nodes: [], edges: [] };
 // No call is made during prerender; an empty object is a serializable stand-in for the host's api.
 const api = {} as unknown as ComponentProps<typeof W6WUIProvider>["api"];
 
@@ -237,7 +237,7 @@ import { type ComponentProps, useState } from "react";
 const api = {} as unknown as ComponentProps<typeof W6WUIProvider>["api"];
 
 export default function EditorPage() {
-  const [value, setValue] = useState<FlowWorkflow>({ manifestVersion: "1", id: "smoke", name: "smoke", steps: [], edges: [] });
+  const [value, setValue] = useState<FlowWorkflow>({ manifestVersion: "1", id: "smoke", name: "smoke", nodes: [], edges: [] });
   return (
     <W6WUIProvider api={api}>
       <WorkflowFlowEditor value={value} onChange={setValue} />
