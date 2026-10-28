@@ -55,6 +55,10 @@ export default defineConfig({
         /^@codemirror\//,
         "@uiw/react-codemirror",
         "@w6w/expr",
+        // A runtime dependency: bundling it would inline its markdown stack with
+        // browser conditions (decode-named-character-reference's index.dom.js
+        // touches `document` at import), breaking Next.js server prerender.
+        "react-markdown",
       ],
       output: {
         globals: { react: "React", "react-dom": "ReactDOM" },
