@@ -45,7 +45,7 @@ HOST_BROWSER="${HOST_BROWSER:-0}"
 # tests added alongside and B5 (adding a step from each port). The verdict below is REFUSED unless exactly this many
 # ran: a tree that fails to bundle, or a run that dies half-way, reports
 # DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-11}"
+EXPECTED_TESTS="${EXPECTED_TESTS:-12}"
 
 fatal() {
   echo "FATAL: $*"

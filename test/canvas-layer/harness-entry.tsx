@@ -87,7 +87,21 @@ const app: FlowWorkflow = {
   edges: [],
 };
 
-const base = FIXTURE === "flows" ? flows : FIXTURE === "app" ? app : overlap;
+// "trigger": a manual trigger feeding one internal step — both render through
+// ControlNodeCard, so the only difference between their cards is the trigger shape.
+const trigger: FlowWorkflow = {
+  manifestVersion: "2",
+  id: "wf_trigger",
+  name: "trigger",
+  nodes: [
+    { id: "t", uses: { app: "@w6w/trigger", action: "manual" }, position: { x: 0, y: 0 } },
+    step("h", 300, 0),
+  ],
+  edges: [{ from: "t", to: "h" }],
+};
+
+const base =
+  FIXTURE === "flows" ? flows : FIXTURE === "app" ? app : FIXTURE === "trigger" ? trigger : overlap;
 const initial: FlowWorkflow = SAVE_POSITION
   ? base
   : { ...base, settings: { ...(base.settings ?? {}), savePosition: false } };

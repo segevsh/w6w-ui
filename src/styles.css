@@ -3479,6 +3479,17 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   white-space: nowrap;
 }
 
+/* A trigger node's card (ControlNodeCard, `isTrigger`) — a half-pill: fully
+   rounded entry (left) edge, the ordinary 4px corner on the exit (right) edge,
+   so a run's start reads apart from the steps it feeds. No radius token
+   exists beyond --w6w-radius (10px), hence the literals. Wider left inset
+   clears the curve. */
+.w6w-flow .w6w-node-trigger {
+  border-radius: 999px 4px 4px 999px;
+  /* lint-tokens-allow: 14px right inset matches the non-trigger card's inline padding */
+  padding: var(--w6w-sp-1-5) 14px var(--w6w-sp-1-5) var(--w6w-sp-4);
+}
+
 /* The ordinary (success) ports — bumped from the library's own 6px default
    (2026-08-30: "ports must have consistent size") to match the error port
    below exactly. `:not(.w6w-handle-multi)`: the multi-input handle is its
@@ -5360,7 +5371,7 @@ button.w6w-rel-open:focus-visible strong {
 .w6w-callable-list-body {
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
-  background: var(--w6w-surface, #fff);
+  background: var(--w6w-panel);
   overflow: hidden;
 }
 

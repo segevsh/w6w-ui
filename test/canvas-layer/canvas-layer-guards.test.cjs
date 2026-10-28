@@ -754,3 +754,36 @@ test("B5 ports: dragging any port to empty canvas (or clicking it) adds a step w
   assert.ok(await pickerOpen(page), "a click on the exit port opens the picker");
   await page.keyboard.press("Escape");
 });
+
+test("B6 trigger shape: a trigger's card is a half-pill (round entry edge); a sibling control card is not", async () => {
+  const page = await open({ q: "fixture=trigger" });
+  const card = (id) =>
+    page.evaluate((nid) => {
+      const el = document.querySelector(`.react-flow__node[data-id="${nid}"] [data-run-status]`);
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return {
+        kind: el.getAttribute("data-node-kind"),
+        tl: parseFloat(cs.borderTopLeftRadius),
+        bl: parseFloat(cs.borderBottomLeftRadius),
+        tr: parseFloat(cs.borderTopRightRadius),
+        br: parseFloat(cs.borderBottomRightRadius),
+        padL: parseFloat(cs.paddingLeft),
+        h: r.height,
+      };
+    }, id);
+  const t = await card("t");
+  const h = await card("h");
+  assert.ok(t && h, "both cards render");
+  assert.equal(t.kind, "trigger");
+  assert.equal(h.kind, null, "a non-trigger control card carries no data-node-kind");
+  // Half-pill: the entry (left) corners are at least half the card height — fully round —
+  // and the exit (right) corners are the plain card's own corners.
+  assert.ok(t.tl >= t.h / 2 && t.bl >= t.h / 2, `trigger left radius ${t.tl}/${t.bl} vs height ${t.h}`);
+  assert.equal(t.tr, h.tr, "trigger's right corners match a plain card's");
+  assert.equal(t.br, h.br);
+  assert.ok(h.tl < h.h / 2, `plain card stays a rounded rect: ${h.tl} vs height ${h.h}`);
+  assert.equal(h.tl, h.tr, "plain card's corners are uniform");
+  assert.ok(t.padL > h.padL, `trigger's left inset ${t.padL} clears the curve (plain ${h.padL})`);
+});

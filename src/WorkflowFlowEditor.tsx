@@ -2588,6 +2588,8 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
+        className={isTrigger ? "w6w-node-trigger" : undefined}
+        data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node
@@ -2599,8 +2601,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           opacity: selected ? 1 : visual.opacity,
           background: "var(--w6w-panel-2)",
           color: "var(--w6w-text)",
-          borderRadius: 4,
-          padding: "6px 14px 6px 8px",
+          // A trigger's half-pill radius + padding live in `.w6w-node-trigger`
+          // (styles/_flow.scss): an inline value here would beat the class.
+          ...(isTrigger ? {} : { borderRadius: 4, padding: "6px 14px 6px 8px" }),
           minWidth: 140,
           fontSize: 13,
           display: "flex",
