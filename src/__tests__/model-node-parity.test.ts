@@ -8,7 +8,7 @@
 // The ONE sanctioned divergence is `route`: `string` in the manifest, the ui-only
 // `model-route` in the entry (same precedent as `vars` <-> `json`).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { INTERNAL_NODES, MODEL_APP, internalNodeDef, internalNodeDefaults } from "../flow-types.ts";
@@ -88,42 +88,53 @@ test("internalNodeDef resolves @w6w/model actions", () => {
   assert.equal(route?.type, "model-route");
 });
 
-test("@w6w/model palette entries match the internal-app manifest", () => {
-  const manifest = parseManifest(readFileSync(MANIFEST, "utf8"));
-  const entries = INTERNAL_NODES.filter((n) => n.app === MODEL_APP);
-  assert.ok(manifest.size > 0, "manifest parsed at least one action");
-  assert.deepEqual(
-    sortSet(entries.map((e) => e.action)),
-    sortSet(manifest.keys()),
-    "action key set",
-  );
-  for (const e of entries) {
-    const m = manifest.get(e.action);
-    assert.ok(m, e.action);
+// The release workflow checks out only ui + core, so the sibling manifest is absent there;
+// skip rather than fail on a missing checkout. Locally (and wherever internal-apps sits
+// beside ui) the parity check runs in full.
+const HAS_MANIFEST = existsSync(MANIFEST);
+
+test(
+  "@w6w/model palette entries match the internal-app manifest",
+  {
+    skip: HAS_MANIFEST ? false : "internal-apps sibling checkout not present",
+  },
+  () => {
+    const manifest = parseManifest(readFileSync(MANIFEST, "utf8"));
+    const entries = INTERNAL_NODES.filter((n) => n.app === MODEL_APP);
+    assert.ok(manifest.size > 0, "manifest parsed at least one action");
     assert.deepEqual(
-      sortSet(e.params.map((p) => p.key)),
-      sortSet(m.params.keys()),
-      `${e.action}: param key set`,
+      sortSet(entries.map((e) => e.action)),
+      sortSet(manifest.keys()),
+      "action key set",
     );
-    assert.deepEqual(
-      sortSet(e.params.filter((p) => p.required).map((p) => p.key)),
-      sortSet([...m.params].filter(([, v]) => v.required).map(([k]) => k)),
-      `${e.action}: required set`,
-    );
-    for (const p of e.params) {
-      const mp = m.params.get(p.key);
-      const want = mp?.type;
-      const ok = p.type === want || (p.type === "model-route" && want === "string");
-      assert.ok(ok, `${e.action}.${p.key}: ui "${p.type}" vs manifest "${want}"`);
-      const uiOptions = Array.isArray(p.options)
-        ? p.options.map((o): [string, string] => [String(o.value), o.label])
-        : [];
-      assert.deepEqual(uiOptions, mp?.options, `${e.action}.${p.key}: options`);
-      assert.deepEqual(p.default, mp?.default, `${e.action}.${p.key}: default`);
-      assert.equal(p.placeholder, mp?.placeholder, `${e.action}.${p.key}: placeholder`);
+    for (const e of entries) {
+      const m = manifest.get(e.action);
+      assert.ok(m, e.action);
+      assert.deepEqual(
+        sortSet(e.params.map((p) => p.key)),
+        sortSet(m.params.keys()),
+        `${e.action}: param key set`,
+      );
+      assert.deepEqual(
+        sortSet(e.params.filter((p) => p.required).map((p) => p.key)),
+        sortSet([...m.params].filter(([, v]) => v.required).map(([k]) => k)),
+        `${e.action}: required set`,
+      );
+      for (const p of e.params) {
+        const mp = m.params.get(p.key);
+        const want = mp?.type;
+        const ok = p.type === want || (p.type === "model-route" && want === "string");
+        assert.ok(ok, `${e.action}.${p.key}: ui "${p.type}" vs manifest "${want}"`);
+        const uiOptions = Array.isArray(p.options)
+          ? p.options.map((o): [string, string] => [String(o.value), o.label])
+          : [];
+        assert.deepEqual(uiOptions, mp?.options, `${e.action}.${p.key}: options`);
+        assert.deepEqual(p.default, mp?.default, `${e.action}.${p.key}: default`);
+        assert.equal(p.placeholder, mp?.placeholder, `${e.action}.${p.key}: placeholder`);
+      }
     }
-  }
-});
+  },
+);
 
 test("@w6w/model complete seeds only values the host accepts", () => {
   // The host (`runInternalNode`, case MODEL_APP) takes dialect bridge|openai|anthropic|ollama
