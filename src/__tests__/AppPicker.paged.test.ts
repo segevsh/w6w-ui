@@ -766,7 +766,10 @@ test("T3.1.1 A4 — query-changed resets total; a stale generation never writes 
 });
 
 test("server `ids` filter: 9 of a 70-app catalog -> footer '9 of 9', no 'Model provider' text", async () => {
-  const catalog = Array.from({ length: 70 }, (_, i) => ({ id: `app-${i}`, displayName: `App ${i}` }));
+  const catalog = Array.from({ length: 70 }, (_, i) => ({
+    id: `app-${i}`,
+    displayName: `App ${i}`,
+  }));
   const wanted = catalog.slice(0, 9).map((a) => a.id);
   const calls: ListAppsPageOptionsLike[] = [];
   const api = {
