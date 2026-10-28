@@ -469,3 +469,28 @@ test("R14 — allowCustom: type custom text, Enter commits the text", async () =
   assert.deepEqual(calls.at(-1), "zzz-custom");
   await unmount(root);
 });
+
+test("R15 — dark mode: the open listbox and its active row paint from theme tokens only", async () => {
+  const { container, root } = await render(
+    React.createElement(Combobox, { ...PLAIN, mode: "combobox" }),
+  );
+  const input = container.querySelector("input");
+  assert.ok(input);
+  await act(async () => {
+    input.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+  });
+  const list = container.querySelector('[role="listbox"]') as HTMLElement | null;
+  assert.ok(list, "the listbox opens on focus");
+  // Theme-defined tokens (styles/_tokens.scss), each with NO literal fallback:
+  // a fallback like `#fff` is what painted the list white in dark mode.
+  assert.equal(list.style.getPropertyValue("background"), "var(--w6w-panel)");
+  assert.equal(list.style.getPropertyValue("color"), "var(--w6w-text)");
+  assert.equal(list.style.getPropertyValue("border"), "1px solid var(--w6w-border)");
+  const opts = [...list.querySelectorAll('[role="option"]')] as HTMLElement[];
+  assert.equal(opts.length, 3);
+  // Focus opens with the first row active; only that row carries the hover token.
+  assert.equal(opts[0].style.getPropertyValue("background"), "var(--w6w-panel-2)");
+  assert.equal(opts[1].style.getPropertyValue("background"), "");
+  assert.equal(opts[2].style.getPropertyValue("background"), "");
+  await unmount(root);
+});

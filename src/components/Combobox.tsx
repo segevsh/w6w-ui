@@ -61,8 +61,9 @@ const LIST_STYLE: CSSProperties = {
   margin: 0,
   padding: 4,
   listStyle: "none",
-  background: "var(--w6w-surface, #fff)",
-  border: "1px solid var(--w6w-border, #ccc)",
+  background: "var(--w6w-panel)",
+  color: "var(--w6w-text)",
+  border: "1px solid var(--w6w-border)",
   borderRadius: 6,
   boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
 };
@@ -223,7 +224,7 @@ export function Combobox({
                 padding: "6px 8px",
                 cursor: "pointer",
                 borderRadius: 4,
-                background: i === active ? "var(--w6w-hover, rgba(127,127,127,0.18))" : undefined,
+                background: i === active ? "var(--w6w-panel-2)" : undefined,
               }}
               onMouseDown={(e) => {
                 e.preventDefault();
