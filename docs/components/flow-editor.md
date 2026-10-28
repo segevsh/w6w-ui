@@ -201,6 +201,8 @@ authored the workflow — not necessarily by whoever is reading it:
 - **No images.** `![alt](url)` renders nothing; there is no image support on the canvas.
 - **Links only to `http:`, `https:` and `mailto:`.** Any other scheme — `javascript:`, `data:`, or a
   relative path — renders as link text with no `href` at all. Permitted links open in a new tab.
+- **Leading YAML frontmatter is folded away.** A `---` block at the very top renders as a collapsed
+  "Frontmatter" section above the body, showing the YAML as text, rather than as a rule and heading.
 
 `Markdown` is exported from `@w6w/ui/flow` (and `@w6w/ui`) with those rules already applied, for
 when you render note content somewhere else.

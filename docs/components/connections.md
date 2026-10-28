@@ -78,9 +78,26 @@ stored secret, so the fields start empty and **a blank field means unchanged**. 
 and the fields you filled are sent, and the server merges them over the stored credential. OAuth
 connections can be renamed but not re-authorized here.
 
+A connection that uses a stored credential (`connection.credentialId` is set) is edited
+differently, provided your client has `rotateCredential` and the auth is not OAuth. The modal then
+splits into two actions:
+
+- **Save** renames the connection and changes its binding (for a service account, the
+  "Impersonated user" and any other binding fields). It never sends a `credential`, because other
+  connections may share that credential. Binding inputs start blank, and blank means unchanged.
+- **Rotate credential** is a separate, explicit action. It reveals the auth's full credential
+  fields (every required one must be filled) and replaces the stored secret through
+  `rotateCredential`. When `getCredential` exists the modal says how many connections use the
+  credential, because all of them switch to the new one.
+
+With `testCredential` present, a **Test credential** button shows "Credential health" (ok, or the
+failure code). It is a separate line from "App access", which reads the connection's own last test
+(`lastTestOk`: passed, failed, or never tested). The two can disagree: a credential can mint a token
+fine while the app still refuses the call.
+
 | Prop | Type | What it does |
 | --- | --- | --- |
-| `connection` | `Pick<ConnectionSummary, "id" \| "appId" \| "authKey" \| "displayName" \| "builtIn">` | Required. |
+| `connection` | `Pick<ConnectionSummary, "id" \| "appId" \| "authKey" \| "displayName" \| "builtIn" \| "credentialId" \| "lastTestOk">` | Required. |
 | `onClose` | `() => void` | Required. |
 | `onSaved` | `(updated: ConnectionSummary) => void` | Required. Typed credentials are cleared before it runs. |
 | `theme` | `"light" \| "dark"` | Optional. |
@@ -90,6 +107,23 @@ one-line notice with only a Cancel button and calls nothing.
 
 Secret fields are plain text inputs masked with CSS, never `type="password"`, so browsers do not
 offer to save them.
+
+## `CredentialPicker`
+
+The Use existing / Create new switch of a connection's Credential step, with the list of stored
+credentials. It is presentational: it reads no API, so you pass everything in.
+
+| Prop | Type | What it does |
+| --- | --- | --- |
+| `credentials` | `CredentialSummary[]` | Required. Rendered as given, so filter first. Each option shows the name and its non-secret `display` values. |
+| `mode` | `"existing" \| "new"` | Required. |
+| `onModeChange` | `(mode) => void` | Required. |
+| `selectedId` | `string` | Required. The chosen credential id; used in `"existing"` mode. |
+| `onSelect` | `(id) => void` | Required. |
+| `canUseExisting` | `boolean` | Default `true`. `false` hides the Use existing choice. |
+| `contract` | `string` | Shown as a hint next to the label. |
+
+`AddConnectionModal` builds its Credential step from this plus `AuthFieldsForm`.
 
 ## Helpers
 

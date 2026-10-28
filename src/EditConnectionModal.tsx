@@ -1,13 +1,24 @@
 import { useEffect, useState } from "react";
-import { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
+import { AuthFieldsForm, parseJsonFields } from "./components/AuthFieldsForm.tsx";
+import { bindingFieldsFor, buildBinding } from "./components/CredentialPicker.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { useW6WApi } from "./provider.tsx";
-import type { AuthDef, AuthField, ConnectionSummary, ThemeMode } from "./types.ts";
+import type {
+  AuthDef,
+  AuthField,
+  ConnectionBinding,
+  ConnectionSummary,
+  CredentialTestResult,
+  ThemeMode,
+} from "./types.ts";
 import { useEnterSubmit } from "./use-enter-submit.ts";
 
 export interface EditConnectionModalProps {
   /** The row being edited. `builtIn` rows have nothing to edit: the modal shows a notice only. */
-  connection: Pick<ConnectionSummary, "id" | "appId" | "authKey" | "displayName" | "builtIn">;
+  connection: Pick<
+    ConnectionSummary,
+    "id" | "appId" | "authKey" | "displayName" | "builtIn" | "credentialId" | "lastTestOk"
+  >;
   onClose: () => void;
   /** Fired with the server's updated row. The typed credential is cleared before this runs. */
   onSaved: (updated: ConnectionSummary) => void;
@@ -21,6 +32,11 @@ export interface EditConnectionModalProps {
  * fields start empty and blank means "keep what is stored" — only the fields the user filled are
  * sent, and the server merges them over the stored credential. OAuth connections can be renamed
  * here; re-authorizing is not part of this modal.
+ *
+ * A connection that uses a stored credential (`connection.credentialId`), when the host supplies
+ * `api.rotateCredential`, is split in two: Save only renames it and changes its binding (never the
+ * credential, which other connections may share), and "Rotate credential" is a separate explicit
+ * action that replaces the stored secret for every connection using it.
  *
  * Needs `api.updateConnection`. Without it (or for a `builtIn` row) there is no Save button, a
  * one-line notice shows instead, and nothing is called. Hosts should not offer Edit in that case.
@@ -36,6 +52,11 @@ export function EditConnectionModal({ connection, onClose, onSaved }: EditConnec
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [bindingVals, setBindingVals] = useState<Record<string, unknown>>({});
+  const [rotating, setRotating] = useState(false);
+  const [rotated, setRotated] = useState(false);
+  const [connectionCount, setConnectionCount] = useState<number | null>(null);
+  const [health, setHealth] = useState<CredentialTestResult | null>(null);
 
   // The app's declared auth methods drive which credential fields to show.
   useEffect(() => {
@@ -54,9 +75,38 @@ export function EditConnectionModal({ connection, onClose, onSaved }: EditConnec
   const authDef = auths?.find((a) => a.key === connection.authKey);
   const isOAuth = authDef?.type === "oauth2";
   const fields: AuthField[] = isOAuth ? [] : (authDef?.fields ?? []);
+  const credentialId = connection.credentialId;
+  const split = !!credentialId && typeof api.rotateCredential === "function" && !isOAuth;
+  const bindingFields =
+    split && authDef?.serviceAccount ? bindingFieldsFor(authDef.serviceAccount) : [];
+
+  // Impact of a rotation: how many connections share the stored credential.
+  useEffect(() => {
+    if (!editable || !split || !credentialId || typeof api.getCredential !== "function") return;
+    let canceled = false;
+    api
+      .getCredential(credentialId)
+      .then((c) => !canceled && setConnectionCount(c.connectionCount))
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, editable, split, credentialId]);
 
   /** `null` = nothing to update. Only a changed name and non-blank credential fields are sent. */
-  function buildBody(): { displayName?: string; credential?: Record<string, unknown> } | null {
+  function buildBody(): {
+    displayName?: string;
+    binding?: ConnectionBinding;
+    credential?: Record<string, unknown>;
+  } | null {
+    if (split) {
+      // Rename/binding only: the credential is never part of this body.
+      const body: { displayName?: string; binding?: ConnectionBinding } = {};
+      if (displayName !== (connection.displayName ?? "")) body.displayName = displayName;
+      const binding = buildBinding(bindingFields, bindingVals);
+      if (binding) body.binding = binding;
+      return body.displayName === undefined && body.binding === undefined ? null : body;
+    }
     const filled: Record<string, unknown> = {};
     for (const f of fields) {
       const v = credential[f.key];
@@ -73,7 +123,11 @@ export function EditConnectionModal({ connection, onClose, onSaved }: EditConnec
     setError(null);
     const body = buildBody();
     if (!body) {
-      setError("Nothing to update — change the name or a credential field.");
+      setError(
+        split
+          ? "Nothing to update — change the name or a binding field."
+          : "Nothing to update — change the name or a credential field.",
+      );
       return;
     }
     setPending(true);
@@ -87,6 +141,42 @@ export function EditConnectionModal({ connection, onClose, onSaved }: EditConnec
       setError((e as Error).message);
     } finally {
       setPending(false);
+    }
+  }
+
+  const rotateMissing = fields.some(
+    (f) => f.required && (credential[f.key] === undefined || credential[f.key] === ""),
+  );
+
+  async function rotate() {
+    if (!credentialId || !api.rotateCredential || pending) return;
+    setError(null);
+    const parsed = parseJsonFields(fields, credential);
+    if ("error" in parsed) {
+      setError(parsed.error);
+      return;
+    }
+    setPending(true);
+    try {
+      await api.rotateCredential(credentialId, { source: parsed.values });
+      setCredential({});
+      setRotating(false);
+      setRotated(true);
+      setHealth(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function checkHealth() {
+    if (!credentialId || !api.testCredential) return;
+    setError(null);
+    try {
+      setHealth(await api.testCredential(credentialId));
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -136,7 +226,94 @@ export function EditConnectionModal({ connection, onClose, onSaved }: EditConnec
                   </p>
                 )}
 
-                {fields.length > 0 && (
+                {split && bindingFields.length > 0 && (
+                  <>
+                    <p className="w6w-muted w6w-small">
+                      Leave a binding field blank to keep it unchanged.
+                    </p>
+                    <AuthFieldsForm
+                      mode="edit"
+                      fields={bindingFields}
+                      values={bindingVals}
+                      onChange={setBindingVals}
+                      enterSubmitProps={enterSubmit}
+                    />
+                  </>
+                )}
+
+                {split && (
+                  <div className="w6w-stack" data-w6w="credential-section">
+                    {typeof api.testCredential === "function" && (
+                      <div>
+                        <button
+                          type="button"
+                          className="w6w-btn w6w-btn-ghost"
+                          onClick={checkHealth}
+                        >
+                          Test credential
+                        </button>
+                        {health && (
+                          <p className="w6w-small" data-w6w="credential-health">
+                            Credential health: {health.ok ? "ok" : (health.code ?? "failed")}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <p className="w6w-small" data-w6w="app-access">
+                      App access:{" "}
+                      {connection.lastTestOk === true
+                        ? "passed"
+                        : connection.lastTestOk === false
+                          ? "failed"
+                          : "never tested"}
+                    </p>
+                    {rotated && <p className="w6w-small">Credential rotated.</p>}
+                    {!rotating ? (
+                      <button
+                        type="button"
+                        className="w6w-btn w6w-btn-ghost"
+                        onClick={() => setRotating(true)}
+                      >
+                        Rotate credential
+                      </button>
+                    ) : (
+                      <>
+                        <p className="w6w-muted w6w-small">
+                          Enter the full new credential; it replaces the stored one.
+                          {connectionCount !== null &&
+                            ` It is used by ${connectionCount} connection${connectionCount === 1 ? "" : "s"}, and all of them switch to it.`}
+                        </p>
+                        <AuthFieldsForm
+                          fields={fields}
+                          values={credential}
+                          onChange={setCredential}
+                        />
+                        <div>
+                          <button
+                            type="button"
+                            className="w6w-btn"
+                            disabled={pending || rotateMissing}
+                            onClick={rotate}
+                          >
+                            Rotate
+                          </button>{" "}
+                          <button
+                            type="button"
+                            className="w6w-btn w6w-btn-ghost"
+                            onClick={() => {
+                              setRotating(false);
+                              setCredential({});
+                            }}
+                          >
+                            Cancel rotation
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {!split && fields.length > 0 && (
                   <>
                     <p className="w6w-muted w6w-small">
                       Leave a field blank to keep it unchanged. Filled fields replace the stored

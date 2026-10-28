@@ -734,3 +734,12 @@ verified: 2026-10-25 · against `proj/26-10-24-02-agents-studio-foundations` @ `
   A studio gate that resolves `@w6w/ui` through it measures main's ui, not the branch. Check
   `readlink -f ../ui` before trusting a studio result; T6.1.1 ran studio against a `git archive` of the
   integration branch instead (that project's FOLLOWUPS `[T6.1.1/S2b]`).
+
+## 26-10-27-01-unified-credentials-service-accounts update
+
+**verified: 2026-10-27** — against ui `main` @ `02a948f`.
+- `ConnectionConfig` gains a credential step (`components/CredentialPicker.tsx`: use existing / create new + binding
+  fields) shown iff `auth.serviceAccount` is present AND `W6WApi.listCredentials` + `createCredential` exist; eight new
+  OPTIONAL `W6WApi` credential methods (`provider.tsx`). A secret JSON field is a plain textarea branch in
+  `AuthFieldsForm` — never `JsonParamField` (it allows expression bindings).
+- Baseline: `NODE_OPTIONS=--experimental-strip-types npm test` → **1074 / 0**; `npm run typecheck` 0.

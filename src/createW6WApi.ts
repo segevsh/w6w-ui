@@ -11,6 +11,9 @@ import type {
   AppSummary,
   AuthDef,
   ConnectionSummary,
+  CredentialDependents,
+  CredentialSummary,
+  CredentialTestResult,
   FunctionDetail,
   FunctionSummary,
   SavedTest,
@@ -183,6 +186,52 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
         method: "PATCH",
         body: JSON.stringify(body),
       }).then((r) => r.connection),
+
+    listCredentials: (filter) => {
+      const qs = new URLSearchParams();
+      if (filter?.contract !== undefined) qs.set("contract", filter.contract);
+      if (filter?.appId !== undefined) qs.set("appId", filter.appId);
+      if (filter?.authKey !== undefined) qs.set("authKey", filter.authKey);
+      const q = qs.toString();
+      return req<{ credentials: CredentialSummary[] }>(`/credentials${q ? `?${q}` : ""}`).then(
+        (r) => r.credentials ?? [],
+      );
+    },
+
+    createCredential: (body) =>
+      req<{ credential: CredentialSummary }>("/credentials", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }).then((r) => r.credential),
+
+    getCredential: (id) =>
+      req<{ credential: CredentialSummary }>(`/credentials/${encodeURIComponent(id)}`).then(
+        (r) => r.credential,
+      ),
+
+    rotateCredential: (id, body) =>
+      req<{ credential: CredentialSummary }>(`/credentials/${encodeURIComponent(id)}/rotate`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }).then((r) => r.credential),
+
+    setCredentialStatus: (id, status) =>
+      req<{ credential: CredentialSummary }>(
+        `/credentials/${encodeURIComponent(id)}/${status === "disabled" ? "disable" : "enable"}`,
+        { method: "POST" },
+      ).then((r) => r.credential),
+
+    testCredential: (id) =>
+      req<CredentialTestResult>(`/credentials/${encodeURIComponent(id)}/test`, { method: "POST" }),
+
+    credentialDependents: (id) =>
+      req<{ dependents: CredentialDependents }>(
+        `/credentials/${encodeURIComponent(id)}/dependents`,
+      ).then((r) => r.dependents),
+
+    deleteCredential: async (id) => {
+      await req<unknown>(`/credentials/${encodeURIComponent(id)}`, { method: "DELETE" });
+    },
 
     startAppOAuthFlow: (appId, authKey, body) =>
       req<{ authorizationUrl: string }>(

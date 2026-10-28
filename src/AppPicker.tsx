@@ -27,11 +27,6 @@ const DEFAULT_PAGE_LIMIT = 60;
 /** How long to wait after the last keystroke before firing a server search. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-/** Non-empty, trimmed strings only — a wire list may carry blanks or nulls. */
-function declaredValues(values: readonly string[] | undefined): string[] {
-  return (values ?? []).filter((value) => typeof value === "string" && value.trim() !== "");
-}
-
 /**
  * The app's declared model-provider designation, or `null` when it declares
  * none (A01). PRESENCE of `modelProvider` is the ONLY test — this never
@@ -45,38 +40,35 @@ export function modelProviderOf(app: AppSummary): NonNullable<AppSummary["modelP
 }
 
 /**
- * The card badge text for a designated app — its declared model types plus,
- * when present, its declared families — or `null` for an undesignated one
- * (which therefore renders no badge at all). A designation that declares
- * neither still reads as "Model provider": the app IS one, it just did not
- * enumerate what it serves.
- *
- * @example
- * modelProviderBadge({ id, displayName, modelProvider: { modelTypes: ["chat"] } });
- * // "Model provider — chat"
- * modelProviderBadge({ id, displayName, modelProvider: {
- *   modelTypes: ["chat"], modelFamilies: ["gpt-4"],
- * } });
- * // "Model provider — chat · families: gpt-4"
- * modelProviderBadge({ id, displayName }); // null
+ * The bridge-support chip content for one card, or `null` when the host's
+ * lookup carries no entry for that app — "unknown" renders nothing rather
+ * than guessing, exactly like an undesignated app has no provider badge.
+ * A blank `reason` is treated as absent (a wire value may be `""`).
  */
-export function modelProviderBadge(app: AppSummary): string | null {
-  const provider = modelProviderOf(app);
-  if (!provider) return null;
-  const types = declaredValues(provider.modelTypes);
-  const families = declaredValues(provider.modelFamilies);
-  const parts = [
-    types.join(", "),
-    families.length > 0 ? `families: ${families.join(", ")}` : "",
-  ].filter((part) => part !== "");
-  return parts.length > 0 ? `Model provider — ${parts.join(" · ")}` : "Model provider";
+function bridgeSupportChip(
+  entry: { supported: boolean; reason?: string } | undefined,
+): { text: string; title: string } | null {
+  if (!entry) return null;
+  if (entry.supported) return { text: "Bridge supported", title: "Bridge supported" };
+  const reason = typeof entry.reason === "string" ? entry.reason.trim() : "";
+  return {
+    text: reason === "" ? "unsupported" : `unsupported — ${reason}`,
+    title: reason === "" ? "Bridge not supported" : reason,
+  };
 }
 
 export interface AppPickerProps {
   /** Fired when the user picks an app card. */
   onSelectApp: (app: AppSummary) => void;
   theme?: ThemeMode;
-  /** Optional pre-filter over the app list (e.g. only connectable apps). Applied CLIENT-side, on top of whatever page/list was fetched — never widens a fetch, only narrows what's shown. */
+  /**
+   * Optional pre-filter over the app list (e.g. only connectable apps).
+   * Applied CLIENT-side, on top of whatever page/list was fetched — never
+   * widens a fetch, only narrows what's shown. Because the server counted the
+   * apps this filter may then hide, a narrowing filter also removes the paged
+   * footer's denominator: the count reads `N apps`, never `N of total`.
+   * Prefer {@link ids} / {@link category} when the server can do the narrowing.
+   */
   filter?: (app: AppSummary) => boolean;
   /** Search-box placeholder. Defaults to "Search apps…". */
   searchPlaceholder?: string;
@@ -118,11 +110,28 @@ export interface AppPickerProps {
    */
   providerFilter?: boolean;
   /**
+   * Opt-in bridge-support lookup, keyed by app id — the HOST passes this in,
+   * because this package never fetches (`GET /models/providers` carries
+   * `operations.complete` support and its `reasons`, and the host already
+   * holds that descriptor). Presence of an entry adds a chip beside the
+   * model-provider badge: "Bridge supported" when `supported`, else an
+   * "unsupported" chip carrying the entry's `reason` as both its text and its
+   * `title`. Omitting the prop (or an app having no entry) renders no chip at
+   * all, so every existing call site and snapshot is unchanged.
+   */
+  bridgeSupport?: ReadonlyMap<string, { supported: boolean; reason?: string }>;
+  /**
    * Server-side `category` param for the bounded paged fetch (e.g. `"ai"` for
    * the AI tab) — sent to `W6WApi.listAppsPage`, never applied client-side.
    * Ignored when `apps` is supplied or the host has no `listAppsPage`.
    */
   category?: string;
+  /**
+   * Server-side id allow-list (`GET /apps?ids=a,b&paged=true`) for the bounded
+   * paged fetch: the page `total` is the FILTERED total, so the footer reads
+   * `N of N`. Sent to `listAppsPage`/`loadPage`; ignored when `apps` is supplied.
+   */
+  ids?: string[];
   /** Bounded page size for the paged fetch. Defaults to {@link DEFAULT_PAGE_LIMIT} (60). */
   pageLimit?: number;
   /**
@@ -137,6 +146,7 @@ export interface AppPickerProps {
     q?: string;
     cursor?: string;
     limit: number;
+    ids?: string[];
     signal: AbortSignal;
   }) => Promise<{ apps: AppSummary[]; nextCursor?: string; total?: number }>;
 }
@@ -171,7 +181,9 @@ export function AppPicker({
   apps: providedApps,
   categoryFilter = false,
   providerFilter = false,
+  bridgeSupport,
   category,
+  ids,
   pageLimit = DEFAULT_PAGE_LIMIT,
   loadPage,
 }: AppPickerProps) {
@@ -192,6 +204,7 @@ export function AppPicker({
   // package's own suites now use (`StepBuilderModal.connection-only/
   // homepage-tabs/template-node.test.ts`) rather than working around a
   // stub's shape in production semantics.
+  const idsKey = ids && ids.length > 0 ? ids.join(",") : "";
   const paged = !supplied && (loadPage !== undefined || typeof api.listAppsPage === "function");
   const loadPageRef = useRef(loadPage);
   loadPageRef.current = loadPage;
@@ -223,7 +236,7 @@ export function AppPicker({
   // ── Mode 2: bounded paged fetch ────────────────────────────────────────────
   const [pageState, dispatch] = useReducer(
     appsPageReducer,
-    initialAppsPageState({ q: "", category }, 0),
+    initialAppsPageState({ q: "", category, ids }, 0),
   );
   const [inputValue, setInputValue] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -252,11 +265,13 @@ export function AppPicker({
               q: query.q || undefined,
               cursor,
               limit: pageLimit,
+              ...(query.ids ? { ids: query.ids } : {}),
               signal: controller.signal,
             })
           : (listAppsPage as NonNullable<typeof listAppsPage>)({
               q: query.q || undefined,
               category: query.category,
+              ...(query.ids ? { ids: query.ids } : {}),
               cursor,
               limit: pageLimit,
               compact: true,
@@ -329,13 +344,17 @@ export function AppPicker({
   useEffect(() => {
     if (!paged) return;
     const generation = ++generationRef.current;
-    const query: AppsPageQuery = { q: debouncedQuery, category };
+    const query: AppsPageQuery = {
+      q: debouncedQuery,
+      category,
+      ...(idsKey ? { ids: idsKey.split(",") } : {}),
+    };
     dispatch({ type: "query-changed", query, generation });
     fetchPage(query, generation, undefined);
     return () => {
       abortRef.current?.abort();
     };
-  }, [paged, debouncedQuery, category, fetchPage]);
+  }, [paged, debouncedQuery, category, idsKey, fetchPage]);
 
   // Abort any still-pending request when the component itself unmounts (tab
   // switch away, modal close) even if no new query/category fired above.
@@ -486,6 +505,23 @@ export function AppPicker({
         (a) => a.displayName.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
       )
     : sorted;
+  // A1 (U1/S3) — a CLIENT-side narrowing can drop cards the SERVER already
+  // counted in `total`. There are exactly three such narrowings: the `filter`
+  // prop, the model-provider toggle and a category-chip selection. None of
+  // them reach the fetch, so `pageState.total` still includes what they hide,
+  // and `N of total` would claim apps that are not on screen. When one of them
+  // actually drops a card from the loaded pages, the footer reports the card
+  // count alone — no denominator, no total that disagrees with the grid.
+  //
+  // Server-side narrowing (`ids`, `category`, `q`) needs none of this: the
+  // page arrives already filtered, so `total` is the filtered total and the
+  // footer reads `N of N`. The reserved-`@w6w/*` exclusion is deliberately not
+  // counted here either — the footer's numerator is pinned to the page's own
+  // app count (T3.1.1 A5), internal apps included.
+  const clientFilterDroppedCards =
+    (filter !== undefined && base.length !== connectable.length) ||
+    (providerActive && providerFiltered.length !== base.length) ||
+    (categoryFilter && selectedCats.length > 0 && catFiltered.length !== providerFiltered.length);
   // A7: a category and/or provider selection narrowed the list to nothing,
   // distinct from the search-only empty state below (and distinct from either
   // alone: the message names whichever of the two is actually active).
@@ -626,7 +662,8 @@ export function AppPicker({
           ) : (
             <div className="w6w-stepbuilder-list w6w-apppicker-grid w6w-stepbuilder-scroll">
               {visible.map((a) => {
-                const badge = modelProviderBadge(a);
+                const bridgeEntry = bridgeSupport?.get(a.id);
+                const bridge = bridgeSupportChip(bridgeEntry);
                 return (
                   <button
                     key={a.id}
@@ -653,13 +690,21 @@ export function AppPicker({
                       {a.version && (
                         <span className="w6w-apppicker-card-version">v{a.version}</span>
                       )}
-                      {/* Model-provider badge (crit 1, A02): the declared types, plus
-                        the declared families when the app names them. Rendered ONLY
-                        for an app that carries a `modelProvider` designation — an
-                        undesignated app (however category-`ai` it looks) has no
-                        badge, because designation is never inferred from categories. */}
-                      {badge && (
-                        <span className="w6w-chip w6w-apppicker-card-provider">{badge}</span>
+                      {/* Bridge-support chip (A6): host-supplied, one entry per
+                        app id — nothing is derived from `designation` or
+                        `adapter` here, because the host owns the descriptor
+                        and this package never fetches. No entry, no chip. */}
+                      {bridge && (
+                        <span
+                          className={
+                            bridgeEntry?.supported
+                              ? "w6w-chip w6w-apppicker-card-bridge"
+                              : "w6w-chip w6w-apppicker-card-bridge w6w-apppicker-card-bridge-unsupported"
+                          }
+                          title={bridge.title}
+                        >
+                          {bridge.text}
+                        </span>
                       )}
                     </span>
                   </button>
@@ -669,7 +714,9 @@ export function AppPicker({
           )}
           {paged && typeof pageState.total === "number" && (
             <div className="w6w-small w6w-apppicker-count">
-              {pageState.apps.length} of {pageState.total}
+              {clientFilterDroppedCards
+                ? `${visible.length} ${visible.length === 1 ? "app" : "apps"}`
+                : `${pageState.apps.length} of ${pageState.total}`}
             </div>
           )}
           {paged && pageError && (

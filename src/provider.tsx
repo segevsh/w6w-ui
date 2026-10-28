@@ -17,7 +17,12 @@ import type {
   ApiCallRecord,
   AppSummary,
   AuthDef,
+  ConnectionBinding,
   ConnectionSummary,
+  CreateConnectionBody,
+  CredentialDependents,
+  CredentialSummary,
+  CredentialTestResult,
   FunctionDetail,
   FunctionSummary,
   ResolveFieldsBody,
@@ -141,6 +146,8 @@ export interface ListAppsPageOptions {
   q?: string;
   /** Server-side category filter (e.g. `"ai"`). */
   category?: string;
+  /** Server-side id allow-list (`GET /apps?ids=a,b`); `total` is then the filtered total. */
+  ids?: string[];
   /** Opaque pagination cursor from a prior {@link AppsPageResult.nextCursor}. */
   cursor?: string;
   /** Page size; a host may clamp this to its own bounds. */
@@ -235,15 +242,7 @@ export interface W6WApi {
   getAppAuth(appId: string): Promise<AuthDef[]>;
 
   /** Create a non-OAuth connection with a user-supplied credential. */
-  createConnection(
-    appId: string,
-    body: {
-      authKey: string;
-      credential: Record<string, unknown>;
-      displayName?: string;
-      profile?: Record<string, unknown>;
-    },
-  ): Promise<ConnectionSummary>;
+  createConnection(appId: string, body: CreateConnectionBody): Promise<ConnectionSummary>;
 
   /**
    * Rename a connection and/or replace some of its credential fields (`PATCH /connections/:id`).
@@ -253,8 +252,42 @@ export interface W6WApi {
    */
   updateConnection?(
     id: string,
-    body: { displayName?: string; credential?: Record<string, unknown> },
+    body: {
+      displayName?: string;
+      binding?: ConnectionBinding;
+      credentialId?: string;
+      credential?: Record<string, unknown>;
+    },
   ): Promise<ConnectionSummary>;
+
+  // Stored credentials (all optional). The credential UI is hidden unless the methods it needs are
+  // present, so an older adapter keeps working and keeps the inline-credential form.
+
+  /** List stored credentials, optionally narrowed (`GET /credentials`). */
+  listCredentials?(filter?: {
+    contract?: string;
+    appId?: string;
+    authKey?: string;
+  }): Promise<CredentialSummary[]>;
+  /** Store a new credential (`POST /credentials`). `source` is the auth's field-value record. */
+  createCredential?(body: {
+    name: string;
+    contract: string;
+    source: Record<string, unknown>;
+  }): Promise<CredentialSummary>;
+  getCredential?(id: string): Promise<CredentialSummary>;
+  /** Replace a credential's secret (`POST /credentials/:id/rotate`). */
+  rotateCredential?(
+    id: string,
+    body: { source: Record<string, unknown> },
+  ): Promise<CredentialSummary>;
+  /** Disable (`/disable`) or re-enable (`/enable`) a credential. */
+  setCredentialStatus?(id: string, status: "active" | "disabled"): Promise<CredentialSummary>;
+  /** Mint-level health check; distinct from a connection's app-access test. */
+  testCredential?(id: string): Promise<CredentialTestResult>;
+  credentialDependents?(id: string): Promise<CredentialDependents>;
+  /** Rejects with `ApiError` code `credential_in_use` (body.error.dependents) when in use. */
+  deleteCredential?(id: string): Promise<void>;
 
   /**
    * Start an OAuth 2.0 flow. Server builds the provider's authorize URL and

@@ -38,12 +38,38 @@ function SafeLink({
 }
 
 /**
+ * A leading `---` YAML block and the Markdown after it. Rendered as Markdown the block would
+ * come out as a rule plus a heading; it is metadata, so `Markdown` shows it in a collapsed
+ * section instead. Kept as text, not parsed — this package carries no YAML parser.
+ */
+export function splitFrontmatter(text: string): { frontmatter: string | null; body: string } {
+  const m = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  if (!m) return { frontmatter: null, body: text };
+  return { frontmatter: m[1], body: text.slice(m[0].length) };
+}
+
+/** Collapsed by default: metadata about the document, not part of what it says. */
+function Frontmatter({ yaml }: { yaml: string }) {
+  return (
+    <details className="w6w-md-frontmatter" data-testid="md-frontmatter">
+      <summary>Frontmatter</summary>
+      <pre>
+        <code>{yaml}</code>
+      </pre>
+    </details>
+  );
+}
+
+/**
  * Renders imported, attacker-controllable note content. No `rehype-raw`: raw HTML
  * is dropped (`skipHtml`), images are not rendered, and links are protocol-allowlisted.
+ * A leading YAML frontmatter block becomes a collapsed section above the body.
  */
 export function Markdown({ content, className }: MarkdownProps) {
+  const { frontmatter, body } = splitFrontmatter(content);
   return (
     <div className={className}>
+      {frontmatter?.trim() && <Frontmatter yaml={frontmatter} />}
       <ReactMarkdown
         skipHtml
         urlTransform={safeUrl}
@@ -51,7 +77,7 @@ export function Markdown({ content, className }: MarkdownProps) {
         unwrapDisallowed
         components={{ a: SafeLink }}
       >
-        {content}
+        {body}
       </ReactMarkdown>
     </div>
   );

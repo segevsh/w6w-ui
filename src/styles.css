@@ -5983,3 +5983,26 @@ button.w6w-rel-open:focus-visible strong {
 .w6w-budget-meter-over .w6w-budget-meter-value {
   color: var(--w6w-danger);
 }
+
+/* Markdown: the leading YAML frontmatter, collapsed above the rendered body. The body itself
+   is unstyled here — the host styles it through the `className` it passes. */
+.w6w-md-frontmatter {
+  margin-bottom: var(--w6w-sp-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2-5);
+  font-size: var(--w6w-fs-sm);
+}
+
+.w6w-md-frontmatter > summary {
+  cursor: pointer;
+  color: var(--w6w-muted);
+}
+
+.w6w-md-frontmatter > pre {
+  margin: var(--w6w-sp-2) 0 0;
+  overflow-x: auto;
+  font-family: var(--w6w-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

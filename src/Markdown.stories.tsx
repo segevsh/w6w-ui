@@ -46,4 +46,18 @@ export const Default: Story = {};
  */
 export const Hostile: Story = { args: { content: HOSTILE } };
 
+/** A leading YAML block (a SKILL.md, say) collapses into a "Frontmatter" section above the body. */
+export const Frontmatter: Story = {
+  args: {
+    content: `---
+name: release-notes
+description: Drafts release notes from merged PRs.
+allowed-tools: [Bash, Read]
+metadata:
+  owner: docs
+---
+${RICH}`,
+  },
+};
+
 export const Empty: Story = { args: { content: "" } };

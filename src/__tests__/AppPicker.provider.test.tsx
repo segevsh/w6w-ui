@@ -47,7 +47,7 @@ g.IS_REACT_ACT_ENVIRONMENT = true;
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
-const { AppPicker, modelProviderBadge } = await import("../AppPicker.tsx");
+const { AppPicker } = await import("../AppPicker.tsx");
 const { W6WUIProvider } = await import("../provider.tsx");
 
 type FixtureApp = {
@@ -122,10 +122,16 @@ const cardIds = (container: Element) =>
     (n.textContent || "").trim(),
   );
 
-const badgeTexts = (container: Element) =>
-  Array.from(container.querySelectorAll(".w6w-apppicker-card-provider")).map((n) =>
-    (n.textContent || "").trim(),
-  );
+/** The bridge-support chips, per card, in DOM order — `text` is `""` when the card has none. */
+const bridgeChips = (container: Element) =>
+  Array.from(container.querySelectorAll(".w6w-apppicker-card")).map((card) => {
+    const chip = card.querySelector(".w6w-apppicker-card-bridge");
+    return {
+      id: (card.querySelector(".w6w-apppicker-card-id")?.textContent || "").trim(),
+      text: (chip?.textContent || "").trim(),
+      title: chip?.getAttribute("title") ?? null,
+    };
+  });
 
 const providerToggle = (container: Element) =>
   container.querySelector(".w6w-apppicker-provider-toggle") as HTMLElement | null;
@@ -141,32 +147,13 @@ async function click(container: Element, selector: string, label: string) {
   });
 }
 
-test("badge text: declared types, plus families when the app names them — null when undesignated", () => {
-  assert.equal(
-    modelProviderBadge(FIXTURES[0] as never),
-    "Model provider — chat",
-    "types-only designation lists exactly its types",
-  );
-  assert.equal(
-    modelProviderBadge(FIXTURES[1] as never),
-    "Model provider — chat, embedding · families: gpt-4o, embed-3",
-    "families are appended when present",
-  );
-  // A01: presence is the only test — a category-`ai` app with no
-  // `modelProvider` is not a provider, so it has no badge text at all.
-  assert.equal(modelProviderBadge(FIXTURES[2] as never), null);
-  assert.equal(modelProviderBadge(FIXTURES[3] as never), null);
-});
-
-test("cards show a badge only for designated apps; a category-ai undesignated fixture shows none", async () => {
+test("cards render no model-provider badge text; designated and undesignated alike", async () => {
   const h = await render({});
   // All four cards render (the badge does not filter anything by itself).
   assert.deepEqual(cardIds(h.container).sort(), ["crm", "legacy-ai", "multi", "openai-chat"]);
-  // Sorted by displayName ("Multi Model" before "OpenAI Chat").
-  assert.deepEqual(badgeTexts(h.container), [
-    "Model provider — chat, embedding · families: gpt-4o, embed-3",
-    "Model provider — chat",
-  ]);
+  // The "Model provider — …" badge text is gone everywhere.
+  assert.ok(!(h.container.textContent ?? "").includes("Model provider —"));
+  assert.equal(h.container.querySelectorAll(".w6w-apppicker-card-provider").length, 0);
   const cards = Array.from(h.container.querySelectorAll(".w6w-apppicker-card"));
   const legacy = cards.find((c) =>
     (c.querySelector(".w6w-apppicker-card-id")?.textContent || "").includes("legacy-ai"),
@@ -177,6 +164,40 @@ test("cards show a badge only for designated apps; a category-ai undesignated fi
     0,
     "an undesignated category-ai app never shows the provider badge",
   );
+  await act(async () => h.root.unmount());
+});
+
+test("host-supplied bridgeSupport: 'Bridge supported' chip, and 'unsupported' with its reason as text and title", async () => {
+  const h = await render({
+    bridgeSupport: new Map<string, { supported: boolean; reason?: string }>([
+      ["multi", { supported: true }],
+      ["openai-chat", { supported: false, reason: "no_connection" }],
+    ]),
+  });
+  assert.deepEqual(
+    bridgeChips(h.container).filter((chip) => chip.text !== ""),
+    [
+      { id: "multi", text: "Bridge supported", title: "Bridge supported" },
+      { id: "openai-chat", text: "unsupported — no_connection", title: "no_connection" },
+    ],
+    "one chip per lookup entry, carrying the reason as its text AND its title",
+  );
+  // Apps with no lookup entry stay bare — "unknown" is not "unsupported".
+  assert.deepEqual(
+    bridgeChips(h.container).filter((chip) => chip.id === "legacy-ai"),
+    [{ id: "legacy-ai", text: "", title: null }],
+  );
+  await act(async () => h.root.unmount());
+});
+
+test("no bridge chip at all without the prop (the pre-A6 render is unchanged)", async () => {
+  const h = await render({});
+  assert.deepEqual(
+    bridgeChips(h.container).map((chip) => chip.text),
+    ["", "", "", ""],
+    "no prop, no chip — every existing call site renders exactly as before",
+  );
+  assert.equal(h.container.querySelectorAll(".w6w-apppicker-card-bridge").length, 0);
   await act(async () => h.root.unmount());
 });
 

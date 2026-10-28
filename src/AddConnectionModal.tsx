@@ -1,11 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppPicker } from "./AppPicker.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
-import { AuthFieldsForm } from "./components/AuthFieldsForm.tsx";
+import { AuthFieldsForm, parseJsonFields } from "./components/AuthFieldsForm.tsx";
+import {
+  CredentialPicker,
+  bindingFieldsFor,
+  buildBinding,
+} from "./components/CredentialPicker.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { startOAuthPopup } from "./oauth-popup.ts";
 import { useW6WApi } from "./provider.tsx";
-import type { AppSummary, AuthDef, AuthField, ThemeMode } from "./types.ts";
+import type {
+  AppSummary,
+  AuthDef,
+  AuthField,
+  CreateConnectionBody,
+  CredentialSummary,
+  ThemeMode,
+} from "./types.ts";
 import { useEnterSubmit } from "./use-enter-submit.ts";
 
 export interface AddConnectionModalProps {
@@ -163,6 +175,14 @@ function ConnectionConfig({
   const [credential, setCredential] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Credential step (serviceAccount auths only). `createdId` survives a failed connection call so a
+  // retry attaches the credential already stored instead of storing a second copy.
+  const [stored, setStored] = useState<CredentialSummary[] | null>(null);
+  const [pickedMode, setPickedMode] = useState<"existing" | "new" | null>(null);
+  const [selectedId, setSelectedId] = useState("");
+  const [credName, setCredName] = useState("");
+  const [bindingVals, setBindingVals] = useState<Record<string, unknown>>({});
+  const createdId = useRef<string | null>(null);
 
   useEffect(() => {
     let canceled = false;
@@ -186,6 +206,37 @@ function ConnectionConfig({
     available[0];
   const fields: AuthField[] = auth?.fields ?? [];
   const isOAuth = auth?.type === "oauth2";
+  // The Credential step needs the auth to declare `serviceAccount` AND the host to supply both
+  // credential methods; otherwise this is the plain inline-credential form.
+  const sa = auth?.serviceAccount;
+  const listCredentials = api.listCredentials;
+  const createCredential = api.createCredential;
+  const credentialStep =
+    !isOAuth &&
+    !!sa &&
+    typeof listCredentials === "function" &&
+    typeof createCredential === "function";
+  const contract = sa?.accepts?.[0] ?? "";
+  const usable = (stored ?? []).filter((c) => c.contract === contract && c.status === "active");
+  const mode: "existing" | "new" = usable.length === 0 ? "new" : (pickedMode ?? "existing");
+  const chosenId = usable.some((c) => c.id === selectedId) ? selectedId : (usable[0]?.id ?? "");
+  const bindingFields = credentialStep && sa ? bindingFieldsFor(sa) : [];
+
+  useEffect(() => {
+    if (!credentialStep || !listCredentials) return;
+    let canceled = false;
+    setStored(null);
+    setPickedMode(null);
+    createdId.current = null;
+    listCredentials
+      .call(api, { contract })
+      .then((list) => !canceled && setStored(list))
+      .catch(() => !canceled && setStored([]));
+    return () => {
+      canceled = true;
+    };
+    // `credentialStep`/`contract` change only when the auth does; `api` is the host's stable object.
+  }, [api, credentialStep, contract, listCredentials]);
   // The synthetic "no connection needed" entry `GET /apps/:id/auths` appends
   // for a zero-credential-flagged tenant (`admin/apps-catalog.ts`) — matched
   // by `key`, never `type` (its `type` is the existing `"custom"` value,
@@ -196,10 +247,17 @@ function ConnectionConfig({
   // `zerocred:<appId>` summary), so submitting here just reports that same
   // id back rather than creating a second, real row for nothing to store.
   const isZeroCred = auth?.key === "zero-credential";
+  const blank = (v: unknown) => v === undefined || v === "";
   const requiredMissing =
     !isOAuth &&
     !isZeroCred &&
-    fields.some((f) => f.required && (credential[f.key] === undefined || credential[f.key] === ""));
+    (credentialStep
+      ? stored === null ||
+        bindingFields.some((f) => f.required && blank(bindingVals[f.key])) ||
+        (mode === "existing"
+          ? chosenId === ""
+          : credName.trim() === "" || fields.some((f) => f.required && blank(credential[f.key])))
+      : fields.some((f) => f.required && blank(credential[f.key])));
   // Hoisted once — shared by the primary button's `disabled` and the
   // enter-to-submit hook's `enabled`, so Enter can never do something the
   // button itself refuses to do.
@@ -218,10 +276,40 @@ function ConnectionConfig({
         });
         const { connectionId } = await startOAuthPopup(authorizationUrl);
         onCreated({ connectionId });
+      } else if (credentialStep && createCredential) {
+        let credentialId = mode === "existing" ? chosenId : createdId.current;
+        if (credentialId === null) {
+          const parsed = parseJsonFields(fields, credential);
+          if ("error" in parsed) {
+            setError(parsed.error);
+            return;
+          }
+          const made = await createCredential.call(api, {
+            name: credName.trim(),
+            contract,
+            source: parsed.values,
+          });
+          createdId.current = made.id;
+          credentialId = made.id;
+        }
+        const binding = buildBinding(bindingFields, bindingVals);
+        const body: CreateConnectionBody = {
+          authKey: auth.key,
+          credentialId,
+          ...(binding ? { binding } : {}),
+          ...(displayName ? { displayName } : {}),
+        };
+        const conn = await api.createConnection(app.id, body);
+        onCreated({ connectionId: conn.id });
       } else {
+        const parsed = parseJsonFields(fields, credential);
+        if ("error" in parsed) {
+          setError(parsed.error);
+          return;
+        }
         const conn = await api.createConnection(app.id, {
           authKey: auth.key,
-          credential,
+          credential: parsed.values,
           displayName: displayName || undefined,
         });
         onCreated({ connectionId: conn.id });
@@ -259,6 +347,8 @@ function ConnectionConfig({
                 onChange={(e) => {
                   setAuthKey(e.target.value);
                   setCredential({});
+                  setBindingVals({});
+                  createdId.current = null;
                   setError(null);
                 }}
               >
@@ -300,6 +390,61 @@ function ConnectionConfig({
                   You'll be redirected to <strong>{auth.displayName ?? auth.key}</strong> to
                   authorize this connection.
                 </p>
+              ) : credentialStep && sa ? (
+                <>
+                  <CredentialPicker
+                    credentials={usable}
+                    mode={mode}
+                    onModeChange={(m) => {
+                      setPickedMode(m);
+                      createdId.current = null;
+                    }}
+                    selectedId={chosenId}
+                    onSelect={setSelectedId}
+                    canUseExisting={usable.length > 0}
+                    contract={contract}
+                  />
+                  {sa.scopes.length > 0 && (
+                    <p className="w6w-muted w6w-small">
+                      Scopes: <code>{sa.scopes.join(" ")}</code>
+                    </p>
+                  )}
+                  {bindingFields.length > 0 && (
+                    <AuthFieldsForm
+                      fields={bindingFields}
+                      values={bindingVals}
+                      onChange={setBindingVals}
+                      enterSubmitProps={enterSubmit}
+                    />
+                  )}
+                  {mode === "new" && (
+                    <>
+                      <label className="w6w-field">
+                        <span>Credential name *</span>
+                        <input
+                          type="text"
+                          value={credName}
+                          onChange={(e) => setCredName(e.target.value)}
+                          placeholder="e.g. Workspace automation"
+                          maxLength={80}
+                          name="w6w-credential-name"
+                          autoComplete="off"
+                          data-1p-ignore="true"
+                          data-lpignore="true"
+                          data-bwignore="true"
+                          data-form-type="other"
+                          {...enterSubmit}
+                        />
+                      </label>
+                      <AuthFieldsForm
+                        fields={fields}
+                        values={credential}
+                        onChange={setCredential}
+                        enterSubmitProps={enterSubmit}
+                      />
+                    </>
+                  )}
+                </>
               ) : (
                 <AuthFieldsForm
                   fields={fields}
