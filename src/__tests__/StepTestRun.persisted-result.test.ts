@@ -131,8 +131,8 @@ function makeApi(rows: () => Promise<Row[]>, invoke: () => unknown = () => ({ va
     },
     startAppOAuthFlow: async () => ({ authorizationUrl: "" }),
     listStepTests: async (_w: string, stepId: string) => {
-      if (stepId !== "mail_1") return [];
       counts.list++;
+      if (stepId !== "mail_1") return [];
       return rows();
     },
   } as unknown as W6WApi;
