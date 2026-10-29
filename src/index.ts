@@ -240,3 +240,14 @@ export { BudgetMeter } from "./components/BudgetMeter.tsx";
 export type { BudgetMeterProps } from "./components/BudgetMeter.tsx";
 export { Markdown, splitFrontmatter } from "./Markdown.tsx";
 export type { MarkdownProps } from "./Markdown.tsx";
+
+// ── ResultViewer (T0.1.1) — format-aware, read-only result display ──
+export { HTML_PREVIEW_CSP, HtmlPreview, htmlPreviewSrcDoc } from "./components/HtmlPreview.tsx";
+export { ResultViewer } from "./components/ResultViewer.tsx";
+export type { ResultViewerProps } from "./components/ResultViewer.tsx";
+export {
+  RESULT_RENDER_MAX_CHARS,
+  detectResultFormat,
+  resultCopyText,
+} from "./components/result-format.ts";
+export type { DetectedResult } from "./components/result-format.ts";

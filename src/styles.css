@@ -2012,6 +2012,32 @@ select optgroup {
   min-width: 0;
 }
 
+/* ── Hover modifier: ResultViewer — the button overlays the top-right corner of
+   ANY child and is revealed on hover/focus; always shown where there is no hover. */
+.w6w-copyable--hover {
+  position: relative;
+  align-items: flex-start;
+}
+
+.w6w-copyable--hover > .w6w-copyable-btn {
+  position: absolute;
+  top: var(--w6w-sp-1);
+  right: var(--w6w-sp-1);
+  background: var(--w6w-panel);
+  border-color: var(--w6w-border);
+  opacity: 0;
+}
+
+.w6w-copyable--hover:hover > .w6w-copyable-btn,
+.w6w-copyable--hover:focus-within > .w6w-copyable-btn {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .w6w-copyable--hover > .w6w-copyable-btn {
+    opacity: 1;
+  }
+}
 /* The raw {{ }} input stands alone, so it keeps an input box of its own. */
 .w6w-expr-raw {
   width: 100%;
@@ -3772,6 +3798,65 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
    baseline bar, `degraded` taller, `down` the full cell, and `unknown` a hatched
    outline with no solid fill (nothing was measured: not a good day, not a bad
    one). Each cell also carries a `title` with its day and state. */
+/* ── ResultViewer (T0.1.1) — one result value, shown by format: a collapsible
+   JSON tree, xml/html/markdown source, or vendor html in a sandboxed iframe.
+   The viewer owns its OWN internal spacing only; the host pane spaces it. */
+.w6w-result-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+  min-width: 0;
+}
+
+/* The toolbar — Expand all / Collapse all for a tree, Rendered / Source for
+   html and markdown. End-aligned so it sits under the copy button's corner. */
+.w6w-result-viewer-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--w6w-sp-1);
+}
+
+/* The viewport: the one element that scrolls, capped by the inline `maxHeight`.
+   Mono + 0.85em are `.w6w-result`'s type (above), because both present the same
+   thing to the reader. */
+.w6w-result-viewer-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--w6w-font-mono);
+  /* lint-tokens-allow: mirrors `.w6w-result`'s result type size above; the value is pinned by T0.1.1 */
+  font-size: 0.85em;
+}
+
+/* A plain-text result wraps instead of scrolling sideways: prose has no
+   meaningful line structure to preserve (a code block does — it keeps `wrap`
+   off by default for that reason). */
+.w6w-result-viewer-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* One indent step per nesting level, and no list markers: the `<summary>`
+   triangle already says "this node opens". */
+.w6w-json-children {
+  padding-left: var(--w6w-sp-4);
+}
+
+/* Keys and counts recede; values stay the reading colour. */
+.w6w-json-key,
+.w6w-json-count {
+  color: var(--w6w-muted);
+}
+
+/* The sandboxed frame: fills the body's width and gives the preview a fixed
+   viewport (it cannot size itself to its own content from outside). */
+.w6w-html-preview {
+  width: 100%;
+  height: 320px;
+  border: none;
+  background: var(--w6w-panel);
+}
+
 .w6w-uptime-strip {
   display: grid;
   grid-auto-flow: column;
