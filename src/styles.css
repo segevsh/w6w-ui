@@ -1109,6 +1109,18 @@ select optgroup {
   margin-top: var(--w6w-sp-0-5);
 }
 
+/* Combobox (`components/Combobox.tsx`): its <input> sits inside the component's
+   own positioned root, so it is not a direct flex child of `.w6w-field` and would
+   keep its intrinsic width. The root and the input fill the field instead. */
+.w6w-combobox {
+  width: 100%;
+}
+
+.w6w-combobox > input[type=text] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* Material-style multi-select: chips live INSIDE a single input-like box,
    followed by the dropdown which reads as the trailing placeholder. */
 .w6w-multiselect {
@@ -1671,7 +1683,9 @@ select optgroup {
 .w6w-fx-wrap > select,
 .w6w-fx-wrap > textarea,
 .w6w-fx-wrap > .w6w-multiselect,
-.w6w-fx-wrap > .w6w-expr {
+.w6w-fx-wrap > .w6w-expr,
+.w6w-fx-wrap > .w6w-combobox,
+.w6w-fx-wrap > .w6w-fx-grow {
   flex: 1 1 auto;
   min-width: 0;
 }

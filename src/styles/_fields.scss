@@ -159,3 +159,14 @@ select optgroup {
 .w6w-array-add {
   margin-top: var(--w6w-sp-0-5);
 }
+
+/* Combobox (`components/Combobox.tsx`): its <input> sits inside the component's
+   own positioned root, so it is not a direct flex child of `.w6w-field` and would
+   keep its intrinsic width. The root and the input fill the field instead. */
+.w6w-combobox {
+  width: 100%;
+}
+.w6w-combobox > input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+}

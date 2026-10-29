@@ -769,7 +769,7 @@ function ChoiceField({
       label={label}
       req={req}
     >
-      <div aria-busy={state.loading ? "true" : "false"}>
+      <div className="w6w-fx-grow" aria-busy={state.loading ? "true" : "false"}>
         <Combobox
           mode="combobox"
           forceSelection={!allowCustomOf(param)}
