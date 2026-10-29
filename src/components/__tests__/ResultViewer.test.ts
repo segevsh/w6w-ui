@@ -511,6 +511,24 @@ test("R12 — a hand-collapsed node is re-opened by Expand all (the tree is remo
   await act(async () => {
     root.unmount();
   });
+
+  // …and the other direction: the reader opens the deepest node by hand, then
+  // Collapse all must put the tree back to its depth-1 default.
+  const second = await mount({ a: { b: { c: "deep-leaf" } }, n: 1 });
+  const third = second.container.querySelectorAll("details.w6w-json-node")[2] as HTMLDetailsElement;
+  third.open = true;
+  assert.deepEqual(openStates(second.container), [true, true, true]);
+
+  await click(byText(second.container, "Collapse all"));
+  assert.deepEqual(
+    openStates(second.container),
+    [true, false, false],
+    "Collapse all must win over a hand-opened node",
+  );
+
+  await act(async () => {
+    second.root.unmount();
+  });
 });
 
 test("R13 — a value whose copy text throws still renders the pane", async () => {
