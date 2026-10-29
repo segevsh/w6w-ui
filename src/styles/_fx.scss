@@ -24,7 +24,9 @@
 .w6w-fx-wrap > select,
 .w6w-fx-wrap > textarea,
 .w6w-fx-wrap > .w6w-multiselect,
-.w6w-fx-wrap > .w6w-expr {
+.w6w-fx-wrap > .w6w-expr,
+.w6w-fx-wrap > .w6w-combobox,
+.w6w-fx-wrap > .w6w-fx-grow {
   flex: 1 1 auto;
   min-width: 0;
 }

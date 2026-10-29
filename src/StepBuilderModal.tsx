@@ -1,3 +1,4 @@
+import { effectiveParam } from "@w6w/expr";
 import {
   type ReactNode,
   forwardRef,
@@ -22,6 +23,7 @@ import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ResultViewer } from "./components/ResultViewer.tsx";
 import type { IconName } from "./components/icons.tsx";
 import {
   CALL_APP,
@@ -1501,12 +1503,7 @@ function CallableTestRun({
       {state?.status === "done" && state.terminal && state.error === undefined && (
         <div className="w6w-testout">
           <div className="w6w-testout-label">Result</div>
-          <pre
-            className="w6w-result"
-            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-          >
-            {JSON.stringify(state.output, null, 2)}
-          </pre>
+          <ResultViewer value={state.output} maxHeight={220} />
         </div>
       )}
     </div>
@@ -1543,7 +1540,9 @@ export function requiredParamsFilled(
     vals: Record<string, unknown>,
     eff: (key: string) => unknown,
   ): boolean =>
-    list.every((p) => {
+    list.every((base) => {
+      // `when` overlay: effective `required` (same helper as the core runtime).
+      const p = effectiveParam(base, eff);
       // A `section` is a layout-only container whose children write flat at this
       // level — recurse so a required child (e.g. a grouped Sender Email) still
       // gates. The section param itself carries no value.
@@ -1577,7 +1576,7 @@ export function requiredParamsFilled(
         return check(children, groupVals, scoped(groupVals));
       }
       if (!p.required) return true;
-      if (!isParamVisible(p, eff)) return true;
+      if (!isParamVisible(base, eff)) return true;
       const v = vals[p.key] ?? p.default;
       if (v === undefined || v === null) return false;
       if (typeof v === "string") return v.trim() !== "";
@@ -1631,13 +1630,6 @@ function apiCallsIn(body: unknown): ApiCallRecord[] {
   return Array.isArray(calls) ? (calls as ApiCallRecord[]) : [];
 }
 
-const LOG_PRE_STYLE = {
-  whiteSpace: "pre-wrap",
-  maxHeight: 320,
-  overflow: "auto",
-  margin: 0,
-} as const;
-
 /** Modal body for {@link TestRunLog} — the request, the response, then each vendor call. */
 function TestRunLogModal({ log, onClose }: { log: TestRunLog; onClose: () => void }) {
   return (
@@ -1647,9 +1639,7 @@ function TestRunLogModal({ log, onClose }: { log: TestRunLog; onClose: () => voi
           <div className="w6w-testout-label">
             Request to w6w · {log.request.method} {log.request.path}
           </div>
-          <pre className="w6w-result" style={LOG_PRE_STYLE}>
-            {JSON.stringify(log.request.body, null, 2)}
-          </pre>
+          <ResultViewer value={log.request.body} maxHeight={320} />
         </div>
         <div className="w6w-testout">
           <div className="w6w-testout-label">
@@ -1659,9 +1649,7 @@ function TestRunLogModal({ log, onClose }: { log: TestRunLog; onClose: () => voi
               : `failed${log.response.status ? ` (HTTP ${log.response.status})` : ""}`}{" "}
             · {log.durationMs}ms
           </div>
-          <pre className="w6w-result" style={LOG_PRE_STYLE}>
-            {JSON.stringify(log.response.body, null, 2)}
-          </pre>
+          <ResultViewer value={log.response.body} maxHeight={320} />
         </div>
         <div className="w6w-testout">
           <div className="w6w-testout-label">Outbound API calls ({log.apiCalls.length})</div>
@@ -1757,9 +1745,56 @@ export const StepTestRun = forwardRef<
   const [state, setState] = useState<TestState | null>(null);
   const [log, setLog] = useState<TestRunLog | null>(null);
   const [logOpen, setLogOpen] = useState(false);
+  // Set once a session run starts, so a late read-back never overwrites it.
+  const ranRef = useRef(false);
+  // The stored run's time while its result is on show; cleared by a new run.
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+
+  // Show the step's newest stored run (success or failure) on (re)open. Read-only:
+  // never saves, records, invokes or notifies the host.
+  const persistWorkflowId = persist?.workflowId;
+  const persistStepId = persist?.stepId;
+  useEffect(() => {
+    if (!persistWorkflowId || !persistStepId) return;
+    let canceled = false;
+    api
+      .listStepTests(persistWorkflowId, persistStepId)
+      .then((rows) => {
+        let row: (typeof rows)[number] | undefined;
+        for (const r of rows) {
+          if (!r.lastRunAt || !r.lastRunStatus) continue;
+          if (!row || Date.parse(r.lastRunAt) > Date.parse(row.lastRunAt as string)) row = r;
+        }
+        if (!row || !row.lastRunAt || canceled || ranRef.current) return;
+        if (row.lastRunStatus === "succeeded") {
+          setState({
+            status: "done",
+            value: row.lastRunOutput,
+            ...(row.lastRunMeta ? { meta: row.lastRunMeta } : {}),
+          });
+        } else {
+          setState({
+            status: "error",
+            error:
+              typeof row.lastRunError === "string"
+                ? row.lastRunError
+                : row.lastRunError == null
+                  ? "Test failed"
+                  : JSON.stringify(row.lastRunError),
+          });
+        }
+        setRestoredAt(row.lastRunAt);
+      })
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, persistWorkflowId, persistStepId]);
 
   const run = async () => {
     if (!canRun || state?.status === "running") return;
+    ranRef.current = true;
+    setRestoredAt(null);
     setState({ status: "running" });
     onBusyChange?.(true);
     let outcome: Exclude<TestState, { status: "running" }>;
@@ -1871,6 +1906,11 @@ export const StepTestRun = forwardRef<
         </div>
       )}
       {logOpen && log && <TestRunLogModal log={log} onClose={() => setLogOpen(false)} />}
+      {restoredAt && (state?.status === "done" || state?.status === "error") && (
+        <div className="w6w-muted w6w-small w6w-testout-restored">
+          Last run · {new Date(restoredAt).toLocaleString()}
+        </div>
+      )}
       {state?.status === "error" && (
         <div className="w6w-result w6w-error">
           {state.errorCode && (
@@ -1884,21 +1924,11 @@ export const StepTestRun = forwardRef<
       {state?.status === "done" && (
         <div className="w6w-testout">
           <div className="w6w-testout-label">Result (return value)</div>
-          <pre
-            className="w6w-result"
-            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-          >
-            {JSON.stringify(state.value, null, 2)}
-          </pre>
+          <ResultViewer value={state.value} maxHeight={220} />
           {state.meta && (
             <>
               <div className="w6w-testout-label">Metadata</div>
-              <pre
-                className="w6w-result"
-                style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-              >
-                {JSON.stringify(state.meta, null, 2)}
-              </pre>
+              <ResultViewer value={state.meta} maxHeight={220} />
             </>
           )}
         </div>

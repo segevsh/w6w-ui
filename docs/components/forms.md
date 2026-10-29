@@ -104,6 +104,14 @@ fold under **Additional parameters**. The widget follows each parameter's `type`
 `number`, `boolean`, `select`, `multiselect`, `array`, `json`, `group`, `secret`, `code`, `vars`
 and `section`. It also honours `showIf`, `row`, `repeat` and `options` on the parameter.
 
+A parameter can also carry `when`: a list of `{ if, set }` entries. The first entry whose `if`
+condition (`{ field, equals | in | notIn | truthy }`, the same shape as `showIf`) holds overlays
+`label`, `hint`, `required`, `ui` and `options` onto the parameter, so one field can relabel itself
+or become required depending on a sibling (for example "Event ID" becomes "Organization ID" when
+`scope` is `organization`). The form, the Test gate and `ResolvedParams` all read it through
+`effectiveParam` from `@w6w/expr`, the same helper the runtime uses. A parameter that becomes
+required through `when` moves out of **Additional parameters** into the main area.
+
 | Prop | Type | What it does |
 | --- | --- | --- |
 | `params` | `ActionParam[]` | Required. The parameters to render, usually `action.params`. |

@@ -213,3 +213,49 @@ test("a showIf referencing a field OUTSIDE its own section still resolves", () =
   assert.equal(requiredParamsFilled(params, { dynamicTemplate: true }), true);
   assert.equal(requiredParamsFilled(params, { dynamicTemplate: false }), false);
 });
+
+const WHEN_REQ = (equals: string): ActionParam[] => [
+  { key: "scope", label: "Scope", type: "string" },
+  {
+    key: "id",
+    label: "ID",
+    type: "string",
+    when: [{ if: { field: "scope", equals }, set: { required: true } }],
+  },
+];
+
+test("when-overlay required: matching + empty blocks the gate", () => {
+  assert.equal(requiredParamsFilled(WHEN_REQ("organization"), { scope: "organization" }), false);
+});
+
+test("when-overlay required: non-matching condition does not block", () => {
+  assert.equal(requiredParamsFilled(WHEN_REQ("organization"), { scope: "event" }), true);
+});
+
+test("when-overlay required:false relaxes a base-required param", () => {
+  const params: ActionParam[] = [
+    { key: "scope", label: "Scope", type: "string" },
+    {
+      key: "id",
+      label: "ID",
+      type: "string",
+      required: true,
+      when: [{ if: { field: "scope", equals: "event" }, set: { required: false } }],
+    },
+  ];
+  assert.equal(requiredParamsFilled(params, { scope: "event" }), true);
+});
+
+test("a hidden param with overlay required does not block", () => {
+  const params: ActionParam[] = [
+    { key: "scope", label: "Scope", type: "string" },
+    {
+      key: "id",
+      label: "ID",
+      type: "string",
+      showIf: { field: "scope", equals: "never" },
+      when: [{ if: { field: "scope", equals: "organization" }, set: { required: true } }],
+    },
+  ];
+  assert.equal(requiredParamsFilled(params, { scope: "organization" }), true);
+});

@@ -179,7 +179,7 @@ export function Combobox({
   };
 
   return (
-    <div ref={rootRef} style={{ position: "relative" }}>
+    <div ref={rootRef} className="w6w-combobox" style={{ position: "relative" }}>
       <input
         type="text"
         role="combobox"
