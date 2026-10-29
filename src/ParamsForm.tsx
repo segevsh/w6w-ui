@@ -8,11 +8,11 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { varLabel } from "./components/expression-dom.ts";
 import { bareRefBinding } from "./components/json-compose.ts";
 import { type DynamicContext, allowCustomOf } from "./dynamic-fields.ts";
 import { useOptionalW6WApi, useWorkflowProject } from "./provider.tsx";
-import { buildResolveScope, isDollarPath } from "./resolve-params.ts";
-import { resolveParamJson } from "./resolved-json.ts";
+import { isDollarPath } from "./resolve-params.ts";
 import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
 import { type UseDynamicFields, useDynamicFields } from "./use-dynamic-fields.ts";
 
@@ -1119,22 +1119,6 @@ function JsonParamField({
     }
     onChange(param.key, restored);
   };
-  // Preview: the bound ref resolved against the host's sample values. The flow
-  // editor seeds `steps.<id>.output` as a flat key, which `resolveRef` does not
-  // read for `steps.*`, so the nested `steps` scope is built from those keys.
-  const preview = (() => {
-    if (!bound) return "";
-    const steps: Record<string, { output?: unknown }> = {};
-    for (const [ref, v] of Object.entries(exprOptions.sampleValues ?? {})) {
-      const m = /^steps\.([^.]+)\.output$/.exec(ref);
-      if (m) steps[m[1]] = { output: v };
-    }
-    return JSON.stringify(
-      resolveParamJson(value, buildResolveScope(undefined, { steps })),
-      null,
-      2,
-    );
-  })();
 
   return (
     <div className="w6w-field">
@@ -1160,31 +1144,51 @@ function JsonParamField({
       {/* Inline: content-sized, grows with content up to maxHeight, then scrolls
           internally (so it never overlaps the next field). Full view via button. */}
       {bound ? (
-        <div className="w6w-json-binding">
-          <div className="w6w-fx-wrap is-fx">
-            <code>{boundRef}</code>
-            {!readOnly && (
-              <>
+        // Bound: the reference reads exactly like an expression in a text field — one
+        // var chip in the field box (same classes `ExpressionInput` paints), its × to
+        // clear, and the ƒx to reopen the picker. No resolved preview.
+        <div className="w6w-fx-wrap is-fx w6w-json-binding">
+          <div className="w6w-expr">
+            <div className="w6w-expr-field">
+              <div
+                className={`w6w-expr-editor${readOnly ? " is-readonly" : ""}`}
+                data-testid="json-binding-ref"
+              >
+                <span
+                  className="w6w-expr-chip w6w-expr-chip-var"
+                  data-kind="var"
+                  data-ref={boundRef}
+                  title={`Variable: ${boundRef}`}
+                >
+                  <span className="w6w-expr-chip-sigil">◆</span>
+                  <span className="w6w-expr-chip-label">{varLabel(boundRef)}</span>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="w6w-expr-chip-x"
+                      aria-label={`Remove the reference from ${label}`}
+                      // `.w6w-expr-chip-x` styles the glyph; reset only what a <button> adds.
+                      style={{ border: 0, padding: 0, font: "inherit" }}
+                      onClick={clear}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              </div>
+              {!readOnly && (
                 <button
                   type="button"
-                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  className="w6w-expr-edit"
+                  title="Edit expression — browse step outputs, metadata & variables"
+                  aria-label={`Edit expression for ${label}`}
                   onClick={() => setPickerOpen(true)}
                 >
-                  Edit
+                  ƒx
                 </button>
-                <button type="button" className="w6w-btn w6w-btn-ghost w6w-btn-sm" onClick={clear}>
-                  Clear
-                </button>
-              </>
-            )}
+              )}
+            </div>
           </div>
-          <pre
-            className="w6w-json-binding-preview"
-            data-testid="json-binding-preview"
-            style={{ margin: 0, maxHeight: 260, overflow: "auto", fontSize: "0.85em" }}
-          >
-            {preview}
-          </pre>
         </div>
       ) : (
         <JsonEditor
@@ -1219,7 +1223,6 @@ function JsonParamField({
           jsonValue={value}
           options={exprOptions}
           fieldLabel={label}
-          onBind={(next) => onChange(param.key, next)}
           onSaveJson={(next) => onChange(param.key, next)}
           onClose={() => setPickerOpen(false)}
         />

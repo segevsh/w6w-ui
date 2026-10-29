@@ -183,6 +183,23 @@ const unmount = async (root: { unmount(): void }) => {
   await act(async () => root.unmount());
 };
 
+// The bound field: one var chip (data-ref), its × (Clear) and the ƒx (Edit).
+const chipRef = (c: Element) =>
+  c.querySelector('[data-testid="json-binding-ref"] .w6w-expr-chip')?.getAttribute("data-ref");
+const editBtns = () =>
+  buttons().filter((b) => (b.getAttribute("aria-label") ?? "").startsWith("Edit expression for "));
+const clearBtns = () =>
+  buttons().filter((b) =>
+    (b.getAttribute("aria-label") ?? "").startsWith("Remove the reference from "),
+  );
+const rowNamed = (name: string) => entireRows().find((r) => r.getAttribute("aria-label") === name);
+/** Pick a source in the open picker and Save: what binding the field takes now. */
+async function pick(row: Element | undefined) {
+  await click(row);
+  await settle(20);
+  await click(byText("Save")[0]);
+}
+
 test("Acc1 - one fx on a json and on a childless group; Entire output per step; binds {$}", async () => {
   const { container, root, box } = await render([JSON_PARAM, GROUP_PARAM]);
   assert.equal(fxButtons().length, 2);
@@ -208,23 +225,24 @@ test("Acc1 - one fx on a json and on a childless group; Entire output per step; 
   assert.equal(doc().querySelectorAll('dialog [aria-label="Expression"]').length, 0);
   assert.equal(doc().querySelectorAll('[data-testid="expr-copy-to-editor"]').length, 0);
 
-  await click(rows.find((r) => r.getAttribute("aria-label") === "Entire output of Step B"));
+  // A click inserts — it writes nothing and keeps the picker open until Save.
+  await click(rowNamed("Entire output of Step B"));
+  assert.equal(box.calls, 0);
+  assert.equal(draftOf(doc().body, "Compose"), '{ "$": "nodes.b.output" }');
+  await click(byText("Save")[0]);
   assert.equal(box.calls, 1);
   const v = box.current.cfg as Record<string, unknown>;
   assert.deepEqual(v, { $: "nodes.b.output" });
   assert.deepEqual(Object.keys(v), ["$"]);
-  assert.equal(typeof v.$, "string");
-  assert.ok(!("type" in v) && !("parts" in v));
   await unmount(root);
   void container;
 });
 
-test("Acc1 - a field leaf binds steps.<id>.output.<key>", async () => {
+test("Acc1 - a field leaf binds nodes.<id>.output.<key>", async () => {
   const { root, box } = await render([JSON_PARAM]);
   await click(fxButtons()[0]);
   await click(doc().querySelector('[data-testid="expr-caret-fields"]') ?? undefined);
-  const leaf = buttons().find((b) => b.textContent?.includes("a.id"));
-  await click(leaf);
+  await pick(buttons().find((b) => b.textContent?.includes("a.id")));
   assert.deepEqual(box.current.cfg, { $: "nodes.a.output.id" });
   await unmount(root);
 });
@@ -243,65 +261,60 @@ test("Acc2 - Cancel from fx and from Edit writes nothing; invalid draft is byte-
   assert.equal(before, '{"a": ');
   const calls0 = box.calls;
   await click(fxButtons()[0]);
+  await click(rowNamed("Entire output of Step A"));
   await click(byText("Cancel")[0]);
   assert.equal(box.calls, calls0);
   assert.equal(draftOf(container, "cfg"), before);
 
-  // Edit -> Cancel on a bound value
   await unmount(root);
   const r2 = await render([JSON_PARAM], { cfg: { $: "nodes.a.output" } });
-  await click(byText("Edit")[0]);
+  await click(editBtns()[0]);
   await click(byText("Cancel")[0]);
   assert.equal(r2.box.calls, 0);
   assert.deepEqual(r2.box.current.cfg, { $: "nodes.a.output" });
   await unmount(r2.root);
 });
 
-test("Acc3 - bound row: ref, Edit, Clear, preview, no editor; Edit rebinds; Clear restores draft", async () => {
+test("Acc3 - bound field: one chip, ƒx and ×, no preview box; Edit rebinds; × restores the draft", async () => {
   const { container, root, box } = await render([JSON_PARAM]);
   await typeDraft(container, "cfg", '{"keep": [1, 2]}');
   await click(fxButtons()[0]);
-  await click(entireRows()[0]);
+  await pick(entireRows()[0]);
   assert.deepEqual(box.current.cfg, { $: "nodes.a.output" });
-  assert.ok((container.textContent ?? "").includes("nodes.a.output"));
-  assert.equal(byText("Edit").length, 1);
-  assert.equal(byText("Clear").length, 1);
-  assert.equal(fxButtons().length, 0, "Edit replaces fx");
+  assert.equal(chipRef(container), "nodes.a.output");
+  assert.equal(editBtns().length, 1);
+  assert.equal(clearBtns().length, 1);
+  assert.equal(fxButtons().length, 0, "the chip row's ƒx replaces the literal field's");
   assert.equal(hasEditor(container, "cfg"), false);
-  const pre = container.querySelector('[data-testid="json-binding-preview"]');
-  assert.equal(pre?.textContent, JSON.stringify(SAMPLE, null, 2));
+  assert.equal(container.querySelector("pre"), null, "no resolved-JSON preview");
+  assert.equal(byText("Edit").length + byText("Clear").length, 0, "no text buttons");
 
-  await click(byText("Edit")[0]);
-  await click(entireRows().find((r) => r.getAttribute("aria-label") === "Entire output of Step B"));
+  // Edit opens on the bound ref; an untouched draft is replaced by the next pick.
+  await click(editBtns()[0]);
+  assert.equal(draftOf(doc().body, "Compose").replace(/\s/g, ""), '{"$":"nodes.a.output"}');
+  await pick(rowNamed("Entire output of Step B"));
   assert.deepEqual(box.current.cfg, { $: "nodes.b.output" });
-  assert.equal(
-    container.querySelector('[data-testid="json-binding-preview"]')?.textContent,
-    JSON.stringify("<unresolved: nodes.b.output>"),
-  );
+  assert.equal(chipRef(container), "nodes.b.output");
 
   const callsBefore = box.calls;
-  await click(byText("Clear")[0]);
-  assert.equal(box.calls, callsBefore + 1, "Clear fires onChange exactly once");
+  await click(clearBtns()[0]);
+  assert.equal(box.calls, callsBefore + 1, "× fires onChange exactly once");
   assert.deepEqual(box.current.cfg, { keep: [1, 2] });
   assert.equal(draftOf(container, "cfg"), '{"keep": [1, 2]}', "draft byte-identical");
   await unmount(root);
 });
 
-test("Acc3 - no sample -> unresolved token; Clear with an empty draft -> undefined", async () => {
-  const { container, root, box } = await render([JSON_PARAM]);
+test("Acc3 - × with an empty draft -> undefined", async () => {
+  const { root, box } = await render([JSON_PARAM]);
   await click(fxButtons()[0]);
-  await click(entireRows().find((r) => r.getAttribute("aria-label") === "Entire output of Step C"));
-  assert.ok(
-    (container.querySelector('[data-testid="json-binding-preview"]')?.textContent ?? "").includes(
-      "<unresolved: nodes.c.output>",
-    ),
-  );
-  await click(byText("Clear")[0]);
+  await pick(rowNamed("Entire output of Step C"));
+  assert.deepEqual(box.current.cfg, { $: "nodes.c.output" });
+  await click(clearBtns()[0]);
   assert.equal(box.current.cfg, undefined);
   await unmount(root);
 });
 
-test("Acc4 - saved + reloaded bound value renders bound, fires nothing, Clear -> undefined", async () => {
+test("Acc4 - saved + reloaded bound value renders bound, fires nothing, × -> undefined", async () => {
   const saved = { cfg: { $: "nodes.a.output" } };
   for (const clone of [
     JSON.parse(JSON.stringify(saved)) as Record<string, unknown>,
@@ -309,107 +322,93 @@ test("Acc4 - saved + reloaded bound value renders bound, fires nothing, Clear ->
   ]) {
     const { container, root, box } = await render([JSON_PARAM], clone);
     assert.equal(box.calls, 0);
-    assert.equal(byText("Clear").length, 1);
+    assert.equal(chipRef(container), "nodes.a.output");
     assert.equal(hasEditor(container, "cfg"), false);
-    await click(byText("Clear")[0]);
+    await click(clearBtns()[0]);
     assert.equal(box.current.cfg, undefined);
     await unmount(root);
   }
 });
 
-test("Acc5 - readOnly: no fx/Edit/Clear in either state; bound row and preview still render", async () => {
+test("Acc5 - readOnly: no ƒx/×; the bound chip still renders", async () => {
   const a = await render([JSON_PARAM], {}, { readOnly: true });
   assert.equal(fxButtons().length, 0);
   await unmount(a.root);
   const b = await render([JSON_PARAM], { cfg: { $: "nodes.a.output" } }, { readOnly: true });
-  assert.equal(fxButtons().length, 0);
-  assert.equal(byText("Edit").length, 0);
-  assert.equal(byText("Clear").length, 0);
-  assert.ok((b.container.textContent ?? "").includes("nodes.a.output"));
-  assert.ok(b.container.querySelector('[data-testid="json-binding-preview"]'));
+  assert.equal(fxButtons().length + editBtns().length + clearBtns().length, 0);
+  assert.equal(chipRef(b.container), "nodes.a.output");
   await unmount(b.root);
 });
 
-test("Acc5 - literal edit still pushes the parsed object; nested {$} stays literal", async () => {
+test("Acc5 - literal edit still pushes the parsed object; nested {$} stays in the editor", async () => {
   const { container, root, box } = await render([JSON_PARAM]);
   await typeDraft(container, "cfg", '{"x": 1}');
   assert.deepEqual(box.current.cfg, { x: 1 });
   await unmount(root);
   const nested = await render([JSON_PARAM], { cfg: { outer: { $: "nodes.a.output" } } });
   assert.equal(hasEditor(nested.container, "cfg"), true, "editor stays mounted");
-  assert.equal(byText("Clear").length, 0);
+  assert.equal(clearBtns().length, 0);
   assert.equal(fxButtons().length, 1);
   await unmount(nested.root);
 });
 
-test("C2 - a bound NESTED path resolves from the whole-output sample", async () => {
+test("C2 - a bound nested path renders as its chip", async () => {
   const { container, root } = await render([JSON_PARAM], { cfg: { $: "nodes.a.output.id" } });
-  assert.equal(byText("Clear").length, 1, "rendered as bound");
-  assert.equal(
-    container.querySelector('[data-testid="json-binding-preview"]')?.textContent,
-    JSON.stringify("123"),
-    "nodes.a.output.id walks the sample of nodes.a.output",
-  );
+  assert.equal(chipRef(container), "nodes.a.output.id");
   await unmount(root);
 });
 
 test("C3 - a non-string `$` is a literal object, not a binding", async () => {
   const { container, root } = await render([JSON_PARAM], { cfg: { $: 5 } });
   assert.equal(hasEditor(container, "cfg"), true, "editor stays mounted");
-  assert.equal(byText("Clear").length, 0, "no bound row");
-  assert.equal(container.querySelector('[data-testid="json-binding-preview"]') === null, true);
+  assert.equal(chipRef(container), undefined, "no bound chip");
   await unmount(root);
 });
 
-test("C4 - a childless group binds, shows the bound row, and Clear returns to the literal editor", async () => {
+test("C4 - a childless group binds, shows the chip, and × returns to the literal editor", async () => {
   const { container, root, box } = await render([GROUP_PARAM]);
   await click(fxButtons()[0]);
-  await click(entireRows()[0]);
+  await pick(entireRows()[0]);
   assert.deepEqual(box.current.grp, { $: "nodes.a.output" });
-  assert.equal(byText("Clear").length, 1, "bound row renders");
+  assert.equal(clearBtns().length, 1, "bound chip renders");
   assert.equal(hasEditor(container, "grp"), false);
-  await click(byText("Clear")[0]);
-  assert.equal(byText("Clear").length, 0, "back to literal");
+  await click(clearBtns()[0]);
+  assert.equal(clearBtns().length, 0, "back to literal");
   assert.equal(hasEditor(container, "grp"), true, "editor remounted");
   await unmount(root);
 });
 
 const hintShown = (c: Element) => (c.textContent ?? "").includes("Invalid JSON");
 
-test("I-1 - invalid draft: hint hides while bound to fx, returns after Clear, draft byte-identical", async () => {
+test("I-1 - invalid draft: hint hides while bound, returns after ×, draft byte-identical", async () => {
   const { container, root } = await render([JSON_PARAM]);
   await typeDraft(container, "cfg", '{"a": ');
   assert.equal(hintShown(container), true, "hint present for the invalid draft");
   await click(fxButtons()[0]);
-  await click(entireRows()[0]);
+  await pick(entireRows()[0]);
   assert.equal(hintShown(container), false, "hint absent while bound");
-  await click(byText("Clear")[0]);
-  assert.equal(hintShown(container), true, "hint present again after Clear");
+  await click(clearBtns()[0]);
+  assert.equal(hintShown(container), true, "hint present again after ×");
   assert.equal(draftOf(container, "cfg"), '{"a": ', "draft byte-identical");
   await unmount(root);
 });
 
-test("I-1 - valid draft: bind then Clear shows no hint", async () => {
+test("I-1 - valid draft: bind then × shows no hint", async () => {
   const { container, root } = await render([JSON_PARAM]);
   await typeDraft(container, "cfg", '{"a": 1}');
   assert.equal(hintShown(container), false);
   await click(fxButtons()[0]);
-  await click(entireRows()[0]);
+  await pick(entireRows()[0]);
   assert.equal(hintShown(container), false);
-  await click(byText("Clear")[0]);
+  await click(clearBtns()[0]);
   assert.equal(hintShown(container), false);
   await unmount(root);
 });
 
-const insertIcon = (rowLabel: string) =>
-  buttons()
-    .find((b) => b.getAttribute("aria-label") === rowLabel)
-    ?.parentElement?.querySelector('[data-testid="expr-insert-json"]') as HTMLElement | undefined;
-
-test("C5 - compose: an insert into an empty draft is a $ ref; Result previews it; Save binds", async () => {
+test("C5 - compose: a click into a blank draft is a $ ref; Result previews it; Save binds", async () => {
   const { root, box } = await render([JSON_PARAM]);
   await click(fxButtons()[0]);
-  await click(insertIcon("Entire output of Step A"));
+  await click(rowNamed("Entire output of Step A"));
   await settle(50);
   assert.equal(draftOf(doc().body, "Compose"), '{ "$": "nodes.a.output" }');
   const result = doc().querySelector('[data-testid="expr-json-result"]')?.textContent ?? "";
@@ -440,19 +439,37 @@ test("C6 - compose: Save stores an object mixing literals, $ refs and {{ }} stri
   await unmount(root);
 });
 
-test("C7 - compose: inside a JSON string the insert icon interpolates {{ ref }}", async () => {
+/** Put the caret at `pos` of the compose pane the way an author does: focus it, then move. */
+async function caretAt(pos: number) {
+  const view = viewFor(doc().body, "Compose");
+  await act(async () => {
+    view.contentDOM.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+    view.dispatch({ selection: { anchor: pos } });
+  });
+}
+
+test("C7 - once the author has worked in the draft, a click inserts at the caret", async () => {
   const { root } = await render([JSON_PARAM]);
   await click(fxButtons()[0]);
-  await typeDraft(doc().body, "Compose", '{ "label": "id: " }');
-  const view = viewFor(doc().body, "Compose");
-  const inString = view.state.doc.toString().lastIndexOf('"');
-  await act(async () => view.dispatch({ selection: { anchor: inString } }));
-  await click(insertIcon("Entire output of Step A"));
-  assert.equal(draftOf(doc().body, "Compose"), '{ "label": "id: {{ nodes.a.output }}" }');
+  await typeDraft(doc().body, "Compose", '{ "label": "id: ", "connectionId":  }');
+  const text = draftOf(doc().body, "Compose");
+  // Inside a string: interpolate.
+  await caretAt(text.indexOf('", "connectionId"'));
+  await click(rowNamed("Entire output of Step A"));
+  let now = draftOf(doc().body, "Compose");
+  assert.equal(now, '{ "label": "id: {{ nodes.a.output }}", "connectionId":  }');
+  // Where a value goes: a $ object, and the rest of the draft is kept.
+  await caretAt(now.lastIndexOf(":") + 2);
+  await click(rowNamed("Entire output of Step B"));
+  now = draftOf(doc().body, "Compose");
+  assert.deepEqual(JSON.parse(now), {
+    label: "id: {{ nodes.a.output }}",
+    connectionId: { $: "nodes.b.output" },
+  });
   await unmount(root);
 });
 
-test("C8 - an app step's Metadata leaves are offered and bind like any source", async () => {
+test("C8 - an app step's Metadata leaves are offered and insert like any source", async () => {
   const { root, box } = await render(
     [JSON_PARAM],
     {},
@@ -469,7 +486,7 @@ test("C8 - an app step's Metadata leaves are offered and bind like any source", 
   const app = Array.from(
     doc().querySelectorAll('[data-testid="expr-meta-fields"] .w6w-exprmodal-source'),
   ).find((b) => b.querySelector(".w6w-exprmodal-source-label")?.textContent?.trim() === "App");
-  await click(app);
+  await pick(app);
   assert.deepEqual(box.current.cfg, { $: "nodes.ev.meta.app" });
   await unmount(root);
 });

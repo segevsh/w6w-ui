@@ -54,20 +54,19 @@ export interface ExpressionEditorModalProps {
   options: ExpressionOptions;
   /** Field name shown in the modal title. */
   fieldLabel?: string;
-  /** Expression mode's commit. Not used in `mode="json-binding"` (see `onBind`). */
+  /** Expression mode's commit. Not used in `mode="json-binding"` (see `onSaveJson`). */
   onSave?: (next: ExprValue | string) => void;
   onClose: () => void;
   /**
-   * `"json-binding"`: the value of a whole `json`/`group` param. The rail shows Workflow state
-   * (each step's "Entire output", its fields and, for an app step, its Metadata), Inputs and
-   * Variables — no Secrets or Documents. A click on a source calls `onBind({ $: ref })` (the
-   * plain one-key object, never an `ExprValue`) and closes, as before. Each source's insert
-   * icon instead puts a reference at the caret of the JSON compose pane on the right, and
-   * Save calls `onSaveJson` with the parsed JSON (see `json-compose.ts` for the two reference
-   * forms). Absent ⇒ expression mode, unchanged.
+   * `"json-binding"`: the value of a whole `json`/`group` param, composed as JSON. The rail
+   * shows Workflow state (each step's "Entire output", its fields and, for an app step, its
+   * Metadata), Inputs and Variables — no Secrets or Documents. A click on a source inserts a
+   * reference at the caret of the JSON pane (the whole draft when it is blank): `{ "$": ref }`
+   * where a value goes, `{{ ref }}` inside a string (`json-compose.ts`). Save calls
+   * `onSaveJson` with the parsed JSON; a draft of just `{ "$": ref }` is a plain binding.
+   * Absent ⇒ expression mode, unchanged.
    */
   mode?: "json-binding";
-  onBind?: (next: { $: string }) => void;
   /** json-binding mode: the field's current value, seeding the compose pane. */
   jsonValue?: unknown;
   /** json-binding mode: Save from the compose pane, with the parsed JSON. */
@@ -83,7 +82,6 @@ export function ExpressionEditorModal({
   onSave,
   onClose,
   mode,
-  onBind,
   jsonValue,
   onSaveJson,
 }: ExpressionEditorModalProps) {
@@ -94,6 +92,10 @@ export function ExpressionEditorModal({
     jsonValue === undefined ? "" : JSON.stringify(jsonValue, null, 2),
   );
   const jsonView = useRef<EditorView | null>(null);
+  // Whether the author has worked in the JSON pane (focused it, so a caret is theirs). Until
+  // then a source click REPLACES the draft — the seeded value's caret is just position 0, and
+  // re-picking a bound field's reference is one click; after it, a click inserts at the caret.
+  const jsonTouched = useRef(false);
   const jsonParsed = useMemo((): { ok: true; value: unknown } | { ok: false } => {
     if (jsonText.trim() === "") return { ok: false };
     try {
@@ -106,7 +108,7 @@ export function ExpressionEditorModal({
     const view = jsonView.current;
     if (!view) return;
     const doc = view.state.doc.toString();
-    if (doc.trim() === "") {
+    if (doc.trim() === "" || !jsonTouched.current) {
       const text = `{ "$": ${JSON.stringify(ref)} }`;
       view.dispatch({ changes: { from: 0, to: doc.length, insert: text } });
     } else {
@@ -205,12 +207,9 @@ export function ExpressionEditorModal({
   };
 
   // Save `part` alone as the field's value (what Save yields for an editor
-  // holding only that chip) and close.
-  // In json-binding mode this is the ONE save path: a leaf (Entire output, a
-  // field, or any later Metadata leaf) yields `{ $: ref }` and closes.
+  // holding only that chip) and close. Expression mode only.
   const saveOnly = (part: ExprPart) => {
-    if (jsonBinding) onBind?.({ $: part.ref ?? "" });
-    else onSave?.(partsToValue([part]));
+    onSave?.(partsToValue([part]));
     onClose();
   };
 
@@ -304,24 +303,20 @@ export function ExpressionEditorModal({
         type="button"
         className={`w6w-exprmodal-source ${cls}`}
         style={{ flex: 1, minWidth: 0 }}
-        title={composite ? `Insert ${label}` : `Use ${label}`}
+        title={composite || jsonBinding ? `Insert ${label}` : `Use ${label}`}
         aria-label={ariaLabel}
-        onClick={() => (composite ? insertPart(part) : saveOnly(part))}
+        onClick={() =>
+          jsonBinding
+            ? part.kind === "var" && insertJsonRef(part.ref ?? "")
+            : composite
+              ? insertPart(part)
+              : saveOnly(part)
+        }
       >
         {sigil !== null && <span className="w6w-expr-chip-sigil">{sigil}</span>}
         <span className="w6w-exprmodal-source-label">{label}</span>
       </button>
-      {jsonBinding ? (
-        part.kind === "var" && (
-          <IconButton
-            icon="copy"
-            iconSize={14}
-            label="Insert into JSON"
-            data-testid="expr-insert-json"
-            onClick={() => insertJsonRef(part.ref ?? "")}
-          />
-        )
-      ) : (
+      {!jsonBinding && (
         <IconButton
           icon="copy"
           iconSize={14}
@@ -335,7 +330,7 @@ export function ExpressionEditorModal({
 
   return (
     <Modal
-      title={jsonBinding ? "Bind or compose a JSON value" : "Edit expression"}
+      title={jsonBinding ? "Edit JSON value" : "Edit expression"}
       subtitle={fieldLabel ? <code>{fieldLabel}</code> : undefined}
       onClose={onClose}
       size="full"
@@ -776,20 +771,26 @@ export function ExpressionEditorModal({
                 JSON
                 <span className="w6w-muted w6w-small">
                   {" "}
-                  — type JSON; a source's insert icon adds a reference at the cursor
+                  — type JSON, or click a source on the left to insert it at the cursor
                 </span>
               </span>
-              <JsonEditor
-                value={jsonText}
-                onChange={setJsonText}
-                minHeight="160px"
-                maxHeight="360px"
-                aria-label="Compose JSON"
-                placeholder='{ "key": { "$": "nodes.step_1.output" } }'
-                onCreateEditor={(view) => {
-                  jsonView.current = view;
+              <div
+                onFocus={() => {
+                  jsonTouched.current = true;
                 }}
-              />
+              >
+                <JsonEditor
+                  value={jsonText}
+                  onChange={setJsonText}
+                  minHeight="160px"
+                  maxHeight="360px"
+                  aria-label="Compose JSON"
+                  placeholder='{ "key": { "$": "nodes.step_1.output" } }'
+                  onCreateEditor={(view) => {
+                    jsonView.current = view;
+                  }}
+                />
+              </div>
             </div>
             <div className="w6w-exprmodal-preview w6w-exprmodal-result-pane">
               <span className="w6w-exprmodal-pane-label">

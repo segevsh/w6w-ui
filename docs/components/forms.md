@@ -132,19 +132,14 @@ by [`ExpressionOptionsProvider`](/reference-packages/components/providers/#expre
 The older `steps.fetch.output.id` spelling still resolves: it is the same scope root under another
 name, kept so references written before the rename keep working.
 
-A `json` parameter, or a `group` parameter shown as JSON, has a ƒx button too. It opens the picker
-with each upstream node's **Entire output**, its fields and, for an app step, its **Metadata**
-(`app`, `version`, `action`, `connectionId`), plus your variables and inputs. Clicking one binds
-the whole parameter to it: the value becomes exactly `{ "$": "<ref>" }`, for example
-`{ "$": "nodes.<id>.output" }`. The field then shows that reference with **Edit**, **Clear** and a
-preview of the resolved JSON. **Clear** goes back to the JSON you had typed. In `readOnly` mode
-the reference and preview show, without the buttons.
-
-To build a value out of several pieces, compose it in the picker's **JSON** pane instead. Each
-source's insert icon puts a reference at the cursor: `{ "$": "<ref>" }` where a value goes, which
-keeps the referenced value's type, or `{{ <ref> }}` inside a string, which interpolates it as text.
-The **Result** pane previews the value against sample data, and **Save** stores the JSON. For
-example, a conversion context that combines a literal with the previous step's metadata:
+A `json` parameter, or a `group` parameter shown as JSON, has a ƒx button too. It opens a JSON
+editor beside a list of what's in scope: each upstream node's **Entire output**, its fields and,
+for an app step, its **Metadata** (`app`, `version`, `action`, `connectionId`), plus your variables
+and inputs. Clicking one inserts a reference at the cursor: `{ "$": "<ref>" }` where a value goes,
+which keeps the referenced value's type, or `{{ <ref> }}` inside a string, which interpolates it as
+text. Into a blank editor, or one you haven't clicked into yet, the click replaces the draft. The
+**Result** pane previews the value against sample data, and **Save** stores the JSON. For example,
+a conversion context that combines a literal with the previous step's metadata:
 
 ```json
 {
@@ -153,6 +148,11 @@ example, a conversion context that combines a literal with the previous step's m
   "connectionId": { "$": "nodes.get_event_1.meta.connectionId" }
 }
 ```
+
+A value that is just one reference, `{ "$": "nodes.<id>.output" }`, binds the whole field. The
+field then shows the reference as a chip, like an expression in a text field: **×** removes it and
+goes back to the JSON you had typed, and **ƒx** reopens the editor. In `readOnly` mode only the
+chip shows.
 
 Typing a single `{{ <ref> }}` as the whole field also binds it, once the field loses focus.
 

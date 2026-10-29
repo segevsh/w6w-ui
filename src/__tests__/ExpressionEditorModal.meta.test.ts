@@ -263,18 +263,23 @@ test("M6 - save/reload: meta chips read readably; other values round-trip", asyn
   }
 });
 
-test("M7 - json-binding mode: one Metadata toggle per app step; Entire output still binds", async () => {
-  const bound: unknown[] = [];
+test("M7 - json-binding mode: one Metadata toggle per app step; a click inserts, Save commits", async () => {
+  const saved: unknown[] = [];
   const { container } = await mountModal({
     mode: "json-binding",
-    onBind: (v) => bound.push(v),
+    onSaveJson: (v) => saved.push(v),
     options: { steps: [{ id: "ev", hasMeta: true }, { id: "plain" }] },
   });
   assert.equal(toggles(container).length, 1);
-  const entire = q(container, "button").find((b) => b.textContent?.includes("Entire output"));
-  assert.ok(entire);
-  await click(entire as HTMLElement);
-  assert.deepEqual(bound, [{ $: "nodes.ev.output" }]);
+  await click(toggles(container)[0]);
+  const app = leaves(container).find(
+    (l) => l.querySelector(".w6w-exprmodal-source-label")?.textContent === "App",
+  );
+  await click(app?.querySelector(".w6w-exprmodal-source") as HTMLElement);
+  assert.deepEqual(saved, [], "a click never saves");
+  const save = q(container, "button").find((b) => b.textContent === "Save");
+  await click(save as HTMLElement);
+  assert.deepEqual(saved, [{ $: "nodes.ev.meta.app" }]);
 });
 
 test("V0 - varLabel meta labels are exact for an id sharing no letters with any key", () => {
