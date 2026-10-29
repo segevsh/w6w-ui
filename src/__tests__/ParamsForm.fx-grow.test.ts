@@ -98,7 +98,11 @@ async function settle(ms = 0) {
   });
 }
 
-async function render(api: unknown | null, params: ActionParam[], dynamic: Record<string, unknown>) {
+async function render(
+  api: unknown | null,
+  params: ActionParam[],
+  dynamic: Record<string, unknown>,
+) {
   const container = document.getElementById("root");
   assert.ok(container);
   container.innerHTML = "";
