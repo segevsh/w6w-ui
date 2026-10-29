@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ApiCallRecord } from "../types.ts";
+import { ResultViewer } from "./ResultViewer.tsx";
 
 export interface ApiCallsPanelProps {
   /** The captured outbound calls to render, in the order they were made. */
@@ -27,16 +28,6 @@ export interface ApiCallsPanelProps {
    * because the host provides it. Any other node replaces the default text.
    */
   title?: ReactNode | false;
-}
-
-/** Pretty-print a captured body when it is JSON; otherwise show it verbatim. */
-function formatBody(body: string | null | undefined): string {
-  if (!body) return "";
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2);
-  } catch {
-    return body;
-  }
 }
 
 /** Captured calls have no id of their own; index is stable within a run. */
@@ -92,7 +83,7 @@ export function ApiCallsPanel({ calls, defaultOpen, keyOf, title }: ApiCallsPane
             {call.requestBody && (
               <>
                 <div className="w6w-muted w6w-small">Request body</div>
-                <pre className="w6w-result">{formatBody(call.requestBody)}</pre>
+                <ResultViewer value={call.requestBody} maxHeight={240} />
               </>
             )}
             <div className="w6w-muted w6w-small">Response headers</div>
@@ -100,7 +91,7 @@ export function ApiCallsPanel({ calls, defaultOpen, keyOf, title }: ApiCallsPane
             {call.responseBody && (
               <>
                 <div className="w6w-muted w6w-small">Response body</div>
-                <pre className="w6w-result">{formatBody(call.responseBody)}</pre>
+                <ResultViewer value={call.responseBody} maxHeight={240} />
               </>
             )}
             {call.truncated && (
