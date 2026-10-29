@@ -17,10 +17,13 @@ repo's git history for exact dates and commits.
   of treating it as missing.
 - New `ResultViewer`: a read-only result display that picks the view from the value's format — a
   collapsible JSON tree, xml/markdown/html source, markdown through `Markdown`, and html rendered
-  ONLY inside a sandboxed `<iframe srcdoc>` (`HtmlPreview`, also exported) with a `default-src 'none'`
-  CSP, so vendor HTML cannot run script, read the page or make a request. Rendered/Source toggle for
+  ONLY inside a sandboxed `<iframe srcdoc>` (`HtmlPreview`, also exported) whose `srcdoc` opens with a
+  `default-src 'none'` CSP meta, so a vendor payload cannot run script and cannot read or reach this
+  page. Accepted residual: a reader's click on a link inside the preview navigates the frame itself —
+  a scriptless, same-origin-less document with no cookies, nothing more. Rendered/Source toggle for
   html and markdown, one hover-revealed copy button, `detectResultFormat` / `resultCopyText` /
-  `RESULT_RENDER_MAX_CHARS` exported alongside. No existing pane adopts it yet.
+  `RESULT_RENDER_MAX_CHARS` exported alongside. Source views stop being highlighted above 64 KiB, so a
+  multi-megabyte result renders instantly instead of stalling the pane. No existing pane adopts it yet.
 
 ## [0.2.0]
 

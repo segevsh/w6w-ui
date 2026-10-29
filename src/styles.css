@@ -3835,8 +3835,11 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 }
 
 /* The sandboxed frame: fills the body's width and gives the preview a fixed
-   viewport (it cannot size itself to its own content from outside). */
+   viewport (it cannot size itself to its own content from outside). `display:
+   block` is load-bearing — an inline iframe sits on a text baseline, so the
+   3 px descender made the 320 px body scroll 3 px and drew a stray scrollbar. */
 .w6w-html-preview {
+  display: block;
   width: 100%;
   height: 320px;
   border: none;

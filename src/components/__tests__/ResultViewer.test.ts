@@ -143,11 +143,38 @@ test("R3 — html renders only inside the sandboxed iframe; Source is inert sour
   assert.equal(container.querySelector(".w6w-result-viewer script, .w6w-result-viewer h1"), null);
   assert.equal(container.querySelectorAll(".w6w-result").length, 0, "never class .w6w-result");
 
-  await click(byText(container, "Source"));
+  // Clicked by its DOM hook, not by its label: a mutant that drops `data-mode`
+  // must die here, and `aria-pressed` is the toggle's only announced state.
+  const source = container.querySelector('[data-mode="source"]');
+  assert.ok(source, "the toggle must carry data-mode");
+  const rendered = container.querySelector('[data-mode="rendered"]');
+  assert.ok(rendered);
+  assert.equal(rendered.getAttribute("aria-pressed"), "true", "rendered is the default");
+  assert.equal(source.getAttribute("aria-pressed"), "false");
+  await click(source);
+  assert.equal(
+    (container.querySelector('[data-mode="source"]') as HTMLButtonElement).getAttribute(
+      "aria-pressed",
+    ),
+    "true",
+    "Source must announce itself as pressed after the click",
+  );
+  assert.equal(
+    (container.querySelector('[data-mode="rendered"]') as HTMLButtonElement).getAttribute(
+      "aria-pressed",
+    ),
+    "false",
+  );
   assert.equal(container.querySelectorAll("iframe.w6w-html-preview").length, 0);
   const block = container.querySelector(".w6w-code-block");
   assert.ok(block, "source view must be a code block");
   assert.ok((block.textContent ?? "").includes("<h1>"), "source must show the raw markup");
+  // The source CodeBlock is NOT copyable: one copy button per viewer, ever.
+  assert.equal(
+    container.querySelectorAll(".w6w-copyable-btn").length,
+    1,
+    "exactly one copy button (the viewer's own)",
+  );
 
   await act(async () => {
     root.unmount();
@@ -186,6 +213,12 @@ test("R5 — xml is highlighted source, with no render path and no toggle", asyn
     container.querySelectorAll("[data-mode]").length,
     0,
     "xml has no Rendered/Source toggle",
+  );
+  // The xml source block is `copyable={false}`: the viewer owns the one button.
+  assert.equal(
+    container.querySelectorAll(".w6w-copyable-btn").length,
+    1,
+    "exactly one copy button (the viewer's own)",
   );
 
   await act(async () => {
@@ -233,4 +266,250 @@ test("R8 — HTML_PREVIEW_CSP is the pinned string, verbatim", async () => {
     HTML_PREVIEW_CSP,
     "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'",
   );
+});
+
+// ── R9 — the highlighting bound (eval B1) ───────────────────────────────────
+//
+// Prism is the slow part of a big result, and its cost is NOT bounded by
+// `RESULT_RENDER_MAX_CHARS`: a 300 KB markdown source or a 4 MB xml body spent
+// tens of seconds in it, which made the size guard a pessimisation. Above
+// `RESULT_HIGHLIGHT_MAX_CHARS` a source view must therefore be plain text.
+// The bound is module-private, so the number is spelled out here — a literal
+// 65536, deliberately NOT imported, so this test fails if the module's value
+// moves without the behaviour being reconsidered.
+const HIGHLIGHT_MAX = 65536;
+
+/** An xml body of exactly `n` characters (starts `<`, ends `>` ⇒ format xml). */
+function xmlOf(n: number): string {
+  return `<a>${"x".repeat(n - 7)}</a>`;
+}
+
+/** An html document of exactly `n` characters. */
+function htmlOf(n: number): string {
+  const head = "<!doctype html><body>";
+  const tail = "</body>";
+  return `${head}${"x".repeat(n - head.length - tail.length)}${tail}`;
+}
+
+/** A markdown document of exactly `n` characters (a heading ⇒ format markdown). */
+function markdownOf(n: number): string {
+  const head = "# Title\n";
+  return `${head}${"a".repeat(n - head.length)}`;
+}
+
+/** A `.w6w-result-viewer-text` `<pre>` whose text is EXACTLY `text`. */
+function assertPlainText(container: HTMLElement, text: string, where: string) {
+  assert.equal(
+    container.querySelectorAll(".w6w-code-block").length,
+    0,
+    `${where}: over the highlight bound, Prism must not see the value`,
+  );
+  const pre = container.querySelector(".w6w-result-viewer-text");
+  assert.ok(pre, `${where}: the source must still be shown, as plain text`);
+  assert.equal(pre.textContent, text, `${where}: the plain-text source must be the input, exactly`);
+}
+
+test("R9 — source views over the highlight bound are plain text, not Prism", async () => {
+  // The bound itself: exactly 65536 characters is still highlighted, one
+  // character more is not. Each case mounts fresh — the mode is per-mount.
+  {
+    const text = xmlOf(HIGHLIGHT_MAX);
+    assert.equal(text.length, HIGHLIGHT_MAX);
+    const { container, root } = await mount(text);
+    assert.ok(
+      container.querySelector(".w6w-code-block"),
+      "xml at exactly the bound must still be highlighted",
+    );
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    const text = markdownOf(HIGHLIGHT_MAX);
+    assert.equal(text.length, HIGHLIGHT_MAX);
+    const { container, root } = await mount(text);
+    await click(container.querySelector('[data-mode="source"]') as Element);
+    assert.ok(
+      container.querySelector(".w6w-code-block"),
+      "a markdown source at exactly the bound must still be highlighted",
+    );
+    await act(async () => {
+      root.unmount();
+    });
+  }
+
+  // One character over the bound: every source path degrades to plain text.
+  {
+    const text = xmlOf(HIGHLIGHT_MAX + 1);
+    const { container, root } = await mount(text);
+    assertPlainText(container, text, "xml");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    const text = htmlOf(HIGHLIGHT_MAX + 1);
+    const { container, root } = await mount(text);
+    // Under RESULT_RENDER_MAX_CHARS: the toggle is still offered, so reach the
+    // source view the way a reader does.
+    await click(container.querySelector('[data-mode="source"]') as Element);
+    assertPlainText(container, text, "html source");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    const text = markdownOf(HIGHLIGHT_MAX + 1);
+    const { container, root } = await mount(text);
+    await click(container.querySelector('[data-mode="source"]') as Element);
+    assertPlainText(container, text, "markdown source");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    // The over-limit fallback is the case that actually hung (eval B1: 300 KB
+    // markdown, 24.5 s). It must be plain text, and still carry the note.
+    const text = htmlOf(RESULT_RENDER_MAX_CHARS + 1);
+    const { container, root } = await mount(text);
+    assert.ok(container.querySelector(".w6w-result-viewer-note"), "the note must stay");
+    assertPlainText(container, text, "html over-limit");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+// ── R10 — the render cap boundary ───────────────────────────────────────────
+
+test("R10 — at exactly RESULT_RENDER_MAX_CHARS html still renders; +1 does not", async () => {
+  {
+    const text = htmlOf(RESULT_RENDER_MAX_CHARS);
+    assert.equal(text.length, RESULT_RENDER_MAX_CHARS);
+    const { container, root } = await mount(text);
+    assert.equal(
+      container.querySelectorAll("iframe.w6w-html-preview").length,
+      1,
+      "the cap is inclusive: at exactly the cap the html still renders",
+    );
+    assert.equal(container.querySelectorAll("[data-mode]").length, 2, "and the toggle is offered");
+    assert.equal(container.querySelector(".w6w-result-viewer-note"), null, "no note at the cap");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    const { container, root } = await mount(htmlOf(RESULT_RENDER_MAX_CHARS + 1));
+    assert.equal(container.querySelectorAll("iframe").length, 0, "one over: never rendered");
+    assert.equal(container.querySelectorAll("[data-mode]").length, 0);
+    assert.ok(container.querySelector(".w6w-result-viewer-note"));
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+// ── R11 — reader-facing details a mutant could silently drop ────────────────
+
+test("R11 — maxHeight reaches the scrolling body, tree leaves quoted, empty containers are leaves", async () => {
+  {
+    const { container, root } = await mount({ n: 1 });
+    const body = container.querySelector(".w6w-result-viewer-body") as HTMLElement;
+    assert.ok(body);
+    assert.equal(body.style.maxHeight, "320px", "the default cap must reach the body");
+    assert.equal(body.style.overflow, "auto", "the body is the element that scrolls");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    // A tabular result: string leaves keep their quotes (so a leaf can never be
+    // mistaken for structure), numbers and booleans stay bare.
+    const { container, root } = await mount({ s: "hi", n: 1, b: true, z: null });
+    assert.equal(container.querySelector(".w6w-json-string")?.textContent, '"hi"');
+    assert.equal(container.querySelector(".w6w-json-number")?.textContent, "1");
+    assert.equal(container.querySelector(".w6w-json-boolean")?.textContent, "true");
+    assert.equal(container.querySelector(".w6w-json-null")?.textContent, "null");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    // An empty container has nothing to collapse: it must read as a leaf, not
+    // as a `<details>` that opens onto nothing.
+    const { container, root } = await mount({ e: {}, arr: [] });
+    assert.equal(
+      container.querySelectorAll("details.w6w-json-node").length,
+      1,
+      "only the non-empty root is a <details>",
+    );
+    const text = container.textContent ?? "";
+    assert.ok(text.includes("{}"), "an empty object reads {}");
+    assert.ok(text.includes("[]"), "an empty array reads []");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    // `maxHeight` is a prop, not a constant.
+    const container = document.getElementById("root") as HTMLElement;
+    container.innerHTML = "";
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(React.createElement(ResultViewer, { value: { n: 1 }, maxHeight: 500 }));
+    });
+    const body = container.querySelector(".w6w-result-viewer-body") as HTMLElement;
+    assert.equal(body.style.maxHeight, "500px");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    // The `text` branch is a plain `<pre>` and still never carries `.w6w-result`.
+    const { container, root } = await mount("plain sentence");
+    assert.equal(container.querySelector("[data-format]")?.getAttribute("data-format"), "text");
+    assert.ok(container.querySelector("pre.w6w-result-viewer-text"));
+    assert.equal(container.querySelectorAll(".w6w-result").length, 0);
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
+test("R12 — a hand-collapsed node is re-opened by Expand all (the tree is remounted)", async () => {
+  const { container, root } = await mount({ a: { b: { c: "deep-leaf" } }, n: 1 });
+  assert.deepEqual(openStates(container), [true, true, false]);
+
+  // The reader closes the root by hand. Nothing about the props changes, so
+  // React would not touch that DOM node again — only a remount re-applies
+  // `open`, which is what the epoch counter in the `key` is for.
+  const first = container.querySelector("details.w6w-json-node") as HTMLDetailsElement;
+  first.open = false;
+  assert.deepEqual(openStates(container), [false, true, false]);
+
+  await click(byText(container, "Expand all"));
+  assert.deepEqual(openStates(container), [true, true, true], "Expand all must win over the DOM");
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("R13 — a value whose copy text throws still renders the pane", async () => {
+  // `resultCopyText` runs `JSON.stringify`, which throws on a BigInt. The pane
+  // must keep showing the result; only the clipboard payload degrades.
+  const calls = stubClipboard();
+  const { container, root } = await mount({ n: 1n });
+
+  assert.ok(container.querySelector('[data-format="json"]'), "the viewer must survive the throw");
+  assert.ok(container.querySelector("details.w6w-json-node"));
+
+  const button = container.querySelector('button[aria-label="Copy result"]');
+  assert.ok(button);
+  await click(button);
+  assert.deepEqual(calls, ["[object Object]"], "the copy text degrades to a best-effort string");
+
+  await act(async () => {
+    root.unmount();
+  });
 });

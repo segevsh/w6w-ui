@@ -44,7 +44,8 @@ function isContainer(value: unknown): value is Record<string, unknown> | unknown
 }
 
 function countLabel(isArray: boolean, n: number): string {
-  return isArray ? `${n} items` : `${n} keys`;
+  const noun = isArray ? "item" : "key";
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 export interface JsonTreeProps {
@@ -87,9 +88,11 @@ function JsonNode(props: {
   if (container && entries.length > 0) {
     return (
       <details className="w6w-json-node" open={depth < expandDepth}>
+        {/* The count is its own span, so the summary needs an explicit space
+            text node — otherwise it reads `{…}3 keys`. */}
         <summary>
           {key}
-          {isArray ? "[…]" : "{…}"}
+          {isArray ? "[…]" : "{…}"}{" "}
           <span className="w6w-json-count">{countLabel(isArray, entries.length)}</span>
         </summary>
         {/* Always rendered: the browser collapses it, not us (`see above`). */}

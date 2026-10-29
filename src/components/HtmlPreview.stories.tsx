@@ -4,8 +4,9 @@ import { HtmlPreview } from "./HtmlPreview.tsx";
 /**
  * `HtmlPreview` is the only path in `@w6w/ui` that renders third-party HTML: an
  * `<iframe sandbox="">` (opaque origin, no scripts) whose `srcdoc` opens with a
- * `default-src 'none'` CSP meta, so the payload cannot execute, cannot read this
- * page and cannot make a network request.
+ * `default-src 'none'` CSP meta as its first element, so the payload cannot
+ * execute and cannot read or reach this page. Accepted residual: a click on a
+ * link inside the frame navigates the frame itself.
  */
 const DOCUMENT = `<!doctype html>
 <html>
@@ -24,8 +25,8 @@ const DOCUMENT = `<!doctype html>
 
 /**
  * A payload written to attack its host: script, an `onerror` handler, a remote
- * stylesheet, a beacon image and a nested frame. It renders, and none of it runs
- * or loads — the CSP meta is the first byte of the `srcdoc`.
+ * stylesheet and a beacon image. It renders, and none of it runs or loads — the
+ * CSP meta is the first element of the `srcdoc`.
  */
 const HOSTILE = `<h1>vendor page</h1>
 <script>parent.postMessage("script-ran", "*")</script>

@@ -22,12 +22,40 @@ export interface ResultViewerProps {
 type Mode = "rendered" | "source";
 
 /**
+ * Above this many characters a source view is plain wrapped text, not a
+ * `CodeBlock`.
+ *
+ * Highlighting is not free and its cost is not bounded by the render cap: a
+ * 4 MB xml body, or a 300 KB markdown source over `RESULT_RENDER_MAX_CHARS`,
+ * took tens of seconds inside Prism — far slower than the raw `<pre>` this
+ * component replaces, i.e. the size guard made things WORSE (T0.1.1 eval B1).
+ * A `<pre>` is instant, and at 64 KB the reader is scrolling anyway, so the
+ * colour carries nothing they can use.
+ */
+const RESULT_HIGHLIGHT_MAX_CHARS = 65536;
+
+/**
+ * The source form of `text`: highlighted when it is small enough for the colour
+ * to be worth its cost, plain wrapped text when it is not.
+ *
+ * EVERY source view goes through here — xml, the Rendered/Source toggle and
+ * the over-limit fallback — so there is exactly one place that decides when
+ * Prism is allowed to see a value.
+ */
+function renderSource(text: string, language: "markup" | "markdown"): ReactNode {
+  if (text.length > RESULT_HIGHLIGHT_MAX_CHARS) {
+    return <pre className="w6w-result-viewer-text">{text}</pre>;
+  }
+  return <CodeBlock code={text} language={language} copyable={false} wrap />;
+}
+
+/**
  * Read-only display of one result value, chosen by its format:
  *
  * | format     | body                                                       |
  * | ---------- | ---------------------------------------------------------- |
  * | `json`     | a collapsible `JsonTree`, with Expand all / Collapse all    |
- * | `xml`      | highlighted source (`CodeBlock`, `markup`)                  |
+ * | `xml`      | source (`CodeBlock`, `markup`, when small enough)           |
  * | `html`     | `HtmlPreview` — an empty-sandbox iframe — or source         |
  * | `markdown` | `Markdown` — or source                                      |
  * | `text`     | a plain `<pre>`                                             |
@@ -38,17 +66,21 @@ type Mode = "rendered" | "source";
  * on hover (`w6w-copyable--hover`).
  *
  * **Vendor HTML never touches this document.** The `html` format renders only
- * through `HtmlPreview` — an `<iframe sandbox="">` whose `srcdoc` starts with
- * a restrictive CSP meta — so a hostile payload cannot run script, cannot
- * reach this page's origin and cannot make a network request. Nothing in this
- * component is ever passed to `dangerouslySetInnerHTML`. Above
- * `RESULT_RENDER_MAX_CHARS` even that path is skipped: an oversized document
- * is shown as source, with a note saying so.
+ * through `HtmlPreview` — an `<iframe sandbox="">` whose `srcdoc` opens with a
+ * restrictive CSP meta as its first element — so a hostile payload cannot run
+ * script and cannot reach this page's origin or its data. Nothing in this
+ * component is ever passed to `dangerouslySetInnerHTML`. Accepted residual: a
+ * reader's CLICK on a link inside the preview navigates the frame itself (a
+ * page load in a sandboxed, scriptless, cookie-less document) — nothing more.
+ * Above `RESULT_RENDER_MAX_CHARS` even that path is skipped: an oversized
+ * document is shown as source, with a note saying so. Source views are handed
+ * to `renderSource`, which drops Prism above `RESULT_HIGHLIGHT_MAX_CHARS`.
  *
  * The copy button always writes `resultCopyText(detected)` — pretty-printed
  * JSON for a tree, the raw string for every other format — so what lands on
  * the clipboard is what the reader means by "the result", not the on-screen
- * rendering.
+ * rendering. If that computation throws (circular value, `BigInt`), the view
+ * still renders and the button writes a best-effort string instead.
  */
 export function ResultViewer(props: ResultViewerProps) {
   const { value, maxHeight = 320, className } = props;
@@ -67,18 +99,30 @@ export function ResultViewer(props: ResultViewerProps) {
   const renderable = d.format === "html" || d.format === "markdown";
   const overLimit = renderable && text.length > RESULT_RENDER_MAX_CHARS;
 
+  // The clipboard payload, computed once: `resultCopyText` runs `JSON.stringify`,
+  // which THROWS on a circular value or a `BigInt`, and a throw here would
+  // unmount the pane — the reader would lose the result they are looking at.
+  // Degrade the copy text instead: a raw string as-is, anything else stringified
+  // as best it can be.
+  const copyText = useMemo(() => {
+    try {
+      return resultCopyText(d);
+    } catch {
+      return typeof value === "string" ? value : String(value);
+    }
+  }, [d, value]);
+
   let body: ReactNode;
   if (d.format === "json") {
     body = <JsonTree key={treeEpoch} value={d.data} expandDepth={expandDepth} />;
   } else if (d.format === "xml") {
     // XML is shown as source, never parsed or rendered: it can carry the same
     // hostile constructs as HTML, and there is no sandbox for an SVG/XML tree.
-    body = <CodeBlock code={d.text} language="markup" copyable={false} wrap />;
+    body = renderSource(d.text, "markup");
   } else if (d.format === "text") {
     body = <pre className="w6w-result-viewer-text">{d.text}</pre>;
   } else {
     const language = d.format === "html" ? "markup" : "markdown";
-    const source = <CodeBlock code={d.text} language={language} copyable={false} wrap />;
     if (overLimit) {
       // Too big to render: hand the reader the source rather than a 4 MB
       // iframe/DOM, and say why the Rendered view is not on offer.
@@ -87,11 +131,11 @@ export function ResultViewer(props: ResultViewerProps) {
           <div className="w6w-muted w6w-small w6w-result-viewer-note">
             Too large to render — showing source.
           </div>
-          {source}
+          {renderSource(d.text, language)}
         </>
       );
     } else if (mode === "source") {
-      body = source;
+      body = renderSource(d.text, language);
     } else if (d.format === "html") {
       // The ONLY path that renders vendor HTML — see the component doc.
       body = <HtmlPreview html={d.text} />;
@@ -157,7 +201,7 @@ export function ResultViewer(props: ResultViewerProps) {
       data-format={d.format}
     >
       {bar}
-      <Copyable value={resultCopyText(d)} label="Copy result" className="w6w-copyable--hover">
+      <Copyable value={copyText} label="Copy result" className="w6w-copyable--hover">
         <div className="w6w-result-viewer-body" style={{ maxHeight, overflow: "auto" }}>
           {body}
         </div>
