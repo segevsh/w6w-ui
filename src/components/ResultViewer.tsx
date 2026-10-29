@@ -4,11 +4,7 @@ import { Markdown } from "../Markdown.tsx";
 import { Copyable } from "./Copyable.tsx";
 import { HtmlPreview } from "./HtmlPreview.tsx";
 import { JsonTree } from "./JsonTree.tsx";
-import {
-  RESULT_RENDER_MAX_CHARS,
-  detectResultFormat,
-  resultCopyText,
-} from "./result-format.ts";
+import { RESULT_RENDER_MAX_CHARS, detectResultFormat, resultCopyText } from "./result-format.ts";
 
 export interface ResultViewerProps {
   /** The result as the host received it: an already-parsed value, or a raw
@@ -156,7 +152,10 @@ export function ResultViewer(props: ResultViewerProps) {
   }
 
   return (
-    <div className={["w6w-result-viewer", className ?? ""].filter(Boolean).join(" ")} data-format={d.format}>
+    <div
+      className={["w6w-result-viewer", className ?? ""].filter(Boolean).join(" ")}
+      data-format={d.format}
+    >
       {bar}
       <Copyable value={resultCopyText(d)} label="Copy result" className="w6w-copyable--hover">
         <div className="w6w-result-viewer-body" style={{ maxHeight, overflow: "auto" }}>

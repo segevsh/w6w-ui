@@ -99,7 +99,7 @@ function openStates(container: HTMLElement): boolean[] {
 }
 
 const HTML_PAYLOAD =
-  '<!doctype html><html><body><h1>vendor page</h1><script>window.__pwned=1</script></body></html>';
+  "<!doctype html><html><body><h1>vendor page</h1><script>window.__pwned=1</script></body></html>";
 
 test("R1 — json: 3 nodes, depth-2 open, collapsed text still in the DOM", async () => {
   const { container, root } = await mount({ a: { b: { c: "deep-leaf" } }, n: 1 });
@@ -107,7 +107,10 @@ test("R1 — json: 3 nodes, depth-2 open, collapsed text still in the DOM", asyn
   assert.ok(container.querySelector('[data-format="json"]'), "root must announce data-format=json");
   assert.equal(container.querySelectorAll("details.w6w-json-node").length, 3);
   assert.deepEqual(openStates(container), [true, true, false]);
-  assert.ok((container.textContent ?? "").includes("deep-leaf"), "collapsed text must stay in the DOM");
+  assert.ok(
+    (container.textContent ?? "").includes("deep-leaf"),
+    "collapsed text must stay in the DOM",
+  );
   assert.equal(container.querySelectorAll(".w6w-result").length, 0, "never class .w6w-result");
 
   await act(async () => {
@@ -159,7 +162,11 @@ test("R4 — markdown renders through Markdown; Source shows the raw text", asyn
   assert.equal((h1.textContent ?? "").trim(), "Title-marker");
 
   await click(byText(container, "Source"));
-  assert.equal(container.querySelector(".w6w-result-viewer h1"), null, "source view renders no heading");
+  assert.equal(
+    container.querySelector(".w6w-result-viewer h1"),
+    null,
+    "source view renders no heading",
+  );
   const block = container.querySelector(".w6w-code-block");
   assert.ok(block);
   assert.ok((block.textContent ?? "").includes("# Title-marker"));
@@ -175,7 +182,11 @@ test("R5 — xml is highlighted source, with no render path and no toggle", asyn
   assert.equal(container.querySelector("[data-format]")?.getAttribute("data-format"), "xml");
   assert.ok(container.querySelector(".w6w-code-block"), "xml must be shown as source");
   assert.equal(container.querySelectorAll("iframe").length, 0, "xml is never rendered");
-  assert.equal(container.querySelectorAll("[data-mode]").length, 0, "xml has no Rendered/Source toggle");
+  assert.equal(
+    container.querySelectorAll("[data-mode]").length,
+    0,
+    "xml has no Rendered/Source toggle",
+  );
 
   await act(async () => {
     root.unmount();
@@ -187,7 +198,11 @@ test("R6 — an over-limit html string never renders: note + source only", async
   const { container, root } = await mount(big);
 
   assert.equal(container.querySelectorAll("iframe").length, 0, "over the cap: never an iframe");
-  assert.equal(container.querySelectorAll("[data-mode]").length, 0, "over the cap: no toggle offered");
+  assert.equal(
+    container.querySelectorAll("[data-mode]").length,
+    0,
+    "over the cap: no toggle offered",
+  );
   assert.ok(container.querySelector(".w6w-result-viewer-note"), "the reader must be told why");
 
   await act(async () => {

@@ -6,11 +6,7 @@
 // documented table fails here rather than in a rendered pane.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  RESULT_RENDER_MAX_CHARS,
-  detectResultFormat,
-  resultCopyText,
-} from "../result-format.ts";
+import { RESULT_RENDER_MAX_CHARS, detectResultFormat, resultCopyText } from "../result-format.ts";
 
 const formatOf = (value: unknown) => detectResultFormat(value).format;
 
@@ -60,7 +56,13 @@ test("every other angle-bracketed document is xml", () => {
 });
 
 test("headings, fences, two list items and links are markdown", () => {
-  const rows = ["# Title\nbody", "```\ncode\n```", "- a\n- b", "1. a\n2. b", "see [docs](https://w6w.io)"];
+  const rows = [
+    "# Title\nbody",
+    "```\ncode\n```",
+    "- a\n- b",
+    "1. a\n2. b",
+    "see [docs](https://w6w.io)",
+  ];
   for (const row of rows) assert.equal(formatOf(row), "markdown", JSON.stringify(row));
 });
 

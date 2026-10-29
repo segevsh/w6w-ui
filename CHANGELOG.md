@@ -15,6 +15,12 @@ repo's git history for exact dates and commits.
 - The step panel's Setup tab labels a connection that is absent from the loaded list "Missing
   connection — choose another", and a failed connections fetch "Couldn't load connections" instead
   of treating it as missing.
+- New `ResultViewer`: a read-only result display that picks the view from the value's format — a
+  collapsible JSON tree, xml/markdown/html source, markdown through `Markdown`, and html rendered
+  ONLY inside a sandboxed `<iframe srcdoc>` (`HtmlPreview`, also exported) with a `default-src 'none'`
+  CSP, so vendor HTML cannot run script, read the page or make a request. Rendered/Source toggle for
+  html and markdown, one hover-revealed copy button, `detectResultFormat` / `resultCopyText` /
+  `RESULT_RENDER_MAX_CHARS` exported alongside. No existing pane adopts it yet.
 
 ## [0.2.0]
 

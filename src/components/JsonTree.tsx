@@ -95,7 +95,13 @@ function JsonNode(props: {
         {/* Always rendered: the browser collapses it, not us (`see above`). */}
         <div className="w6w-json-children">
           {entries.map(([k, v]) => (
-            <JsonNode key={String(k)} label={k} value={v} depth={depth + 1} expandDepth={expandDepth} />
+            <JsonNode
+              key={String(k)}
+              label={k}
+              value={v}
+              depth={depth + 1}
+              expandDepth={expandDepth}
+            />
           ))}
         </div>
       </details>
