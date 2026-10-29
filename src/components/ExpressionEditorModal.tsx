@@ -775,6 +775,7 @@ export function ExpressionEditorModal({
                 </span>
               </span>
               <div
+                className="w6w-exprmodal-json"
                 onFocus={() => {
                   jsonTouched.current = true;
                 }}
@@ -782,8 +783,8 @@ export function ExpressionEditorModal({
                 <JsonEditor
                   value={jsonText}
                   onChange={setJsonText}
-                  minHeight="160px"
-                  maxHeight="360px"
+                  height="100%"
+                  minHeight="0px"
                   aria-label="Compose JSON"
                   placeholder='{ "key": { "$": "nodes.step_1.output" } }'
                   onCreateEditor={(view) => {
