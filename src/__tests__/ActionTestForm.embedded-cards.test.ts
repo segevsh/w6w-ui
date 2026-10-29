@@ -143,7 +143,10 @@ test("embedded + connection: params, result, saved-tests each in a headed card; 
     "Result",
     "Saved tests and history",
   ]);
-  assert.ok(cards(container)[1].querySelector("pre.w6w-result"), "result lives in the Result card");
+  assert.ok(
+    cards(container)[1].querySelector(".w6w-result-viewer"),
+    "result lives in the Result card",
+  );
   assert.equal(container.querySelectorAll(".w6w-tester-embedded-rail").length, 0);
   assert.equal(container.querySelectorAll(".w6w-tester-embedded-cols").length, 0);
   await unmount(root);
@@ -162,6 +165,6 @@ test("non-embedded: no cards, no embedded wrappers", async () => {
   await run(container);
   assert.equal(cards(container).length, 0);
   assert.equal(container.querySelectorAll("[class*='w6w-tester-embedded']").length, 0);
-  assert.ok(container.querySelector("pre.w6w-result"), "result still rendered inline");
+  assert.ok(container.querySelector(".w6w-result-viewer"), "result still rendered inline");
   await unmount(root);
 });

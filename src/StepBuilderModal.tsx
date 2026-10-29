@@ -23,6 +23,7 @@ import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ResultViewer } from "./components/ResultViewer.tsx";
 import type { IconName } from "./components/icons.tsx";
 import {
   CALL_APP,
@@ -1502,12 +1503,7 @@ function CallableTestRun({
       {state?.status === "done" && state.terminal && state.error === undefined && (
         <div className="w6w-testout">
           <div className="w6w-testout-label">Result</div>
-          <pre
-            className="w6w-result"
-            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-          >
-            {JSON.stringify(state.output, null, 2)}
-          </pre>
+          <ResultViewer value={state.output} maxHeight={220} />
         </div>
       )}
     </div>
@@ -1634,13 +1630,6 @@ function apiCallsIn(body: unknown): ApiCallRecord[] {
   return Array.isArray(calls) ? (calls as ApiCallRecord[]) : [];
 }
 
-const LOG_PRE_STYLE = {
-  whiteSpace: "pre-wrap",
-  maxHeight: 320,
-  overflow: "auto",
-  margin: 0,
-} as const;
-
 /** Modal body for {@link TestRunLog} — the request, the response, then each vendor call. */
 function TestRunLogModal({ log, onClose }: { log: TestRunLog; onClose: () => void }) {
   return (
@@ -1650,9 +1639,7 @@ function TestRunLogModal({ log, onClose }: { log: TestRunLog; onClose: () => voi
           <div className="w6w-testout-label">
             Request to w6w · {log.request.method} {log.request.path}
           </div>
-          <pre className="w6w-result" style={LOG_PRE_STYLE}>
-            {JSON.stringify(log.request.body, null, 2)}
-          </pre>
+          <ResultViewer value={log.request.body} maxHeight={320} />
         </div>
         <div className="w6w-testout">
           <div className="w6w-testout-label">
@@ -1662,9 +1649,7 @@ function TestRunLogModal({ log, onClose }: { log: TestRunLog; onClose: () => voi
               : `failed${log.response.status ? ` (HTTP ${log.response.status})` : ""}`}{" "}
             · {log.durationMs}ms
           </div>
-          <pre className="w6w-result" style={LOG_PRE_STYLE}>
-            {JSON.stringify(log.response.body, null, 2)}
-          </pre>
+          <ResultViewer value={log.response.body} maxHeight={320} />
         </div>
         <div className="w6w-testout">
           <div className="w6w-testout-label">Outbound API calls ({log.apiCalls.length})</div>

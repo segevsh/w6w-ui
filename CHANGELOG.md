@@ -23,7 +23,14 @@ repo's git history for exact dates and commits.
   ONLY inside a sandboxed `<iframe srcdoc>` (`HtmlPreview`, also exported) with a `default-src 'none'`
   CSP, so vendor HTML cannot run script, read the page or make a request. Rendered/Source toggle for
   html and markdown, one hover-revealed copy button, `detectResultFormat` / `resultCopyText` /
-  `RESULT_RENDER_MAX_CHARS` exported alongside. No existing pane adopts it yet.
+  `RESULT_RENDER_MAX_CHARS` exported alongside.
+- The six existing result panes now render through `ResultViewer`, so a JSON result is a collapsible
+  tree instead of wall-to-wall pretty-printed text and an HTML body is previewed in the sandboxed
+  iframe rather than shown as source: the step builder's inline test-run result and its test-run log
+  (request and response bodies), the flow editor's per-step Result and Metadata, both
+  `ActionTestForm` result panes, `TriggerFillForm`'s filled output state, and `ApiCallsPanel`'s
+  captured request/response bodies (headers stay plain). Error panes, log panes and header panes are
+  unchanged.
 
 ## [0.2.0]
 
