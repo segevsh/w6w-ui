@@ -24,6 +24,9 @@ repo's git history for exact dates and commits.
   CSP, so vendor HTML cannot run script, read the page or make a request. Rendered/Source toggle for
   html and markdown, one hover-revealed copy button, `detectResultFormat` / `resultCopyText` /
   `RESULT_RENDER_MAX_CHARS` exported alongside. No existing pane adopts it yet.
+- The step modal's Test tab shows the step's newest stored run (success or failure) when reopened,
+  labelled with its time, until a new test replaces it; its Result and Metadata panes use
+  `ResultViewer`. Nothing about the result is written to the workflow document.
 
 ## [0.2.0]
 

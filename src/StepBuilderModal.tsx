@@ -23,6 +23,7 @@ import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ResultViewer } from "./components/ResultViewer.tsx";
 import type { IconName } from "./components/icons.tsx";
 import {
   CALL_APP,
@@ -1760,9 +1761,56 @@ export const StepTestRun = forwardRef<
   const [state, setState] = useState<TestState | null>(null);
   const [log, setLog] = useState<TestRunLog | null>(null);
   const [logOpen, setLogOpen] = useState(false);
+  // Set once a session run starts, so a late read-back never overwrites it.
+  const ranRef = useRef(false);
+  // The stored run's time while its result is on show; cleared by a new run.
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+
+  // Show the step's newest stored run (success or failure) on (re)open. Read-only:
+  // never saves, records, invokes or notifies the host.
+  const persistWorkflowId = persist?.workflowId;
+  const persistStepId = persist?.stepId;
+  useEffect(() => {
+    if (!persistWorkflowId || !persistStepId) return;
+    let canceled = false;
+    api
+      .listStepTests(persistWorkflowId, persistStepId)
+      .then((rows) => {
+        let row: (typeof rows)[number] | undefined;
+        for (const r of rows) {
+          if (!r.lastRunAt || !r.lastRunStatus) continue;
+          if (!row || Date.parse(r.lastRunAt) > Date.parse(row.lastRunAt as string)) row = r;
+        }
+        if (!row || !row.lastRunAt || canceled || ranRef.current) return;
+        if (row.lastRunStatus === "succeeded") {
+          setState({
+            status: "done",
+            value: row.lastRunOutput,
+            ...(row.lastRunMeta ? { meta: row.lastRunMeta } : {}),
+          });
+        } else {
+          setState({
+            status: "error",
+            error:
+              typeof row.lastRunError === "string"
+                ? row.lastRunError
+                : row.lastRunError == null
+                  ? "Test failed"
+                  : JSON.stringify(row.lastRunError),
+          });
+        }
+        setRestoredAt(row.lastRunAt);
+      })
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, persistWorkflowId, persistStepId]);
 
   const run = async () => {
     if (!canRun || state?.status === "running") return;
+    ranRef.current = true;
+    setRestoredAt(null);
     setState({ status: "running" });
     onBusyChange?.(true);
     let outcome: Exclude<TestState, { status: "running" }>;
@@ -1874,6 +1922,11 @@ export const StepTestRun = forwardRef<
         </div>
       )}
       {logOpen && log && <TestRunLogModal log={log} onClose={() => setLogOpen(false)} />}
+      {restoredAt && (state?.status === "done" || state?.status === "error") && (
+        <div className="w6w-muted w6w-small w6w-testout-restored">
+          Last run · {new Date(restoredAt).toLocaleString()}
+        </div>
+      )}
       {state?.status === "error" && (
         <div className="w6w-result w6w-error">
           {state.errorCode && (
@@ -1887,21 +1940,11 @@ export const StepTestRun = forwardRef<
       {state?.status === "done" && (
         <div className="w6w-testout">
           <div className="w6w-testout-label">Result (return value)</div>
-          <pre
-            className="w6w-result"
-            style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-          >
-            {JSON.stringify(state.value, null, 2)}
-          </pre>
+          <ResultViewer value={state.value} maxHeight={220} />
           {state.meta && (
             <>
               <div className="w6w-testout-label">Metadata</div>
-              <pre
-                className="w6w-result"
-                style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-              >
-                {JSON.stringify(state.meta, null, 2)}
-              </pre>
+              <ResultViewer value={state.meta} maxHeight={220} />
             </>
           )}
         </div>
