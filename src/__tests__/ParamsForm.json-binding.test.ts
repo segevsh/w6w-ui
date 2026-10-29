@@ -196,12 +196,16 @@ test("Acc1 - one fx on a json and on a childless group; Entire output per step; 
   const names = rows.map((r) => r.getAttribute("aria-label"));
   assert.equal(new Set(names).size, 3, "distinct accessible names");
   const text = doc().body.textContent ?? "";
-  for (const hidden of ["Variables", "Secrets", "Documents", "Inputs"]) {
+  for (const hidden of ["Secrets", "Documents", "Inputs"]) {
     assert.ok(!text.includes(hidden), `${hidden} group hidden`);
   }
-  assert.equal(byText("Save").length, 0);
+  assert.ok(text.includes("Variables"), "Variables group shown");
+  // The compose pane: a JSON editor and its Save — no chips editor, no plain-value exit.
+  assert.equal(byText("Save").length, 1);
+  assert.equal(byText("Save")[0].disabled, true, "nothing composed yet");
   assert.equal(byText("Use a plain value").length, 0);
-  assert.equal(doc().querySelectorAll("dialog [contenteditable]").length, 0);
+  assert.ok(doc().querySelector('dialog [aria-label="Compose JSON"]'));
+  assert.equal(doc().querySelectorAll('dialog [aria-label="Expression"]').length, 0);
   assert.equal(doc().querySelectorAll('[data-testid="expr-copy-to-editor"]').length, 0);
 
   await click(rows.find((r) => r.getAttribute("aria-label") === "Entire output of Step B"));
@@ -394,5 +398,91 @@ test("I-1 - valid draft: bind then Clear shows no hint", async () => {
   assert.equal(hintShown(container), false);
   await click(byText("Clear")[0]);
   assert.equal(hintShown(container), false);
+  await unmount(root);
+});
+
+const insertIcon = (rowLabel: string) =>
+  buttons()
+    .find((b) => b.getAttribute("aria-label") === rowLabel)
+    ?.parentElement?.querySelector('[data-testid="expr-insert-json"]') as HTMLElement | undefined;
+
+test("C5 - compose: an insert into an empty draft is a $ ref; Result previews it; Save binds", async () => {
+  const { root, box } = await render([JSON_PARAM]);
+  await click(fxButtons()[0]);
+  await click(insertIcon("Entire output of Step A"));
+  await settle(50);
+  assert.equal(draftOf(doc().body, "Compose"), '{ "$": "nodes.a.output" }');
+  const result = doc().querySelector('[data-testid="expr-json-result"]')?.textContent ?? "";
+  assert.deepEqual(JSON.parse(result), SAMPLE);
+  assert.equal(box.calls, 0, "inserting writes nothing until Save");
+  await click(byText("Save")[0]);
+  assert.deepEqual(box.current.cfg, { $: "nodes.a.output" });
+  await unmount(root);
+});
+
+test("C6 - compose: Save stores an object mixing literals, $ refs and {{ }} strings", async () => {
+  const { root, box } = await render([JSON_PARAM], { cfg: { companyId: "c1" } });
+  await click(fxButtons()[0]);
+  assert.deepEqual(JSON.parse(draftOf(doc().body, "Compose")), { companyId: "c1" });
+  const composed = {
+    companyId: "c1",
+    app: { $: "nodes.a.meta.app" },
+    label: "event {{ nodes.a.output.id }}",
+  };
+  await typeDraft(doc().body, "Compose", JSON.stringify(composed));
+  const result = JSON.parse(
+    doc().querySelector('[data-testid="expr-json-result"]')?.textContent ?? "",
+  );
+  assert.equal(result.companyId, "c1");
+  assert.equal(result.label, "event 123");
+  await click(byText("Save")[0]);
+  assert.deepEqual(box.current.cfg, composed);
+  await unmount(root);
+});
+
+test("C7 - compose: inside a JSON string the insert icon interpolates {{ ref }}", async () => {
+  const { root } = await render([JSON_PARAM]);
+  await click(fxButtons()[0]);
+  await typeDraft(doc().body, "Compose", '{ "label": "id: " }');
+  const view = viewFor(doc().body, "Compose");
+  const inString = view.state.doc.toString().lastIndexOf('"');
+  await act(async () => view.dispatch({ selection: { anchor: inString } }));
+  await click(insertIcon("Entire output of Step A"));
+  assert.equal(draftOf(doc().body, "Compose"), '{ "label": "id: {{ nodes.a.output }}" }');
+  await unmount(root);
+});
+
+test("C8 - an app step's Metadata leaves are offered and bind like any source", async () => {
+  const { root, box } = await render(
+    [JSON_PARAM],
+    {},
+    {
+      options: { steps: [{ id: "ev", label: "Get event", hasMeta: true }] },
+    },
+  );
+  await click(fxButtons()[0]);
+  await click(doc().querySelector('[data-testid="expr-meta-toggle"]') as Element);
+  const leafLabels = Array.from(
+    doc().querySelectorAll('[data-testid="expr-meta-fields"] .w6w-exprmodal-source-label'),
+  ).map((b) => b.textContent?.trim());
+  assert.deepEqual(leafLabels, ["All metadata", "App", "App version", "Action", "Connection ID"]);
+  const app = Array.from(
+    doc().querySelectorAll('[data-testid="expr-meta-fields"] .w6w-exprmodal-source'),
+  ).find((b) => b.querySelector(".w6w-exprmodal-source-label")?.textContent?.trim() === "App");
+  await click(app);
+  assert.deepEqual(box.current.cfg, { $: "nodes.ev.meta.app" });
+  await unmount(root);
+});
+
+test("C9 - a field typed as one bare {{ ref }} becomes that binding when it loses focus", async () => {
+  const { container, root, box } = await render([JSON_PARAM]);
+  await typeDraft(container, "cfg", "{{ nodes.a.output }}");
+  assert.equal(box.calls, 0, "no binding while typing");
+  const content = container.querySelector('[aria-label="cfg JSON"] .cm-content') as HTMLElement;
+  await act(async () => {
+    content.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true }));
+  });
+  await settle();
+  assert.deepEqual(box.current.cfg, { $: "nodes.a.output" });
   await unmount(root);
 });

@@ -1,4 +1,8 @@
+import type { EditorView } from "@codemirror/view";
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { JsonEditor } from "../JsonEditor.tsx";
+import { buildResolveScope } from "../resolve-params.ts";
+import { resolveParamJson } from "../resolved-json.ts";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import { Copyable } from "./Copyable.tsx";
 import type { ExpressionOptions } from "./ExpressionOptions.tsx";
@@ -24,6 +28,7 @@ import {
   serializeTemplate,
   valueToParts,
 } from "./expression-template.ts";
+import { refInsertion, resolveComposed, sampleStepsState } from "./json-compose.ts";
 
 /**
  * A near-full-screen editor for an expression value. Left: the data sources in
@@ -53,14 +58,20 @@ export interface ExpressionEditorModalProps {
   onSave?: (next: ExprValue | string) => void;
   onClose: () => void;
   /**
-   * `"json-binding"`: pick ONE upstream step output for a whole `json`/`group`
-   * param. The rail shows only the Workflow state slot, each step gets an
-   * "Entire output" leaf, and a click calls `onBind({ $: ref })` (the plain
-   * one-key object, never an `ExprValue`) and closes. No chips editor, no
-   * Save, no template/Result panes. Absent ⇒ expression mode, unchanged.
+   * `"json-binding"`: the value of a whole `json`/`group` param. The rail shows Workflow state
+   * (each step's "Entire output", its fields and, for an app step, its Metadata), Inputs and
+   * Variables — no Secrets or Documents. A click on a source calls `onBind({ $: ref })` (the
+   * plain one-key object, never an `ExprValue`) and closes, as before. Each source's insert
+   * icon instead puts a reference at the caret of the JSON compose pane on the right, and
+   * Save calls `onSaveJson` with the parsed JSON (see `json-compose.ts` for the two reference
+   * forms). Absent ⇒ expression mode, unchanged.
    */
   mode?: "json-binding";
   onBind?: (next: { $: string }) => void;
+  /** json-binding mode: the field's current value, seeding the compose pane. */
+  jsonValue?: unknown;
+  /** json-binding mode: Save from the compose pane, with the parsed JSON. */
+  onSaveJson?: (next: unknown) => void;
 }
 
 export function ExpressionEditorModal({
@@ -73,8 +84,41 @@ export function ExpressionEditorModal({
   onClose,
   mode,
   onBind,
+  jsonValue,
+  onSaveJson,
 }: ExpressionEditorModalProps) {
   const jsonBinding = mode === "json-binding";
+  // json-binding mode's compose pane: the draft text, whether it parses, and the CodeMirror
+  // view (for inserting at the caret).
+  const [jsonText, setJsonText] = useState(() =>
+    jsonValue === undefined ? "" : JSON.stringify(jsonValue, null, 2),
+  );
+  const jsonView = useRef<EditorView | null>(null);
+  const jsonParsed = useMemo((): { ok: true; value: unknown } | { ok: false } => {
+    if (jsonText.trim() === "") return { ok: false };
+    try {
+      return { ok: true, value: JSON.parse(jsonText) };
+    } catch {
+      return { ok: false };
+    }
+  }, [jsonText]);
+  const insertJsonRef = (ref: string) => {
+    const view = jsonView.current;
+    if (!view) return;
+    const doc = view.state.doc.toString();
+    if (doc.trim() === "") {
+      const text = `{ "$": ${JSON.stringify(ref)} }`;
+      view.dispatch({ changes: { from: 0, to: doc.length, insert: text } });
+    } else {
+      const { from, to } = view.state.selection.main;
+      const text = refInsertion(doc, from, ref);
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+      });
+    }
+    view.focus();
+  };
   const [parts, setParts] = useState<ExprPart[]>(() => valueToParts(value).parts);
   // Bumped ONLY for programmatic repaints — mount, and committing template
   // text back into chips. Typing/insert mutate the DOM directly and sync out,
@@ -267,7 +311,17 @@ export function ExpressionEditorModal({
         {sigil !== null && <span className="w6w-expr-chip-sigil">{sigil}</span>}
         <span className="w6w-exprmodal-source-label">{label}</span>
       </button>
-      {!jsonBinding && (
+      {jsonBinding ? (
+        part.kind === "var" && (
+          <IconButton
+            icon="copy"
+            iconSize={14}
+            label="Insert into JSON"
+            data-testid="expr-insert-json"
+            onClick={() => insertJsonRef(part.ref ?? "")}
+          />
+        )
+      ) : (
         <IconButton
           icon="copy"
           iconSize={14}
@@ -281,7 +335,7 @@ export function ExpressionEditorModal({
 
   return (
     <Modal
-      title={jsonBinding ? "Bind to a step output" : "Edit expression"}
+      title={jsonBinding ? "Bind or compose a JSON value" : "Edit expression"}
       subtitle={fieldLabel ? <code>{fieldLabel}</code> : undefined}
       onClose={onClose}
       size="full"
@@ -290,6 +344,20 @@ export function ExpressionEditorModal({
           <div className="w6w-exprmodal-actions">
             <button type="button" className="w6w-btn w6w-btn-ghost" onClick={onClose}>
               Cancel
+            </button>
+            <button
+              type="button"
+              className="w6w-btn"
+              data-testid="expr-json-save"
+              disabled={!jsonParsed.ok}
+              title={jsonParsed.ok ? "Save the composed JSON" : "Compose valid JSON to save"}
+              onClick={() => {
+                if (!jsonParsed.ok) return;
+                onSaveJson?.(jsonParsed.value);
+                onClose();
+              }}
+            >
+              Save
             </button>
           </div>
         ) : (
@@ -327,10 +395,7 @@ export function ExpressionEditorModal({
         )
       }
     >
-      <div
-        className="w6w-exprmodal"
-        style={jsonBinding ? { gridTemplateColumns: "1fr" } : undefined}
-      >
+      <div className="w6w-exprmodal">
         {/* Left: the data sources in scope. */}
         <aside className="w6w-exprmodal-sources">
           {/* First slot — context-specific, mutually exclusive in the real
@@ -446,6 +511,34 @@ export function ExpressionEditorModal({
                           )}
                         </>
                       )}
+                      {st.hasMeta === true && (
+                        <>
+                          <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
+                            {metaToggle(st.id)}
+                          </div>
+                          {expanded.has(`meta:${st.id}`) && (
+                            <div
+                              className="w6w-exprmodal-subsources"
+                              data-testid="expr-meta-fields"
+                            >
+                              {source(
+                                "All metadata",
+                                { kind: "var", ref: `nodes.${st.id}.meta` },
+                                "w6w-expr-chip-var",
+                                "·",
+                              )}
+                              {META_LEAVES.map(([key, label]) =>
+                                source(
+                                  label,
+                                  { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
+                                  "w6w-expr-chip-var",
+                                  "·",
+                                ),
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
                     </Fragment>
                   );
                 }
@@ -545,38 +638,40 @@ export function ExpressionEditorModal({
             </div>
           )}
 
-          {!jsonBinding && (
-            <>
-              {options.inputs !== undefined && (
-                <div className="w6w-exprmodal-group">
-                  <span className="w6w-exprmodal-group-label">Inputs</span>
-                  {inputs.length === 0 && <span className="w6w-expr-menu-empty">No inputs</span>}
-                  {inputs.map((i) =>
-                    source(i, { kind: "var", ref: `inputs.${i}` }, "w6w-expr-chip-var", "⇥"),
-                  )}
-                </div>
-              )}
-
+          {/* Inputs and Variables in both modes; Documents and Secrets in expression mode only. */}
+          <>
+            {options.inputs !== undefined && (
               <div className="w6w-exprmodal-group">
-                <div className="w6w-field-labelrow">
-                  <span className="w6w-exprmodal-group-label">Variables</span>
-                  {options.createVar && (
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                      data-testid="expr-add-var"
-                      onClick={() => setAdding("var")}
-                    >
-                      + Add
-                    </button>
-                  )}
-                </div>
-                {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
-                {vars.map((v) =>
-                  source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
+                <span className="w6w-exprmodal-group-label">Inputs</span>
+                {inputs.length === 0 && <span className="w6w-expr-menu-empty">No inputs</span>}
+                {inputs.map((i) =>
+                  source(i, { kind: "var", ref: `inputs.${i}` }, "w6w-expr-chip-var", "⇥"),
                 )}
               </div>
+            )}
 
+            <div className="w6w-exprmodal-group">
+              <div className="w6w-field-labelrow">
+                <span className="w6w-exprmodal-group-label">Variables</span>
+                {options.createVar && (
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                    data-testid="expr-add-var"
+                    onClick={() => setAdding("var")}
+                  >
+                    + Add
+                  </button>
+                )}
+              </div>
+              {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
+              {vars.map((v) =>
+                source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
+              )}
+            </div>
+          </>
+          {!jsonBinding && (
+            <>
               <div className="w6w-exprmodal-group">
                 <span className="w6w-exprmodal-group-label">Documents</span>
                 {documents.length === 0 && (
@@ -672,6 +767,60 @@ export function ExpressionEditorModal({
             </>
           )}
         </aside>
+
+        {/* Right (json-binding mode): the JSON compose pane over its resolved preview. */}
+        {jsonBinding && (
+          <div className="w6w-exprmodal-main">
+            <div className="w6w-exprmodal-editor">
+              <span className="w6w-exprmodal-pane-label">
+                JSON
+                <span className="w6w-muted w6w-small">
+                  {" "}
+                  — type JSON; a source's insert icon adds a reference at the cursor
+                </span>
+              </span>
+              <JsonEditor
+                value={jsonText}
+                onChange={setJsonText}
+                minHeight="160px"
+                maxHeight="360px"
+                aria-label="Compose JSON"
+                placeholder='{ "key": { "$": "nodes.step_1.output" } }'
+                onCreateEditor={(view) => {
+                  jsonView.current = view;
+                }}
+              />
+            </div>
+            <div className="w6w-exprmodal-preview w6w-exprmodal-result-pane">
+              <span className="w6w-exprmodal-pane-label">
+                Result
+                <span className="w6w-muted w6w-small">
+                  {" "}
+                  — live preview against the sample values
+                </span>
+              </span>
+              <pre className="w6w-exprmodal-result" data-testid="expr-json-result">
+                {jsonParsed.ok
+                  ? JSON.stringify(
+                      resolveComposed(jsonParsed.value, (leaf) =>
+                        resolveParamJson(
+                          leaf,
+                          buildResolveScope(
+                            options.sampleValues,
+                            sampleStepsState(options.sampleValues),
+                          ),
+                        ),
+                      ),
+                      null,
+                      2,
+                    )
+                  : jsonText.trim() === ""
+                    ? ""
+                    : "Invalid JSON"}
+              </pre>
+            </div>
+          </div>
+        )}
 
         {/* Right: editor over the saved {{ }} template. */}
         {!jsonBinding && (

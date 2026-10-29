@@ -8,6 +8,7 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { bareRefBinding } from "./components/json-compose.ts";
 import { type DynamicContext, allowCustomOf } from "./dynamic-fields.ts";
 import { useOptionalW6WApi, useWorkflowProject } from "./provider.tsx";
 import { buildResolveScope, isDollarPath } from "./resolve-params.ts";
@@ -1096,6 +1097,15 @@ function JsonParamField({
     }
     setInvalid(!valid);
   };
+  // A whole field typed as one `{{ ref }}` is not JSON, but it means exactly the binding
+  // `{ $: ref }` the ƒx picker stores. Applied when the field loses focus, never per keystroke:
+  // auto-closed braces make `{{ nodes}}` a complete marker halfway through typing a ref.
+  const commitBareRef = () => {
+    const binding = bareRefBinding(text);
+    if (!binding) return;
+    setInvalid(false);
+    onChange(param.key, binding);
+  };
   const label = param.label ?? param.key;
 
   // Clear: back to the literal JSON the editor still holds (undefined if the
@@ -1180,6 +1190,7 @@ function JsonParamField({
         <JsonEditor
           value={text}
           onChange={onEdit}
+          onBlur={commitBareRef}
           readOnly={readOnly}
           minHeight="34px"
           maxHeight="260px"
@@ -1205,9 +1216,11 @@ function JsonParamField({
         <ExpressionEditorModal
           mode="json-binding"
           value={undefined}
+          jsonValue={value}
           options={exprOptions}
           fieldLabel={label}
           onBind={(next) => onChange(param.key, next)}
+          onSaveJson={(next) => onChange(param.key, next)}
           onClose={() => setPickerOpen(false)}
         />
       )}

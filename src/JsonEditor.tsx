@@ -34,6 +34,14 @@ export interface JsonEditorProps {
    */
   height?: string;
 
+  /**
+   * Receives the CodeMirror view once it exists — for a host that inserts text at the caret
+   * (the JSON compose pane of `ExpressionEditorModal`).
+   */
+  onCreateEditor?: (view: EditorView) => void;
+  /** Fired when the editor loses focus. */
+  onBlur?: () => void;
+
   /** Read-only mode — useful for previewing a stored definition. */
   readOnly?: boolean;
 
@@ -139,6 +147,8 @@ export function JsonEditor(props: JsonEditorProps) {
         height={props.height}
         minHeight={props.minHeight ?? "240px"}
         maxHeight={props.maxHeight}
+        onCreateEditor={props.onCreateEditor}
+        onBlur={props.onBlur}
         basicSetup={{
           lineNumbers: true,
           foldGutter: true,

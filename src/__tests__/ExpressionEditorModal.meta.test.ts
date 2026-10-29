@@ -41,6 +41,26 @@ g.MutationObserver =
 (dom.window as unknown as Record<string, unknown>).MutationObserver = g.MutationObserver;
 g.IS_REACT_ACT_ENVIRONMENT = true;
 
+// json-binding mode mounts a CodeMirror JsonEditor, which needs these (same shims as
+// `ParamsForm.json-binding.test.ts`).
+g.Window = dom.window.Window;
+const raf = (cb: (t: number) => void) => setTimeout(() => cb(Date.now()), 0) as unknown as number;
+g.requestAnimationFrame = raf;
+g.cancelAnimationFrame = (id: number) => clearTimeout(id);
+(dom.window as unknown as Record<string, unknown>).requestAnimationFrame = raf;
+(dom.window as unknown as Record<string, unknown>).cancelAnimationFrame = (id: number) =>
+  clearTimeout(id as unknown as NodeJS.Timeout);
+const rangeProto = dom.window.Range.prototype as unknown as Record<string, unknown>;
+rangeProto.getClientRects = () => [];
+rangeProto.getBoundingClientRect = () => ({
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+});
+
 // jsdom@30 doesn't implement <dialog>'s imperative API — `Modal.tsx` calls
 // `el.showModal()` in a mount effect, which would otherwise throw.
 (
@@ -243,15 +263,14 @@ test("M6 - save/reload: meta chips read readably; other values round-trip", asyn
   }
 });
 
-test("M7 - json-binding mode: no Metadata group; Entire output still binds", async () => {
+test("M7 - json-binding mode: one Metadata toggle per app step; Entire output still binds", async () => {
   const bound: unknown[] = [];
   const { container } = await mountModal({
     mode: "json-binding",
     onBind: (v) => bound.push(v),
-    options: { steps: [{ id: "ev", hasMeta: true }] },
+    options: { steps: [{ id: "ev", hasMeta: true }, { id: "plain" }] },
   });
-  assert.equal(toggles(container).length, 0);
-  assert.equal(container.textContent?.includes("Metadata"), false);
+  assert.equal(toggles(container).length, 1);
   const entire = q(container, "button").find((b) => b.textContent?.includes("Entire output"));
   assert.ok(entire);
   await click(entire as HTMLElement);
