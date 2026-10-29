@@ -1,3 +1,4 @@
+import { effectiveParam } from "@w6w/expr";
 import { useMemo, useState } from "react";
 import { JsonEditor } from "../JsonEditor.tsx";
 import { type DataVar, flattenParams, isParamVisible } from "../ParamsForm.tsx";
@@ -64,7 +65,9 @@ export function ResolvedParams({
   // This is the "visible" row set D-2's code view is complete OVER — before
   // A1's unchanged-value filter, so the code view still carries a param the
   // list hides.
-  const visibleRows = flat.filter((p) => p.type !== "section" && isParamVisible(p, effective));
+  const visibleRows = flat
+    .filter((p) => p.type !== "section" && isParamVisible(p, effective))
+    .map((p) => effectiveParam(p, effective));
 
   if (view === "code") {
     // Derived fresh on every render from `values` — no draft state — so
