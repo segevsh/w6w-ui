@@ -112,7 +112,7 @@
     "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.35.0",
     "@uiw/react-codemirror": "^4.23.7",
-    "@w6w/expr": "^0.1.0",
+    "@w6w/expr": "^0.1.1",
     "@xyflow/react": "^12.3.6",
     "prism-react-renderer": "^2.4.1",
     "react-markdown": "^10.1.0"

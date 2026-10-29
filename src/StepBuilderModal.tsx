@@ -1,3 +1,4 @@
+import { effectiveParam } from "@w6w/expr";
 import {
   type ReactNode,
   forwardRef,
@@ -1543,7 +1544,9 @@ export function requiredParamsFilled(
     vals: Record<string, unknown>,
     eff: (key: string) => unknown,
   ): boolean =>
-    list.every((p) => {
+    list.every((base) => {
+      // `when` overlay: effective `required` (same helper as the core runtime).
+      const p = effectiveParam(base, eff);
       // A `section` is a layout-only container whose children write flat at this
       // level — recurse so a required child (e.g. a grouped Sender Email) still
       // gates. The section param itself carries no value.
@@ -1577,7 +1580,7 @@ export function requiredParamsFilled(
         return check(children, groupVals, scoped(groupVals));
       }
       if (!p.required) return true;
-      if (!isParamVisible(p, eff)) return true;
+      if (!isParamVisible(base, eff)) return true;
       const v = vals[p.key] ?? p.default;
       if (v === undefined || v === null) return false;
       if (typeof v === "string") return v.trim() !== "";

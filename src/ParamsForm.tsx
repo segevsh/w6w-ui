@@ -1,3 +1,4 @@
+import { effectiveParam, matchesParamCondition } from "@w6w/expr";
 import { type ReactNode, createContext, useContext, useEffect, useId, useState } from "react";
 import { CodeEditor, type ScriptLanguage } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
@@ -25,14 +26,8 @@ import { type UseDynamicFields, useDynamicFields } from "./use-dynamic-fields.ts
  * would block the gate even while hidden.
  */
 export function isParamVisible(param: ActionParam, getValue: (key: string) => unknown): boolean {
-  const c = param.showIf;
-  if (!c) return true;
-  const v = getValue(c.field);
-  if (c.equals !== undefined) return v === c.equals;
-  if (c.in) return c.in.some((x) => x === v);
-  if (c.notIn) return !c.notIn.some((x) => x === v);
-  if (c.truthy !== undefined) return c.truthy ? !!v : !v;
-  return true;
+  if (!param.showIf) return true;
+  return matchesParamCondition(param.showIf, getValue);
 }
 
 /**
@@ -175,7 +170,11 @@ export function ParamsForm({ params, values, onChange, readOnly, dynamic }: Para
   const flat = flattenParams(params);
   const effective = (key: string) =>
     values[key] !== undefined ? values[key] : flat.find((p) => p.key === key)?.default;
-  const visible = params.filter((p) => isParamVisible(p, effective));
+  // `when` overlay (label/hint/required/ui/options) applied BEFORE the split so
+  // an overlay-required param lands in the main area even when `advanced`.
+  const visible = params
+    .filter((p) => isParamVisible(p, effective))
+    .map((p) => effectiveParam(p, effective));
   // Split by `advanced` (not by required): required + non-advanced show up front;
   // only fields flagged `advanced` collapse under "Additional parameters".
   const main = visible.filter((p) => p.required || !p.advanced);
@@ -259,7 +258,9 @@ function SectionField({
   effective: (key: string) => unknown;
   renderOne: (p: ActionParam) => ReactNode;
 }) {
-  const visibleChildren = (param.children ?? []).filter((c) => isParamVisible(c, effective));
+  const visibleChildren = (param.children ?? [])
+    .filter((c) => isParamVisible(c, effective))
+    .map((c) => effectiveParam(c, effective));
 
   if (param.section === "collapsible") {
     return (
@@ -343,7 +344,9 @@ function GroupField({
     if (!local) return effective(key);
     return groupValue[key] !== undefined ? groupValue[key] : local.default;
   };
-  const visibleChildren = children.filter((c) => isParamVisible(c, groupEffective));
+  const visibleChildren = children
+    .filter((c) => isParamVisible(c, groupEffective))
+    .map((c) => effectiveParam(c, groupEffective));
   const groupRenderOne = makeRenderOne(groupValue, groupSet, groupEffective, readOnly);
 
   return (

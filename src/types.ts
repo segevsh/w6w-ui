@@ -4,6 +4,8 @@
  * don't use `@w6w/types` (partners, non-TypeScript backends) don't need it.
  */
 
+import type { ParamWhen } from "@w6w/expr";
+
 /** Summary of a registered app as returned by GET /apps. */
 export interface AppSummary {
   id: string;
@@ -135,6 +137,12 @@ export interface ActionParam {
    * (e.g. Basic-auth fields shown only when `auth` is `"basic"`).
    */
   showIf?: ParamCondition;
+  /**
+   * Conditional overlay: the first entry whose `if` holds overlays
+   * label/hint/required/ui/options onto this param (see `effectiveParam` in
+   * `@w6w/expr`). Mirrors `@w6w/types`' `Param.when`.
+   */
+  when?: ParamWhen<ParamOption[] | DynamicOptions>[];
   /**
    * Constrained choices. Renders as a single-select dropdown for `select` (or any
    * param with options), and as a multi-select pill picker for `multiselect`.

@@ -298,3 +298,38 @@ export const OrganizerWithOrgExpression: Story = {
   },
   render: (args) => <DynamicDemo {...args} api={EVENTBRITE_API} />,
 };
+
+const WHEN_PARAMS: ParamsFormProps["params"] = [
+  {
+    key: "scope",
+    label: "Scope",
+    type: "select",
+    options: [
+      { value: "event", label: "Event" },
+      { value: "organization", label: "Organization" },
+    ],
+  },
+  {
+    key: "scopeId",
+    label: "ID",
+    type: "string",
+    advanced: true,
+    when: [
+      { if: { field: "scope", equals: "event" }, set: { label: "Event ID" } },
+      {
+        if: { field: "scope", equals: "organization" },
+        set: { label: "Organization ID", required: true },
+      },
+    ],
+  },
+];
+
+/** `when` overlay: scope=event relabels the field "Event ID". */
+export const WhenOverlayEvent: Story = {
+  args: { params: WHEN_PARAMS, values: { scope: "event" } },
+};
+
+/** `when` overlay: scope=organization relabels it and makes it required (main area). */
+export const WhenOverlayOrganization: Story = {
+  args: { params: WHEN_PARAMS, values: { scope: "organization" } },
+};
