@@ -430,6 +430,24 @@ test("R11 — maxHeight reaches the scrolling body, tree leaves quoted, empty co
     assert.equal(container.querySelector(".w6w-json-number")?.textContent, "1");
     assert.equal(container.querySelector(".w6w-json-boolean")?.textContent, "true");
     assert.equal(container.querySelector(".w6w-json-null")?.textContent, "null");
+    // The summary reads `{…} 4 keys`: a space before the count, and the plural
+    // agrees with the number (a bare `{…}4 keys` and "1 keys" both read wrong).
+    assert.equal(container.querySelector("summary")?.textContent, "{…} 4 keys");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    // …and the singular, plus the array wording.
+    const { container, root } = await mount({ one: [] });
+    assert.equal(container.querySelector("summary")?.textContent, "{…} 1 key");
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  {
+    const { container, root } = await mount([1, 2]);
+    assert.equal(container.querySelector("summary")?.textContent, "[…] 2 items");
     await act(async () => {
       root.unmount();
     });
