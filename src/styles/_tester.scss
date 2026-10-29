@@ -96,3 +96,59 @@
    baseline bar, `degraded` taller, `down` the full cell, and `unknown` a hatched
    outline with no solid fill (nothing was measured: not a good day, not a bad
    one). Each cell also carries a `title` with its day and state. */
+
+/* ── ResultViewer (T0.1.1) — one result value, shown by format: a collapsible
+   JSON tree, xml/html/markdown source, or vendor html in a sandboxed iframe.
+   The viewer owns its OWN internal spacing only; the host pane spaces it. */
+.w6w-result-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+  min-width: 0;
+}
+/* The toolbar — Expand all / Collapse all for a tree, Rendered / Source for
+   html and markdown. End-aligned so it sits under the copy button's corner. */
+.w6w-result-viewer-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--w6w-sp-1);
+}
+/* The viewport: the one element that scrolls, capped by the inline `maxHeight`.
+   Mono + 0.85em are `.w6w-result`'s type (above), because both present the same
+   thing to the reader. */
+.w6w-result-viewer-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--w6w-font-mono);
+  /* lint-tokens-allow: mirrors `.w6w-result`'s result type size above; the value is pinned by T0.1.1 */
+  font-size: 0.85em;
+}
+/* A plain-text result wraps instead of scrolling sideways: prose has no
+   meaningful line structure to preserve (a code block does — it keeps `wrap`
+   off by default for that reason). */
+.w6w-result-viewer-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* One indent step per nesting level, and no list markers: the `<summary>`
+   triangle already says "this node opens". */
+.w6w-json-children {
+  padding-left: var(--w6w-sp-4);
+}
+/* Keys and counts recede; values stay the reading colour. */
+.w6w-json-key,
+.w6w-json-count {
+  color: var(--w6w-muted);
+}
+/* The sandboxed frame: fills the body's width and gives the preview a fixed
+   viewport (it cannot size itself to its own content from outside). `display:
+   block` is load-bearing — an inline iframe sits on a text baseline, so the
+   3 px descender made the 320 px body scroll 3 px and drew a stray scrollbar. */
+.w6w-html-preview {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border: none;
+  background: var(--w6w-panel);
+}

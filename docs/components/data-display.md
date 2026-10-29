@@ -155,6 +155,47 @@ import { CopyableText } from "@w6w/ui";
 `cropText(value, chars, crop)` is exported too, if you need the same cropping without the copy
 behavior.
 
+## `ResultViewer`
+
+Read-only display of one result value, chosen by what the value *is*: a collapsible JSON tree,
+xml as highlighted source, markdown through `Markdown`, and html rendered **only** inside an
+empty-sandbox `<iframe srcdoc>` (`HtmlPreview`) — the frame has an opaque origin and a
+`default-src 'none'` CSP meta as the **first element of its `srcdoc`** (the first bytes are
+`<!doctype html>`), so a vendor payload cannot run script and cannot read or reach this page.
+Accepted residual: a click on a link *inside* the preview navigates the frame itself — a page load in
+a scriptless, same-origin-less document with no cookies, and nothing beyond it.
+
+| Prop | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `value` | `unknown` | Required | The result: an already-parsed value, or a raw response body string. The format is sniffed from this root value only — string leaves inside a JSON tree stay text. |
+| `maxHeight` | `number` | `320` | Height cap of the scrolling body, in px. |
+| `className` | `string` | None | Added to the root element, for spacing in your pane. |
+
+```tsx
+import { ResultViewer } from "@w6w/ui";
+
+<ResultViewer value={response.body} maxHeight={480} />
+```
+
+| Detected format | Body | Toolbar |
+| --- | --- | --- |
+| `json` | A collapsible tree, two levels open | Expand all / Collapse all |
+| `xml` | Source (highlighted under 64 KiB) | none |
+| `html` | `HtmlPreview` (sandboxed iframe) | Rendered / Source |
+| `markdown` | `Markdown` | Rendered / Source |
+| `text` | A wrapping `<pre>` | none |
+
+The root element carries `data-format`, so a pane can style per format. One copy button overlays
+the top-right corner of the body, revealed on hover and always shown where there is no hover; it
+writes pretty-printed JSON for a tree and the raw string for every other format. html or markdown
+longer than `RESULT_RENDER_MAX_CHARS` (262144) is shown as source with a note instead of being
+rendered. Source views longer than 64 KiB are plain text rather than highlighted — highlighting a
+multi-megabyte body cost tens of seconds, and the reader scrolling at that size gets nothing from the
+colour — so an oversized result displays instantly either way.
+
+The pieces are exported too: `HtmlPreview`, `htmlPreviewSrcDoc`, `HTML_PREVIEW_CSP`,
+`detectResultFormat`, `resultCopyText`, `RESULT_RENDER_MAX_CHARS` and the `DetectedResult` type.
+
 ## Where to next
 
 - **[Status and health](/reference-packages/components/status/)**: pills and strips for the trailing slot.

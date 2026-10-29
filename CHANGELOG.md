@@ -18,6 +18,15 @@ repo's git history for exact dates and commits.
 - `Combobox` fills the field it is dropped into and grows to the ƒx button inside a `.w6w-fx-wrap`,
   so the ƒx sits at the field's right end again everywhere the component is used (Setup Action,
   dynamic-option and model-route params, flow-editor step actions, the action-test picker).
+- New `ResultViewer`: a read-only result display that picks the view from the value's format — a
+  collapsible JSON tree, xml/markdown/html source, markdown through `Markdown`, and html rendered
+  ONLY inside a sandboxed `<iframe srcdoc>` (`HtmlPreview`, also exported) whose `srcdoc` opens with a
+  `default-src 'none'` CSP meta, so a vendor payload cannot run script and cannot read or reach this
+  page. Accepted residual: a reader's click on a link inside the preview navigates the frame itself —
+  a scriptless, same-origin-less document with no cookies, nothing more. Rendered/Source toggle for
+  html and markdown, one hover-revealed copy button, `detectResultFormat` / `resultCopyText` /
+  `RESULT_RENDER_MAX_CHARS` exported alongside. Source views stop being highlighted above 64 KiB, so a
+  multi-megabyte result renders instantly instead of stalling the pane. No existing pane adopts it yet.
 
 ## [0.2.0]
 

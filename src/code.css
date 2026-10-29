@@ -405,6 +405,32 @@
   min-width: 0;
 }
 
+/* ── Hover modifier: ResultViewer — the button overlays the top-right corner of
+   ANY child and is revealed on hover/focus; always shown where there is no hover. */
+.w6w-copyable--hover {
+  position: relative;
+  align-items: flex-start;
+}
+
+.w6w-copyable--hover > .w6w-copyable-btn {
+  position: absolute;
+  top: var(--w6w-sp-1);
+  right: var(--w6w-sp-1);
+  background: var(--w6w-panel);
+  border-color: var(--w6w-border);
+  opacity: 0;
+}
+
+.w6w-copyable--hover:hover > .w6w-copyable-btn,
+.w6w-copyable--hover:focus-within > .w6w-copyable-btn {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .w6w-copyable--hover > .w6w-copyable-btn {
+    opacity: 1;
+  }
+}
 .w6w-code-block {
   background: var(--w6w-panel-2);
   border: 1px solid var(--w6w-border);
