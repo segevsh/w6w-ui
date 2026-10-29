@@ -6,6 +6,7 @@ import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { ListItem } from "./components/ListItem.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ResultViewer } from "./components/ResultViewer.tsx";
 import { useW6WApi } from "./provider.tsx";
 import type { RequestOverrides, TestRunSummary } from "./provider.tsx";
 import type { ActionDef, ApiCallRecord, SavedTest, ThemeMode } from "./types.ts";
@@ -971,7 +972,7 @@ export function ActionTestForm({
               result !== undefined ? (
                 <div className="w6w-stack" style={{ gap: "var(--w6w-sp-1)" }}>
                   <strong className="w6w-small">Result</strong>
-                  <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
+                  <ResultViewer value={result} />
                 </div>
               ) : null;
             const paramsAndResult = (
@@ -1053,9 +1054,7 @@ export function ActionTestForm({
                             <h3>Result</h3>
                           </div>
                           <div className="w6w-stack" style={{ gap: "var(--w6w-sp-3)" }}>
-                            {result !== undefined && (
-                              <pre className="w6w-result">{JSON.stringify(result, null, 2)}</pre>
-                            )}
+                            {result !== undefined && <ResultViewer value={result} />}
                             <ApiCallsPanel calls={apiCalls} />
                           </div>
                         </div>

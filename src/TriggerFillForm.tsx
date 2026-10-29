@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
 import { type StepTestPersist, requiredParamsFilled } from "./StepBuilderModal.tsx";
+import { ResultViewer } from "./components/ResultViewer.tsx";
 import { useW6WApi, useWorkflowProject } from "./provider.tsx";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
 
@@ -226,12 +227,7 @@ export function TriggerFillForm({
         {state?.status === "done" && (
           <div className="w6w-testout">
             <div className="w6w-testout-label">Output state (filled values)</div>
-            <pre
-              className="w6w-result"
-              style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", margin: 0 }}
-            >
-              {JSON.stringify(state.value, null, 2)}
-            </pre>
+            <ResultViewer value={state.value} maxHeight={220} />
           </div>
         )}
         {logs && logs.length > 0 && (

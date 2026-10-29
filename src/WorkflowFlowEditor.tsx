@@ -80,6 +80,7 @@ import { IconButton } from "./components/IconButton.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ResolvedParams } from "./components/ResolvedParams.tsx";
+import { ResultViewer } from "./components/ResultViewer.tsx";
 import {
   applyConnect,
   canConnect,
@@ -1894,17 +1895,7 @@ function Inner({
                                 <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
                                   Result
                                 </div>
-                                <pre
-                                  className="w6w-result"
-                                  style={{
-                                    whiteSpace: "pre-wrap",
-                                    maxHeight: 360,
-                                    overflow: "auto",
-                                    margin: 0,
-                                  }}
-                                >
-                                  {JSON.stringify(runResult.value, null, 2)}
-                                </pre>
+                                <ResultViewer value={runResult.value} maxHeight={360} />
                                 {runResult.meta && (
                                   <>
                                     <div
@@ -1913,17 +1904,7 @@ function Inner({
                                     >
                                       Metadata
                                     </div>
-                                    <pre
-                                      className="w6w-result"
-                                      style={{
-                                        whiteSpace: "pre-wrap",
-                                        maxHeight: 360,
-                                        overflow: "auto",
-                                        margin: 0,
-                                      }}
-                                    >
-                                      {JSON.stringify(runResult.meta, null, 2)}
-                                    </pre>
+                                    <ResultViewer value={runResult.meta} maxHeight={360} />
                                   </>
                                 )}
                               </div>
