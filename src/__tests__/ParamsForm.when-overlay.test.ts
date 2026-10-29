@@ -97,13 +97,16 @@ function render(root: ReturnType<typeof createRoot>, params: ActionParam[], valu
 }
 const text = (c: Element) => c.textContent ?? "";
 
+// Stable params identity across renders mirrors Studio (same action.params, changing values).
+const TOP: ActionParam[] = [SCOPE, ID];
+
 test("top level: relabels and marks required, rerendered on the same root", async () => {
   const { container, root } = mountRoot();
-  await render(root, [SCOPE, ID], { scope: "event" });
+  await render(root, TOP, { scope: "event" });
   assert.ok(text(container).includes("Event ID"));
   assert.ok(!text(container).includes("Organization ID"));
   assert.ok(!text(container).includes("Event ID *"));
-  await render(root, [SCOPE, ID], { scope: "organization" });
+  await render(root, TOP, { scope: "organization" });
   assert.ok(text(container).includes("Organization ID *"));
   assert.ok(!text(container).includes("Event ID"));
   await act(async () => root.unmount());
@@ -118,9 +121,10 @@ test("section child is overlaid", async () => {
     section: "group",
     children: [ID],
   };
-  await render(root, [SCOPE, section], { scope: "event" });
+  const SECP = [SCOPE, section];
+  await render(root, SECP, { scope: "event" });
   assert.ok(text(container).includes("Event ID"));
-  await render(root, [SCOPE, section], { scope: "organization" });
+  await render(root, SECP, { scope: "organization" });
   assert.ok(text(container).includes("Organization ID *"));
   await act(async () => root.unmount());
 });
@@ -142,10 +146,11 @@ test("group child reads a group-local sibling over an enclosing key", async () =
 test("overlay-required advanced param renders in the main area", async () => {
   const { container, root } = mountRoot();
   const adv: ActionParam = { ...ID, advanced: true };
-  await render(root, [SCOPE, adv], { scope: "event" });
+  const ADVP = [SCOPE, adv];
+  await render(root, ADVP, { scope: "event" });
   const folded = container.querySelector("details.w6w-params-optional");
   assert.ok(folded?.textContent?.includes("Event ID"), "advanced + optional is folded");
-  await render(root, [SCOPE, adv], { scope: "organization" });
+  await render(root, ADVP, { scope: "organization" });
   assert.ok(text(container).includes("Organization ID *"));
   assert.equal(container.querySelector("details.w6w-params-optional"), null);
   await act(async () => root.unmount());
