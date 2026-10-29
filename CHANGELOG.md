@@ -15,6 +15,9 @@ repo's git history for exact dates and commits.
 - The step panel's Setup tab labels a connection that is absent from the loaded list "Missing
   connection — choose another", and a failed connections fetch "Couldn't load connections" instead
   of treating it as missing.
+- `Combobox` fills the field it is dropped into and grows to the ƒx button inside a `.w6w-fx-wrap`,
+  so the ƒx sits at the field's right end again everywhere the component is used (Setup Action,
+  dynamic-option and model-route params, flow-editor step actions, the action-test picker).
 
 ## [0.2.0]
 
