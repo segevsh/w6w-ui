@@ -446,6 +446,7 @@ function ParamFieldBody({
   readOnly?: boolean;
 }) {
   const listModelRoutes = useOptionalW6WApi()?.listModelRoutes;
+  const listDataStores = useOptionalW6WApi()?.listDataStores;
   const workflowProject = useWorkflowProject();
   const dyn = useContext(DynamicFieldsCtx);
   const dynState = dyn?.fields[param.key];
@@ -549,6 +550,23 @@ function ParamFieldBody({
         label={label}
         req={req}
         listModelRoutes={listModelRoutes}
+        project={workflowProject}
+      />
+    );
+  }
+
+  // `data-store` — a store-name picker when the host supplies `listDataStores`;
+  // otherwise it falls through to the plain text input below (like `string`).
+  if (param.type === "data-store" && listDataStores) {
+    return (
+      <StoreField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        listDataStores={listDataStores}
         project={workflowProject}
       />
     );
@@ -860,6 +878,69 @@ function ModelRouteField({
           value: r.name,
           label: r.status === "broken" ? `${r.name} (broken)` : r.name,
         }))}
+        onChange={(next) => onChange(param.key, next)}
+      />
+    </FxField>
+  );
+}
+
+type DataStoreList = NonNullable<import("./provider.tsx").W6WApi["listDataStores"]>;
+
+/**
+ * The `data-store` picker: store NAMES in a {@link Combobox}. Free text is a
+ * value (`forceSelection={false}`) and an expression binds through the same
+ * {@link FxField} a `string` uses.
+ */
+function StoreField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  listDataStores,
+  project,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  listDataStores: DataStoreList;
+  /** The editor's project (`WorkflowProjectProvider`) — the stores listed are THIS project's. */
+  project: string | undefined;
+}) {
+  const [stores, setStores] = useState<Awaited<ReturnType<DataStoreList>>>([]);
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => listDataStores(project))
+      .then((r) => live && setStores(Array.isArray(r) ? r : []))
+      .catch(() => live && setStores([]));
+    return () => {
+      live = false;
+    };
+  }, [listDataStores, project]);
+  const raw = value ?? param.default ?? "";
+  const current = typeof raw === "string" ? raw : "";
+  return (
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
+      <Combobox
+        mode="combobox"
+        forceSelection={false}
+        aria-label={label}
+        disabled={readOnly}
+        value={current}
+        placeholder="Select a store…"
+        options={stores.map((s) => ({ value: s.name, label: `${s.name} (${s.kind})` }))}
         onChange={(next) => onChange(param.key, next)}
       />
     </FxField>
