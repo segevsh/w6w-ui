@@ -312,3 +312,11 @@ export type {
   TableColumn,
   TableSchema,
 } from "./data-stores/data-store-view.ts";
+
+// Data store entry views (T2.1.2)
+export { DataEntryList } from "./components/DataEntryList.tsx";
+export type { DataEntryListProps, DataEntryListRow } from "./components/DataEntryList.tsx";
+export { DataEntryEditor } from "./components/DataEntryEditor.tsx";
+export type { DataEntryEditorProps } from "./components/DataEntryEditor.tsx";
+export { DataTableGrid } from "./components/DataTableGrid.tsx";
+export type { DataTableGridProps, DataTableGridRow } from "./components/DataTableGrid.tsx";
