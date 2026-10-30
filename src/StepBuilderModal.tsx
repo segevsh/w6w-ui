@@ -2542,6 +2542,12 @@ export function AppStepConfig({
   const autoSatisfied = availableAuths.some(
     (a) => a.autoSatisfied === true && (a.type === "tenantAuth" || a.type === "jit"),
   );
+  // The server prefers `tenantAuth` over `jit` and mints it for the run's owner, so a scheduled or
+  // queued run reaches it too. Only a `jit` sign-in forwards the signed-in user's own token, which
+  // a queued run does not have.
+  const autoNeedsSignedInUser =
+    autoSatisfied &&
+    !availableAuths.some((a) => a.autoSatisfied === true && a.type === "tenantAuth");
   const needsConnection = availableAuths.length > 0 && !autoSatisfied;
   const hasConnection = (conns ?? []).length > 0;
   const selectedAction = (actions ?? []).find((a) => a.key === actionKey);
@@ -2740,15 +2746,14 @@ export function AppStepConfig({
                     Create connection
                   </button>
                 </div>
-                {/* P3a / HITL-8's pinned default: auto-connect is synchronous-only
-                    (HITL-4) — a queued/scheduled Run of this saved workflow drops
-                    `subjectToken` before it reaches the invoke path, so it still
-                    needs a connection configured on the step. Nothing server-side
-                    changes; this is the editor telling the truth about that limit. */}
-                <span className="w6w-hint">
-                  A scheduled or queued run of this workflow still needs a connection configured on
-                  this step — use "Create connection" if this step will run on a schedule.
-                </span>
+                {/* P3a: a `jit` sign-in needs the signed-in user's own token, which a
+                    scheduled or queued run of this saved workflow does not have. */}
+                {autoNeedsSignedInUser && (
+                  <span className="w6w-hint">
+                    A scheduled or queued run of this workflow still needs a connection configured
+                    on this step — use "Create connection" if this step will run on a schedule.
+                  </span>
+                )}
               </div>
             )}
 
@@ -3053,6 +3058,12 @@ export function AppConnectionOnlyConfig({
   const autoSatisfied = availableAuths.some(
     (a) => a.autoSatisfied === true && (a.type === "tenantAuth" || a.type === "jit"),
   );
+  // The server prefers `tenantAuth` over `jit` and mints it for the run's owner, so a scheduled or
+  // queued run reaches it too. Only a `jit` sign-in forwards the signed-in user's own token, which
+  // a queued run does not have.
+  const autoNeedsSignedInUser =
+    autoSatisfied &&
+    !availableAuths.some((a) => a.autoSatisfied === true && a.type === "tenantAuth");
   const needsConnection = availableAuths.length > 0 && !autoSatisfied;
   const hasConnection = (conns ?? []).length > 0;
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
@@ -3115,15 +3126,14 @@ export function AppConnectionOnlyConfig({
                   Create connection
                 </button>
               </div>
-              {/* P3a / HITL-8's pinned default: auto-connect is synchronous-only
-                  (HITL-4) — a queued/scheduled Run of this saved workflow drops
-                  `subjectToken` before it reaches the invoke path, so it still
-                  needs a connection configured on the step. Nothing server-side
-                  changes; this is the editor telling the truth about that limit. */}
-              <span className="w6w-hint">
-                A scheduled or queued run of this workflow still needs a connection configured on
-                this step — use "Create connection" if this step will run on a schedule.
-              </span>
+              {/* P3a: a `jit` sign-in needs the signed-in user's own token, which a
+                  scheduled or queued run of this saved workflow does not have. */}
+              {autoNeedsSignedInUser && (
+                <span className="w6w-hint">
+                  A scheduled or queued run of this workflow still needs a connection configured on
+                  this step — use "Create connection" if this step will run on a schedule.
+                </span>
+              )}
             </div>
           )}
 
