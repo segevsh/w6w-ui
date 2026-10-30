@@ -792,9 +792,10 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         default: "javascript",
         options: [
           { value: "javascript", label: "JavaScript" },
+          { value: "typescript", label: "TypeScript" },
           { value: "python", label: "Python" },
         ],
-        hint: "Execution language for this step's code. Python runs CPython-on-WASM with no network.",
+        hint: "Execution language for this step's code. TypeScript types are erased before it runs, not checked. Python runs CPython-on-WASM with no network.",
       },
       {
         key: "input",
