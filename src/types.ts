@@ -118,6 +118,18 @@ export interface ActionParam {
    */
   advanced?: boolean;
   /**
+   * The field holds ONE value or expression, never a composed container: in the JSON-binding
+   * editor, picking a reference into an empty draft (or a bare `[]` / `{}`) stores the bare
+   * whole-value ref `"{{ ref }}"`, not `[ref]`. A literal still can be typed.
+   */
+  whole?: boolean;
+  /**
+   * The param is declared on the action but never rendered by any param form, and never gates
+   * the required check. Its stored value is preserved untouched (e.g. a canvas-owned `body`).
+   * Not the entry-level `InternalNodeDef.hidden` (a palette hide).
+   */
+  hidden?: boolean;
+  /**
    * Lay this param out on a shared row with adjacent params carrying the same
    * `row` id — e.g. a username/password pair side by side.
    */
