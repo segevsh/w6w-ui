@@ -157,6 +157,7 @@ feature-detected: a component that finds one missing falls back or hides that fe
 | `testCredential(id)` | Optional | `EditConnectionModal`'s "Credential health" line |
 | `setCredentialStatus(id, status)`, `credentialDependents(id)`, `deleteCredential(id)` | Optional | Credential management screens in hosts (no `@w6w/ui` component calls them) |
 | `listTriggerApps`, `getAppTriggers`, `listSubscriptionsForWorkflow`, `createSubscription` | Optional | App triggers in the step builder and the canvas's webhook panel |
+| `listDataStores(project?)` | Optional | The `@w6w/store` step's store picker; absent → plain text |
 
 **Credentials are optional end to end.** The eight credential members above use method syntax and
 are feature-detected, so an older client keeps compiling and keeps the inline-credential forms; a

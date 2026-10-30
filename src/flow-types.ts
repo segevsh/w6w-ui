@@ -1251,12 +1251,15 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     icon: ICON_STORE,
     // Host node: the run's own account and project are bound host-side, so there is no
     // scope param (`project`, `tenant`, ...) — the store is addressed by NAME alone.
+    // `store` is `type: "string"` in the manifest (core `ParamType` has no `data-store`);
+    // every entry's `store` param is the ui-only `data-store`, rendered as a store-name
+    // picker when the host supplies `listDataStores` — the same precedent as `model-route`.
     ports: { in: 1, out: 1 },
     params: [
       {
         key: "store",
         label: "Store",
-        type: "string",
+        type: "data-store",
         required: true,
         hint: "Name of a data store in this account and project.",
       },
@@ -1295,7 +1298,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "store",
         label: "Store",
-        type: "string",
+        type: "data-store",
         required: true,
         hint: "Name of a data store in this account and project.",
       },
@@ -1340,7 +1343,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "store",
         label: "Store",
-        type: "string",
+        type: "data-store",
         required: true,
         hint: "Name of a data store in this account and project.",
       },
@@ -1366,7 +1369,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "store",
         label: "Store",
-        type: "string",
+        type: "data-store",
         required: true,
         hint: "Name of a data store in this account and project.",
       },
@@ -1399,7 +1402,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "store",
         label: "Store",
-        type: "string",
+        type: "data-store",
         required: true,
         hint: "Name of a data store in this account and project.",
       },
@@ -1437,7 +1440,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "store",
         label: "Store",
-        type: "string",
+        type: "data-store",
         required: true,
         hint: "Name of a data store in this account and project.",
       },
@@ -1474,7 +1477,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "store",
         label: "Store",
-        type: "string",
+        type: "data-store",
         required: true,
         hint: "Name of a data store in this account and project.",
       },

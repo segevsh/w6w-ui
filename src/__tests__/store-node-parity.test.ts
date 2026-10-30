@@ -6,8 +6,9 @@
 // editor-built step fail) AND the S-4 seam, restated below as an independent literal so a
 // drifted manifest and a drifted entry can't agree on the wrong thing. The manifest is the
 // SIBLING repo's source (`internal-apps/apps/store/index.ts`), read as text — ui never
-// imports it. Unlike `@w6w/model`, there is NO sanctioned divergence: every ui type equals
-// the manifest type.
+// imports it. The ONE sanctioned divergence is `store`: `string` in the manifest, the ui-only
+// `data-store` in the entry (same precedent as `@w6w/model`'s `route` <-> `model-route`).
+// It is keyed to `store` — an unkeyed sanction would let a `key` -> `data-store` drift pass.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -96,6 +97,12 @@ test("internalNodeDef resolves every @w6w/store action, with the S-4 action set"
   for (const a of S4_ACTIONS) assert.equal(internalNodeDef(STORE_APP, a)?.action, a);
 });
 
+test("every @w6w/store entry's store param is the data-store picker type", () => {
+  for (const e of entries()) {
+    assert.equal(e.params.find((p) => p.key === "store")?.type, "data-store", `${e.action}.store`);
+  }
+});
+
 test("@w6w/store entries carry no scope param and one distinct label each", () => {
   const FORBIDDEN = ["scope", "account", "project", "tenant", "subject", "input"];
   for (const e of entries()) {
@@ -177,7 +184,10 @@ test(
       );
       for (const p of e.params) {
         const mp = m.params.get(p.key);
-        assert.equal(p.type, mp?.type, `${e.action}.${p.key}: type`);
+        const ok =
+          p.type === mp?.type ||
+          (p.key === "store" && p.type === "data-store" && mp?.type === "string");
+        assert.ok(ok, `${e.action}.${p.key}: ui "${p.type}" vs manifest "${mp?.type}"`);
         const uiOptions = Array.isArray(p.options)
           ? p.options.map((o): [string, string] => [String(o.value), o.label])
           : [];
