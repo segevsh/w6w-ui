@@ -312,6 +312,14 @@ export const MODEL_APP = "@w6w/model";
  * compiles to a JS function, the same risk shape `@w6w/script` has.
  */
 export const TEMPLATE_APP = "@w6w/template";
+/**
+ * Read, write, count, list and query the entries of a named data store (core
+ * rfcs/node-types.md, the `@w6w/store` amendment). Host node, like
+ * {@link DOCUMENT_APP}: the run's own account and project are bound host-side, so
+ * there is no scope param — a store is addressed by NAME. The params mirror the
+ * `@w6w/store` internal-app manifest (pinned by `store-node-parity.test.ts`).
+ */
+export const STORE_APP = "@w6w/store";
 
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
@@ -480,6 +488,10 @@ const ICON_MODEL =
 /** Braces — a compiled placeholder template. */
 const ICON_TEMPLATE =
   '<path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1" /><path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1" />';
+
+/** Cylinder — a data store. */
+const ICON_STORE =
+  '<ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" /><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />';
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
@@ -1229,6 +1241,258 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         hint: "Connection id of the provider to read the allowance of.",
       },
     ],
+  },
+  {
+    app: STORE_APP,
+    action: "get",
+    label: "Get entry",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    // Host node: the run's own account and project are bound host-side, so there is no
+    // scope param (`project`, `tenant`, ...) — the store is addressed by NAME alone.
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "string",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "string",
+        required: true,
+        hint: "Entry key — may be an expression, e.g. a step output.",
+      },
+      {
+        key: "required",
+        label: "Required",
+        type: "boolean",
+        default: false,
+        hint: "Fail the step when the key is missing instead of returning found: false.",
+      },
+    ],
+    output: [
+      { key: "found" },
+      { key: "key" },
+      { key: "value" },
+      { key: "version" },
+      { key: "expiresAt" },
+    ],
+  },
+  {
+    app: STORE_APP,
+    action: "set",
+    label: "Set entry",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "string",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "string",
+        required: true,
+        hint: "Entry key — may be an expression, e.g. a step output.",
+      },
+      {
+        key: "value",
+        label: "Value",
+        type: "json",
+        required: true,
+        hint: "The JSON value to store.",
+      },
+      {
+        key: "ifVersion",
+        label: "If version",
+        type: "number",
+        hint: "Write only when the stored version equals this number.",
+      },
+      {
+        key: "ttlSeconds",
+        label: "TTL (seconds)",
+        type: "number",
+        hint: "Expire the entry after this many seconds. Omit to keep it.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "value" }, { key: "version" }, { key: "expiresAt" }],
+  },
+  {
+    app: STORE_APP,
+    action: "delete",
+    label: "Delete entry",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "string",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "string",
+        required: true,
+        hint: "Entry key — may be an expression, e.g. a step output.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "deleted" }],
+  },
+  {
+    app: STORE_APP,
+    action: "increment",
+    label: "Increment counter",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "string",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "string",
+        required: true,
+        hint: "Entry key — may be an expression, e.g. a step output.",
+      },
+      {
+        key: "by",
+        label: "By",
+        type: "number",
+        default: 1,
+        hint: "Amount to add; may be negative.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "value" }, { key: "version" }],
+  },
+  {
+    app: STORE_APP,
+    action: "list",
+    label: "List entries",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "string",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "prefix",
+        label: "Prefix",
+        type: "string",
+        hint: "Only entries whose key starts with this.",
+      },
+      {
+        key: "cursor",
+        label: "Cursor",
+        type: "string",
+        hint: "The nextCursor of a previous page.",
+      },
+      {
+        key: "limit",
+        label: "Limit",
+        type: "number",
+        default: 50,
+        hint: "Page size, at most 200.",
+      },
+    ],
+    output: [{ key: "items" }, { key: "nextCursor" }],
+  },
+  {
+    app: STORE_APP,
+    action: "query",
+    label: "Query rows",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "string",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "where",
+        label: "Where",
+        type: "json",
+        hint: "Column equality filter.",
+      },
+      {
+        key: "order",
+        label: "Order",
+        type: "string",
+        hint: "Column to order by; prefix with - for descending.",
+      },
+      {
+        key: "limit",
+        label: "Limit",
+        type: "number",
+        hint: "Maximum rows to return.",
+      },
+    ],
+    output: [{ key: "items" }],
+  },
+  {
+    app: STORE_APP,
+    action: "insert",
+    label: "Insert row",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "string",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "row",
+        label: "Row",
+        type: "json",
+        required: true,
+        hint: "The row, keyed by column name.",
+      },
+      {
+        key: "ttlSeconds",
+        label: "TTL (seconds)",
+        type: "number",
+        hint: "Expire the entry after this many seconds. Omit to keep it.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "value" }, { key: "version" }],
   },
 ];
 
