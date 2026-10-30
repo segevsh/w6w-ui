@@ -254,6 +254,12 @@ export {
 export type { DetectedResult } from "./components/result-format.ts";
 
 // ── Data stores (F-2) ──
+export { DataStoreList } from "./components/DataStoreList.tsx";
+export type { DataStoreListProps } from "./components/DataStoreList.tsx";
+export { ColumnsEditor } from "./components/ColumnsEditor.tsx";
+export type { ColumnsEditorProps } from "./components/ColumnsEditor.tsx";
+export { CsvPanel } from "./components/CsvPanel.tsx";
+export type { CsvPanelProps } from "./components/CsvPanel.tsx";
 export {
   CELL_PROBLEM_COPY,
   CSV_MAX_BYTES,
