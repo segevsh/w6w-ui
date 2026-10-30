@@ -375,3 +375,60 @@ test("AC5 — the ▶ Run projection call passes stepShapes (4th argument)", () 
   assert.equal(c.length, 1);
   assert.equal(c[0].arguments[3]?.getText(sf), "stepShapes");
 });
+
+// ── Round 2: the `Inner` mount props (the JSX the isolated tests never reach) ─
+function jsxAttr(sf: ts.SourceFile, tag: string, attr: string): ts.Expression {
+  const found: ts.Expression[] = [];
+  const v = (n: ts.Node) => {
+    if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) {
+      if (n.tagName.getText(sf) === tag) {
+        for (const a of n.attributes.properties) {
+          if (ts.isJsxAttribute(a) && a.name.getText(sf) === attr) {
+            const init = a.initializer;
+            if (init && ts.isJsxExpression(init) && init.expression) found.push(init.expression);
+          }
+        }
+      }
+    }
+    ts.forEachChild(n, v);
+  };
+  v(sf);
+  assert.equal(found.length, 1, `<${tag} ${attr}={…}> present exactly once`);
+  return found[0];
+}
+
+test("Inner mounts — <StepEditModal loop> reads mergedExprOptions.loop", () => {
+  const sf = parse("../WorkflowFlowEditor.tsx");
+  assert.equal(jsxAttr(sf, "StepEditModal", "loop").getText(sf), "mergedExprOptions.loop");
+});
+
+test("Inner mounts — <StepEditModal foreachItemCount> is resolveLoopItems(…with?.items, stepTestOutputs)?.length", () => {
+  const sf = parse("../WorkflowFlowEditor.tsx");
+  const expr = jsxAttr(sf, "StepEditModal", "foreachItemCount");
+  const calls: ts.CallExpression[] = [];
+  const lens: ts.Node[] = [];
+  const v = (n: ts.Node) => {
+    if (ts.isCallExpression(n) && n.expression.getText(sf) === "resolveLoopItems") calls.push(n);
+    if (ts.isPropertyAccessExpression(n) && n.name.getText(sf) === "length") lens.push(n);
+    ts.forEachChild(n, v);
+  };
+  v(expr);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].arguments.length, 2);
+  assert.equal(/\.with\?\.items$/.test(calls[0].arguments[0].getText(sf)), true);
+  assert.equal(calls[0].arguments[1].getText(sf), "stepTestOutputs");
+  assert.equal(lens.length, 1);
+  assert.equal(
+    (lens[0] as ts.PropertyAccessExpression).expression.getText(sf).startsWith("resolveLoopItems("),
+    true,
+  );
+});
+
+test("Inner mounts — <StepBuilderModal loop> calls stepBuilderLoop with stepShapes", () => {
+  const sf = parse("../WorkflowFlowEditor.tsx");
+  const expr = jsxAttr(sf, "StepBuilderModal", "loop");
+  assert.equal(ts.isCallExpression(expr), true);
+  const c = expr as ts.CallExpression;
+  assert.equal(c.expression.getText(sf), "stepBuilderLoop");
+  assert.equal(c.arguments[3]?.getText(sf), "stepShapes");
+});
