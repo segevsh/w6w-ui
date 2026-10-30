@@ -14,7 +14,12 @@ export function fanOutState(
   edges: readonly Edge[],
 ): { enabled: boolean; count: number } {
   const per = { success: 0, error: 0 };
-  for (const e of edges) if (e.source === stepId) per[edgeLane(e)]++;
+  for (const e of edges) {
+    if (e.source !== stepId) continue;
+    const lane = edgeLane(e);
+    // The each lane is a loop body, not fan-out: it never counts.
+    if (lane !== "each") per[lane]++;
+  }
   const count = Math.max(per.success, per.error);
   return { enabled: count >= 2, count };
 }

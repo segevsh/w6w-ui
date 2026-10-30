@@ -201,3 +201,13 @@ test("M2 — flowToWorkflow ignores a run-stamped edge className/label — edges
   assert.deepEqual(withRun.edges, withoutRun.edges);
   assert.deepEqual(withRun.edges, WF.edges);
 });
+
+test("each lane: edgeVisuals classes and edgeRunState arms", () => {
+  assert.deepEqual(edgeVisuals("each"), { className: "w6w-edge-each" });
+  assert.deepEqual(edgeVisuals("each", "taken"), { className: "w6w-edge-each w6w-edge-taken" });
+  const rs = (status: "skipped" | "succeeded") =>
+    ({ steps: { p: { status } } }) as unknown as RunState;
+  assert.equal(edgeRunState(rs("skipped"), "p", "each"), "skipped");
+  assert.equal(edgeRunState(rs("succeeded"), "p", "each"), undefined);
+  assert.equal(edgeRunState(undefined, "p", "each"), undefined);
+});

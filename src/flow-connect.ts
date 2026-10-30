@@ -15,6 +15,7 @@
  */
 import { type Edge, addEdge } from "@xyflow/react";
 import {
+  type CanvasLane,
   type PortsLookup,
   edgeVisuals,
   nodePortsForStep,
@@ -29,8 +30,9 @@ import { type StepNode, flowEdgeId } from "./flow-utils.ts";
  * `data` at all. The single accessor: every consumer calls this rather than
  * re-deriving the fallback, so "absent means success" is decided once.
  */
-export function edgeLane(e: Edge): "success" | "error" {
-  return (e.data as { when?: string } | undefined)?.when === "error" ? "error" : "success";
+export function edgeLane(e: Edge): CanvasLane {
+  const when = (e.data as { when?: string } | undefined)?.when;
+  return when === "error" ? "error" : when === "each" ? "each" : "success";
 }
 
 /**
@@ -115,7 +117,7 @@ function planConnect(
   target: string | null | undefined,
   nodes: StepNode[],
   edges: Edge[],
-  when: "success" | "error",
+  when: CanvasLane,
   lookup?: PortsLookup,
 ): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | null } | null {
   if (!canConnect(source, target, nodes, edges, lookup) || !source || !target) return null;
@@ -210,7 +212,7 @@ export function applyConnect(
   target: string | null | undefined,
   nodes: StepNode[],
   edges: Edge[],
-  when: "success" | "error" = "success",
+  when: CanvasLane = "success",
   lookup?: PortsLookup,
 ): Edge[] | null {
   const plan = planConnect(source, target, nodes, edges, when, lookup);
@@ -233,7 +235,7 @@ export function connectConflict(
   target: string | null | undefined,
   nodes: StepNode[],
   edges: Edge[],
-  when: "success" | "error" = "success",
+  when: CanvasLane = "success",
   lookup?: PortsLookup,
 ): string | null {
   return planConnect(source, target, nodes, edges, when, lookup)?.conflict ?? null;
@@ -249,7 +251,7 @@ export function connectRefusal(
   target: string | null | undefined,
   nodes: StepNode[],
   edges: Edge[],
-  when: "success" | "error" = "success",
+  when: CanvasLane = "success",
   lookup?: PortsLookup,
 ): OutCapRefusal | null {
   return planConnect(source, target, nodes, edges, when, lookup)?.refusal ?? null;
@@ -283,6 +285,9 @@ function planRelane(
   const matches = edges.filter((e) => e.id === edgeId);
   if (matches.length !== 1) return null;
   const me = matches[0];
+  // An each-lane edge is a loop body link, never re-laned (the lane is not a
+  // persisted outcome) — refused like any other un-switchable edge.
+  if (edgeLane(me) === "each") return null;
   const srcStep = nodes.find((n) => n.id === me.source)?.data.step;
   if (!srcStep) return null;
   const out = nodePortsForStep(srcStep, lookup).out;

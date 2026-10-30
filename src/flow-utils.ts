@@ -5,7 +5,17 @@
  * so the same workflow always opens with the same layout.
  */
 import type { Edge, Node } from "@xyflow/react";
+import { edgeLane } from "./flow-connect.ts";
 import {
+  definitionLoops,
+  eachLaneEdge,
+  effectiveEdges,
+  isForeachStep,
+  loopBodies,
+  stripBody,
+} from "./flow-loop.ts";
+import {
+  type CanvasLane,
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
@@ -47,6 +57,13 @@ export interface StepNodeData extends Record<string, unknown> {
    * here and never read by {@link flowToWorkflow} (not persisted).
    */
   stepProblem?: StepProblem;
+  /**
+   * The For each this step is a loop-body member of (canvas-only; derived on load
+   * and by the editor, never read by {@link flowToWorkflow}).
+   */
+  loopOf?: string;
+  /** This For each was converted from a legacy (no-`body`) loop on load. Canvas-only. */
+  legacyLoop?: boolean;
 }
 
 export type StepNode = Node<StepNodeData>;
@@ -67,7 +84,7 @@ export type StepNode = Node<StepNodeData>;
  * rewrite) in `flow-connect.ts`. A second hand-rolled copy of the template is
  * exactly how the rename path came to drop the qualifier.
  */
-export function flowEdgeId(from: string, to: string, when?: FlowEdge["when"]): string {
+export function flowEdgeId(from: string, to: string, when?: CanvasLane): string {
   return when === "error" ? `${from}->${to}:error` : `${from}->${to}`;
 }
 
@@ -331,8 +348,36 @@ function normalizeInput(input: FlowWorkflowInput): FlowWorkflow {
 export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; edges: Edge[] } {
   const wf = normalizeInput(input);
   const defs = wf.nodes;
-  const edges: FlowEdge[] = wf.edges ?? implicitChain(defs);
-  const layer = computeLayers(defs, edges);
+  let edges: FlowEdge[] = effectiveEdges(wf);
+  // Loops (D-A3): draw every foreach body as each-lane edges. A legacy loop's
+  // success edges are replaced by exactly those each-lane edges; a `body` loop's
+  // members are touched by no declared edge (validated), so nothing is removed.
+  // An invalid body keeps the step verbatim with no each-lane edges.
+  const eachEdges: Edge[] = [];
+  const loopOf = new Map<string, string>();
+  const legacyFoes = new Set<string>();
+  const drop = new Set<FlowEdge>();
+  for (const [fid, loop] of Object.entries(definitionLoops(wf))) {
+    if ("invalid" in loop) continue;
+    let prev = fid;
+    for (const id of loop.body) {
+      if (loop.source === "legacy") {
+        const e = edges.find(
+          (x) => x.from === prev && x.to === id && (x.when ?? "success") === "success",
+        );
+        if (e) drop.add(e);
+      }
+      eachEdges.push(eachLaneEdge(prev, id, prev === fid));
+      loopOf.set(id, fid);
+      prev = id;
+    }
+    if (loop.source === "legacy") legacyFoes.add(fid);
+  }
+  if (drop.size > 0) edges = edges.filter((e) => !drop.has(e));
+  const layer = computeLayers(defs, [
+    ...edges,
+    ...eachEdges.map((e) => ({ from: e.source, to: e.target })),
+  ]);
   const rowsInLayer = new Map<number, number>();
 
   const nodes: StepNode[] = defs.map((step) => {
@@ -344,7 +389,12 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
       id: step.id,
       type: isInternal ? "control" : "step",
       position: storedPosition(step) ?? slotPosition(col, row),
-      data: { step, isInternal },
+      data: {
+        step,
+        isInternal,
+        ...(loopOf.has(step.id) ? { loopOf: loopOf.get(step.id) } : {}),
+        ...(legacyFoes.has(step.id) ? { legacyLoop: true } : {}),
+      },
     };
   });
 
@@ -382,7 +432,7 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
     };
   });
 
-  return { nodes, edges: flowEdges };
+  return { nodes, edges: [...flowEdges, ...eachEdges] };
 }
 
 /**
@@ -483,31 +533,66 @@ export function flowToWorkflow(
   for (const s of original.nodes) stepById.set(s.id, s);
   for (const n of nodes) if (n.data?.step) stepById.set(n.id, n.data.step);
 
+  // Each foreach's body is DERIVED from the canvas's each-lane edges — a stored
+  // `with.body` is never trusted (P6/P8).
+  const derived = loopBodies(nodes, edges);
+  const originalLoops = definitionLoops(original);
+  const originalById = new Map<string, FlowStep>(original.nodes.map((s) => [s.id, s]));
+  const successFrom = new Set<string>();
+  for (const e of edges) if (edgeLane(e) === "success") successFrom.add(e.source);
+  const withBody = (step: FlowStep): FlowStep => {
+    if (!isForeachStep(step)) return step;
+    const chain = derived.get(step.id) ?? [];
+    const orig = originalById.get(step.id);
+    const loop = originalLoops[step.id];
+    let emit: { value: unknown } | null;
+    if (chain.length > 0) emit = { value: chain };
+    else if (loop && "invalid" in loop && loop.invalid.reason !== "legacy_not_linear") {
+      emit = orig?.with && "body" in orig.with ? { value: orig.with.body } : null;
+    } else if (loop && "invalid" in loop) emit = null;
+    else if (successFrom.has(step.id) || (orig?.with && "body" in orig.with)) emit = { value: [] };
+    else emit = null;
+    const w = step.with ?? {};
+    if (emit === null) {
+      if (!("body" in w)) return step;
+      return stripBody(step);
+    }
+    // An existing `body` keeps its key slot in `with`; a new one is appended.
+    return { ...step, with: { ...w, body: emit.value } };
+  };
+  const emitted = (s: FlowStep): FlowStep => withPosition(withBody(s));
+
   const nextSteps: FlowStep[] = [];
   const seen = new Set<string>();
   for (const s of original.nodes) {
     const current = stepById.get(s.id);
     if (current && nodes.some((n) => n.id === s.id)) {
-      nextSteps.push(withPosition(current));
+      nextSteps.push(emitted(current));
       seen.add(s.id);
     }
   }
   for (const n of nodes) {
     if (seen.has(n.id)) continue;
     const s = stepById.get(n.id);
-    if (s) nextSteps.push(withPosition(s));
+    if (s) nextSteps.push(emitted(s));
   }
 
   // Read the lane back off the React Flow edge (put there by workflowToFlow /
   // by applyConnect at creation). `"success"` is written as ABSENT — the house
   // omit-the-default idiom — so a definition with no error edge round-trips
   // byte-identically to what was loaded.
-  const nextEdges: FlowEdge[] = edges.map((e) => {
-    const when = (e.data as { when?: FlowEdge["when"] } | undefined)?.when;
-    return when === "error"
-      ? { from: e.source, to: e.target, when }
-      : { from: e.source, to: e.target };
-  });
+  //
+  // The each lane is canvas-only and never serialized, and no emitted edge may
+  // touch a body step the engine will own (any such edge is a PlanError there).
+  const bodyIds = new Set<string>();
+  for (const chain of derived.values()) for (const id of chain) bodyIds.add(id);
+  const nextEdges: FlowEdge[] = edges
+    .filter((e) => edgeLane(e) !== "each" && !bodyIds.has(e.source) && !bodyIds.has(e.target))
+    .map((e) =>
+      edgeLane(e) === "error"
+        ? { from: e.source, to: e.target, when: "error" }
+        : { from: e.source, to: e.target },
+    );
 
   return { ...original, nodes: nextSteps, edges: nextEdges };
 }
@@ -598,13 +683,6 @@ export function withViewport(wf: FlowWorkflow, vp: StoredViewport): FlowWorkflow
   return { ...wf, settings: { ...prev, viewport: next } };
 }
 
-/** When no edges are declared, treat steps as a linear chain in declared order. */
-function implicitChain(steps: FlowStep[]): FlowEdge[] {
-  const out: FlowEdge[] = [];
-  for (let i = 0; i < steps.length - 1; i++) out.push({ from: steps[i].id, to: steps[i + 1].id });
-  return out;
-}
-
 /**
  * Turn a human-readable label (an action's `label`/`displayName`) into an
  * id-safe slug for {@link suggestStepId}'s `prefix` — human override,
@@ -693,7 +771,8 @@ export type StepLike = Omit<FlowStep, "id"> & { id?: string };
  * access stays on {@link paramsToJson}'s view and the Form view.
  */
 export function stepToJson(step: StepLike): string {
-  return JSON.stringify(step, null, 2);
+  // A foreach's `with.body` is derived from the canvas — never shown or edited.
+  return JSON.stringify(stripBody(step), null, 2);
 }
 
 /**
@@ -702,6 +781,6 @@ export function stepToJson(step: StepLike): string {
  * writable: the params-only `JsonEditor`'s `onValidChange` feeds straight back
  * into `with`/`withValues`, same as it always has.
  */
-export function paramsToJson(step: Pick<StepLike, "with">): string {
-  return JSON.stringify(step.with ?? {}, null, 2);
+export function paramsToJson(step: Pick<StepLike, "with"> & { uses?: StepLike["uses"] }): string {
+  return JSON.stringify(stripBody(step).with ?? {}, null, 2);
 }

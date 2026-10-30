@@ -115,13 +115,18 @@ export interface FlowEdge {
  * rather than spreading.
  */
 export function edgeVisuals(
-  when: "success" | "error" | undefined,
+  when: CanvasLane | undefined,
   runState?: EdgeRunState,
 ): {
   className?: string;
   label?: string;
 } {
-  const lane = when === "error" ? { className: "w6w-edge-error", label: "on error" } : {};
+  const lane: { className?: string; label?: string } =
+    when === "error"
+      ? { className: "w6w-edge-error", label: "on error" }
+      : when === "each"
+        ? { className: "w6w-edge-each" }
+        : {};
   if (!runState) return lane;
   const runClass = runState === "taken" ? "w6w-edge-taken" : "w6w-edge-skipped";
   return {
@@ -138,6 +143,19 @@ export function edgeVisuals(
 export const ERROR_SOURCE_HANDLE = "out-error";
 
 /**
+ * The handle id of a For each's **Each item** exit port (the success lane keeps the
+ * unnamed handle, rendered as **Done**). Canvas-only: the `each` lane is never
+ * serialized — `flowToWorkflow` derives `with.body` from these edges instead.
+ */
+export const EACH_SOURCE_HANDLE = "out-each";
+
+/**
+ * A lane on the CANVAS. `"each"` is canvas-only (a For each → body-step edge);
+ * the persisted {@link FlowEdge}`["when"]` deliberately stays `"success" | "error"`.
+ */
+export type CanvasLane = "success" | "error" | "each";
+
+/**
  * The `sourceHandle` a minted/re-laned/loaded edge carries for a given lane —
  * the inverse of {@link laneForSourceHandle}. `undefined` for `"success"`/
  * absent is **load-bearing, not stylistic**: React Flow anchors a handle-less
@@ -145,8 +163,8 @@ export const ERROR_SOURCE_HANDLE = "out-error";
  * already-saved workflow's edges implicitly use. An empty string would not do
  * this — an empty string is a real, if degenerate, handle id.
  */
-export function sourceHandleForLane(when: "success" | "error" | undefined): string | undefined {
-  return when === "error" ? ERROR_SOURCE_HANDLE : undefined;
+export function sourceHandleForLane(when: CanvasLane | undefined): string | undefined {
+  return when === "error" ? ERROR_SOURCE_HANDLE : when === "each" ? EACH_SOURCE_HANDLE : undefined;
 }
 
 /**
@@ -158,8 +176,12 @@ export function sourceHandleForLane(when: "success" | "error" | undefined): stri
  * `"error"`; everything else — a near-miss id, `null`, `undefined` — is
  * `"success"`.
  */
-export function laneForSourceHandle(handleId: string | null | undefined): "success" | "error" {
-  return handleId === ERROR_SOURCE_HANDLE ? "error" : "success";
+export function laneForSourceHandle(handleId: string | null | undefined): CanvasLane {
+  return handleId === ERROR_SOURCE_HANDLE
+    ? "error"
+    : handleId === EACH_SOURCE_HANDLE
+      ? "each"
+      : "success";
 }
 
 export interface FlowWorkflow {

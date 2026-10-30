@@ -407,3 +407,29 @@ test("U5 — setEdgeWhen re-lanes the sourceHandle both ways on ONE edge object"
   assert.ok(backToSuccess, "error→success re-lane must be allowed");
   assert.equal(backToSuccess[0].sourceHandle, undefined);
 });
+
+// ── each lane (loop core) ──────────────────────────────────────────────────
+test("each lane: edgeLane, handles, and relane refusal", () => {
+  const eachEdge: Edge = {
+    id: "a->b",
+    source: "a",
+    target: "b",
+    sourceHandle: "out-each",
+    data: { when: "each" },
+  };
+  assert.equal(edgeLane(eachEdge), "each");
+  assert.equal(laneForSourceHandle("out-each"), "each");
+  assert.equal(laneForSourceHandle("out-each-x"), "success");
+  assert.equal(sourceHandleForLane("each"), "out-each");
+  assert.equal(flowEdgeId("a", "b", "each"), "a->b");
+  assert.equal(setEdgeWhen([eachEdge], "a->b", "error", [node("a"), node("b")]), null);
+  assert.equal(setEdgeWhen([eachEdge], "a->b", "success", [node("a"), node("b")]), null);
+});
+
+test("each lane: applyConnect mints the each edge", () => {
+  const next = applyConnect("a", "b", [node("a"), node("b")], [], "each");
+  assert.equal(next?.[0].id, "a->b");
+  assert.deepEqual(next?.[0].data, { when: "each" });
+  assert.equal(next?.[0].sourceHandle, "out-each");
+  assert.equal(next?.[0].className, "w6w-edge-each");
+});

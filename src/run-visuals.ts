@@ -16,6 +16,7 @@
  * already has the real `RunState`/`StepExecution` is structurally compatible
  * for free.
  */
+import type { CanvasLane } from "./flow-types.ts";
 
 /** Mirrors `RunStatus` in `@w6w/workflow-types`. */
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
@@ -152,11 +153,14 @@ export type EdgeRunState = "taken" | "skipped";
 export function edgeRunState(
   runState: RunState | undefined,
   from: string,
-  when: "success" | "error" | undefined,
+  when: CanvasLane | undefined,
 ): EdgeRunState | undefined {
   if (!runState) return undefined;
   const exec = execOf(runState, from);
   if (!exec) return undefined;
+  // Each lane: a body edge's fate is not decidable from the parent's record (body
+  // ids are never `RunState.nodes` keys) — only a skipped parent skips it.
+  if (when === "each") return exec.status === "skipped" ? "skipped" : undefined;
   const lane = when ?? "success";
   if (exec.status === "succeeded") return lane === "success" ? "taken" : "skipped";
   if (exec.status === "failed") return lane === "error" ? "taken" : "skipped";

@@ -97,6 +97,7 @@ import {
 import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
 import {
   CALL_APP,
+  type CanvasLane,
   ERROR_SOURCE_HANDLE,
   type FlowStep,
   type FlowWorkflow,
@@ -523,7 +524,7 @@ function Inner({
      * handle id that is never `ERROR_SOURCE_HANDLE`, so this naturally reads
      * "success" for that gesture without a separate branch.
      */
-    lane: "success" | "error";
+    lane: CanvasLane;
   } | null>(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   // React Flow's `colorMode` defaults to "light", so without this its chrome
