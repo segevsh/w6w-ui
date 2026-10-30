@@ -69,6 +69,7 @@ import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { Copyable } from "./components/Copyable.tsx";
 import {
+  type ExpressionLoopSource,
   type ExpressionOptions,
   ExpressionOptionsProvider,
   type ExpressionStepSource,
@@ -95,6 +96,7 @@ import {
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
 import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
+import { isForeachStep } from "./flow-loop.ts";
 import {
   CALL_APP,
   type CanvasLane,
@@ -148,7 +150,11 @@ import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./
 import {
   type SeedSource,
   type StepShapeContext,
+  loopItemText,
+  parseLoopSeed,
+  resolveLoopItems,
   startStateFromSeeds,
+  stepBuilderLoop,
   stepBuilderUpstreamSteps,
   upstreamSampleValues,
   upstreamStateSources,
@@ -1348,10 +1354,6 @@ function Inner({
   // so it needs the RUNNING step's graph ancestors — the step editor's own
   // `upstreamState` below is computed for `editingId`, a different step.
   const collecting = runResult?.status === "collect" && !!runningStep;
-  const runUpstreamSteps = useMemo(
-    () => (runResult ? upstreamStateSources(runResult.stepId, nodes, edges).steps : []),
-    [runResult, nodes, edges],
-  );
 
   const fanOutCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -1383,6 +1385,15 @@ function Inner({
     }),
     [actionDefs, stepTestOutputs],
   );
+  // The ▶ Run modal's projection, kept WHOLE: ONE call yields both the seed chips' ancestors
+  // (`.steps`) and the `loop` the Current item / Index seed comes from (never a second membership
+  // derivation). It passes `stepShapes` so the loop's sample item resolves.
+  const runUpstreamSteps = useMemo(
+    () =>
+      runResult ? upstreamStateSources(runResult.stepId, nodes, edges, stepShapes) : undefined,
+    [runResult, nodes, edges, stepShapes],
+  );
+  const runSteps = useMemo(() => runUpstreamSteps?.steps ?? [], [runUpstreamSteps]);
   // While the add-step builder is open `editingId` is null, which makes
   // `upstreamStateSources` offer EVERY node — including the step being drafted
   // (progressively committed as a node). Exclude it from its own rail sources.
@@ -1816,6 +1827,7 @@ function Inner({
                       // own Test tab can seed `{{ steps.<id>.output.<field> }}` the
                       // same way the step editor's Test tab already does.
                       upstreamSteps={stepBuilderUpstreamSteps(pendingConnect, nodes, edges)}
+                      loop={stepBuilderLoop(pendingConnect, nodes, edges, stepShapes)}
                     />
                   )}
 
@@ -1830,6 +1842,12 @@ function Inner({
                       // (via `mergedExprOptions`) — the incoming-state picker seeds from
                       // each ancestor's latest saved step-test rather than re-walking the graph.
                       upstreamSteps={mergedExprOptions.steps ?? []}
+                      loop={mergedExprOptions.loop}
+                      foreachItemCount={
+                        isForeachStep(editingStep)
+                          ? resolveLoopItems(editingStep.with?.items, stepTestOutputs)?.length
+                          : undefined
+                      }
                       readOnly={readOnly}
                       fanOutCount={fanOutCounts.get(editingId) ?? 0}
                       initialView={editView}
@@ -1851,7 +1869,8 @@ function Inner({
                           key={runResult.stepId}
                           workflowId={value.id}
                           step={runningStep}
-                          upstreamSteps={runUpstreamSteps}
+                          upstreamSteps={runSteps}
+                          loop={runUpstreamSteps?.loop}
                           onCancel={() => setRunResult(null)}
                           onRun={(values, state) => performRunStep(runResult.stepId, values, state)}
                         />
@@ -1968,6 +1987,67 @@ function parseStateOverride(text: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The loop seed a test of a For each BODY step is sent as `state.foreach`: the sample item
+ * (editable JSON) and the index (default 0). While "Current item" is untouched it FOLLOWS the
+ * loop's `itemSample` (which can arrive after mount); once edited, the edit wins.
+ */
+function useLoopSeed(loop: ExpressionLoopSource | undefined) {
+  const [editedItem, setEditedItem] = useState<string | null>(null);
+  const [indexText, setIndexText] = useState("0");
+  const itemText = editedItem ?? loopItemText(loop);
+  const parsed = loop ? parseLoopSeed(itemText, indexText) : undefined;
+  return { active: !!loop, itemText, indexText, setItemText: setEditedItem, setIndexText, parsed };
+}
+type LoopSeed = ReturnType<typeof useLoopSeed>;
+
+/** The seed `startStateFromSeeds` takes: absent off a loop and while the control is invalid. */
+function loopSeedValue(seed: LoopSeed): { item?: unknown; index?: number } | undefined {
+  return seed.parsed?.ok ? seed.parsed.value : undefined;
+}
+
+/** Why a loop seed refuses the run (`null` when it is fine, or there is no loop). */
+function loopSeedError(seed: LoopSeed): string | null {
+  return seed.parsed && !seed.parsed.ok ? seed.parsed.error : null;
+}
+
+/** Sibling of {@link IncomingStateField}: the Current item / Index a loop-body test runs with. */
+function LoopSeedField({ seed, readOnly }: { seed: LoopSeed; readOnly?: boolean }) {
+  if (!seed.active) return null;
+  const error = loopSeedError(seed);
+  return (
+    <div className="w6w-field w6w-loop-seed">
+      <span>Current item</span>
+      <textarea
+        rows={3}
+        value={seed.itemText}
+        readOnly={readOnly}
+        spellCheck={false}
+        aria-label="Current item"
+        onChange={(e) => seed.setItemText(e.target.value)}
+      />
+      <span>Index</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={seed.indexText}
+        readOnly={readOnly}
+        aria-label="Index"
+        onChange={(e) => seed.setIndexText(e.target.value)}
+      />
+      <span className="w6w-hint">
+        This step runs once per item of the For each. Test it as one iteration — starting from the
+        sample item, or edit it.
+      </span>
+      {error && (
+        <span className="w6w-hint" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -2103,6 +2183,7 @@ function StepRunCollect({
   workflowId,
   step,
   upstreamSteps,
+  loop,
   onRun,
   onCancel,
 }: {
@@ -2111,6 +2192,8 @@ function StepRunCollect({
   step: FlowStep;
   /** Graph ancestors of this step; their saved tests are offered as seeds. */
   upstreamSteps: ExpressionStepSource[];
+  /** The enclosing For each when this step is in its body (from the same projection call). */
+  loop?: ExpressionLoopSource;
   /**
    * Fired when the user presses Run — with the trigger's filled values, or (for
    * every other step) the incoming-state override alone, plus the start state
@@ -2171,7 +2254,8 @@ function StepRunCollect({
   const seeds = useSeedSources(workflowId, upstreamSteps, !isTrigger);
   // The same fixtures the chips offer, projected into the run's start state —
   // one source, so what the chips SAY is upstream is what the run is GIVEN.
-  const startState = startStateFromSeeds(seeds);
+  const loopSeed = useLoopSeed(loop);
+  const startState = startStateFromSeeds(seeds, loopSeedValue(loopSeed));
 
   // …then layered with what was entered the last time this step was tested or
   // run. `listStepTests` is oldest-first, so the LAST entry is the most recent
@@ -2219,7 +2303,9 @@ function StepRunCollect({
   // the Test tab sends — so the required-params gate is applied to that, not to
   // the override alone. Never a second required-check.
   const effective = isTrigger ? values : { ...(step.with ?? {}), ...(state ?? {}) };
-  const canRun = !!params && seeded && validDraft && requiredParamsFilled(params, effective);
+  const loopError = isTrigger ? null : loopSeedError(loopSeed);
+  const canRun =
+    !!params && seeded && validDraft && !loopError && requiredParamsFilled(params, effective);
 
   return (
     // `.w6w-stepconfig` frame + body + pinned footer (D-3): this component is a
@@ -2254,6 +2340,7 @@ function StepRunCollect({
                 only the incoming state changes per run. Edit the node to change how it is
                 configured.
               </p>
+              <LoopSeedField seed={loopSeed} />
               <IncomingStateField text={stateText} onChange={setStateText} seeds={seeds} />
             </>
           )}
@@ -2265,13 +2352,15 @@ function StepRunCollect({
         </button>
         {!canRun && params !== null && seeded && (
           <span className="w6w-muted w6w-small">
-            {!validDraft
-              ? isTrigger
-                ? "The payload must be a JSON object to run."
-                : "The incoming state must be a JSON object to run."
-              : isTrigger
-                ? "Fill the required fields to test."
-                : "This step is missing required configuration — set it on the Configure tab."}
+            {loopError
+              ? `${loopError} Fix it to run.`
+              : !validDraft
+                ? isTrigger
+                  ? "The payload must be a JSON object to run."
+                  : "The incoming state must be a JSON object to run."
+                : isTrigger
+                  ? "Fill the required fields to test."
+                  : "This step is missing required configuration — set it on the Configure tab."}
           </span>
         )}
         <button
@@ -2629,6 +2718,8 @@ export function StepEditModal({
   workflowId,
   step: initialStep,
   upstreamSteps,
+  loop,
+  foreachItemCount,
   onChange,
   onClose,
   readOnly,
@@ -2641,6 +2732,10 @@ export function StepEditModal({
   step: FlowStep;
   /** Graph ancestors of this step (from `upstreamStateSources`); the incoming-state picker seeds from their saved tests. */
   upstreamSteps: ExpressionStepSource[];
+  /** The enclosing For each when this step is in its body: seeds `state.foreach` on Test. */
+  loop?: ExpressionLoopSource;
+  /** On a For each step: how many items its Items resolve to now (`undefined` = unknown). */
+  foreachItemCount?: number;
   onChange: (next: FlowStep) => void;
   onClose: () => void;
   readOnly?: boolean;
@@ -2793,7 +2888,8 @@ export function StepEditModal({
   // …and the start state the test is SENT with, from those same fixtures. This
   // is what makes `{{ steps.<id>.output.<field> }}` in this step's `with`
   // resolve to what that step last produced instead of to "".
-  const testStartState = startStateFromSeeds(seedSources);
+  const loopSeed = useLoopSeed(testable && !isTrigger ? loop : undefined);
+  const testStartState = startStateFromSeeds(seedSources, loopSeedValue(loopSeed));
 
   // The incoming state this step was last tested or run with comes back (T4.1.3
   // on this surface's own noun): the fixture's `input` slot is where both
@@ -2827,7 +2923,7 @@ export function StepEditModal({
   // The resolved incoming state saved alongside the fixture — the slot the ▶ Run
   // collect form reads back, and what the upstream seed chips write into.
   const testInput = testOverride ?? {};
-  const canTest = !!params && requiredParamsFilled(params, testValues);
+  const canTest = !!params && !loopSeedError(loopSeed) && requiredParamsFilled(params, testValues);
 
   // Header icon mirrors the canvas node: the app's icon for app steps, the
   // internal glyph for triggers/actions/control nodes (same as the node cards).
@@ -3078,6 +3174,7 @@ export function StepEditModal({
                       Tests <code>{step.uses.action}</code> with the configuration saved on this
                       step — only the incoming state changes per run.
                     </p>
+                    <LoopSeedField seed={loopSeed} readOnly={readOnly} />
                     <IncomingStateField
                       text={testState}
                       onChange={setTestState}
@@ -3112,6 +3209,19 @@ export function StepEditModal({
                     />
                   </>
                 )
+              ) : isForeachStep(step) ? (
+                <>
+                  <p className="w6w-muted w6w-small">
+                    A For each can't be tested on its own — it runs only as part of the workflow. To
+                    test the loop, test a step on its <strong>Each item</strong> output: it runs
+                    once, on one item.
+                  </p>
+                  {foreachItemCount !== undefined && (
+                    <p className="w6w-small">
+                      {foreachItemCount} {foreachItemCount === 1 ? "item" : "items"}
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="w6w-muted w6w-small">
                   Flow-control nodes can't be tested on their own.

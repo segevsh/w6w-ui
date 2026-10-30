@@ -19,7 +19,10 @@ import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
-import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
+import type {
+  ExpressionLoopSource,
+  ExpressionStepSource,
+} from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
@@ -37,7 +40,7 @@ import {
 } from "./flow-types.ts";
 import { paramsToJson, stepToJson } from "./flow-utils.ts";
 import { type StepMeta, type StepStartState, useW6WApi, useWorkflowProject } from "./provider.tsx";
-import { startStateFromSeeds } from "./step-preview-state.ts";
+import { loopSeedFromSource, startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -130,6 +133,11 @@ export interface StepBuilderModalProps {
    * which have no graph to draw ancestors from.
    */
   upstreamSteps?: ExpressionStepSource[];
+  /**
+   * The For each whose body the new step lands in (`stepBuilderLoop`, same decision as its
+   * rail). Seeds the Test tab's `state.foreach` with the sample item and index 0; not editable here.
+   */
+  loop?: ExpressionLoopSource;
   /**
    * Pre-select an app when the modal opens. When provided along with
    * initialAction/initialConnection/initialWith, the modal opens directly
@@ -297,6 +305,7 @@ export function StepBuilderModal({
   workflowId,
   stepId,
   upstreamSteps = [],
+  loop,
   initialApp,
   initialAction,
   initialConnection,
@@ -400,6 +409,7 @@ export function StepBuilderModal({
             onDraftChange={onDraftChange}
             workflowId={workflowId}
             upstreamSteps={upstreamSteps}
+            loop={loop}
           />
         </div>
       </Modal>
@@ -454,6 +464,7 @@ export function StepBuilderModal({
               workflowId={workflowId}
               stepId={stepId}
               upstreamSteps={upstreamSteps}
+              loop={loop}
               initialAction={initialAction}
               initialConnection={initialConnection}
               initialWith={initialWith}
@@ -940,6 +951,7 @@ export function ControlStepConfig({
   onDraftChange,
   workflowId,
   upstreamSteps = [],
+  loop,
 }: {
   node: InternalNodeDef;
   // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
@@ -950,6 +962,8 @@ export function ControlStepConfig({
   workflowId?: string;
   /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
   upstreamSteps?: ExpressionStepSource[];
+  /** See {@link StepBuilderModalProps.loop}. */
+  loop?: ExpressionLoopSource;
 }) {
   const [withValues, setWithValues] = useState<Record<string, unknown>>(() =>
     internalNodeDefaults(node.app, node.action),
@@ -964,7 +978,7 @@ export function ControlStepConfig({
   // builder was opened from a workflow canvas (`workflowId` present); the
   // Functions/Endpoints pickers pass no `workflowId` and no `upstreamSteps`.
   const seedSources = useSeedSources(workflowId ?? "", upstreamSteps, testable && !!workflowId);
-  const testStartState = startStateFromSeeds(seedSources);
+  const testStartState = startStateFromSeeds(seedSources, loopSeedFromSource(loop));
   const [tab, setTab] = useState<"configure" | "test">("configure");
   const [configView, setConfigView] = useState<ConfigView>("props");
   // Draft text backing the "code" (full-step, read-only) view.
@@ -2430,6 +2444,7 @@ export function AppStepConfig({
   workflowId,
   stepId,
   upstreamSteps = [],
+  loop,
   initialAction,
   initialConnection,
   initialWith,
@@ -2447,6 +2462,8 @@ export function AppStepConfig({
   stepId?: string;
   /** The new step's known graph ancestors — see {@link StepBuilderModalProps.upstreamSteps}. */
   upstreamSteps?: ExpressionStepSource[];
+  /** See {@link StepBuilderModalProps.loop}. */
+  loop?: ExpressionLoopSource;
   /** Pre-selected action key, opens directly to Configure tab when provided with initialWith */
   initialAction?: string;
   /** Pre-selected connection id */
@@ -2562,7 +2579,7 @@ export function AppStepConfig({
   // workflow canvas (`workflowId` present); the Functions/Endpoints pickers
   // pass no `workflowId` and no `upstreamSteps`.
   const seedSources = useSeedSources(workflowId ?? "", upstreamSteps, !!workflowId);
-  const testStartState = startStateFromSeeds(seedSources);
+  const testStartState = startStateFromSeeds(seedSources, loopSeedFromSource(loop));
 
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
   // Setup is done when an action is picked and its connection (if any) is set;

@@ -17,8 +17,12 @@ import { workflowToFlow } from "../flow-utils.ts";
 import type { StepMeta, StepTest } from "../provider.tsx";
 import {
   fetchSeedSources,
+  loopItemText,
+  loopSeedFromSource,
+  parseLoopSeed,
   resolveLoopItems,
   startStateFromSeeds,
+  stepBuilderLoop,
   stepBuilderUpstreamSteps,
   stepMetaSampleValues,
   upstreamSampleValues,
@@ -621,5 +625,115 @@ test("L6 — upstreamSampleValues: nodes. keys mirrored under steps.; foreach.* 
     !Object.keys(upstreamSampleValues(steps, outputs, {}, { foreachId: "f" })).some((k) =>
       k.startsWith("foreach."),
     ),
+  );
+});
+
+// ── Loop seed (T2.4.2) ─────────────────────────────────────────────────────
+const SIX = Array.from({ length: 6 }, (_, i) => ({
+  name: `T${i}`,
+  sourceId: `s${i}`,
+  price: i * 10,
+  quantity: i + 1,
+}));
+const seedWithOutput = [
+  {
+    stepId: "gate_1",
+    label: "gate_1",
+    test: { ...fixture({ to: "a@b.com" }), lastRunStatus: "succeeded" as const },
+  },
+];
+
+test("S1 — startStateFromSeeds: no loop is byte-identical (1 arg === explicit undefined)", () => {
+  assert.deepEqual(
+    startStateFromSeeds(seedWithOutput),
+    startStateFromSeeds(seedWithOutput, undefined),
+  );
+  assert.equal(startStateFromSeeds([]), undefined);
+  assert.equal(startStateFromSeeds([], undefined), undefined);
+  assert.equal("foreach" in (startStateFromSeeds(seedWithOutput) ?? {}), false);
+});
+
+test("S2 — startStateFromSeeds: loop adds foreach, index defaults to 0, item key only when defined", () => {
+  const s = startStateFromSeeds(seedWithOutput, { item: SIX[0] });
+  assert.deepEqual(s?.foreach, { item: SIX[0], index: 0 });
+  assert.ok(s?.steps?.gate_1);
+  assert.deepEqual(startStateFromSeeds([], { index: 3 }), { foreach: { index: 3 } });
+  assert.equal("item" in (startStateFromSeeds([], {})?.foreach ?? {}), false);
+  assert.deepEqual(startStateFromSeeds([], { item: null, index: 2 }), {
+    foreach: { item: null, index: 2 },
+  });
+});
+
+test("S3 — parseLoopSeed: valid, blank, and refused inputs", () => {
+  assert.deepEqual(parseLoopSeed('{"a":1}', "3"), {
+    ok: true,
+    value: { item: { a: 1 }, index: 3 },
+  });
+  assert.deepEqual(parseLoopSeed("", ""), { ok: true, value: { index: 0 } });
+  for (const bad of [
+    ["{nope", "0"],
+    ["{}", "-1"],
+    ["{}", "1.5"],
+    ["{}", "x"],
+  ] as const) {
+    assert.equal(parseLoopSeed(bad[0], bad[1]).ok, false, bad.join("|"));
+  }
+});
+
+test("S4 — loopSeedFromSource / loopItemText follow the loop's itemSample", () => {
+  assert.equal(loopSeedFromSource(undefined), undefined);
+  assert.deepEqual(loopSeedFromSource({ foreachId: "f", itemSample: SIX[0] }), {
+    item: SIX[0],
+    index: 0,
+  });
+  assert.deepEqual(loopSeedFromSource({ foreachId: "f" }), { index: 0 });
+  assert.equal(loopItemText({ foreachId: "f" }), "");
+  assert.deepEqual(JSON.parse(loopItemText({ foreachId: "f", itemSample: SIX[0] })), SIX[0]);
+});
+
+test("S5 — N items: resolveLoopItems(F0 items) has length 6 and [0] is the body step's itemSample", () => {
+  const g = f0();
+  const outs = { eventbrite_to_cohost_1: { tickets: SIX } };
+  const feItems = g.nodes.find((n) => n.id === "for_each_1")?.data.step.with?.items;
+  const arr = resolveLoopItems(feItems, outs);
+  assert.equal(arr?.length, 6);
+  assert.notDeepEqual(SIX[0], SIX[1]);
+  const body = upstreamStateSources("update_event_ticket_1", g.nodes, g.edges, {
+    testOutputs: outs,
+  });
+  assert.deepEqual(arr?.[0], body.loop?.itemSample);
+  assert.notDeepEqual(arr?.[0], SIX[5]);
+  assert.equal(resolveLoopItems(feItems, {}), undefined);
+});
+
+test("S6 — stepBuilderLoop follows the builder's own-loop decision", () => {
+  const g = f0();
+  const shapes = { testOutputs: { eventbrite_to_cohost_1: { tickets: SIX } } };
+  assert.equal(stepBuilderLoop(null, g.nodes, g.edges, shapes), undefined);
+  assert.equal(
+    stepBuilderLoop({ nodeId: "for_each_1", handleType: "target" }, g.nodes, g.edges, shapes),
+    undefined,
+  );
+  assert.deepEqual(
+    stepBuilderLoop(
+      { nodeId: "for_each_1", handleType: "source", lane: "each" },
+      g.nodes,
+      g.edges,
+      shapes,
+    )?.itemSample,
+    SIX[0],
+  );
+  assert.equal(
+    stepBuilderLoop({ nodeId: "for_each_1", handleType: "source" }, g.nodes, g.edges, shapes),
+    undefined,
+  );
+  assert.equal(
+    stepBuilderLoop(
+      { nodeId: "update_event_ticket_1", handleType: "source" },
+      g.nodes,
+      g.edges,
+      shapes,
+    )?.foreachId,
+    "for_each_1",
   );
 });

@@ -358,14 +358,36 @@ export function stepBuilderUpstreamSteps(
   if (!pendingConnect || pendingConnect.handleType === "target") return [];
   const ids = ancestorIds(pendingConnect.nodeId, edges);
   ids.add(pendingConnect.nodeId);
-  // A drag off a For each's Each-item handle puts the new step IN that body; a drag off a body
-  // step keeps it in that step's body. Off the Done side the For each stays on offer.
-  const dragged = nodes.find((n) => n.id === pendingConnect.nodeId);
-  const ownLoop =
-    pendingConnect.lane === "each" && isForeachStep(dragged?.data.step)
-      ? pendingConnect.nodeId
-      : loopMembership(nodes, edges)[pendingConnect.nodeId];
+  const ownLoop = builderOwnLoop(pendingConnect, nodes, edges);
   return loopAwareSources(ids, ownLoop, nodes, edges, shapes).steps;
+}
+
+/**
+ * The For each the add-step builder's new step lands in the body of: a drag off a For each's
+ * Each-item handle puts it IN that body; a drag off a body step keeps it in that step's body.
+ * Off the Done side the For each stays on offer.
+ */
+function builderOwnLoop(
+  pendingConnect: PendingConnect,
+  nodes: StepNode[],
+  edges: Edge[],
+): string | undefined {
+  const dragged = nodes.find((n) => n.id === pendingConnect.nodeId);
+  return pendingConnect.lane === "each" && isForeachStep(dragged?.data.step)
+    ? pendingConnect.nodeId
+    : loopMembership(nodes, edges)[pendingConnect.nodeId];
+}
+
+/** The `loop` source for the add-step builder's new step — the same decision as its rail. */
+export function stepBuilderLoop(
+  pendingConnect: PendingConnect | null,
+  nodes: StepNode[],
+  edges: Edge[],
+  shapes?: StepShapeContext,
+): ExpressionLoopSource | undefined {
+  if (!pendingConnect || pendingConnect.handleType === "target") return undefined;
+  const ownLoop = builderOwnLoop(pendingConnect, nodes, edges);
+  return ownLoop ? loopSourceFor(ownLoop, nodes, shapes) : undefined;
 }
 
 /**
@@ -420,7 +442,10 @@ export async function fetchSeedSources(
  * ⚠️ Single-step scope only. A full run (`POST /workflows/:id/run`) builds its
  * own scope and is not affected by this.
  */
-export function startStateFromSeeds(seeds: SeedSource[]): StepStartState | undefined {
+export function startStateFromSeeds(
+  seeds: SeedSource[],
+  loop?: { item?: unknown; index?: number },
+): StepStartState | undefined {
   const steps: Record<string, { output?: unknown; meta?: StepMeta }> = {};
   for (const s of seeds) {
     const output = s.test.lastRunOutput;
@@ -433,7 +458,53 @@ export function startStateFromSeeds(seeds: SeedSource[]): StepStartState | undef
     const meta = s.test.lastRunMeta;
     steps[s.stepId] = { output: hasOutput ? output : null, ...(meta ? { meta } : {}) };
   }
-  return Object.keys(steps).length > 0 ? { steps } : undefined;
+  const hasSteps = Object.keys(steps).length > 0;
+  // Off a loop body the result is exactly what it was before `loop` existed.
+  if (!loop) return hasSteps ? { steps } : undefined;
+  // A loop-body step also carries the iteration scope (`state.foreach`, the same wire shape the
+  // engine's inner scope has); the `item` key is present only when there is one.
+  return {
+    ...(hasSteps ? { steps } : {}),
+    foreach: { ...(loop.item !== undefined ? { item: loop.item } : {}), index: loop.index ?? 0 },
+  };
+}
+
+/** The default `{ item, index }` a loop-body Test is seeded with: the sample item, index 0. */
+export function loopSeedFromSource(
+  loop: ExpressionLoopSource | undefined,
+): { item?: unknown; index?: number } | undefined {
+  if (!loop) return undefined;
+  return { ...("itemSample" in loop ? { item: loop.itemSample } : {}), index: 0 };
+}
+
+/** The editable "Current item" text a loop's sample item starts as (`""` when there is none). */
+export function loopItemText(loop: ExpressionLoopSource | undefined): string {
+  if (!loop || !("itemSample" in loop)) return "";
+  return JSON.stringify(loop.itemSample, null, 2) ?? "";
+}
+
+/**
+ * Parse the loop seed control's two fields. A blank item means "no item"; a blank index means 0.
+ * Invalid item JSON, or an index that is not a non-negative integer, is an ERROR — the caller
+ * refuses the run rather than falling back to the sample.
+ */
+export function parseLoopSeed(
+  itemText: string,
+  indexText: string,
+): { ok: true; value: { item?: unknown; index: number } } | { ok: false; error: string } {
+  let item: unknown;
+  if (itemText.trim() !== "") {
+    try {
+      item = JSON.parse(itemText);
+    } catch {
+      return { ok: false, error: "The current item must be valid JSON." };
+    }
+  }
+  const idx = indexText.trim() === "" ? 0 : Number(indexText.trim());
+  if (!Number.isInteger(idx) || idx < 0) {
+    return { ok: false, error: "The index must be a whole number, 0 or more." };
+  }
+  return { ok: true, value: { ...(item !== undefined ? { item } : {}), index: idx } };
 }
 
 /**
