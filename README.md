@@ -215,6 +215,8 @@ not pulled in automatically.
   `ServerResourcesBadge`.
 - **Connections**: `ConnectionList`, `ConnectionHeader`, `EditConnectionModal` (provider; needs
   the optional `updateConnection` on the API client).
+- **Data store entries**: `DataEntryList`, `DataEntryEditor`, `DataTableGrid` (props-only; the host
+  owns drafts, queries, versions and delete confirmation).
 
 Everything is exported from `@w6w/ui` except `WorkflowFlowEditor`, which is only in `@w6w/ui/flow`
 (alongside a re-export of `ExpressionOptionsProvider`). `@w6w/ui/code` re-exports `CodeBlock` and
