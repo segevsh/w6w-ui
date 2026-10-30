@@ -8,7 +8,7 @@ const meta = {
   title: "Editors/CodeEditor",
   component: CodeEditor,
   argTypes: {
-    language: { control: "select", options: ["javascript", "python"] },
+    language: { control: "select", options: ["javascript", "typescript", "python"] },
     theme: { control: "select", options: ["light", "dark"] },
     readOnly: { control: "boolean" },
   },

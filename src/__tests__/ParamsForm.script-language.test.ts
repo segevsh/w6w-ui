@@ -61,6 +61,7 @@ const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { EditorView } = await import("@codemirror/view");
+const { javascriptLanguage, typescriptLanguage } = await import("@codemirror/lang-javascript");
 const { ParamsForm } = await import("../ParamsForm.tsx");
 const { internalNodeParams, internalNodeDefaults, SCRIPT_APP } = await import("../flow-types.ts");
 type ActionParam = import("../types.ts").ActionParam;
@@ -355,6 +356,43 @@ test("d — a `code` param with no `language` sibling renders exactly as today",
     null,
     "no Language select is synthesized",
   );
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("h — javascript → typescript: the JS default stays and the editor parses TypeScript", async () => {
+  const { container, root, values } = await render(SCRIPT_PARAMS, {});
+  assert.ok(javascriptLanguage.isActiveAt(viewFor(container, "code code").state, 0));
+
+  await setLanguage(container, "typescript");
+
+  const view = viewFor(container, "code code");
+  assert.equal(view.state.doc.toString(), JS_DEFAULT, "JS boilerplate is valid TypeScript");
+  assert.ok(typescriptLanguage.isActiveAt(view.state, 0), "CodeMirror's TypeScript mode is live");
+  assert.equal(values.current.language, "typescript");
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("i — typed code survives typescript → javascript, and python → typescript swaps the Python default", async () => {
+  const { container, root } = await render(SCRIPT_PARAMS, {});
+  await setLanguage(container, "typescript");
+  await setCode(container, "const n: number = 1;\nreturn n;");
+  await setLanguage(container, "javascript");
+  assert.equal(
+    viewFor(container, "code code").state.doc.toString(),
+    "const n: number = 1;\nreturn n;",
+  );
+
+  await setCode(container, JS_DEFAULT);
+  await setLanguage(container, "python");
+  assert.equal(viewFor(container, "code code").state.doc.toString(), PYTHON_DEFAULT);
+  await setLanguage(container, "typescript");
+  assert.equal(viewFor(container, "code code").state.doc.toString(), JS_DEFAULT);
 
   await act(async () => {
     root.unmount();

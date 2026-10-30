@@ -792,9 +792,17 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         default: "javascript",
         options: [
           { value: "javascript", label: "JavaScript" },
+          { value: "typescript", label: "TypeScript" },
           { value: "python", label: "Python" },
         ],
-        hint: "Execution language for this step's code. Python runs CPython-on-WASM with no network.",
+        hint: "Execution language for this step's code. TypeScript types are erased before it runs, not checked. Python runs CPython-on-WASM with no network.",
+      },
+      {
+        key: "input",
+        type: "json",
+        label: "Input",
+        whole: true,
+        hint: "Data the script reads as `input`. Bind an upstream output ({{ nodes.<id>.output }}) or an object of several bindings; each value keeps its type.",
       },
       {
         key: "code",
@@ -802,7 +810,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Script",
         required: true,
         default: "// Runs as a function body. Return the step's output.\nreturn input;",
-        hint: "Function body; return the step's output.",
+        hint: "Function body over `input`; return the step's output. {{ }} is not substituted in code, so bind data under Input. digest(value) returns a stable SHA-256 hex (await it in JavaScript).",
       },
     ],
   },

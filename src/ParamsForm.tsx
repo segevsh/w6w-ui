@@ -511,11 +511,11 @@ function ParamFieldBody({
   if (param.type === "code") {
     const siblingLanguage = effective?.("language");
     const language: ScriptLanguage | undefined =
-      siblingLanguage === "python"
-        ? "python"
-        : siblingLanguage === "javascript"
-          ? "javascript"
-          : undefined;
+      siblingLanguage === "python" ||
+      siblingLanguage === "javascript" ||
+      siblingLanguage === "typescript"
+        ? siblingLanguage
+        : undefined;
     const fallbackDefault = language === "python" ? PYTHON_CODE_DEFAULT : param.default;
     const current = (value ?? fallbackDefault ?? "") as string;
     return (
