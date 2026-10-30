@@ -331,3 +331,18 @@ test("dot-path walk — a hop into null/undefined never yields a value, only 'un
   );
   assert.deepStrictEqual(seg, [{ status: "unresolved", ref: "vars.obj.deeper" }]);
 });
+
+test("foreach scope — buildResolveScope fills ResolveScope.foreach from foreach.* sample keys", () => {
+  const item = { name: "GA", price: 10 };
+  const scope = buildResolveScope({ "foreach.item": item, "foreach.index": 0 }, undefined);
+  assert.deepStrictEqual(scope.foreach, { item, index: 0 });
+  assert.deepStrictEqual(resolveParamValue("{{ foreach.item.name }}", scope), [
+    { status: "resolved", ref: "foreach.item.name", value: "GA" },
+  ]);
+  assert.deepStrictEqual(resolveParamValue("{{ foreach.index }}", scope), [
+    { status: "resolved", ref: "foreach.index", value: 0 },
+  ]);
+  assert.equal(buildResolveScope({ "var.a": 1 }, undefined).foreach, undefined);
+  const unresolved = resolveParamValue("{{ foreach.item.name }}", buildResolveScope({}, undefined));
+  assert.equal(unresolved[0].status, "unresolved");
+});

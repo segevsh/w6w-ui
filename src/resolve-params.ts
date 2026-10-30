@@ -59,6 +59,11 @@ export interface ResolveScope {
   nodes?: Record<string, { output?: unknown; meta?: StepMeta }>;
   trigger: { event?: unknown };
   /**
+   * The For each iteration scope (`foreach.item` / `foreach.index`), present only when
+   * `sampleValues` carries a `foreach.*` key. Mirrors the engine's inner scope.
+   */
+  foreach?: { item?: unknown; index?: number };
+  /**
    * The original flat `sampleValues` map, keyed by full ref string — checked
    * BEFORE the nested walk in {@link resolveRef}. `documentSampleValues`
    * (`document-sources.ts`) emits a document field's sample as its OWN
@@ -127,7 +132,20 @@ export function buildResolveScope(
   }
   const steps =
     (testStartState?.steps as Record<string, { output?: unknown; meta?: StepMeta }>) ?? {};
+  // `foreach.item` is the whole element; `foreach.item.<k>` flat keys are the same value
+  // walked, so only the whole-element key (and the index) are read.
+  const sv = sampleValues ?? {};
+  const hasItem = Object.hasOwn(sv, "foreach.item");
+  const hasIndex = typeof sv["foreach.index"] === "number";
+  const foreach =
+    hasItem || hasIndex
+      ? {
+          ...(hasItem ? { item: sv["foreach.item"] } : {}),
+          ...(hasIndex ? { index: sv["foreach.index"] as number } : {}),
+        }
+      : undefined;
   return {
+    ...(foreach ? { foreach } : {}),
     vars,
     documents,
     constants,
