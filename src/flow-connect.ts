@@ -21,6 +21,7 @@ import {
   nodePortsForStep,
   sourceHandleForLane,
 } from "./flow-types.ts";
+import { type LoopRefusalReason, isForeachStep, loopMembership, loopRefusal } from "./flow-loop.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
 /**
@@ -41,6 +42,13 @@ export function edgeLane(e: Edge): CanvasLane {
  * an existing edge (an unbounded `"many"` out never refuses).
  */
 export type OutCapRefusal = { refused: "out_cap"; cap: number };
+
+/**
+ * A refused connection that would break the v1 linear-body rule of a For each
+ * (see {@link loopRefusal}). Raised before the out-cap census and before any
+ * inbound eviction, always against the INPUT edges.
+ */
+export type LoopRefusal = { refused: "loop"; reason: LoopRefusalReason };
 
 /**
  * The id of the edge in `survivors` that `id` would duplicate, or `null` when it is
@@ -119,11 +127,24 @@ function planConnect(
   edges: Edge[],
   when: CanvasLane,
   lookup?: PortsLookup,
-): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | null } | null {
+): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | LoopRefusal | null } | null {
   if (!canConnect(source, target, nodes, edges, lookup) || !source || !target) return null;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return null;
+  // A success connect drawn from a body node extends the body (its ordinary right
+  // handle is the only one it has), so it is an each-lane edge. Computed once.
+  const inBody = loopMembership(nodes, edges)[source] !== undefined;
+  const effLane: CanvasLane = when === "success" && inBody ? "each" : when;
+  // An each lane from something that is neither a For each nor a body step has no
+  // handle to be drawn from: it must not mint an edge.
+  if (effLane === "each" && !inBody && !isForeachStep(srcStep)) return null;
+  // The loop rule runs on the INPUT edges, before the out-cap census and before
+  // the inbound eviction (D-A6) — so a refused drop never evicts anything.
+  const loopReason = loopRefusal(source, target, effLane, nodes, edges);
+  if (loopReason) {
+    return { next: edges, conflict: null, refusal: { refused: "loop", reason: loopReason } };
+  }
   // Per-step ports (T2.3.1): capacity honors a persisted `ports.in`/`ports.out`,
   // so a fan-in node with `ports.in > 1` keeps prior edges instead of dropping them.
   const srcPorts = nodePortsForStep(srcStep, lookup);
@@ -131,7 +152,7 @@ function planConnect(
   let next = edges;
   // The source's exit port IN THIS LANE is full at a finite cap: REFUSE. Nothing is
   // evicted — `next` stays the input edge set. The other lane is untouched.
-  const fromSrc = next.filter((e) => e.source === source && edgeLane(e) === when);
+  const fromSrc = next.filter((e) => e.source === source && edgeLane(e) === effLane);
   if (fromSrc.length >= srcPorts.out) {
     return { next: edges, conflict: null, refusal: { refused: "out_cap", cap: srcPorts.out } };
   }
@@ -154,19 +175,23 @@ function planConnect(
   // because only `planRelane` (re-laning an EXISTING edge) applied it — the
   // create path never did. Same trap `planRelane`'s own comment warns about:
   // this must be an explicit spread here, not left for a later re-render.
-  const id = flowEdgeId(source, target, when);
+  const id = flowEdgeId(source, target, effLane);
+  // A body node has no Each-item handle: stamping `out-each` there would leave the
+  // edge unrendered, so only the For each itself anchors to it.
+  const sourceHandle =
+    effLane === "each" && inBody ? undefined : sourceHandleForLane(effLane);
   return {
     next: addEdge(
       {
         source,
         target,
         id,
-        sourceHandle: sourceHandleForLane(when),
-        data: { when },
+        sourceHandle,
+        data: { when: effLane },
         // No run state: this mints a freshly DRAWN edge, never a run-taken
         // one — the live run-aware repaint is a separate effect
         // (WorkflowFlowEditor.tsx, T1.1.1), not this creation path.
-        ...edgeVisuals(when, undefined),
+        ...edgeVisuals(effLane, undefined),
       },
       next,
     ),
@@ -253,7 +278,7 @@ export function connectRefusal(
   edges: Edge[],
   when: CanvasLane = "success",
   lookup?: PortsLookup,
-): OutCapRefusal | null {
+): OutCapRefusal | LoopRefusal | null {
   return planConnect(source, target, nodes, edges, when, lookup)?.refusal ?? null;
 }
 
