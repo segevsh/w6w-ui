@@ -139,3 +139,16 @@ test("saving disables Save; otherwise Save and Cancel fire", () => {
   assert.equal(calls.save?.length, 1);
   assert.equal(calls.cancel?.length, 1);
 });
+
+const { EditorView } = await import("@codemirror/view");
+test("doc: editing the JSON editor fires onTextChange; entry-editor hook is present", () => {
+  const calls: Calls = {};
+  const c = mount({ kind: "doc", text: "{}" }, calls);
+  assert.ok(tid(c, "entry-editor"), "entry-editor hook");
+  const view = EditorView.findFromDOM(c.querySelector(".cm-content") as HTMLElement);
+  assert.ok(view, "CodeMirror view mounted");
+  act(() => {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '{"a":1}' } });
+  });
+  assert.deepEqual(calls.text, ['{"a":1}']);
+});

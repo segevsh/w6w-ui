@@ -176,3 +176,26 @@ test("search is submit-only; Add row and Load more fire; load-more only with has
   assert.equal(calls.more?.length, 1);
   assert.ok(tid(m, "data-grid-scroll"));
 });
+
+test("new row: row-save carries data-row new; Save/Delete/Reload fire with the row id", () => {
+  const calls: Calls = {};
+  const c = mount(
+    {
+      rows: [
+        { ...newRow, conflict: true },
+        { ...existing, id: "c-3", cells: { sku: "c-3", qty: "" }, dirty: true },
+      ],
+    },
+    calls,
+  );
+  const save = c.querySelector('[data-testid="row-save"][data-row="new"]');
+  assert.ok(save, "row-save[data-row=new]");
+  assert.ok(c.querySelector('[data-testid="row-save"][data-row="c-3"]'), "row-save[data-row=c-3]");
+  click(c.querySelectorAll('button[aria-label="Delete entry"]')[0]);
+  assert.deepEqual(calls.delete, [["tmp"]]);
+  click(tid(c, "row-reload"));
+  assert.deepEqual(calls.reload, [["tmp"]]);
+  const f = mount({ rows: [{ ...newRow, conflict: false }] }, calls);
+  click(f.querySelector('[data-testid="row-save"][data-row="new"]') as Element);
+  assert.deepEqual(calls.save, [["tmp"]]);
+});
