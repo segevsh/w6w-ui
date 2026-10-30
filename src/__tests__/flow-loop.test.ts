@@ -10,8 +10,8 @@ import {
   type LoopInvalidReason,
   bridgeDeletedBodyStep,
   definitionLoops,
-  loopBody,
   deleteStepMessage,
+  loopBody,
   loopMembership,
   stampLoopOf,
   stripBody,
@@ -407,7 +407,10 @@ test("C14 stampLoopOf stamps F0 legacy, is identity on re-run, clears on edge re
     g.edges.filter((e) => (e.data as { when?: string }).when !== "each"),
   );
   assert.equal(cleared.find((n) => n.id === "update_event_ticket_1")?.data.loopOf, undefined);
-  assert.equal("loopOf" in (cleared.find((n) => n.id === "update_event_ticket_1")?.data ?? {}), false);
+  assert.equal(
+    "loopOf" in (cleared.find((n) => n.id === "update_event_ticket_1")?.data ?? {}),
+    false,
+  );
   assert.equal(cleared[0], stamped[0]);
 });
 

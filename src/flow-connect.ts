@@ -14,6 +14,7 @@
  * from `index.ts` / `flow.ts`.
  */
 import { type Edge, addEdge } from "@xyflow/react";
+import { type LoopRefusalReason, isForeachStep, loopMembership, loopRefusal } from "./flow-loop.ts";
 import {
   type CanvasLane,
   type PortsLookup,
@@ -21,7 +22,6 @@ import {
   nodePortsForStep,
   sourceHandleForLane,
 } from "./flow-types.ts";
-import { type LoopRefusalReason, isForeachStep, loopMembership, loopRefusal } from "./flow-loop.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
 /**
@@ -178,8 +178,7 @@ function planConnect(
   const id = flowEdgeId(source, target, effLane);
   // A body node has no Each-item handle: stamping `out-each` there would leave the
   // edge unrendered, so only the For each itself anchors to it.
-  const sourceHandle =
-    effLane === "each" && inBody ? undefined : sourceHandleForLane(effLane);
+  const sourceHandle = effLane === "each" && inBody ? undefined : sourceHandleForLane(effLane);
   return {
     next: addEdge(
       {

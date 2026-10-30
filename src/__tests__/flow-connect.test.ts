@@ -20,6 +20,7 @@ import {
   relaneRefusal,
   setEdgeWhen,
 } from "../flow-connect.ts";
+import { eachLaneEdge, loopRefusal, loopRefusalMessage } from "../flow-loop.ts";
 import {
   EACH_SOURCE_HANDLE,
   ERROR_SOURCE_HANDLE,
@@ -27,7 +28,6 @@ import {
   laneForSourceHandle,
   sourceHandleForLane,
 } from "../flow-types.ts";
-import { eachLaneEdge, loopRefusal, loopRefusalMessage } from "../flow-loop.ts";
 import { type StepNode, flowEdgeId, flowToWorkflow } from "../flow-utils.ts";
 
 /** A canvas node for step `id`, optionally with persisted per-step ports. */

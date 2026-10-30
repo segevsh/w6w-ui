@@ -267,11 +267,7 @@ export function stampLoopOf(nodes: StepNode[], edges: Edge[]): StepNode[] {
 }
 
 /** The delete-confirm text. Byte-identical to the plain message unless a For each owns a body. */
-export function deleteStepMessage(
-  id: string,
-  nodes: StepNode[],
-  edges: Edge[],
-): string {
+export function deleteStepMessage(id: string, nodes: StepNode[], edges: Edge[]): string {
   const base = `Delete node "${id}"? Its connections are removed too.`;
   const step = nodes.find((n) => n.id === id)?.data?.step;
   if (!isForeachStep(step)) return base;
