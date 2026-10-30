@@ -4614,6 +4614,59 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   margin-bottom: var(--w6w-sp-1);
 }
 
+/* --- For each iterations (T1.5.1) ----------------------------------------
+   Chips carry the status as TEXT as well as colour; failed/running also differ
+   in border style, so colour is never the only signal. */
+.w6w-execution-log-foreach {
+  margin-top: var(--w6w-sp-2);
+  padding-left: var(--w6w-sp-3);
+  border-left: 2px solid var(--w6w-border);
+}
+
+.w6w-execution-log-iteration-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--w6w-sp-1);
+}
+
+.w6w-execution-log-iteration-chip {
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 999px;
+  font-size: var(--w6w-fs-xs);
+  white-space: nowrap;
+}
+
+.w6w-execution-log-iteration-chip-succeeded {
+  border-color: var(--w6w-success);
+}
+
+.w6w-execution-log-iteration-chip-failed {
+  border-color: var(--w6w-danger);
+  border-width: 2px;
+}
+
+.w6w-execution-log-iteration-chip-running {
+  border-color: var(--w6w-accent);
+  border-style: dashed;
+}
+
+.w6w-execution-log-subrows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.w6w-execution-log-subrow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--w6w-sp-2);
+}
+
 /* --- ExecutionList ------------------------------------------------------- */
 /* Rows of past executions: a click-to-select list plus a prev/next pager.
    Closer in shape to `.w6w-execution-log` (`_execution-log.scss`) than to

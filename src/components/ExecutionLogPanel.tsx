@@ -69,6 +69,24 @@ export interface ExecutionLogStep {
    * reads without expanding the row.
    */
   error?: ExecutionLogError;
+  /** For each only (I4): the per-iteration body-step records, index ascending. */
+  iterations?: ExecutionLogIteration[];
+  /** Distinct iteration indices the run recorded (may exceed `iterations.length`). */
+  iterationsTotal?: number;
+  /** How many of those iterations failed. */
+  iterationsFailed?: number;
+  /** `true` when `iterations` holds fewer than `iterationsTotal`. */
+  iterationsTruncated?: boolean;
+}
+
+/** One For each iteration: its status and the body-step records, in execution order. */
+export interface ExecutionLogIteration {
+  /** 0-based; the same number as `foreach.index` in that iteration's expressions. */
+  index: number;
+  status: "succeeded" | "failed" | "running";
+  /** The body step that failed, when one did. */
+  failedNodeId?: string;
+  steps: ExecutionLogStep[];
 }
 
 export interface ExecutionLogPanelProps {
@@ -196,12 +214,14 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
   );
 
   const error = step.error ? <ExecutionLogErrorBlock error={step.error} /> : null;
+  const loop = Array.isArray(step.iterations) ? <ExecutionLogIterations step={step} /> : null;
 
   if (step.input === undefined && step.output === undefined && !step.meta) {
     return (
       <li className="w6w-execution-log-row">
         <div className="w6w-section">{header}</div>
         {error}
+        {loop}
       </li>
     );
   }
@@ -224,6 +244,119 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
         )}
       </details>
       {error}
+      {loop}
+    </li>
+  );
+}
+
+/**
+ * A For each row's per-iteration view: a summary (count, failures, pointer at the
+ * failing body step), one presentational chip per served iteration, and one
+ * sub-row per body step with its own iteration `<select>` (failed iteration
+ * preselected, else the last served one). Pure props -> DOM; no fetching.
+ */
+function ExecutionLogIterations({ step }: { step: ExecutionLogStep }) {
+  const iterations = step.iterations ?? [];
+  const total = step.iterationsTotal ?? iterations.length;
+  const failedCount =
+    step.iterationsFailed ?? iterations.filter((it) => it.status === "failed").length;
+  const firstFailed = iterations.find((it) => it.status === "failed");
+  const defaultIndex = firstFailed?.index ?? iterations[iterations.length - 1]?.index;
+
+  const bodyIds: string[] = [];
+  const labels = new Map<string, string>();
+  for (const it of iterations) {
+    for (const s of it.steps) {
+      if (!labels.has(s.id)) {
+        bodyIds.push(s.id);
+        labels.set(s.id, s.label ?? s.id);
+      }
+    }
+  }
+  const failedId =
+    firstFailed?.failedNodeId ?? firstFailed?.steps.find((s) => s.status === "failed")?.id;
+
+  return (
+    <div className="w6w-execution-log-foreach w6w-stack">
+      <div className="w6w-small" data-testid="execution-log-foreach-summary">
+        <span>
+          {total === 1 ? "1 item" : `${total} items`}
+          {failedCount > 0 ? ` · ${failedCount} failed` : ""}
+        </span>
+        {firstFailed && failedId !== undefined && (
+          <div>
+            {labels.get(failedId) ?? failedId} failed in iteration {firstFailed.index}
+          </div>
+        )}
+        {step.iterationsTruncated === true && (
+          <div className="w6w-muted">{`showing ${iterations.length} of ${total}`}</div>
+        )}
+      </div>
+      <div className="w6w-execution-log-iteration-chips">
+        {iterations.map((it) => (
+          <span
+            key={it.index}
+            className={`w6w-execution-log-iteration-chip w6w-execution-log-iteration-chip-${it.status}`}
+            data-testid="execution-log-iteration-chip"
+            data-status={it.status}
+          >
+            {it.index} · {it.status}
+          </span>
+        ))}
+      </div>
+      <ul className="w6w-execution-log-subrows">
+        {bodyIds.map((id) => (
+          <ExecutionLogBodyStep
+            key={id}
+            id={id}
+            label={labels.get(id) ?? id}
+            iterations={iterations}
+            initial={defaultIndex}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ExecutionLogBodyStep({
+  id,
+  label,
+  iterations,
+  initial,
+}: {
+  id: string;
+  label: string;
+  iterations: ExecutionLogIteration[];
+  initial: number | undefined;
+}) {
+  const [selected, setSelected] = useState<number | undefined>(initial);
+  const record = iterations.find((it) => it.index === selected)?.steps.find((s) => s.id === id);
+  return (
+    <li className="w6w-execution-log-subrow w6w-stack">
+      <div className="w6w-execution-log-subrow-head">
+        <strong className="w6w-small">{label}</strong>
+        <select
+          className="w6w-select"
+          aria-label={`Iteration for ${label}`}
+          data-testid="execution-log-iteration-select"
+          value={selected === undefined ? "" : String(selected)}
+          onChange={(e) => setSelected(Number(e.currentTarget.value))}
+        >
+          {iterations.map((it) => (
+            <option key={it.index} value={String(it.index)}>
+              {`iteration ${it.index} (${it.status})`}
+            </option>
+          ))}
+        </select>
+      </div>
+      {record ? (
+        <ol className="w6w-execution-log">
+          <ExecutionLogRow key={selected} step={record} />
+        </ol>
+      ) : (
+        <p className="w6w-muted w6w-small">Did not run in this iteration.</p>
+      )}
     </li>
   );
 }

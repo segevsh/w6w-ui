@@ -179,6 +179,7 @@ export { formatDurationMs, formatExecutionTime } from "./components/execution-fo
 export { ExecutionLogPanel } from "./components/ExecutionLogPanel.tsx";
 export type {
   ExecutionLogError,
+  ExecutionLogIteration,
   ExecutionLogPanelProps,
   ExecutionLogRecordedError,
   ExecutionLogStep,

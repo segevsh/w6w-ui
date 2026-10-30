@@ -26,6 +26,8 @@ export type StepStatus = "pending" | "running" | "succeeded" | "failed" | "skipp
 /** The slice of `StepExecution` this module reads. */
 export interface StepExecution {
   status: StepStatus;
+  /** For each only (I3): per-iteration body-step records, keyed by body-step id. */
+  iterations?: ReadonlyArray<{ nodes?: Record<string, { status: StepStatus }> }>;
 }
 
 /** The slice of `RunState` this module reads — steps keyed by step id, same
@@ -62,7 +64,22 @@ export type StepVisualState = "no-run" | StepStatus;
  */
 export function stepVisualState(runState: RunState | undefined, stepId: string): StepVisualState {
   if (!runState) return "no-run";
-  return execOf(runState, stepId)?.status ?? "pending";
+  const own = execOf(runState, stepId);
+  if (own) return own.status;
+  // A For each body node has no record of its own (D-R1): derive from the owning
+  // loop's iterations — failed > running > succeeded > skipped, else pending.
+  const seen = new Set<StepStatus>();
+  for (const rec of Object.values(runState.nodes ?? runState.steps ?? {})) {
+    if (!Array.isArray(rec?.iterations)) continue;
+    for (const it of rec.iterations) {
+      const s = it?.nodes?.[stepId]?.status;
+      if (s) seen.add(s);
+    }
+  }
+  for (const s of ["failed", "running", "succeeded", "skipped"] as const) {
+    if (seen.has(s)) return s;
+  }
+  return "pending";
 }
 
 /** One node's non-persisted, run-aware look. Colour is never the only signal
