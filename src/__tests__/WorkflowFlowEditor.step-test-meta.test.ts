@@ -346,10 +346,10 @@ test("W2 — the succeeded persist and the run result carry meta by conditional 
   assert.equal(hasMetaSpread(rec[0].arguments[2] as ts.ObjectLiteralExpression), true);
 });
 
-test("W3 — stepSampleValues merges stepMetaSampleValues per upstream step", () => {
-  const c = calls(constInit("stepSampleValues"), "stepMetaSampleValues");
+test("W3 — stepSampleValues merges per-step meta through upstreamSampleValues (which calls stepMetaSampleValues)", () => {
+  const c = calls(constInit("stepSampleValues"), "upstreamSampleValues");
   assert.equal(c.length, 1);
-  assert.equal(c[0].arguments[0].getText(sf), "st.id");
+  assert.equal(c[0].arguments[2].getText(sf), "stepTestMetas");
 });
 
 test("C1 — the step-test fetch effect maps `lastRunMeta` into `meta` beside the latest output", () => {

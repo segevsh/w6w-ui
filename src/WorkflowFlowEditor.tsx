@@ -133,7 +133,6 @@ import {
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
 // form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
 // header comment for why this lives outside WorkflowFlowEditor.tsx.
-import { valueAtPath } from "./output-shape.ts";
 import {
   type StepMeta,
   type StepStartState,
@@ -151,7 +150,7 @@ import {
   type StepShapeContext,
   startStateFromSeeds,
   stepBuilderUpstreamSteps,
-  stepMetaSampleValues,
+  upstreamSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
 import {
@@ -1389,13 +1388,17 @@ function Inner({
   // (progressively committed as a node). Exclude it from its own rail sources.
   const [draftStepId, setDraftStepId] = useState<string | null>(null);
   const upstreamState = useMemo(() => {
-    const st = upstreamStateSources(editingId, nodes, edges, stepShapes);
+    const st = upstreamStateSources(editingId, nodes, edges, stepShapes, draftStepId);
     return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
   }, [editingId, draftStepId, nodes, edges, stepShapes]);
   // A stable identity for *which* steps are upstream. The memo above rebuilds on
   // every node drag and every field edit; this string changes only when the SET
   // does, so the fetch below doesn't re-run on each keystroke.
-  const upstreamIdsKey = JSON.stringify(upstreamState.steps.map((s) => s.id));
+  // Includes the saved tests the projection reads beyond `steps` (an after-loop For each's last body step).
+  const upstreamIdsKey = JSON.stringify([
+    ...upstreamState.steps.map((s) => s.id),
+    ...(upstreamState.extraSampleIds ?? []),
+  ]);
 
   // Design-time sample values for the expression editor's Result pane: what each
   // upstream step's LAST TEST RUN actually captured, flattened onto the very refs
@@ -1451,28 +1454,11 @@ function Inner({
   // The last test output, flattened onto the very refs the picker inserts: the
   // whole output, and each offered field path (nested ones included). Values
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
-  const stepSampleValues = useMemo(() => {
-    const next: Record<string, unknown> = {};
-    for (const st of upstreamState.steps) {
-      Object.assign(next, stepMetaSampleValues(st.id, stepTestMetas[st.id]));
-      const output = stepTestOutputs[st.id];
-      if (output === undefined) continue;
-      next[`steps.${st.id}.output`] = output;
-      // Every own key of a plain object, as before…
-      if (typeof output === "object" && output !== null && !Array.isArray(output)) {
-        for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
-          next[`steps.${st.id}.output.${k}`] = v;
-        }
-      }
-      // …plus each offered nested field path.
-      for (const o of st.outputs ?? []) {
-        if (!o.path || !o.key.includes(".")) continue;
-        const v = valueAtPath(output, o.key);
-        if (v !== undefined) next[`steps.${st.id}.output.${o.key}`] = v;
-      }
-    }
-    return next;
-  }, [upstreamState.steps, stepTestOutputs, stepTestMetas]);
+  const stepSampleValues = useMemo(
+    () =>
+      upstreamSampleValues(upstreamState.steps, stepTestOutputs, stepTestMetas, upstreamState.loop),
+    [upstreamState.steps, upstreamState.loop, stepTestOutputs, stepTestMetas],
+  );
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
   // editor's left panel shows every source at once.
@@ -1493,6 +1479,7 @@ function Inner({
       ...(exprOptions ?? {}),
       steps: upstreamState.steps,
       hasTrigger: upstreamState.hasTrigger,
+      loop: upstreamState.loop,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),

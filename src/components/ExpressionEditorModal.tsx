@@ -241,7 +241,12 @@ export function ExpressionEditorModal({
   const inputs = options.inputs ?? [];
   const documents = options.documents ?? [];
   const steps = options.steps ?? [];
-  const hasState = steps.length > 0 || !!options.hasTrigger;
+  const loop = options.loop;
+  const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
+  const hasState = hasWorkflowState || !!loop;
+  const loopFields = (loop?.itemOutputs ?? []).filter((o) =>
+    o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
+  );
   const template = serializeTemplate(parts);
 
   // The sample map the Result pane previews against: host-seeded defaults
@@ -411,7 +416,23 @@ export function ExpressionEditorModal({
           {jsonBinding && !hasState && (
             <span className="w6w-expr-menu-empty">No upstream steps</span>
           )}
-          {hasState && (
+          {loop && (
+            <div className="w6w-exprmodal-group" data-testid="expr-loop-group">
+              <span className="w6w-exprmodal-group-label">Loop</span>
+              {source(
+                "Current item",
+                { kind: "var", ref: "foreach.item" },
+                "w6w-expr-chip-var",
+                "↻",
+              )}
+              {source("Index", { kind: "var", ref: "foreach.index" }, "w6w-expr-chip-var", "#")}
+              {loopFields.map((o) => {
+                const ref = `foreach.item.${o.key}`;
+                return source(o.key, { kind: "var", ref }, "w6w-expr-chip-var", "·");
+              })}
+            </div>
+          )}
+          {hasWorkflowState && (
             <div className="w6w-exprmodal-group">
               <span className="w6w-exprmodal-group-label">Workflow state</span>
               {options.hasTrigger &&
