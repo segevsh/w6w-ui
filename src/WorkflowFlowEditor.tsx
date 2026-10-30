@@ -452,49 +452,6 @@ function Inner({
   const actionDefs = useAppActionDefs(api, nodes);
   const portsLookup = useMemo(() => portsLookupFromDefs(actionDefs), [actionDefs]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
-  // T1.1.1 — live run-state repaint. `initial` above deliberately re-derives
-  // nodes/edges ONLY on workflow identity change (Trap 1 — its own lint
-  // suppression comment a few lines up says so), so a poll tick that
-  // changes `runState` while `value.id` stays put would be invisible to the
-  // cards if it went through `workflowToFlow` — that memo simply never fires
-  // again. This effect instead patches the already-authoritative React Flow
-  // state directly, the same mechanism a drag/connect/delete already uses to
-  // update `nodes`/`edges` without re-deriving `initial`.
-  //
-  // Only new `data` keys are stamped — `stepStatus`/`runStatus` on nodes, a
-  // run-aware `className`/`label` on edges. `data.step` and `data.when` (the
-  // fields `flowToWorkflow` reads back to build the persisted document) are
-  // never touched here, so nothing run-related can round-trip into a saved
-  // workflow (A6).
-  //
-  // Functional `setNodes`/`setEdges` updaters read the PREVIOUS state
-  // directly, so `nodes`/`edges` need not be dependencies — keeping this
-  // effect keyed on `runState` alone (plus the setters, stable across
-  // renders) is what makes it fire on every run-state change and nothing
-  // else, including a plain drag or edit that doesn't touch `runState`.
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) => {
-        const stepStatus = stepVisualState(runState, n.id);
-        if (n.data.stepStatus === stepStatus && n.data.runStatus === runState?.status) return n;
-        return { ...n, data: { ...n.data, stepStatus, runStatus: runState?.status } };
-      }),
-    );
-    setEdges((eds) =>
-      eds.map((e) => {
-        const lane = edgeLane(e);
-        const run = edgeRunState(runState, e.source, lane);
-        const visuals = edgeVisuals(lane, run);
-        if (e.className === visuals.className && e.label === visuals.label) return e;
-        return { ...e, className: visuals.className, label: visuals.label };
-      }),
-    );
-  }, [runState, setNodes, setEdges]);
-  // Host-supplied step problems — same live-repaint mechanism as runState above:
-  // stamps/clears `data.stepProblems` only, never `data.step`.
-  useEffect(() => {
-    setNodes((nds) => applyStepProblems(nds, stepProblems));
-  }, [stepProblems, setNodes]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Notes + sections: live canvas state (geometry renders live; persistCanvas decides what is
   // written). Re-seeded only on workflow identity change, like nodes/edges.
@@ -558,6 +515,54 @@ function Inner({
     setEditingId(null);
     setCanvas(initialCanvas);
   }, [initial, initialCanvas, setNodes, setEdges]);
+
+  // These two stamps are declared AFTER the workflow-swap reset above on purpose: effects run in
+  // declaration order, so the reset (which reseeds nodes from `initial`, with neither stamp) would
+  // otherwise overwrite a first-render `runState`/`stepProblems`. `initial` is a dep so they
+  // re-stamp after a swap too.
+  // T1.1.1 — live run-state repaint. `initial` above deliberately re-derives
+  // nodes/edges ONLY on workflow identity change (Trap 1 — its own lint
+  // suppression comment a few lines up says so), so a poll tick that
+  // changes `runState` while `value.id` stays put would be invisible to the
+  // cards if it went through `workflowToFlow` — that memo simply never fires
+  // again. This effect instead patches the already-authoritative React Flow
+  // state directly, the same mechanism a drag/connect/delete already uses to
+  // update `nodes`/`edges` without re-deriving `initial`.
+  //
+  // Only new `data` keys are stamped — `stepStatus`/`runStatus` on nodes, a
+  // run-aware `className`/`label` on edges. `data.step` and `data.when` (the
+  // fields `flowToWorkflow` reads back to build the persisted document) are
+  // never touched here, so nothing run-related can round-trip into a saved
+  // workflow (A6).
+  //
+  // Functional `setNodes`/`setEdges` updaters read the PREVIOUS state
+  // directly, so `nodes`/`edges` need not be dependencies — keeping this
+  // effect keyed on `runState` alone (plus the setters, stable across
+  // renders) is what makes it fire on every run-state change and nothing
+  // else, including a plain drag or edit that doesn't touch `runState`.
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((n) => {
+        const stepStatus = stepVisualState(runState, n.id);
+        if (n.data.stepStatus === stepStatus && n.data.runStatus === runState?.status) return n;
+        return { ...n, data: { ...n.data, stepStatus, runStatus: runState?.status } };
+      }),
+    );
+    setEdges((eds) =>
+      eds.map((e) => {
+        const lane = edgeLane(e);
+        const run = edgeRunState(runState, e.source, lane);
+        const visuals = edgeVisuals(lane, run);
+        if (e.className === visuals.className && e.label === visuals.label) return e;
+        return { ...e, className: visuals.className, label: visuals.label };
+      }),
+    );
+  }, [runState, initial, setNodes, setEdges]);
+  // Host-supplied step problems — same live-repaint mechanism as runState above:
+  // stamps/clears `data.stepProblems` only, never `data.step`.
+  useEffect(() => {
+    setNodes((nds) => applyStepProblems(nds, stepProblems));
+  }, [stepProblems, initial, setNodes]);
 
   // Stamp the `canvas` key onto an outgoing workflow. Omitted entirely when there is nothing to
   // keep (no notes, no sections), so a workflow that never used the feature round-trips unchanged.

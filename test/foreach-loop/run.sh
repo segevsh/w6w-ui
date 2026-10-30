@@ -44,7 +44,7 @@ HOST_BROWSER="${HOST_BROWSER:-0}"
 # G4 refusal, G5 run log. The verdict below is REFUSED unless exactly this many
 # ran: a tree that fails to bundle, or a run that dies half-way, reports
 # DID NOT RUN rather than "0 failures".
-EXPECTED_TESTS="${EXPECTED_TESTS:-5}"
+EXPECTED_TESTS="${EXPECTED_TESTS:-7}"
 
 fatal() {
   echo "FATAL: $*"

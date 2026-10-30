@@ -9,6 +9,8 @@
 // G3: the picker of a loop-body field offers Loop > Current item / Index / the item's fields, and
 //     never the For each's own output; upstream steps stay offered.
 // G4: a real drag from outside onto a loop-body step is refused with a visible alert.
+// G4b: a real drag from the For each's own Done handle onto its first body step is refused.
+// G6: a problems feed present on the FIRST render is flagged (not wiped by the mount reseed).
 // G5: the run log shows "6 items", preselects the failed iteration and switches iterations.
 //
 // Every assertion is a RELATION between live measurements or an independent literal.
@@ -69,7 +71,7 @@ after(async () => {
   if (browser) await browser.close();
 });
 
-async function open(fixture) {
+async function open(fixture, query = "") {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errs = [];
   page.on("pageerror", (e) => errs.push(String(e)));
@@ -81,7 +83,7 @@ async function open(fixture) {
     if (p === "/ui.css") return route.fulfill({ contentType: "text/css", path: `${DIR}/ui.css` });
     return route.fulfill({ status: 404, body: "" });
   });
-  await page.goto(`http://foreach-loop.test/?fixture=${fixture}`);
+  await page.goto(`http://foreach-loop.test/?fixture=${fixture}${query}`);
   await page.waitForFunction(() => window.__mounted === true, null, { timeout: 10000 });
   if (fixture === "log") await page.waitForSelector(".w6w-execution-log");
   else {
@@ -306,6 +308,52 @@ test("G4: dragging a connection from outside the loop onto a body step is refuse
         nodeOf(wf, "for_each_1").with.body.includes("update_event_ticket_1"),
         "the body step was evicted from the loop",
       );
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+test("G4b: dragging from the For each's own Done handle onto its body step is refused with the outside_inbound reason", async () => {
+  const page = await open("fixed");
+  try {
+    assert.equal(await page.locator('[role="alert"]:visible').count(), 0, "no alert before the drag");
+    const from = centre(await rectOf(page, SRC_DONE("for_each_1")));
+    const to = centre(await rectOf(page, TARGET("update_event_ticket_1")));
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2 - 20, { steps: 8 });
+    await page.mouse.move(to.x, to.y, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    const alert = page.locator('[role="alert"]:visible');
+    assert.ok((await alert.count()) >= 1, "a visible role=alert refusal");
+    // Independent literal: the reason message src/flow-loop.ts ships for outside_inbound.
+    const REASON =
+      "This step is inside a loop, so nothing outside it can connect into it. Connect from the loop's Each item side instead.";
+    assert.ok((await alert.first().innerText()).includes(REASON), await alert.first().innerText());
+    assert.equal(await page.locator("dialog[open]").count(), 0, "the step builder opened");
+    for (const wf of await changes(page)) {
+      assert.ok(
+        !wf.edges.some((e) => e.from === "for_each_1" && e.to === "update_event_ticket_1"),
+        "the refused Done edge was written",
+      );
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+test("G6: a problems feed supplied on the first render is flagged on the expected nodes", async () => {
+  const page = await open("legacy", "&problems=mount");
+  try {
+    for (const [id, code] of [
+      ["for_each_1", "foreach_wrapped_items"],
+      ["update_event_ticket_1", "foreach_body_refs_output"],
+    ]) {
+      const n = `.react-flow__node[data-id="${id}"]`;
+      assert.equal(await page.locator(`${n} [data-step-problem~="${code}"]`).count(), 1, `${id}: ${code}`);
+      assert.ok(await page.locator(`${n} [data-step-problem-badge]`).isVisible(), `${id}: badge`);
     }
   } finally {
     await page.close();

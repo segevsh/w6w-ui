@@ -11,6 +11,7 @@ import type { FlowWorkflow } from "./flow-types.ts";
 import { findLoopProblems } from "./flow-problems.ts";
 import { W6WUIProvider } from "./provider.tsx";
 
+const PROBLEMS_AT_MOUNT = new URLSearchParams(location.search).get("problems") === "mount";
 const FIXTURE = new URLSearchParams(location.search).get("fixture") || "legacy";
 
 // F0, written out literally (never derived from code under test).
@@ -81,8 +82,10 @@ function Harness() {
   // The embed host loads `findLoopProblems` through a dynamic import, so its problems feed
   // arrives AFTER the editor's mount effects. Mirror that: a feed present on the very first
   // render is overwritten by the editor's mount-time node reseed (reported as a finding).
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(PROBLEMS_AT_MOUNT);
+  // `?problems=mount` supplies the feed on the very FIRST render (G6), no timer.
   useEffect(() => {
+    if (PROBLEMS_AT_MOUNT) return;
     const t = setTimeout(() => setReady(true), 50);
     return () => clearTimeout(t);
   }, []);

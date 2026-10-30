@@ -53,11 +53,30 @@ test("W2 — one useEffect keyed on stepProblems calls setNodes(applyStepProblem
     );
   });
   assert.equal(effects.length, 1, "exactly one effect depends on stepProblems");
-  assert.equal(effects[0].arguments[1].getText(sf), "[stepProblems, setNodes]");
+  assert.equal(effects[0].arguments[1].getText(sf), "[stepProblems, initial, setNodes]");
   const body = effects[0].arguments[0].getText(sf);
   assert.match(body, /setNodes\(/);
   assert.match(body, /applyStepProblems\(/);
   assert.doesNotMatch(body, /setEdges\(/);
+});
+
+test("W2b — the stamp effects run AFTER the workflow-swap reset and re-run when `initial` changes", () => {
+  const effects = findCalls(inner, "useEffect");
+  const depsOf = (c: ts.CallExpression) => c.arguments[1]?.getText(sf) ?? "";
+  const reset = effects.find((c) => depsOf(c).startsWith("[initial, initialCanvas"));
+  assert.ok(reset, "the swap reset effect (deps [initial, initialCanvas, ...]) exists");
+  for (const key of ["stepProblems", "runState"]) {
+    const stamp = effects.find((c) => {
+      const d = c.arguments[1];
+      return d && ts.isArrayLiteralExpression(d) && d.elements.some((e) => e.getText(sf) === key);
+    });
+    assert.ok(stamp, `the ${key} effect exists`);
+    assert.match(depsOf(stamp), /\binitial\b/, `${key} effect must re-stamp after a swap (initial dep)`);
+    assert.ok(
+      stamp.getStart(sf) > reset.getStart(sf),
+      `${key} effect must be declared after the reset, or the mount-time reset wipes its stamp`,
+    );
+  }
 });
 
 test("W3 — StepNodeCard stamps data-step-problem + title via problemAttrs, and an inline ring", () => {
