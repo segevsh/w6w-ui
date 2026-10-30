@@ -2539,11 +2539,9 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
-    <div>
+    <div className={data.loopOf ? "w6w-node-in-loop" : undefined} data-loop-of={data.loopOf}>
       <NodeControls id={id} runnable />
       <div
-        className={data.loopOf ? "w6w-node-in-loop" : undefined}
-        data-loop-of={data.loopOf}
         data-run-status={data.stepStatus ?? "no-run"}
         data-step-problem={data.stepProblem?.code}
         title={data.stepProblem ? stepProblemTooltip(data.stepProblem) : undefined}
@@ -2666,21 +2664,19 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
-    <div>
+    <div
+      className={
+        [isForeach ? "w6w-node-foreach" : "", data.loopOf ? "w6w-node-in-loop" : ""]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      data-loop-of={data.loopOf}
+    >
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
-        className={
-          [
-            isTrigger ? "w6w-node-trigger" : "",
-            isForeach ? "w6w-node-foreach" : "",
-            data.loopOf ? "w6w-node-in-loop" : "",
-          ]
-            .filter(Boolean)
-            .join(" ") || undefined
-        }
+        className={isTrigger ? "w6w-node-trigger" : undefined}
         data-node-kind={isTrigger ? "trigger" : undefined}
-        data-loop-of={data.loopOf}
         data-run-status={data.stepStatus ?? "no-run"}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node

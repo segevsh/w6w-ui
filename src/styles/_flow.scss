@@ -260,7 +260,7 @@
 }
 
 /* A loop-body step: tinted, with a badge naming its For each. */
-.w6w-flow .w6w-node-in-loop {
+.w6w-flow .w6w-node-in-loop [data-run-status] {
   background: color-mix(in srgb, var(--w6w-accent) 10%, var(--w6w-panel)) !important;
 }
 .w6w-flow .w6w-loop-badge {
