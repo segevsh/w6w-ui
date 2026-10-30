@@ -2813,9 +2813,8 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // A trigger is the run's ENTRY, not a step that acts: it emits the start
   // payload and has no vendor call to fail, so there is no failure of its own
   // to route — no error exit port (human report, 2026-09-01). Triggers on the
-  // canvas are always internal nodes (an app's own trigger binds as a
-  // subscription, never as a node), so this card is the only one that needs
-  // the guard.
+  // canvas may be internal nodes or an app trigger node (uses.trigger, D-5);
+  // an app trigger renders in StepNodeCard, which guards it separately.
   const isTrigger = isTriggerStep(step.uses);
   const isForeach = isForeachCard(step);
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.

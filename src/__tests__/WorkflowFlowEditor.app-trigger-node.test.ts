@@ -341,3 +341,32 @@ test("A3: a second trigger (uses.trigger) stays floating — no edge into it", a
   );
   await act(async () => root.unmount());
 });
+
+test("A3: a floating app trigger next to a separate chain still wires FROM the app trigger on + Node", async () => {
+  const wf = {
+    id: "wf_1",
+    name: "wf",
+    nodes: [
+      { id: "T1", uses: { ...T1_USES }, with: { ...T1_WITH } },
+      { id: "X", uses: { app: "@w6w/script", action: "run" }, with: {} },
+      { id: "Y", uses: { app: "@w6w/script", action: "run" }, with: {} },
+    ],
+    edges: [{ from: "X", to: "Y" }],
+  } as unknown as FlowWorkflow;
+  const { changes, root } = await mountEditor(wf);
+  await openBuilder();
+  await click(byText("Controls"));
+  await flush();
+  await click(buttons().find((b) => b.textContent?.includes("Wait")));
+  await flush();
+  const last = changes.at(-1);
+  assert.ok(last);
+  const added = last.nodes.find((n: { id: string }) => !["T1", "X", "Y"].includes(n.id));
+  assert.ok(added, "a node was added");
+  assert.deepEqual(
+    (last.edges ?? []).filter((e: { to: string }) => e.to === added.id),
+    [{ from: "T1", to: added.id }],
+    "the only new edge is T1 -> new (T1 is the existing trigger, not the chain tail X->Y)",
+  );
+  await act(async () => root.unmount());
+});
