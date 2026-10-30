@@ -39,6 +39,7 @@ from [`W6WUIProvider`](/reference-packages/components/providers/) and call your 
 | [Executions](/reference-packages/components/executions/) | `ExecutionList`, `ExecutionFilters`, `ExecutionStats`, `ExecutionDetail`, `ExecutionLogPanel`, `ApiCallsPanel` |
 | [Server resources](/reference-packages/components/server-resources/) | `ServerResourcesCard`, `ServerResourcesCardSmall`, `ServerResourcesRail`, `ServerResourcesBadge` |
 | [Connections](/reference-packages/components/connections/) | `ConnectionList`, `ConnectionHeader`, `EditConnectionModal` (provider) |
+| [Data stores](/reference-packages/components/data-stores/) | `DataStoreList`, `ColumnsEditor`, `CsvPanel`, and the `data-store-view` helpers |
 
 ## What you compose yourself
 

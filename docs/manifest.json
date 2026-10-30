@@ -14,6 +14,7 @@
     { "path": "components/status.md", "slug": "components/status", "section": "reference-packages", "title": "Status and health", "order": 70 },
     { "path": "components/executions.md", "slug": "components/executions", "section": "reference-packages", "title": "Executions", "order": 80 },
     { "path": "components/server-resources.md", "slug": "components/server-resources", "section": "reference-packages", "title": "Server resources", "order": 90 },
-    { "path": "components/connections.md", "slug": "components/connections", "section": "reference-packages", "title": "Connections", "order": 100 }
+    { "path": "components/connections.md", "slug": "components/connections", "section": "reference-packages", "title": "Connections", "order": 100 },
+    { "path": "components/data-stores.md", "slug": "components/data-stores", "section": "reference-packages", "title": "Data stores", "order": 110 }
   ]
 }
