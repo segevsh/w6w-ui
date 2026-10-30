@@ -105,6 +105,7 @@ import {
   stampLoopOf,
   stripBody,
 } from "./flow-loop.ts";
+import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -289,7 +290,7 @@ export interface WorkflowFlowEditorProps {
    * connection no longer exists gets an error ring + tooltip. Omitted ⇒ the
    * canvas renders exactly as today. The host owns detection; this editor never
    * infers a problem itself. Repaints live (same `value.id`) and is never
-   * persisted: `flowToWorkflow` never reads `data.stepProblem`.
+   * persisted: `flowToWorkflow` never reads `data.stepProblems`.
    */
   stepProblems?: StepProblems;
   /**
@@ -490,7 +491,7 @@ function Inner({
     );
   }, [runState, setNodes, setEdges]);
   // Host-supplied step problems — same live-repaint mechanism as runState above:
-  // stamps/clears `data.stepProblem` only, never `data.step`.
+  // stamps/clears `data.stepProblems` only, never `data.step`.
   useEffect(() => {
     setNodes((nds) => applyStepProblems(nds, stepProblems));
   }, [stepProblems, setNodes]);
@@ -594,6 +595,12 @@ function Inner({
     reason: LoopRefusalReason;
   } | null>(null);
   const loopNoticeSelRef = useRef<string | null>(null);
+  // The handle a drag started on (see `dragLane`): xyflow's end-state handle is wrong for Done.
+  const connectStartRef = useRef<{
+    nodeId: string | null;
+    handleId: string | null;
+    handleType: string | null;
+  } | null>(null);
 
   // Mark each loop-body step with its For each (`data.loopOf`) from the each-lane
   // edges. Its own effect, never folded into the runState / stepProblems ones, and
@@ -694,6 +701,23 @@ function Inner({
       const fromNode = connectionState.fromNode;
       if (!fromNode) return;
       const handleType = connectionState.fromHandle?.type === "target" ? "target" : "source";
+      // A drop ON an existing node that the editor rejected is a refusal, never "add a
+      // new node here": when the loop rule names why (e.g. the Done handle onto the
+      // loop's own first step), show that reason anchored to the source and stop.
+      const toNode = connectionState.toNode;
+      if (toNode && handleType === "source") {
+        const reason = connectDropRefusal(
+          fromNode.id,
+          toNode.id,
+          dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
+          nodes,
+          edges,
+        );
+        if (reason) {
+          setLoopNotice({ nodeId: fromNode.id, reason });
+          return;
+        }
+      }
       // Only spawn if the origin handle can participate at all — a source handle
       // needs an exit port, a target handle an entry port. (A full single-slot
       // port is fine: the auto-wire below replaces its existing edge.)
@@ -714,11 +738,11 @@ function Inner({
         nodeId: fromNode.id,
         handleType,
         position,
-        lane: laneForSourceHandle(connectionState.fromHandle?.id),
+        lane: dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
       });
       setBuilderOpen(true);
     },
-    [readOnly, screenToFlowPosition, nodes, portsLookup],
+    [readOnly, screenToFlowPosition, nodes, edges, portsLookup],
   );
 
   // A plain click on a port: the same "new step wired to this port" as a drag
@@ -1609,7 +1633,11 @@ function Inner({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onConnectStart={(_e, p) => {
+                      connectStartRef.current = p;
+                    }}
                     onConnectEnd={onConnectEnd}
+                    onPaneClick={() => setLoopNotice(null)}
                     isValidConnection={isValidConnection}
                     // A finished drag is what makes a new coordinate stick: until this
                     // existed, dragging went only through `onNodesChange` and never
@@ -1923,7 +1951,7 @@ function Inner({
                       readOnly={readOnly}
                       fanOutCount={fanOutCounts.get(editingId) ?? 0}
                       initialView={editView}
-                      stepProblem={editingNode?.data.stepProblem}
+                      stepProblems={editingNode?.data.stepProblems}
                       onChange={(next) => updateStep(editingId, next)}
                       onClose={() => setEditingId(null)}
                       onTestRun={onTestRun}
@@ -2602,6 +2630,43 @@ function FanOutBadge({ step, count }: { step: FlowStep; count: number }) {
   );
 }
 
+/** `data-step-problem` (codes, space-joined) + `title` (tooltips, newline-joined); absent with no problems. */
+function problemAttrs(problems: StepProblem[] | undefined) {
+  if (!problems || problems.length === 0) return {};
+  return {
+    "data-step-problem": problems.map((p) => p.code).join(" "),
+    title: problems.map(stepProblemTooltip).join("\n"),
+  };
+}
+
+function ProblemBadge({ problems }: { problems: StepProblem[] | undefined }) {
+  if (!problems || problems.length === 0) return null;
+  const tip = problems.map(stepProblemTooltip).join("\n");
+  return (
+    <span
+      data-step-problem-badge=""
+      role="img"
+      aria-label={tip}
+      title={tip}
+      style={{
+        position: "absolute",
+        top: -9,
+        right: -9,
+        width: 18,
+        height: 18,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--w6w-danger)",
+        color: "#fff",
+      }}
+    >
+      <Icon name="warning" size={12} />
+    </span>
+  );
+}
+
 function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const apps = useContext(AppsCtx);
@@ -2619,14 +2684,13 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
       <NodeControls id={id} runnable />
       <div
         data-run-status={data.stepStatus ?? "no-run"}
-        data-step-problem={data.stepProblem?.code}
-        title={data.stepProblem ? stepProblemTooltip(data.stepProblem) : undefined}
+        {...problemAttrs(data.stepProblems)}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node
           // (which also spans the meta line below) — keeps ports vertically centered.
           position: "relative",
           // Missing-connection ring; the border stays the run-status visual.
-          ...(data.stepProblem ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
+          ...(data.stepProblems ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
           // Selection always wins the BORDER COLOUR (unchanged from before
           // T1.1.1 — the ternary this extends); width/style/opacity keep
           // reflecting the run status underneath so a selected running/failed
@@ -2646,29 +2710,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        {data.stepProblem && (
-          <span
-            data-step-problem-badge=""
-            role="img"
-            aria-label={stepProblemTooltip(data.stepProblem)}
-            title={stepProblemTooltip(data.stepProblem)}
-            style={{
-              position: "absolute",
-              top: -9,
-              right: -9,
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "var(--w6w-danger)",
-              color: "#fff",
-            }}
-          >
-            <Icon name="warning" size={12} />
-          </span>
-        )}
+        <ProblemBadge problems={data.stepProblems} />
         {ports.in > 0 && (
           <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
         )}
@@ -2754,10 +2796,12 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         className={isTrigger ? "w6w-node-trigger" : undefined}
         data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
+        {...problemAttrs(data.stepProblems)}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node
           // (which also spans the meta line below) — keeps ports vertically centered.
           position: "relative",
+          ...(data.stepProblems ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
           border: `${visual.borderWidth}px ${visual.borderStyle} ${
             selected ? "var(--w6w-accent)" : visual.borderColor
           }`,
@@ -2774,6 +2818,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
+        <ProblemBadge problems={data.stepProblems} />
         {ports.in > 0 && (
           <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
         )}
@@ -2853,7 +2898,7 @@ export function StepEditModal({
   initialView = "props",
   fanOutCount = 0,
   onTestRun,
-  stepProblem,
+  stepProblems,
 }: {
   workflowId: string;
   step: FlowStep;
@@ -2871,19 +2916,24 @@ export function StepEditModal({
   fanOutCount?: number;
   /** Fired the instant the footer Test button is clicked, before the test runs (T1.1.1). */
   onTestRun?: () => void;
-  /** Host-supplied problem for this step; a dangling connection locks Configure/Test. */
-  stepProblem?: StepProblem;
+  /** Host-supplied problems for this step; a dangling connection locks Configure/Test, a fixable one gets a button. */
+  stepProblems?: StepProblem[];
 }) {
   const api = useW6WApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
   // Checked against the LOCAL step so choosing another connection unblocks at once.
-  const blocked = isConnectionBlocked(step, stepProblem);
+  const blocked = isConnectionBlocked(step, stepProblems);
+  const connectionProblem = stepProblems?.find(
+    (p): p is Extract<StepProblem, { code: "unknown_connection" }> =>
+      p.code === "unknown_connection" && p.connection === step.uses.connection,
+  );
+  const fixable = (stepProblems ?? []).filter((p) => "fix" in p);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
   // tab showing form (props) / full-step JSON (code) / params JSON
   // (params-code) / node settings (config).
   const [tab, setTab] = useState<"setup" | "configure" | "test">(
-    isConnectionBlocked(initialStep, stepProblem) ? "setup" : "configure",
+    isConnectionBlocked(initialStep, stepProblems) ? "setup" : "configure",
   );
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
@@ -3153,9 +3203,36 @@ export function StepEditModal({
           )}
         </div>
 
-        {blocked && stepProblem && (
+        {blocked && connectionProblem && (
           <div role="alert" className="w6w-field-error">
-            Connection {stepProblem.connection} no longer exists — choose another to continue.
+            Connection {connectionProblem.connection} no longer exists — choose another to continue.
+          </div>
+        )}
+        {fixable.length > 0 && (
+          <div className="w6w-stepproblem-fixes" style={{ display: "grid", gap: 6 }}>
+            {fixable.map((p) => (
+              <div
+                key={p.code}
+                className="w6w-small"
+                style={{ display: "flex", gap: 8, alignItems: "center" }}
+              >
+                <span>{stepProblemTooltip(p)}</span>
+                <button
+                  type="button"
+                  className="w6w-btn"
+                  data-fix-code={p.code}
+                  disabled={readOnly}
+                  onClick={() => {
+                    const next = applyStepProblemFix(step, p);
+                    commit(next);
+                    setCodeText(stepToJson(next));
+                    setParamsCodeText(paramsToJson(next));
+                  }}
+                >
+                  {"fix" in p ? p.fix.label : ""}
+                </button>
+              </div>
+            ))}
           </div>
         )}
         <div className="w6w-stepconfig-body">
