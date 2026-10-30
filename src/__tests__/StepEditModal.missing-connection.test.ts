@@ -135,7 +135,7 @@ const PROBLEM: StepProblem = { code: "unknown_connection", connection: "conn_1" 
 
 async function mount(
   step: FlowStep,
-  stepProblem: StepProblem | undefined,
+  stepProblems: StepProblem[] | undefined,
   initialView?: "props" | "json" | "settings",
   conns?: unknown[],
 ) {
@@ -157,7 +157,7 @@ async function mount(
             onChange: (next: FlowStep) => changes.push(next),
             onClose: () => {},
             initialView,
-            stepProblem,
+            stepProblems,
           }),
         }),
       }),
@@ -178,7 +178,7 @@ const active = (c: Element) => c.querySelector(".w6w-subtab.active")?.textConten
 
 test("A3: blocked opens on Setup for props, json and settings", async () => {
   for (const view of ["props", "json", "settings"] as const) {
-    const { container, root } = await mount(STEP, PROBLEM, view);
+    const { container, root } = await mount(STEP, [PROBLEM], view);
     assert.equal(active(container), "Setup", view);
     await act(async () => root.unmount());
   }
@@ -186,7 +186,7 @@ test("A3: blocked opens on Setup for props, json and settings", async () => {
 
 test("A3: no problem / non-matching problem keeps the Configure default", async () => {
   for (const p of [undefined, { code: "unknown_connection", connection: "other" } as StepProblem]) {
-    const { container, root } = await mount(STEP, p);
+    const { container, root } = await mount(STEP, p ? [p] : undefined);
     assert.equal(active(container), "Configure");
     assert.equal(tabs(container).Configure.disabled, false);
     assert.equal(container.querySelector('[role="alert"]'), null);
@@ -195,7 +195,7 @@ test("A3: no problem / non-matching problem keeps the Configure default", async 
 });
 
 test("A4: Configure/Test disabled, clicks stay on Setup, alert names the id", async () => {
-  const { container, root } = await mount(STEP, PROBLEM);
+  const { container, root } = await mount(STEP, [PROBLEM]);
   const t = tabs(container);
   assert.equal(t.Configure.disabled, true);
   assert.equal(t.Test.disabled, true);
@@ -211,7 +211,7 @@ test("A4: Configure/Test disabled, clicks stay on Setup, alert names the id", as
 });
 
 test("A4: footer Next is disabled while blocked and clicking leaves Setup active", async () => {
-  const { container, root } = await mount(STEP, PROBLEM);
+  const { container, root } = await mount(STEP, [PROBLEM]);
   const next = Array.from(container.querySelectorAll(".w6w-stepconfig-footer button")).find((b) =>
     b.textContent?.includes("Next"),
   ) as HTMLButtonElement | undefined;
@@ -223,7 +223,7 @@ test("A4: footer Next is disabled while blocked and clicking leaves Setup active
 });
 
 test("A5: picking another connection unblocks; onChange differs only in uses.connection", async () => {
-  const { container, root, changes } = await mount(STEP, PROBLEM, "props", [
+  const { container, root, changes } = await mount(STEP, [PROBLEM], "props", [
     { id: "conn_1", appId: "sendgrid", authKey: "apiKey", displayName: "prod" },
     { id: "conn_9", appId: "sendgrid", authKey: "apiKey", displayName: "staging" },
   ]);
@@ -252,8 +252,8 @@ test("A5: picking another connection unblocks; onChange differs only in uses.con
   await act(async () => root.unmount());
 });
 
-test("A6: the editor passes the editing node's data.stepProblem into StepEditModal", async () => {
+test("A6: the editor passes the editing node's data.stepProblems into StepEditModal", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../WorkflowFlowEditor.tsx", import.meta.url), "utf8");
-  assert.match(src, /stepProblem=\{editingNode\?\.data\.stepProblem\}/);
+  assert.match(src, /stepProblems=\{editingNode\?\.data\.stepProblems\}/);
 });

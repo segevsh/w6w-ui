@@ -181,7 +181,7 @@ export const WithRunState: Story = {
 
 /** A step whose bound connection no longer exists, as the host reports it. */
 export const WithMissingConnection: Story = {
-  args: { stepProblems: { send: { code: "unknown_connection", connection: "conn_deleted" } } },
+  args: { stepProblems: { send: [{ code: "unknown_connection", connection: "conn_deleted" }] } },
 };
 
 /** A run panel docking beside the canvas, as studio's run log does: the toggle

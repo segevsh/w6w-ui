@@ -52,11 +52,11 @@ export interface StepNodeData extends Record<string, unknown> {
    */
   runStatus?: RunStatus;
   /**
-   * A host-supplied problem with this step (e.g. a dangling connection).
+   * Host-supplied problems with this step (a dangling connection, loop problems).
    * Patched in by `WorkflowFlowEditor.tsx`'s `stepProblems` effect — never set
-   * here and never read by {@link flowToWorkflow} (not persisted).
+   * here, absent (never `[]`) when there are none, and never read by {@link flowToWorkflow} (not persisted).
    */
-  stepProblem?: StepProblem;
+  stepProblems?: StepProblem[];
   /**
    * The For each this step is a loop-body member of (canvas-only; derived on load
    * and by the editor, never read by {@link flowToWorkflow}).
@@ -321,7 +321,7 @@ function storedPosition(step: FlowStep): { x: number; y: number } | undefined {
 }
 
 /** Read a definition in either shape into the canonical `nodes[]` form. */
-function normalizeInput(input: FlowWorkflowInput): FlowWorkflow {
+export function normalizeInput(input: FlowWorkflowInput): FlowWorkflow {
   const o = input as { nodes?: FlowStep[]; steps?: FlowStep[] };
   if (o.nodes !== undefined && o.steps !== undefined) {
     throw new Error("workflow carries both nodes and steps");
