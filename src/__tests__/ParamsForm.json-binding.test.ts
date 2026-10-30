@@ -240,7 +240,10 @@ test("Acc1 - a field leaf binds nodes.<id>.output.<key>", async () => {
   const { root, box } = await render([JSON_PARAM]);
   await click(fxButtons()[0]);
   await click(doc().querySelector('[data-testid="expr-caret-fields"]') ?? undefined);
-  await pick(buttons().find((b) => b.textContent?.includes("a.id")));
+  // The row shows the field's own name; its tooltip names the full ref.
+  const leaf = buttons().find((b) => b.title === "Insert a.id");
+  assert.equal(leaf?.textContent?.trim(), "id");
+  await pick(leaf);
   assert.deepEqual(box.current.cfg, "{{ nodes.a.output.id }}");
   await unmount(root);
 });

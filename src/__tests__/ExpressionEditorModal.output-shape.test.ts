@@ -93,7 +93,7 @@ const click = async (el: Element) => {
   });
 };
 
-const { isRefSafePath } = await import("../components/expression-dom.ts");
+const { isRefSafePath, outputFieldTree } = await import("../components/expression-dom.ts");
 
 test("isRefSafePath — each dot segment is checked on its own", () => {
   assert.equal(isRefSafePath("start.utc"), true);
@@ -160,6 +160,63 @@ test("a declared nested path field inserts steps.<id>.output.<path>", async () =
   );
   const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
   assert.equal(chip.getAttribute("data-ref"), "nodes.ev.output.start.utc");
+});
+
+test("outputFieldTree — each field shows its own name, nested under its nearest listed ancestor", () => {
+  const rows = outputFieldTree([
+    { key: "event", path: true },
+    { key: "event.tz", path: true },
+    { key: "event.start.utc", path: true },
+    { key: "tickets", path: true },
+    { key: "a.b" },
+  ]);
+  assert.deepEqual(
+    rows.map((r) => [r.field.key, r.depth, r.name]),
+    [
+      ["event", 0, "event"],
+      ["event.tz", 1, "tz"],
+      ["event.start.utc", 1, "start.utc"],
+      ["tickets", 0, "tickets"],
+      ["a.b", 0, "a.b"],
+    ],
+  );
+});
+
+test("a field row shows only its own name, indents under its parent and keeps the full ref", async () => {
+  const { container } = await mountModal({
+    options: {
+      steps: [
+        {
+          id: "conv",
+          outputs: [
+            { key: "event", path: true },
+            { key: "event.name", path: true },
+          ],
+          outputsFrom: "test",
+        },
+      ],
+    },
+  });
+  const group = groupFor(container, "Workflow state");
+  await click(group?.querySelector('[data-testid="expr-caret-fields"]') as Element);
+  const rows = Array.from(
+    group?.querySelectorAll(".w6w-exprmodal-subsources .w6w-exprmodal-source") ?? [],
+  ) as HTMLElement[];
+  assert.deepEqual(
+    rows.map((b) => b.textContent),
+    ["event", "name"],
+  );
+  assert.equal(rows[1].title, "Use conv.event.name");
+  assert.equal((rows[1].parentElement as HTMLElement).style.paddingLeft, "14px");
+  assert.equal(rows[0].classList.contains("w6w-expr-chip-var"), false, "a field is not a chip");
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  await click(
+    rows[1].parentElement?.querySelector('[data-testid="expr-copy-to-editor"]') as Element,
+  );
+  assert.equal(
+    (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
+    "nodes.conv.output.event.name",
+  );
 });
 
 test("a dotted key WITHOUT path stays a literal key and is dropped, as before", async () => {

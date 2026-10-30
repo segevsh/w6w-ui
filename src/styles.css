@@ -1384,6 +1384,18 @@ select optgroup {
   color: var(--w6w-accent);
 }
 
+/* A step's output field: a plain tree row (just the field's own name), not a
+   chip, so a step with many fields reads as a list rather than a wall of boxes. */
+.w6w-exprmodal-source.w6w-exprmodal-field {
+  padding: var(--w6w-sp-0-5) var(--w6w-sp-1-5);
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-xs);
+}
+
+.w6w-exprmodal-source.w6w-exprmodal-field:hover {
+  color: var(--w6w-accent);
+}
+
 .w6w-exprmodal-source.w6w-expr-chip-secret {
   color: var(--w6w-danger);
 }

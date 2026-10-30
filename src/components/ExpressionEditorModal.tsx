@@ -15,6 +15,7 @@ import {
   isRefSafeKey,
   isRefSafePath,
   makeChip,
+  outputFieldTree,
   paintParts,
   placeCaretAtEnd,
   promoteCompletedMarkerAtCaret,
@@ -327,17 +328,26 @@ export function ExpressionEditorModal({
     sigil: string | null,
     composite = false,
     ariaLabel?: string,
+    // `name` replaces `label` in the tooltip (a tree row shows a short label but
+    // names its full ref on hover); `depth` indents a tree row.
+    tree?: { name: string; depth: number },
   ) => (
     <div
       key={`${part.kind}:${part.ref ?? label}`}
       className="w6w-exprmodal-item"
-      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        minWidth: 0,
+        ...(tree && tree.depth > 0 ? { paddingLeft: tree.depth * 14 } : {}),
+      }}
     >
       <button
         type="button"
         className={`w6w-exprmodal-source ${cls}`}
         style={{ flex: 1, minWidth: 0 }}
-        title={composite || jsonBinding ? `Insert ${label}` : `Use ${label}`}
+        title={`${composite || jsonBinding ? "Insert" : "Use"} ${tree?.name ?? label}`}
         aria-label={ariaLabel}
         onClick={() =>
           jsonBinding
@@ -361,6 +371,19 @@ export function ExpressionEditorModal({
       )}
     </div>
   );
+
+  // A step's output fields as a tree of plain rows, each showing only its own
+  // name (`outputFieldTree`). Each SAVES the canonical `nodes.<id>.output.<key>`
+  // (the only form the engine resolves) — the key goes into the ref VERBATIM;
+  // the short name and `o.label` are display data and never reach a ref.
+  const fieldSources = (stepId: string, fields: { key: string; path?: boolean }[]) =>
+    outputFieldTree(fields).map(({ field, depth, name }) => {
+      const ref = `nodes.${stepId}.output.${field.key}`;
+      return source(name, { kind: "var", ref }, "w6w-exprmodal-field", null, false, undefined, {
+        name: varLabel(ref),
+        depth,
+      });
+    });
 
   return (
     <Modal
@@ -543,15 +566,7 @@ export function ExpressionEditorModal({
                           </div>
                           {isOpen && (
                             <div className="w6w-exprmodal-subsources">
-                              {fields.map((o) => {
-                                const ref = `nodes.${st.id}.output.${o.key}`;
-                                return source(
-                                  varLabel(ref),
-                                  { kind: "var", ref },
-                                  "w6w-expr-chip-var",
-                                  "·",
-                                );
-                              })}
+                              {fieldSources(st.id, fields)}
                             </div>
                           )}
                         </>
@@ -626,12 +641,8 @@ export function ExpressionEditorModal({
                       </div>
                     )}
                     {/* …and one source per DECLARED output field, nested under
-                        it, collapsed until the toggle above is expanded. Each
-                        SAVES the canonical `nodes.<id>.output.<key>` (the only
-                        form the engine resolves) and SHOWS `varLabel(ref)`,
-                        i.e. the short `<id>.<key>`. The key goes into the ref
-                        VERBATIM — `o.label` is display data and must never be
-                        substituted into a ref. */}
+                        it, collapsed until the toggle above is expanded
+                        (`fieldSources`). */}
                     {fields.length > 0 && isOpen && (
                       <div className="w6w-exprmodal-subsources">
                         {st.outputsFrom === "test" && (
@@ -642,15 +653,7 @@ export function ExpressionEditorModal({
                             Fields from the last test run
                           </span>
                         )}
-                        {fields.map((o) => {
-                          const ref = `nodes.${st.id}.output.${o.key}`;
-                          return source(
-                            varLabel(ref),
-                            { kind: "var", ref },
-                            "w6w-expr-chip-var",
-                            "·",
-                          );
-                        })}
+                        {fieldSources(st.id, fields)}
                       </div>
                     )}
                     {/* External app steps only (`st.hasMeta`, R-7): a fixed group of
