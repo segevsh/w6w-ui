@@ -11,7 +11,13 @@ import type { EdgeRunState } from "./run-visuals.ts";
 
 export interface FlowStep {
   id: string;
-  uses: { app: string; action: string; connection?: string | null };
+  uses: {
+    app: string;
+    action: string;
+    connection?: string | null;
+    /** An app TRIGGER node (`action` is the trigger key): behaves like a built-in trigger on the canvas. */
+    trigger?: true;
+  };
   /**
    * Declared connection-port cardinality for this step (see core
    * `rfcs/node-types.md` · Ports & cardinality). Omitted fields fall through field-wise to the catalog action, the internal def, then `{ in: 1, out: "many" }`.
@@ -341,6 +347,16 @@ export function isTriggerApp(app: string): boolean {
   return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
 }
 
+/**
+ * Whether a step is a trigger NODE: one of the built-in triggers, or an app
+ * trigger node (`uses.trigger === true`). Canvas chrome, wiring and editing key
+ * on this; {@link isTriggerApp} stays for readers that mean the built-in
+ * `@w6w/*` triggers only (a callable workflow's input fields).
+ */
+export function isTriggerStep(uses: { app: string; trigger?: true }): boolean {
+  return isTriggerApp(uses.app) || uses.trigger === true;
+}
+
 /** A palette entry for an internal node: its id, label, group, and config schema. */
 export interface InternalNodeDef {
   app: string;
@@ -439,7 +455,13 @@ export function nodePorts(app: string, action: string): NodePorts {
  */
 export function nodePortsForStep(step: FlowStep, lookup?: PortsLookup): NodePorts {
   const { app, action } = step.uses;
-  return resolvePorts(step.ports, lookup?.(app, action), internalNodeDef(app, action)?.ports);
+  // An app trigger node is an entry: nothing flows into it (like the built-in triggers).
+  const appTriggerPorts: PortsDecl | undefined = step.uses.trigger ? { in: 0, out: 1 } : undefined;
+  return resolvePorts(
+    step.ports,
+    lookup?.(app, action),
+    internalNodeDef(app, action)?.ports ?? appTriggerPorts,
+  );
 }
 
 // Feather-style 24×24 stroked glyphs (inner markup only; the card supplies the
