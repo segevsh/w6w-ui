@@ -17,6 +17,7 @@
  * already uses), so this file never actually loads `provider.tsx`'s React
  * import.
  */
+import { parseResolvableText } from "./components/expression-template.ts";
 import type { StepMeta, StepStartState } from "./provider.tsx";
 import { type ExprPart, type ExprValue, isExprValue, isSecretValue } from "./types.ts";
 
@@ -42,11 +43,17 @@ export type ResolvedSegment =
  * The scope a param's `var` refs resolve against. Built by {@link buildResolveScope}
  * from the SAME two things `StepEditModal` already computes: `testStartState`
  * (for `steps.*`/`trigger.*` — the object literally sent as the test's `state`)
- * and `sampleValues` (for `vars.*`/`documents.*`).
+ * and `sampleValues` (for `var.*`/`documents.*`/`const.*`).
+ *
+ * The fields mirror the engine's `RunScope` (`vars`, `constants`); the roots a ref
+ * names are what the engine's data root exposes — `var.*` (with `vars.*` as its
+ * permanent alias) and `const.*`. {@link resolveRef} maps one onto the other.
  */
 export interface ResolveScope {
   vars: Record<string, unknown>;
   documents: Record<string, unknown>;
+  /** Account constants, read as `const.<name>`. */
+  constants?: Record<string, unknown>;
   steps: Record<string, { output?: unknown; meta?: StepMeta }>;
   /** `nodes.<id>…` root — the SAME object as `steps` (one state, two roots). */
   nodes?: Record<string, { output?: unknown; meta?: StepMeta }>;
@@ -64,8 +71,8 @@ export interface ResolveScope {
    * never reach either shape. An exact flat-key hit here resolves any ref
    * `sampleValues` names directly, regardless of how many segments it has;
    * the nested walk stays the fallback for a ref whose own reconstructed
-   * value happens to be an object (`vars.address` = `{ city: "X" }`, walking
-   * into it for `vars.address.city`), which is a value shape `sampleValues`
+   * value happens to be an object (`var.address` = `{ city: "X" }`, walking
+   * into it for `var.address.city`), which is a value shape `sampleValues`
    * never produces a matching flat key for in the first place.
    *
    * Optional: a `ResolveScope` built by hand (as most tests in
@@ -76,8 +83,18 @@ export interface ResolveScope {
   flat?: Record<string, unknown>;
 }
 
-const VARS_PREFIX = "vars.";
+const VAR_PREFIX = "var.";
+/** The permanent alias of {@link VAR_PREFIX}, still read (engine `evalRoot`). */
+const LEGACY_VARS_PREFIX = "vars.";
 const DOCUMENTS_PREFIX = "documents.";
+const CONST_PREFIX = "const.";
+
+/** `vars.<x>` → `var.<x>`; every other ref unchanged. */
+function canonicalRef(ref: string): string {
+  return ref.startsWith(LEGACY_VARS_PREFIX)
+    ? VAR_PREFIX + ref.slice(LEGACY_VARS_PREFIX.length)
+    : ref;
+}
 
 /**
  * Build a {@link ResolveScope} from the two sources scope fidelity requires
@@ -86,12 +103,12 @@ const DOCUMENTS_PREFIX = "documents.";
  *  - `steps`/`trigger` come from `testStartState` — the exact object the test
  *    invoke sends as `state`, so a `steps.<id>.output.<field>` ref resolves to
  *    what the test will ACTUALLY see, not a design-time sample.
- *  - `vars`/`documents` come from `sampleValues` (`useExpressionOptions()`), a
- *    FLAT map keyed by full ref (`"vars.from_email"`, `"documents.<key>"`).
+ *  - `vars`/`documents`/`constants` come from `sampleValues` (`useExpressionOptions()`), a
+ *    FLAT map keyed by full ref (`"var.from_email"`, `"documents.<key>"`, `"const.<name>"`).
  *    Reconstructed into a nested object here (strip the root prefix, one hop)
  *    so {@link walkPath} can dot-walk into a var/document whose OWN value is an
- *    object — `sampleValues["vars.address"]` holding `{ city: "X" }` still
- *    resolves `vars.address.city` correctly, because the walk continues INTO
+ *    object — `sampleValues["var.address"]` holding `{ city: "X" }` still
+ *    resolves `var.address.city` correctly, because the walk continues INTO
  *    the reconstructed value rather than doing a second flat-key lookup.
  */
 export function buildResolveScope(
@@ -100,16 +117,20 @@ export function buildResolveScope(
 ): ResolveScope {
   const vars: Record<string, unknown> = {};
   const documents: Record<string, unknown> = {};
-  for (const [ref, value] of Object.entries(sampleValues ?? {})) {
-    if (ref.startsWith(VARS_PREFIX)) vars[ref.slice(VARS_PREFIX.length)] = value;
+  const constants: Record<string, unknown> = {};
+  for (const [rawRef, value] of Object.entries(sampleValues ?? {})) {
+    const ref = canonicalRef(rawRef);
+    if (ref.startsWith(VAR_PREFIX)) vars[ref.slice(VAR_PREFIX.length)] = value;
     else if (ref.startsWith(DOCUMENTS_PREFIX))
       documents[ref.slice(DOCUMENTS_PREFIX.length)] = value;
+    else if (ref.startsWith(CONST_PREFIX)) constants[ref.slice(CONST_PREFIX.length)] = value;
   }
   const steps =
     (testStartState?.steps as Record<string, { output?: unknown; meta?: StepMeta }>) ?? {};
   return {
     vars,
     documents,
+    constants,
     steps,
     nodes: steps,
     trigger: testStartState?.trigger ?? {},
@@ -142,22 +163,29 @@ function walkPath(
 
 /** Resolve a single `var`/`$`-marker ref against the scope. */
 function resolveRef(ref: string, scope: ResolveScope): ResolvedSegment {
-  // A `vars.*`/`documents.*` ref that `sampleValues` already names directly
+  const path = canonicalRef(ref);
+  // A `var.*`/`documents.*`/`const.*` ref that `sampleValues` already names directly
   // (any number of segments) resolves exactly, before the nested walk below
   // ever gets a chance to misreconstruct it — see `ResolveScope.flat`'s doc.
   if (
     scope.flat &&
-    (ref.startsWith(VARS_PREFIX) || ref.startsWith(DOCUMENTS_PREFIX)) &&
-    Object.hasOwn(scope.flat, ref)
+    (path.startsWith(VAR_PREFIX) ||
+      path.startsWith(DOCUMENTS_PREFIX) ||
+      path.startsWith(CONST_PREFIX))
   ) {
-    return { status: "resolved", ref, value: scope.flat[ref] };
+    const key = Object.hasOwn(scope.flat, ref) ? ref : path;
+    if (Object.hasOwn(scope.flat, key)) return { status: "resolved", ref, value: scope.flat[key] };
   }
-  // `nodes.<id>…` and `steps.<id>…` are two roots over one state object.
-  const root = scope as unknown as Record<string, unknown>;
-  const walked = walkPath(
-    ref.startsWith("nodes.") && !scope.nodes ? { ...root, nodes: scope.steps } : root,
-    ref,
-  );
+  // The engine's data root: `var`/`const` over the `vars`/`constants` fields, and
+  // `nodes.<id>…`/`steps.<id>…` as two roots over one state object.
+  const { vars, constants, ...rest } = scope;
+  const root: Record<string, unknown> = {
+    ...rest,
+    var: vars,
+    ...(constants ? { const: constants } : {}),
+    nodes: scope.nodes ?? scope.steps,
+  };
+  const walked = walkPath(root, path);
   return walked.present
     ? { status: "resolved", ref, value: walked.value }
     : { status: "unresolved", ref };
@@ -227,6 +255,12 @@ export function isDollarExpr(v: unknown): v is { $expr: unknown } {
 export function resolveParamValue(value: unknown, scope: ResolveScope): ResolvedSegment[] {
   if (isSecretValue(value)) return [{ status: "masked" }];
   if (isExprValue(value)) return (value as ExprValue).parts.map((p) => resolvePart(p, scope));
+  // A `{{ }}` template string resolves exactly as the engine resolves it (escapes consumed);
+  // one marker alone folds to the typed value (`foldResolvedSegments`).
+  if (typeof value === "string") {
+    const parts = parseResolvableText(value);
+    if (parts) return parts.map((p) => resolvePart(p, scope));
+  }
   if (isDollarPath(value)) return [resolveRef(String((value as { $: unknown }).$), scope)];
   if (isDollarExpr(value)) return [{ status: "not-evaluated" }];
   return [{ status: "resolved", value }];

@@ -41,6 +41,26 @@ g.MutationObserver =
 (dom.window as unknown as Record<string, unknown>).MutationObserver = g.MutationObserver;
 g.IS_REACT_ACT_ENVIRONMENT = true;
 
+// json-binding mode mounts a CodeMirror JsonEditor, which needs these (same shims as
+// `ParamsForm.json-binding.test.ts`).
+g.Window = dom.window.Window;
+const raf = (cb: (t: number) => void) => setTimeout(() => cb(Date.now()), 0) as unknown as number;
+g.requestAnimationFrame = raf;
+g.cancelAnimationFrame = (id: number) => clearTimeout(id);
+(dom.window as unknown as Record<string, unknown>).requestAnimationFrame = raf;
+(dom.window as unknown as Record<string, unknown>).cancelAnimationFrame = (id: number) =>
+  clearTimeout(id as unknown as NodeJS.Timeout);
+const rangeProto = dom.window.Range.prototype as unknown as Record<string, unknown>;
+rangeProto.getClientRects = () => [];
+rangeProto.getBoundingClientRect = () => ({
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+});
+
 // jsdom@30 doesn't implement <dialog>'s imperative API — `Modal.tsx` calls
 // `el.showModal()` in a mount effect, which would otherwise throw.
 (
@@ -138,7 +158,7 @@ test("M1 - composed projection, before any test: exactly one Metadata group, for
   const m = await mountModal({ options: { steps }, onSave: (v) => saved.push(v) });
   await click(toggles(m.container)[0]);
   await click(leafBtn(m.container, 0));
-  assert.deepEqual(saved, [{ type: "expr", parts: [{ kind: "var", ref: "nodes.ev.meta.app" }] }]);
+  assert.deepEqual(saved, ["{{ nodes.ev.meta.app }}"]);
 });
 
 for (const [i, k] of KEYS.entries()) {
@@ -146,9 +166,7 @@ for (const [i, k] of KEYS.entries()) {
     const { container, onSaveCalls } = await mountExt();
     await click(toggles(container)[0]);
     await click(leafBtn(container, i));
-    assert.deepEqual(onSaveCalls, [
-      { type: "expr", parts: [{ kind: "var", ref: `nodes.ev.meta.${k}` }] },
-    ]);
+    assert.deepEqual(onSaveCalls, [`{{ nodes.ev.meta.${k} }}`]);
   });
   test(`M3 - the copy icon on the ${k} leaf inserts a chip with that ref`, async () => {
     const { container } = await mountExt();
@@ -239,23 +257,25 @@ test("M6 - save/reload: meta chips read readably; other values round-trip", asyn
     assert.equal(onSaveCalls.length, 1);
     const saved = onSaveCalls[0];
     const ref = text.includes("vars") ? "vars.x" : "nodes.ev.output.id";
-    assert.deepEqual(saved, { type: "expr", parts: [{ kind: "var", ref }] });
+    assert.deepEqual(saved, `{{ ${ref} }}`);
   }
 });
 
-test("M7 - json-binding mode: no Metadata group; Entire output still binds", async () => {
-  const bound: unknown[] = [];
+test("M7 - json-binding mode: one Metadata toggle per app step; a click into an empty draft binds", async () => {
+  const saved: unknown[] = [];
   const { container } = await mountModal({
     mode: "json-binding",
-    onBind: (v) => bound.push(v),
-    options: { steps: [{ id: "ev", hasMeta: true }] },
+    onSaveJson: (v) => saved.push(v),
+    options: { steps: [{ id: "ev", hasMeta: true }, { id: "plain" }] },
   });
-  assert.equal(toggles(container).length, 0);
-  assert.equal(container.textContent?.includes("Metadata"), false);
-  const entire = q(container, "button").find((b) => b.textContent?.includes("Entire output"));
-  assert.ok(entire);
-  await click(entire as HTMLElement);
-  assert.deepEqual(bound, [{ $: "nodes.ev.output" }]);
+  assert.equal(toggles(container).length, 1);
+  await click(toggles(container)[0]);
+  const app = leaves(container).find(
+    (l) => l.querySelector(".w6w-exprmodal-source-label")?.textContent === "App",
+  );
+  await click(app?.querySelector(".w6w-exprmodal-source") as HTMLElement);
+  // Into an empty draft a click binds and closes.
+  assert.deepEqual(saved, ["{{ nodes.ev.meta.app }}"]);
 });
 
 test("V0 - varLabel meta labels are exact for an id sharing no letters with any key", () => {

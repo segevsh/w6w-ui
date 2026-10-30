@@ -290,3 +290,23 @@
   align-items: center;
   gap: var(--w6w-sp-2);
 }
+
+/* The JSON compose pane (json-binding mode) fills the editor pane like the chips editor does,
+   instead of sitting at its content height over empty space. */
+.w6w-exprmodal-json {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+.w6w-exprmodal-json > .w6w-json-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* CodeMirror's own root (the react-codemirror wrapper) — its `.cm-editor` is `height: 100%`. */
+.w6w-exprmodal-json > .w6w-json-editor > :first-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}

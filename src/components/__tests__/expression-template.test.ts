@@ -14,6 +14,7 @@ import type { ExprPart, ExprValue, SecretValue } from "../../types.ts";
 import { paintParts, readParts } from "../expression-dom.ts";
 import {
   RUN_SCOPE_ROOT_NAMES,
+  holdsExpression,
   parseRootAnchoredTemplate,
   partsToValue,
   renderResult,
@@ -93,20 +94,55 @@ test("partsToValue: prunes empty text and collapses a lone text part to a plain 
   assert.equal(partsToValue([{ kind: "text", value: "plain" }]), "plain");
 });
 
-test("partsToValue: anything multipart becomes an ExprValue of wire parts", () => {
-  assert.deepEqual(
+test("partsToValue: multipart saves as the {{ }} template string the author sees", () => {
+  assert.equal(
     partsToValue([
       { kind: "text", value: "Bearer " },
       { kind: "secret", ref: "jwt" },
     ]),
+    "Bearer {{ secrets.jwt }}",
+  );
+  assert.equal(partsToValue([{ kind: "var", ref: "var.n" }]), "{{ var.n }}");
+});
+
+test("partsToValue: a render part has no {{ }} spelling, so that value stays an ExprValue", () => {
+  assert.deepEqual(
+    partsToValue([
+      { kind: "text", value: "Hi " },
+      { kind: "render", ref: "documents.welcome" },
+    ]),
     {
       type: "expr",
       parts: [
-        { kind: "text", value: "Bearer " },
-        { kind: "secret", ref: "jwt" },
+        { kind: "text", value: "Hi " },
+        { kind: "render", ref: "documents.welcome" },
       ],
     },
   );
+});
+
+test("partsToValue: a backslash typed right before a chip is doubled, so it is not an escape", () => {
+  assert.equal(
+    partsToValue([
+      { kind: "text", value: "C:\\" },
+      { kind: "var", ref: "var.dir" },
+    ]),
+    "C:\\\\{{ var.dir }}",
+  );
+});
+
+test("escape — `\\{{ ours }}` stays text in the editor and round-trips verbatim; a vendor `\\{{x}}` is untouched", () => {
+  const { parts } = valueToParts("a \\{{ var.x }} {{ var.y }}");
+  assert.deepEqual(parts, [
+    { kind: "text", value: "a \\{{ var.x }} " },
+    { kind: "var", ref: "var.y" },
+  ]);
+  assert.equal(partsToValue(parts), "a \\{{ var.x }} {{ var.y }}");
+  assert.deepEqual(valueToParts("\\{{name}}").parts, [{ kind: "text", value: "\\{{name}}" }]);
+});
+
+test("renderResult — an escaped marker previews without its backslash", () => {
+  assert.equal(renderResult([{ kind: "text", value: "a \\{{ var.x }}" }], {}), "a {{ var.x }}");
 });
 
 test("valueToParts: a plain string with no {{ }} marker, an ExprValue, and a sealed secret", () => {
@@ -118,15 +154,16 @@ test("valueToParts: a plain string with no {{ }} marker, an ExprValue, and a sea
   assert.deepEqual(valueToParts(sealed), { parts: [], sealed });
 });
 
-test("partsToValue ∘ valueToParts round-trips a multipart value", () => {
-  const v: ExprValue = {
+test("partsToValue ∘ valueToParts: a saved string round-trips; a legacy ExprValue becomes its string", () => {
+  assert.equal(partsToValue(valueToParts("x={{ var.y }}").parts), "x={{ var.y }}");
+  const legacy: ExprValue = {
     type: "expr",
     parts: [
       { kind: "text", value: "x=" },
       { kind: "var", ref: "vars.y" },
     ],
   };
-  assert.deepEqual(partsToValue(valueToParts(v).parts), v);
+  assert.equal(partsToValue(valueToParts(legacy).parts), "x={{ vars.y }}");
 });
 
 test("the re-exported serializeTemplate is the one @w6w/expr defines", () => {
@@ -199,6 +236,7 @@ test("CA-3 — the root set is DERIVED (Record<keyof LocalRunScope, true>), not 
   assert.deepEqual(
     [...RUN_SCOPE_ROOT_NAMES].sort(),
     [
+      "const",
       "documents",
       "foreach",
       "inputs",
@@ -207,6 +245,7 @@ test("CA-3 — the root set is DERIVED (Record<keyof LocalRunScope, true>), not 
       "secrets",
       "steps",
       "trigger",
+      "var",
       "vars",
     ].sort(),
   );
@@ -226,29 +265,27 @@ test("CA-3 — the root set is DERIVED (Record<keyof LocalRunScope, true>), not 
   }
 });
 
-// --- CA-4 — the masked-seal behaviour change (acceptance 6), re-derived
-// against the root-anchored rule. `ExpressionInput.tsx`'s `onLeave` seals a
-// masked field only when `typeof partsToValue(parts) === "string"`. -------
+// --- CA-4 — the masked-seal rule. `ExpressionInput.tsx`'s `onLeave` seals a
+// masked field only when its value does not `holdsExpression`. -------
 
-test("CA-4 — a masked field holding a ROOTED {{ }} yields an ExprValue: onLeave's typeof check no longer seals it", () => {
-  const { parts } = valueToParts("{{ vars.x }}");
-  const v = partsToValue(parts);
-  assert.equal(typeof v, "object");
-  assert.deepEqual(v, { type: "expr", parts: [{ kind: "var", ref: "vars.x" }] });
+test("CA-4 — a masked field holding a ROOTED {{ }} holds an expression: onLeave never seals it", () => {
+  const v = partsToValue(valueToParts("{{ vars.x }}").parts);
+  assert.equal(v, "{{ vars.x }}");
+  assert.equal(holdsExpression(v), true);
+  assert.equal(holdsExpression("{{ secrets.K }}"), true);
 });
 
-test("CA-4 — a masked field holding an UNROOTED {{ }} (a vendor placeholder) still parses to a plain string: onLeave's typeof check still seals it", () => {
-  const { parts } = valueToParts("{{name}}");
-  const v = partsToValue(parts);
-  assert.equal(typeof v, "string");
+test("CA-4 — a masked field holding an UNROOTED {{ }} (a vendor placeholder) holds no expression: onLeave still seals it", () => {
+  const v = partsToValue(valueToParts("{{name}}").parts);
   assert.equal(v, "{{name}}");
+  assert.equal(holdsExpression(v), false);
 });
 
 test("CA-4 — an unterminated {{ (parseTemplate keeps it literal) still seals too", () => {
-  const { parts } = valueToParts("prefix {{ open");
-  const v = partsToValue(parts);
-  assert.equal(typeof v, "string");
+  const v = partsToValue(valueToParts("prefix {{ open").parts);
   assert.equal(v, "prefix {{ open");
+  assert.equal(holdsExpression(v), false);
+  assert.equal(holdsExpression("\\{{ var.x }}"), false, "an escaped marker is literal");
 });
 
 // --- The round-trip parallel to expression-dom.test.ts:382-407's
@@ -326,5 +363,20 @@ test("chain fixture 7 — a secrets. operand refuses outright, never falls throu
 test("chain fixture 8 — the = escape hatch stays exempt: coalesceOperandRefs does not recognise raw JSONLogic as a chain", () => {
   assert.deepEqual(parseRootAnchoredTemplate('{{ ={"var":"anything.at.all"} }}'), [
     { kind: "expr", expr: { var: "anything.at.all" } },
+  ]);
+});
+
+test("`var.x` and `const.x` are run-scope roots: chip, json bare ref, and short label", async () => {
+  const { bareRefBinding } = await import("../json-compose.ts");
+  const { varLabel } = await import("../expression-dom.ts");
+  for (const root of ["var", "const"]) {
+    assert.ok(RUN_SCOPE_ROOT_NAMES.includes(root), root);
+    assert.equal(bareRefBinding(`{{ ${root}.account_id }}`), `{{ ${root}.account_id }}`);
+    assert.equal(varLabel(`${root}.account_id`), "account_id");
+  }
+  // `constants` is not a root: a marker naming it stays literal text.
+  assert.ok(!RUN_SCOPE_ROOT_NAMES.includes("constants"));
+  assert.deepEqual(valueToParts("{{ constants.account_id }}").parts, [
+    { kind: "text", value: "{{ constants.account_id }}" },
   ]);
 });

@@ -1,4 +1,5 @@
 import {
+  type TemplateEscape,
   coalesceOperandRefs,
   hasRefusedChainToken,
   parseTemplate,
@@ -39,15 +40,37 @@ function toWirePart(p: ExprPart): ExprPart {
 }
 
 /**
- * Serialize parts to the leanest faithful VALUE: prune empty text, collapse a
- * lone text segment to a plain string (backward-compat), else an `ExprValue`.
- * Shared by the inline field and the expression editor modal.
+ * Serialize parts to the value that is saved: the `{{ }}` template STRING — exactly what the
+ * author sees (core Workflow RFC amendment, 2026-10-29). Text parts are source text, kept
+ * verbatim (an escaped `\{{ var.x }}` stays escaped). The one exception is a `render` part,
+ * which has no `{{ }}` spelling by design (RFC, *The `render` part kind*): a value holding one
+ * is saved as an `ExprValue` envelope. Shared by the inline field and the expression editor
+ * modal.
  */
 export function partsToValue(parts: ExprPart[]): ExprValue | string {
   const cleaned = parts.filter((p) => p.kind !== "text" || (p.value ?? "") !== "");
   if (cleaned.length === 0) return "";
-  if (cleaned.length === 1 && cleaned[0].kind === "text") return cleaned[0].value ?? "";
-  return { type: "expr", parts: cleaned.map(toWirePart) };
+  if (cleaned.some((p) => p.kind === "render")) {
+    return { type: "expr", parts: cleaned.map(toWirePart) };
+  }
+  let out = "";
+  for (const p of cleaned) {
+    if (p.kind === "text") {
+      out += p.value ?? "";
+      continue;
+    }
+    // A literal backslash typed right before a chip would escape it once saved as text:
+    // double it, so it stays a backslash and the chip stays a reference.
+    if (trailingBackslashCount(out) % 2 === 1) out += "\\";
+    out += serializeTemplate([toWirePart(p)]);
+  }
+  return out;
+}
+
+function trailingBackslashCount(s: string): number {
+  let n = 0;
+  while (n < s.length && s[s.length - 1 - n] === "\\") n += 1;
+  return n;
 }
 
 /**
@@ -67,6 +90,8 @@ export function partsToValue(parts: ExprPart[]): ExprValue | string {
  * cannot silently drift on what a chain IS, only on which roots they accept.
  */
 interface LocalRunScope {
+  /** Project vars. `vars` is its permanent alias (engine `evalRoot`). */
+  var: unknown;
   vars: unknown;
   steps: unknown;
   nodes?: unknown;
@@ -76,6 +101,8 @@ interface LocalRunScope {
   output?: unknown;
   secrets?: unknown;
   documents?: unknown;
+  /** Account constants. */
+  const?: unknown;
 }
 
 /**
@@ -85,6 +112,7 @@ interface LocalRunScope {
  * (missing property) — the set cannot silently drift from the type it mirrors.
  */
 const RUN_SCOPE_ROOTS: Record<keyof LocalRunScope, true> = {
+  var: true,
   vars: true,
   steps: true,
   nodes: true,
@@ -94,6 +122,7 @@ const RUN_SCOPE_ROOTS: Record<keyof LocalRunScope, true> = {
   output: true,
   secrets: true,
   documents: true,
+  const: true,
 };
 
 /** Every root name, for tests that pin the derived set without reaching into the type. */
@@ -131,20 +160,65 @@ function firstSegment(ref: string): string {
  * vendor placeholders with no root of their own).
  */
 export function parseRootAnchoredTemplate(s: string): ExprPart[] {
-  const parts = parseTemplate(s);
-  const allRooted = parts.every((p) => {
-    if (p.kind === "var") {
-      const ref = p.ref ?? "";
-      return !hasRefusedChainToken(ref) && isRunScopeRoot(firstSegment(ref));
-    }
-    if (p.kind === "expr") {
-      const refs = coalesceOperandRefs(p.expr);
-      if (refs === null) return true; // not a chain — the `=` escape hatch: always ours.
-      return refs.every((ref) => isRunScopeRoot(firstSegment(ref)));
-    }
-    return true; // `secret` / `text`
-  });
-  return allRooted ? parts : [{ kind: "text", value: s }];
+  const parts = parseTemplate(s, "editor", EDIT_ESCAPE);
+  return parts.every(isOurPart) ? parts : [{ kind: "text", value: s }];
+}
+
+/** The per-marker rule: rooted `var`, rooted chain, any other `expr`, `secret`, `text`. */
+function isOurPart(p: ExprPart): boolean {
+  if (p.kind === "var") {
+    const ref = p.ref ?? "";
+    return !hasRefusedChainToken(ref) && isRunScopeRoot(firstSegment(ref));
+  }
+  if (p.kind === "expr") {
+    const refs = coalesceOperandRefs(p.expr);
+    if (refs === null) return true; // not a chain — the `=` escape hatch: always ours.
+    return refs.every((ref) => isRunScopeRoot(firstSegment(ref)));
+  }
+  return true; // `secret` / `text`
+}
+
+/**
+ * `\{{` before one of OUR markers keeps it literal (vendor `\{{name}}` is untouched). The
+ * editor keeps the backslash in the text part — what the author typed is what is saved.
+ */
+const EDIT_ESCAPE: TemplateEscape = { isOurs: isOurPart, backslash: "keep" };
+/** The same escape as the engine applies at run time: the backslash is consumed. */
+const RESOLVE_ESCAPE: TemplateEscape = { isOurs: isOurPart, backslash: "strip" };
+
+/**
+ * True when `v` holds a reference the run resolves — an `ExprValue` envelope, or a string with
+ * at least one live marker of ours. Since the editor saves template STRINGS, this (not
+ * `isExprValue`) is the test for "this field is an expression".
+ */
+export function holdsExpression(v: unknown): boolean {
+  if (isExprValue(v)) return true;
+  return (
+    typeof v === "string" &&
+    v.includes("{{") &&
+    parseRootAnchoredTemplate(v).some((p) => p.kind !== "text")
+  );
+}
+
+/**
+ * Parse a string the way the engine resolves a `with` string (`parseResolvableTemplate`):
+ * parts with escapes consumed, or `null` when the engine would pass it through untouched (no
+ * marker of ours, or one marker that is not ours). For previews.
+ */
+export function parseResolvableText(s: string): ExprPart[] | null {
+  if (!s.includes("{{")) return null;
+  const parts = parseTemplate(s, "editor", RESOLVE_ESCAPE);
+  if (!parts.every(isOurPart)) return null;
+  if (parts.some((p) => p.kind !== "text")) return parts;
+  return parts.map((p) => p.value ?? "").join("") !== s ? parts : null;
+}
+
+/** A text part's source with its `\{{` escapes consumed — what the run sends. */
+function unescapeText(text: string): string {
+  if (!text.includes("{{")) return text;
+  return parseTemplate(text, "editor", RESOLVE_ESCAPE)
+    .map((p) => (p.kind === "text" ? (p.value ?? "") : serializeTemplate([p])))
+    .join("");
 }
 
 /**
@@ -192,7 +266,7 @@ export function renderResult(parts: ExprPart[], samples: Record<string, string>)
   for (const p of parts) {
     switch (p.kind) {
       case "text":
-        out += p.value ?? "";
+        out += unescapeText(p.value ?? "");
         break;
       case "var":
       case "render": {

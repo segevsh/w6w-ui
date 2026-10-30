@@ -8,11 +8,12 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { varLabel } from "./components/expression-dom.ts";
+import { holdsExpression } from "./components/expression-template.ts";
+import { bareRefBinding, wholeValueRef } from "./components/json-compose.ts";
 import { type DynamicContext, allowCustomOf } from "./dynamic-fields.ts";
 import { useOptionalW6WApi, useWorkflowProject } from "./provider.tsx";
-import { buildResolveScope, isDollarPath } from "./resolve-params.ts";
-import { resolveParamJson } from "./resolved-json.ts";
-import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
+import type { ActionParam, ExprValue, SecretValue } from "./types.ts";
 import { type UseDynamicFields, useDynamicFields } from "./use-dynamic-fields.ts";
 
 /**
@@ -156,9 +157,8 @@ export interface ParamsFormProps {
  * tidy. Widget is chosen by `param.type` — same field-driven approach as
  * `AuthFieldsForm`, extended with `text` (textarea) and `json` (JsonEditor).
  *
- * Values are collected into a plain object suitable for a step's `with`. For
- * expression bindings (`{ $: "steps.x.output.y" }`) authors drop to the JSON
- * view; this form deals in literals.
+ * Values are collected into a plain object suitable for a step's `with`. A field
+ * bound to a reference holds a `{{ }}` template string (`"{{ nodes.x.output.y }}"`).
  */
 export function ParamsForm({ params, values, onChange, readOnly, dynamic }: ParamsFormProps) {
   const dyn = useDynamicFields(params, values, dynamic, onChange);
@@ -928,7 +928,7 @@ function FxField({
   // free — the modal's `onClose` writes nothing, so `value`, and therefore `fx`,
   // is unchanged. A value that arrives after mount (a saved test seeded into a
   // field that mounted empty) is picked up on the next render, no effect needed.
-  const fx = isExprValue(value);
+  const fx = holdsExpression(value);
   // Multi-line text fields keep their newlines in expression mode too: Enter
   // inserts a literal "\n" instead of being swallowed. Same predicate the
   // textarea branch above renders on, so the two can never disagree.
@@ -1046,8 +1046,9 @@ function JsonParamField({
 }) {
   // "Bound" is DERIVED from the stored value on every render — never a local
   // flag — so control and value cannot disagree (same stance as `FxField`'s `fx`).
-  const bound = isDollarPath(value) && typeof value.$ === "string";
-  const boundRef = bound ? String((value as { $: string }).$) : "";
+  // A whole-value binding: `"{{ ref }}"`, or a legacy `{ "$": ref }`.
+  const boundRef = wholeValueRef(value) ?? "";
+  const bound = boundRef !== "";
   const seed = value ?? param.default;
   // The draft is NEVER seeded from a binding (R-18a): Clear must be able to give
   // back the literal JSON the author had, or "" if there was none.
@@ -1096,6 +1097,15 @@ function JsonParamField({
     }
     setInvalid(!valid);
   };
+  // A whole field typed as one `{{ ref }}` is not JSON (no quotes), but it means exactly the
+  // binding `"{{ ref }}"` the ƒx picker stores. Applied when the field loses focus, never per keystroke:
+  // auto-closed braces make `{{ nodes}}` a complete marker halfway through typing a ref.
+  const commitBareRef = () => {
+    const binding = bareRefBinding(text);
+    if (!binding) return;
+    setInvalid(false);
+    onChange(param.key, binding);
+  };
   const label = param.label ?? param.key;
 
   // Clear: back to the literal JSON the editor still holds (undefined if the
@@ -1109,22 +1119,6 @@ function JsonParamField({
     }
     onChange(param.key, restored);
   };
-  // Preview: the bound ref resolved against the host's sample values. The flow
-  // editor seeds `steps.<id>.output` as a flat key, which `resolveRef` does not
-  // read for `steps.*`, so the nested `steps` scope is built from those keys.
-  const preview = (() => {
-    if (!bound) return "";
-    const steps: Record<string, { output?: unknown }> = {};
-    for (const [ref, v] of Object.entries(exprOptions.sampleValues ?? {})) {
-      const m = /^steps\.([^.]+)\.output$/.exec(ref);
-      if (m) steps[m[1]] = { output: v };
-    }
-    return JSON.stringify(
-      resolveParamJson(value, buildResolveScope(undefined, { steps })),
-      null,
-      2,
-    );
-  })();
 
   return (
     <div className="w6w-field">
@@ -1150,36 +1144,57 @@ function JsonParamField({
       {/* Inline: content-sized, grows with content up to maxHeight, then scrolls
           internally (so it never overlaps the next field). Full view via button. */}
       {bound ? (
-        <div className="w6w-json-binding">
-          <div className="w6w-fx-wrap is-fx">
-            <code>{boundRef}</code>
-            {!readOnly && (
-              <>
+        // Bound: the reference reads exactly like an expression in a text field — one
+        // var chip in the field box (same classes `ExpressionInput` paints), its × to
+        // clear, and the ƒx to reopen the picker. No resolved preview.
+        <div className="w6w-fx-wrap is-fx w6w-json-binding">
+          <div className="w6w-expr">
+            <div className="w6w-expr-field">
+              <div
+                className={`w6w-expr-editor${readOnly ? " is-readonly" : ""}`}
+                data-testid="json-binding-ref"
+              >
+                <span
+                  className="w6w-expr-chip w6w-expr-chip-var"
+                  data-kind="var"
+                  data-ref={boundRef}
+                  title={`Variable: ${boundRef}`}
+                >
+                  <span className="w6w-expr-chip-sigil">◆</span>
+                  <span className="w6w-expr-chip-label">{varLabel(boundRef)}</span>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="w6w-expr-chip-x"
+                      aria-label={`Remove the reference from ${label}`}
+                      // `.w6w-expr-chip-x` styles the glyph; reset only what a <button> adds.
+                      style={{ border: 0, padding: 0, font: "inherit" }}
+                      onClick={clear}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              </div>
+              {!readOnly && (
                 <button
                   type="button"
-                  className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                  className="w6w-expr-edit"
+                  title="Edit expression — browse step outputs, metadata & variables"
+                  aria-label={`Edit expression for ${label}`}
                   onClick={() => setPickerOpen(true)}
                 >
-                  Edit
+                  ƒx
                 </button>
-                <button type="button" className="w6w-btn w6w-btn-ghost w6w-btn-sm" onClick={clear}>
-                  Clear
-                </button>
-              </>
-            )}
+              )}
+            </div>
           </div>
-          <pre
-            className="w6w-json-binding-preview"
-            data-testid="json-binding-preview"
-            style={{ margin: 0, maxHeight: 260, overflow: "auto", fontSize: "0.85em" }}
-          >
-            {preview}
-          </pre>
         </div>
       ) : (
         <JsonEditor
           value={text}
           onChange={onEdit}
+          onBlur={commitBareRef}
           readOnly={readOnly}
           minHeight="34px"
           maxHeight="260px"
@@ -1205,9 +1220,10 @@ function JsonParamField({
         <ExpressionEditorModal
           mode="json-binding"
           value={undefined}
+          jsonValue={value}
           options={exprOptions}
           fieldLabel={label}
-          onBind={(next) => onChange(param.key, next)}
+          onSaveJson={(next) => onChange(param.key, next)}
           onClose={() => setPickerOpen(false)}
         />
       )}
@@ -1252,7 +1268,8 @@ function JsonParamField({
  * A `multiselect` param — a Material-style chips input: the chosen options render
  * as removable chips *inside* a single input-like box, followed by a dropdown
  * (reading as placeholder text) that appends more. Value is an array of the
- * chosen option values; the dropdown only lists options not already selected.
+ * chosen option values (or CSV with `config.valueFormat`); the dropdown only
+ * lists options not already selected.
  */
 function MultiSelectField({
   param,
@@ -1266,26 +1283,28 @@ function MultiSelectField({
   readOnly?: boolean;
 }) {
   const options = Array.isArray(param.options) ? param.options : [];
-  const selected: Array<string | number> = Array.isArray(value)
-    ? (value as Array<string | number>)
-    : Array.isArray(param.default)
-      ? (param.default as Array<string | number>)
+  const csv = param.config?.valueFormat === "csv";
+  const current = value ?? param.default;
+  const selected: Array<string | number> = Array.isArray(current)
+    ? (current as Array<string | number>)
+    : csv && typeof current === "string"
+      ? current
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean)
       : [];
   const selectedKeys = new Set(selected.map(String));
   const available = options.filter((o) => !selectedKeys.has(String(o.value)));
   const labelFor = (v: string | number) =>
     options.find((o) => String(o.value) === String(v))?.label ?? String(v);
+  const commit = (next: Array<string | number>) => onChange(param.key, csv ? next.join(",") : next);
 
   const add = (raw: string) => {
     if (!raw || selectedKeys.has(raw)) return;
     const opt = options.find((o) => String(o.value) === raw);
-    onChange(param.key, [...selected, opt ? opt.value : raw]);
+    commit([...selected, opt ? opt.value : raw]);
   };
-  const remove = (v: string | number) =>
-    onChange(
-      param.key,
-      selected.filter((x) => String(x) !== String(v)),
-    );
+  const remove = (v: string | number) => commit(selected.filter((x) => String(x) !== String(v)));
 
   const placeholder =
     typeof param.placeholder === "string" && param.placeholder ? param.placeholder : "Select…";

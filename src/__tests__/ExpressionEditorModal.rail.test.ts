@@ -274,7 +274,7 @@ test("T-2 — a scalar row click saves that single ref (as Save would) and close
   assert.ok(btn);
   await click(btn);
   assert.equal(onSaveCalls.length, 1);
-  assert.deepEqual(onSaveCalls[0], { type: "expr", parts: [{ kind: "var", ref: "vars.v1" }] });
+  assert.deepEqual(onSaveCalls[0], "{{ var.v1 }}");
   assert.equal(onCloseCalls.length, 1);
   assert.equal(editor.querySelectorAll(".w6w-expr-chip").length, 0);
 });
@@ -293,7 +293,7 @@ test("T-2 — the 'Copy to expression editor' icon inserts a chip, stays open, a
   await click(icon);
   assert.equal(
     (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
-    "vars.v1",
+    "var.v1",
   );
   assert.equal(onSaveCalls.length, 0);
   assert.equal(onCloseCalls.length, 0);

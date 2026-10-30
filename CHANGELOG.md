@@ -9,6 +9,15 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- A JSON param can be composed from references: the picker shows each step's outputs with their
+  metadata, a click inserts the reference at the cursor (adding to the draft, never replacing it),
+  a bound field renders as a chip, and the editor fills its pane.
+- References save as `{{ }}` template strings, with `\{{` escaping a literal marker; a JSON param
+  binds a reference as a quoted `"{{ ref }}"`. Variables are offered under the `var.` root
+  (`vars.` still resolves), and account constants appear as a read-only Constants group under
+  `const.`.
+- `ParamConfig.valueFormat: "csv"` lets a multiselect param store its choices as one
+  comma-separated string.
 - `WorkflowFlowEditor` takes an optional `stepProblems` map (`StepProblems`, exported from `./flow`)
   and paints a missing-connection error ring and tooltip on each affected app step, repainting live
   when the map changes. The host owns detection; omitted, the canvas renders as before.

@@ -67,6 +67,8 @@ A JSON editor with parse errors marked inline.
 | `onChange` | `(value: string) => void` | Required | Every edit. |
 | `onValidChange` | `(parsed: unknown) => void` | None | Fires with the parsed value whenever the text is valid JSON. Never fires while it's invalid. |
 | `onValidityChange` | `({ valid, error? }) => void` | None | Fires on every edit, so you can disable a Save button while the JSON is broken. |
+| `onBlur` | `() => void` | None | Fires when the editor loses focus. |
+| `onCreateEditor` | `(view: EditorView) => void` | None | Receives the CodeMirror view once it exists, for inserting text at the cursor. |
 | `minHeight` | `string` | `"240px"` | |
 | `maxHeight` | `string` | None | Scroll past this height. |
 | `height` | `string` | None | A fixed height. `"100%"` fills a flex parent. |

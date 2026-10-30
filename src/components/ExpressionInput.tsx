@@ -11,7 +11,7 @@ import {
   promoteCompletedMarkerAtCaret,
   readParts,
 } from "./expression-dom.ts";
-import { partsToValue, valueToParts } from "./expression-template.ts";
+import { holdsExpression, partsToValue, valueToParts } from "./expression-template.ts";
 
 /**
  * ExpressionInput — a single field that reads like a textbox but whose contents
@@ -116,9 +116,8 @@ export function ExpressionInput({
   // Seal on blur — but not while the editor modal is open (focus moved there).
   //
   // Deliberate behaviour change (CONDUCTOR AMENDMENT 2026-08-14, T1.2.2):
-  // `valueToParts`'s string arm now root-anchor-parses, so a masked field
-  // holding a ROOTED `{{ vars.x }}` yields an `ExprValue` here — `typeof v ===
-  // "string"` is false, and it no longer seals (sealing would encrypt the
+  // a masked field holding a ROOTED `{{ var.x }}` / `{{ secrets.K }}` holds a
+  // reference (`holdsExpression`), so it never seals (sealing would encrypt the
   // template text and permanently break resolution). A masked field holding
   // an UNROOTED placeholder like `{{name}}` still parses to a plain string
   // and still seals, exactly as before — see `expression-template.test.ts`'s
@@ -128,13 +127,14 @@ export function ExpressionInput({
     const next = e.relatedTarget as Node | null;
     if (next && wrapperRef.current?.contains(next)) return;
     const v = partsToValue(parts);
-    if (typeof v === "string" && v !== "") void sealPlain(v);
+    // A template string (`{{ secrets.K }}`) is a reference, not a value to seal.
+    if (typeof v === "string" && v !== "" && !holdsExpression(v)) void sealPlain(v);
   };
 
   // Adopt a value from the modal: re-seed + repaint. For a masked field a plain
   // string is sealed instead of stored in the clear.
   const adopt = (next: ExprValue | string) => {
-    if (masked && typeof next === "string" && next.trim() !== "") {
+    if (masked && typeof next === "string" && next.trim() !== "" && !holdsExpression(next)) {
       void sealPlain(next);
       return;
     }
