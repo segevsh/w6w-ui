@@ -72,6 +72,12 @@ export interface ExpressionEditorModalProps {
   jsonValue?: unknown;
   /** json-binding mode: Save from the compose pane, with the parsed JSON. */
   onSaveJson?: (next: unknown) => void;
+  /**
+   * json-binding mode only: the field takes one whole value (`ActionParam.whole`). A source click
+   * into an empty draft, or one parsing to exactly `[]` / `{}`, binds the bare ref. Any other
+   * draft composes as usual.
+   */
+  whole?: boolean;
 }
 
 export function ExpressionEditorModal({
@@ -85,6 +91,7 @@ export function ExpressionEditorModal({
   mode,
   jsonValue,
   onSaveJson,
+  whole: wholeField,
 }: ExpressionEditorModalProps) {
   const jsonBinding = mode === "json-binding";
   // json-binding mode's compose pane: the draft text, whether it parses, and the CodeMirror
@@ -116,7 +123,18 @@ export function ExpressionEditorModal({
     } catch {
       whole = null;
     }
-    if (doc.trim() === "" || whole !== null) {
+    let emptyContainer = false;
+    if (wholeField) {
+      try {
+        const parsed: unknown = JSON.parse(doc);
+        emptyContainer = Array.isArray(parsed)
+          ? parsed.length === 0
+          : typeof parsed === "object" && parsed !== null && Object.keys(parsed).length === 0;
+      } catch {
+        emptyContainer = false;
+      }
+    }
+    if (doc.trim() === "" || whole !== null || emptyContainer) {
       onSaveJson?.(`{{ ${ref} }}`);
       onClose();
       return;
