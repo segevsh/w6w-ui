@@ -869,8 +869,8 @@ T0.2.1, T0.3.1, T1.2.1 in `.ai/projects/.work/26-10-28-00-updates/`).
 - `src/flow-types.ts` declares its own `STORE_APP = "@w6w/store"`, with no import from
   `@w6w/workflow-types`, and its seven actions sit in `INTERNAL_NODES` beside the
   `DOCUMENT_APP`/`MODEL_APP` entries. `internalNodeDefaults` seeds exactly `get.required: false`,
-  `increment.by: 1` and `list.limit: 50`. Store contents and the Data page live in studio; this
-  package carries only the palette.
+  `increment.by: 1` and `list.limit: 50`. The store contents UI pieces now live here too (section
+  *Data-store components* below); the Data page that wires them to the API stays in studio.
 - `src/__tests__/store-node-parity.test.ts` checks the palette against
   `../internal-apps/apps/store/index.ts`. It parses that file as text: action set, per-action
   param keys/required/type/options/default/placeholder, output keys. A new or renamed store action
@@ -879,3 +879,28 @@ T0.2.1, T0.3.1, T1.2.1 in `.ai/projects/.work/26-10-28-00-updates/`).
   (`HAS_MANIFEST`, `skip: "internal-apps sibling checkout not present"`). A run that reports
   `# skipped 1` has proved nothing about parity. `model-node-parity.test.ts`, by contrast, fails
   without the sibling (section *26-10-27-01*).
+
+## Data-store components, util and store picker (26-10-30-02-data-stores-everywhere)
+
+**verified: 2026-10-30**, against `proj/26-10-30-02-data-stores-everywhere` @ `3eb4822` (`@w6w/ui` 0.2.15). Re-run for this
+file: `NODE_OPTIONS=--experimental-strip-types pnpm test` gives 1456 pass / 0 fail; `coverage:stories` 64/64.
+
+- **Six data-free components** in `src/components/`: `DataStoreList`, `ColumnsEditor` (now with the optional
+  column `default`), `CsvPanel`, `DataEntryList`, `DataEntryEditor` and `DataTableGrid`. Each has a story and a jsdom test in
+  `src/components/__tests__/`. They render from props alone and hold no API client. Studio's Data page and
+  `@w6w/embed`'s `DataStoreList`/`DataStoreView` wire them to data. `DataStoreList` takes `formatSize`: ui's
+  `formatBytes` prints `2.0 KiB` where Studio prints `2 KiB`, and Studio's `data` guard G1 asserts its own form.
+  Styles live in `src/styles/_data-stores.scss` (ui tokens); `src/styles.css` is regenerated with `pnpm build:css`.
+- **`src/data-stores/data-store-view.ts` is the one copy of the pure cell/grid/error logic.** It was lifted verbatim
+  from Studio's `lib/data-{cells,grid,store-errors}.ts`, which were deleted. It holds types, `SCALAR_TYPES`, `tableSchemaOf`,
+  serialize/parse, row drafts, `dirtyColumns`, `locateDataStoreError` and `remainingTtlSeconds`, 48 exports in all,
+  re-exported from `src/index.ts`. Studio and embed import it from `@w6w/ui`; neither keeps a copy.
+- **Trap: a new export that `@w6w/embed` reads must also reach studio's page-guard barrel.** Studio's page guards
+  stub `@w6w/ui` wholesale (`studio/packages/studio/test/page-guards/stubs/ui-index.tsx`). Since 26-10-30-02 T3.1.3,
+  `ui_stub` (`test/page-guards/run.sh`) always appends the REAL `data-store-view.ts` to that barrel. A new
+  *component* that embed imports still needs a marked stand-in there, or every suite that bundles embed fails to build.
+- **Store picker:** the `@w6w/store` entries' `store` param has the ui-only type `data-store` (`src/flow-types.ts`). `ParamsForm`
+  renders a picker only when the host's `W6WApi` supplies the optional `listDataStores?(project?)`
+  (`src/provider.tsx`); otherwise it is a plain text input. `store-node-parity.test.ts` sanctions exactly
+  that one divergence, keyed to `store`, on the `@w6w/model` `route` ↔ `model-route` precedent. `@w6w/react`'s
+  W6WApi adapter implements neither `listDataStores` nor `listModelRoutes`.

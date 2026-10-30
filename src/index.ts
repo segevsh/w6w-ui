@@ -252,3 +252,71 @@ export {
   resultCopyText,
 } from "./components/result-format.ts";
 export type { DetectedResult } from "./components/result-format.ts";
+
+// ── Data stores (F-2) ──
+export { DataStoreList } from "./components/DataStoreList.tsx";
+export type { DataStoreListProps } from "./components/DataStoreList.tsx";
+export { ColumnsEditor } from "./components/ColumnsEditor.tsx";
+export type { ColumnsEditorProps } from "./components/ColumnsEditor.tsx";
+export { CsvPanel } from "./components/CsvPanel.tsx";
+export type { CsvPanelProps } from "./components/CsvPanel.tsx";
+export {
+  CELL_PROBLEM_COPY,
+  CSV_MAX_BYTES,
+  CSV_TOO_LARGE_COPY,
+  DATA_STORE_ERROR_FALLBACK,
+  DATA_STORE_KIND_LABEL,
+  DATA_STORE_KINDS,
+  DATA_STORE_NETWORK_ERROR,
+  DOC_VALUE_COPY,
+  NEW_ROW_ID,
+  SCALAR_TYPES,
+  VERSION_CONFLICT_COPY,
+  buildRowValue,
+  cellErrorsOf,
+  csvFilenameOf,
+  csvImportMessage,
+  csvLineOf,
+  dirtyColumns,
+  draftFromEntry,
+  errorPlacement,
+  isCellValue,
+  isVersionConflict,
+  kvValueOf,
+  kvValueTypeOf,
+  locateDataStoreError,
+  locateRawResponseError,
+  newRowDraft,
+  parseCell,
+  parseDocText,
+  remainingTtlSeconds,
+  rowValueOf,
+  rowWriteOf,
+  serializeCell,
+  tableSchemaOf,
+} from "./data-stores/data-store-view.ts";
+export type {
+  CellProblem,
+  DataStore,
+  DataStoreCreateInput,
+  DataStoreErrorLocator,
+  DataStoreKind,
+  DataStorePage,
+  DataStorePatch,
+  Entry,
+  EntryPage,
+  ImportResult,
+  KvSchema,
+  RowDraft,
+  ScalarType,
+  TableColumn,
+  TableSchema,
+} from "./data-stores/data-store-view.ts";
+
+// Data store entry views (T2.1.2)
+export { DataEntryList } from "./components/DataEntryList.tsx";
+export type { DataEntryListProps, DataEntryListRow } from "./components/DataEntryList.tsx";
+export { DataEntryEditor } from "./components/DataEntryEditor.tsx";
+export type { DataEntryEditorProps } from "./components/DataEntryEditor.tsx";
+export { DataTableGrid } from "./components/DataTableGrid.tsx";
+export type { DataTableGridProps, DataTableGridRow } from "./components/DataTableGrid.tsx";

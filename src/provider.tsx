@@ -234,6 +234,16 @@ export interface W6WApi {
   ): Promise<{ name: string; model: string; status: "active" | "broken" }[]>;
 
   /**
+   * OPTIONAL: the project's data stores, for the `data-store` step-param
+   * picker (`@w6w/store`). Absent, the param renders as a plain text input and
+   * this is never called. Archived stores are not listed by the host.
+   * `project` is the editor's own project (`WorkflowProjectProvider`) when it
+   * has one — a host should list THAT project's stores, not guess one from its
+   * URL; `undefined` leaves the choice to the host.
+   */
+  listDataStores?(project?: string): Promise<{ name: string; kind: string }[]>;
+
+  /**
    * OPTIONAL: resolve the choices of `options: { source: "resolveFields" }`
    * params from the current form (`POST` to the host). Absent, those params
    * render as plain inputs and this is never called.
