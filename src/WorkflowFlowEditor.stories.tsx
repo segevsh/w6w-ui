@@ -108,6 +108,39 @@ export const ParallelFanOut: Story = {
   },
 };
 
+/** A legacy For each (steps wired after it, no `body`): converted on load to a loop body, so
+ *  the card shows Each item / Done handles, the body step is tinted and badged, and the
+ *  "converted from an older definition" notice shows. */
+export const ForEachLoop: Story = {
+  args: {
+    value: {
+      ...SAMPLE_WORKFLOW,
+      nodes: [
+        { id: "create_event_1", uses: { app: "cohost", action: "create-event" } },
+        { id: "eventbrite_to_cohost_1", uses: { app: "eventbrite", action: "to-cohost" } },
+        {
+          id: "for_each_1",
+          uses: { app: "@w6w/control", action: "foreach" },
+          with: { items: ["{{ nodes.eventbrite_to_cohost_1.output.tickets }}"] },
+        },
+        {
+          id: "update_event_ticket_1",
+          uses: { app: "cohost", action: "update-event-ticket" },
+          with: {
+            event: "{{ nodes.create_event_1.output.id }}",
+            ticket: "{{ nodes.for_each_1.output }}",
+          },
+        },
+      ],
+      edges: [
+        { from: "create_event_1", to: "eventbrite_to_cohost_1" },
+        { from: "eventbrite_to_cohost_1", to: "for_each_1" },
+        { from: "for_each_1", to: "update_event_ticket_1" },
+      ],
+    },
+  },
+};
+
 /** Notes and sections on the canvas: a section framing two nodes, plus a Markdown note.
  *  `fitView` frames the NODES only, so the section hugs them (a frame hanging far outside the
  *  nodes' bounds is clipped by the pane) and the note sits just below, inside the taller pane. */
