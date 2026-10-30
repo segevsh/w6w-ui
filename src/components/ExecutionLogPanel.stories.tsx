@@ -114,3 +114,63 @@ export const RecordedStepErrors: Story = {
     ],
   },
 };
+
+const FOREACH_ITERATIONS = (failAt: number | null): ExecutionLogStep["iterations"] =>
+  [0, 1, 2, 3, 4, 5].map((index) => {
+    const failed = index === failAt;
+    return {
+      index,
+      status: failed ? ("failed" as const) : ("succeeded" as const),
+      ...(failed ? { failedNodeId: "update_event_ticket_1" } : {}),
+      steps: [
+        {
+          id: "map_ticket_1",
+          label: "Map ticket",
+          status: "succeeded" as const,
+          input: { ticket: `t${index}` },
+          output: { mapped: `m${index}` },
+        },
+        {
+          id: "update_event_ticket_1",
+          label: "Update ticket",
+          status: failed ? ("failed" as const) : ("succeeded" as const),
+          input: { id: `t${index}` },
+          ...(failed
+            ? { error: { code: "E_TICKET", message: `Ticket t${index} no longer exists` } }
+            : {}),
+        },
+      ],
+    };
+  });
+
+/** A For each that ran 6 iterations, all succeeded — the last is preselected. */
+export const ForEachIterations: Story = {
+  args: {
+    steps: [
+      {
+        id: "f0",
+        label: "Each ticket",
+        status: "succeeded",
+        iterations: FOREACH_ITERATIONS(null),
+        iterationsTotal: 6,
+        iterationsFailed: 0,
+      },
+    ],
+  },
+};
+
+/** Iteration 3 failed in the second body step — the summary points at it and it is preselected. */
+export const ForEachIterationFailed: Story = {
+  args: {
+    steps: [
+      {
+        id: "f0",
+        label: "Each ticket",
+        status: "failed",
+        iterations: FOREACH_ITERATIONS(3),
+        iterationsTotal: 6,
+        iterationsFailed: 1,
+      },
+    ],
+  },
+};

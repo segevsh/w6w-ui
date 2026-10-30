@@ -226,3 +226,63 @@
   font-size: var(--w6w-fs-xs);
   color: var(--w6w-muted, inherit);
 }
+
+/* For each loops (T2.3.1). The Each item edge — a loop-body link, never
+   serialized — reads as a solid accent line, distinct from the error dash. */
+.w6w-flow .react-flow__edge.w6w-edge-each .react-flow__edge-path {
+  stroke: var(--w6w-accent);
+}
+.w6w-flow .react-flow__edge.w6w-edge-each .react-flow__edge-text {
+  fill: var(--w6w-accent);
+}
+.w6w-flow .react-flow__edge.w6w-edge-each .react-flow__edge-textbg {
+  fill: var(--w6w-panel);
+}
+
+/* The Each item handle: accent-tinted, on the right beside the Done handle. */
+.w6w-flow .react-flow__handle.w6w-handle-each {
+  background: var(--w6w-accent);
+  border-color: var(--w6w-accent);
+}
+.w6w-flow .w6w-node-foreach .react-flow__handle-right {
+  top: 72%;
+}
+.w6w-flow .w6w-node-foreach .react-flow__handle-right.w6w-handle-each {
+  top: 28%;
+}
+.w6w-flow .w6w-foreach-ports {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-self: stretch;
+  text-align: right;
+  color: var(--w6w-muted);
+}
+
+/* A loop-body step: tinted, with a badge naming its For each. */
+.w6w-flow .w6w-node-in-loop [data-run-status] {
+  background: color-mix(in srgb, var(--w6w-accent) 10%, var(--w6w-panel)) !important;
+}
+.w6w-flow .w6w-loop-badge {
+  display: inline-block;
+  margin-top: var(--w6w-sp-1);
+  padding: 0 var(--w6w-sp-2);
+  border: 1px solid var(--w6w-accent);
+  border-radius: 999px;
+  color: var(--w6w-accent);
+}
+.w6w-flow .w6w-loop-legacy-note {
+  max-width: 220px;
+  margin-top: var(--w6w-sp-1);
+  color: var(--w6w-muted);
+}
+
+/* The connect-time loop refusal, anchored to its source node. */
+.w6w-flow .w6w-loop-notice {
+  max-width: 260px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-2);
+  background: var(--w6w-panel);
+  border: 1px solid var(--w6w-danger);
+  border-radius: 8px;
+  color: var(--w6w-danger);
+}

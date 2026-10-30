@@ -181,14 +181,34 @@ test("case A: auto-satisfied with no connections — commits with no `connection
     "P3's passive copy must be present",
   );
   assert.ok(
-    text.includes("scheduled or queued run") && text.includes("still needs a connection"),
-    "P3a's queued-run caveat must be present",
+    !text.includes("scheduled or queued run"),
+    "a tenantAuth sign-in reaches a queued run too, so no queued-run caveat",
   );
   assert.ok(
     Array.from(container.querySelectorAll("button")).some(
       (b) => b.textContent === "Create connection",
     ),
     "the escape hatch to AddConnectionModal must be reachable",
+  );
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+// Case A2 — auto-satisfied through `jit` only: a queued run has no signed-in user's token, so
+// the passive copy carries P3a's queued-run caveat.
+test("case A2: auto-satisfied via jit — the queued-run caveat renders", async () => {
+  const { container, root } = await mount(
+    async () => [{ key: "jit", type: "jit", available: true, autoSatisfied: true }],
+    async () => [],
+  );
+
+  const text = container.textContent ?? "";
+  assert.ok(text.includes("Connected automatically"), "P3's passive copy must be present");
+  assert.ok(
+    text.includes("scheduled or queued run") && text.includes("still needs a connection"),
+    "P3a's queued-run caveat must be present for a jit sign-in",
   );
 
   await act(async () => {

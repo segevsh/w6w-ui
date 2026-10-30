@@ -331,3 +331,43 @@ test("dot-path walk — a hop into null/undefined never yields a value, only 'un
   );
   assert.deepStrictEqual(seg, [{ status: "unresolved", ref: "vars.obj.deeper" }]);
 });
+
+test("foreach scope — buildResolveScope fills ResolveScope.foreach from foreach.* sample keys", () => {
+  const item = { name: "GA", price: 10 };
+  const scope = buildResolveScope({ "foreach.item": item, "foreach.index": 0 }, undefined);
+  assert.deepStrictEqual(scope.foreach, { item, index: 0 });
+  assert.deepStrictEqual(resolveParamValue("{{ foreach.item.name }}", scope), [
+    { status: "resolved", ref: "foreach.item.name", value: "GA" },
+  ]);
+  assert.deepStrictEqual(resolveParamValue("{{ foreach.index }}", scope), [
+    { status: "resolved", ref: "foreach.index", value: 0 },
+  ]);
+  assert.equal(buildResolveScope({ "var.a": 1 }, undefined).foreach, undefined);
+  const unresolved = resolveParamValue("{{ foreach.item.name }}", buildResolveScope({}, undefined));
+  assert.equal(unresolved[0].status, "unresolved");
+});
+
+test("foreach scope — testStartState.foreach wins whole over flat foreach.* sample keys (preview == invoke)", () => {
+  const sample = {
+    "foreach.item": { name: "SAMPLE" },
+    "foreach.item.name": "SAMPLE",
+    "foreach.index": 9,
+  };
+  const scope = buildResolveScope(sample, { foreach: { item: { name: "EDITED" }, index: 3 } });
+  assert.deepStrictEqual(resolveParamValue("{{ foreach.item.name }}", scope)[0], {
+    status: "resolved",
+    ref: "foreach.item.name",
+    value: "EDITED",
+  });
+  assert.deepStrictEqual(resolveParamValue("{{ foreach.index }}", scope)[0], {
+    status: "resolved",
+    ref: "foreach.index",
+    value: 3,
+  });
+  // No seeded foreach: the sample keys still drive the preview (T2.4.1 behaviour).
+  const noSeed = buildResolveScope(sample, { steps: {} });
+  assert.deepStrictEqual(noSeed.foreach, { item: { name: "SAMPLE" }, index: 9 });
+  // A seeded foreach with no item never reads the sample item.
+  const noItem = buildResolveScope(sample, { foreach: { index: 1 } });
+  assert.equal(resolveParamValue("{{ foreach.item.name }}", noItem)[0].status, "unresolved");
+});

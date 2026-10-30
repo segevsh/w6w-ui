@@ -47,7 +47,8 @@ export type { TriggerFieldDef } from "./trigger-fields.ts";
 
 export { flowToWorkflow, workflowToFlow } from "./flow-utils.ts";
 export type { StepNode, StepNodeData } from "./flow-utils.ts";
-export type { StepProblem, StepProblems } from "./step-problems.ts";
+export type { StepProblem, StepProblemFix, StepProblems } from "./step-problems.ts";
+export { applyStepProblemFix, findLoopProblems } from "./flow-problems.ts";
 
 export { CanvasLayer } from "./CanvasLayer.tsx";
 export type { CanvasLayerProps } from "./CanvasLayer.tsx";

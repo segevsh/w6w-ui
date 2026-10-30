@@ -129,6 +129,32 @@ export function isRefSafePath(path: string): boolean {
 }
 
 /**
+ * Lay a step's flat output fields out as a tree for the picker: each row shows only its OWN
+ * name, nested under the nearest listed ancestor. `event`, `event.tz`, `event.start.utc` read as
+ * `event` › `tz`, `start.utc` — the step id and the shared prefix are what truncated every row to
+ * the same `eventbrite_to_cohost_1.event.…`. A literal key (no `path`) is one name at depth 0.
+ * Display only: the ref is still built from the verbatim `key`.
+ */
+export function outputFieldTree<F extends { key: string; path?: boolean }>(
+  fields: F[],
+): { field: F; depth: number; name: string }[] {
+  const paths = new Set(fields.filter((f) => f.path).map((f) => f.key));
+  return fields.map((field) => {
+    if (!field.path) return { field, depth: 0, name: field.key };
+    const segs = field.key.split(".");
+    let depth = 0;
+    let cut = 0;
+    for (let i = 1; i < segs.length; i++) {
+      if (paths.has(segs.slice(0, i).join("."))) {
+        depth++;
+        cut = i;
+      }
+    }
+    return { field, depth, name: segs.slice(cut).join(".") };
+  });
+}
+
+/**
  * Build the non-editable inline chip (tag) DOM node for a part.
  *
  * `renderToggle` is opt-in and defaults OFF: `makeChip` is shared through

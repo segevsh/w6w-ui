@@ -10,11 +10,22 @@
  * add-step Test tab (T1.1.1 — the new caller, via {@link stepBuilderUpstreamSteps}).
  */
 import type { Edge } from "@xyflow/react";
-import type { ExpressionStepSource } from "./components/ExpressionOptions.tsx";
+import type {
+  ExpressionLoopSource,
+  ExpressionStepSource,
+} from "./components/ExpressionOptions.tsx";
+import { wholeValueRef } from "./components/json-compose.ts";
+import { isForeachStep, loopBodies, loopMembership } from "./flow-loop.ts";
 import { TRIGGER_APP, internalNodeDef, isInternalApp } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
-import { type ActionShapeDef, inferOutputFields, resolveOutputShape } from "./output-shape.ts";
+import {
+  type ActionShapeDef,
+  inferOutputFields,
+  resolveOutputShape,
+  valueAtPath,
+} from "./output-shape.ts";
 import type { StepMeta, StepStartState, StepTest } from "./provider.tsx";
+import { buildResolveScope, resolveParamValue } from "./resolve-params.ts";
 import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
 
 /**
@@ -51,6 +62,8 @@ export interface SeedSource {
 interface PendingConnect {
   nodeId: string;
   handleType: "source" | "target";
+  /** The lane the drag came off (WFE's `pendingConnect` carries it). */
+  lane?: "success" | "error" | "each";
 }
 
 /** Every node id that is a graph ancestor of `rootId` — walks `edges` backward. */
@@ -160,6 +173,97 @@ function projectStepSources(
 }
 
 /**
+ * The array a For each's `items` resolves to at design time, or `undefined`.
+ * A whole-value ref (`{{ nodes.x.output.tickets }}` / `{ "$": … }`) resolves through
+ * `resolve-params.ts` against the saved test outputs; a literal array is returned as-is;
+ * anything else (a non-array result, a multipart template, a missing ref) is `undefined`.
+ */
+export function resolveLoopItems(
+  items: unknown,
+  testOutputs: Record<string, unknown>,
+): unknown[] | undefined {
+  if (wholeValueRef(items) !== null) {
+    const steps: Record<string, { output?: unknown }> = {};
+    for (const [id, output] of Object.entries(testOutputs)) steps[id] = { output };
+    const segs = resolveParamValue(items, buildResolveScope(undefined, { steps }));
+    const seg = segs.length === 1 ? segs[0] : undefined;
+    return seg?.status === "resolved" && Array.isArray(seg.value) ? seg.value : undefined;
+  }
+  return Array.isArray(items) ? items : undefined;
+}
+
+/**
+ * The picker's loop-aware projection, in ONE place (never a filter in a caller).
+ * `ownLoop` is the For each the anchor sits in the body of (or is about to join).
+ * - Inside that body the For each itself is dropped (its own output does not exist yet),
+ *   along with every OTHER loop's body steps; earlier body steps and the For each's own
+ *   ancestors stay.
+ * - Any other For each in scope (after the loop) keeps its place and offers `items` plus the
+ *   LAST body step's fields as `items.0.<field>` (D-A11). Body steps are never offered.
+ */
+function loopAwareSources(
+  ids: Set<string>,
+  ownLoop: string | undefined,
+  nodes: StepNode[],
+  edges: Edge[],
+  shapes: StepShapeContext = {},
+): { steps: ExpressionStepSource[]; hasTrigger: boolean; extraSampleIds: string[] } {
+  const membership = loopMembership(nodes, edges);
+  const visible = new Set<string>();
+  for (const id of ids) {
+    if (id === ownLoop) continue;
+    const owner = membership[id];
+    if (owner !== undefined && owner !== ownLoop) continue;
+    visible.add(id);
+  }
+  const projected = projectStepSources(visible, nodes, shapes);
+  const bodies = loopBodies(nodes, edges);
+  const extra: string[] = [];
+  const steps = projected.steps.map((st): ExpressionStepSource => {
+    const body = bodies.get(st.id);
+    if (!body || body.length === 0) return st;
+    const last = body[body.length - 1];
+    const lastStep = nodes.find((n) => n.id === last)?.data.step;
+    const testOutputs = shapes.testOutputs ?? {};
+    const shape = lastStep
+      ? resolveOutputShape(
+          shapes.actionDef?.(lastStep.uses.app, lastStep.uses.action),
+          testOutputs[last],
+        )
+      : undefined;
+    if (!extra.includes(last)) extra.push(last);
+    const fields = (shape?.fields ?? []).map((f) => ({
+      key: `items.0.${f.key}`,
+      path: true as const,
+    }));
+    return {
+      id: st.id,
+      label: st.label,
+      outputs: [{ key: "items", path: true }, ...fields],
+      ...(shape ? { outputsFrom: shape.from } : {}),
+    };
+  });
+  return { steps, hasTrigger: projected.hasTrigger, extraSampleIds: extra };
+}
+
+/** The `loop` source for a step in `foreachId`'s body — keys absent when unresolvable. */
+function loopSourceFor(
+  foreachId: string,
+  nodes: StepNode[],
+  shapes: StepShapeContext = {},
+): ExpressionLoopSource {
+  const loop: ExpressionLoopSource = { foreachId };
+  const items = nodes.find((n) => n.id === foreachId)?.data.step.with?.items;
+  const arr = resolveLoopItems(items, shapes.testOutputs ?? {});
+  if (arr && arr.length > 0) {
+    loop.itemSample = arr[0];
+    const outputs = inferOutputFields(arr[0]);
+    if (outputs) loop.itemOutputs = outputs;
+  }
+  return loop;
+}
+
+/**
  * The workflow state a given step can reference: the outputs of every step
  * that runs before it (its graph ancestors) plus whether a trigger precedes
  * it.
@@ -205,9 +309,28 @@ export function upstreamStateSources(
   nodes: StepNode[],
   edges: Edge[],
   shapes?: StepShapeContext,
-): { steps: ExpressionStepSource[]; hasTrigger: boolean } {
-  const ids = editingId ? ancestorIds(editingId, edges) : new Set(nodes.map((n) => n.id));
-  return projectStepSources(ids, nodes, shapes);
+  draftId?: string | null,
+): {
+  steps: ExpressionStepSource[];
+  hasTrigger: boolean;
+  /** Present iff the anchor step is a loop-body member. */
+  loop?: ExpressionLoopSource;
+  /** Saved tests the projection reads beyond `steps` (enclosing-ahead For each's last body step). */
+  extraSampleIds?: string[];
+} {
+  // `draftId` anchors the add-step builder's rail, but only for a draft that already sits in a
+  // loop body; every other builder add (floating, or outside a body) keeps offering every node.
+  let anchor = editingId;
+  if (!anchor && draftId && loopMembership(nodes, edges)[draftId] !== undefined) anchor = draftId;
+  if (!anchor) return projectStepSources(new Set(nodes.map((n) => n.id)), nodes, shapes);
+  const ownLoop = loopMembership(nodes, edges)[anchor];
+  const out = loopAwareSources(ancestorIds(anchor, edges), ownLoop, nodes, edges, shapes);
+  return {
+    steps: out.steps,
+    hasTrigger: out.hasTrigger,
+    ...(ownLoop ? { loop: loopSourceFor(ownLoop, nodes, shapes) } : {}),
+    ...(out.extraSampleIds.length > 0 ? { extraSampleIds: out.extraSampleIds } : {}),
+  };
 }
 
 /**
@@ -235,7 +358,36 @@ export function stepBuilderUpstreamSteps(
   if (!pendingConnect || pendingConnect.handleType === "target") return [];
   const ids = ancestorIds(pendingConnect.nodeId, edges);
   ids.add(pendingConnect.nodeId);
-  return projectStepSources(ids, nodes, shapes).steps;
+  const ownLoop = builderOwnLoop(pendingConnect, nodes, edges);
+  return loopAwareSources(ids, ownLoop, nodes, edges, shapes).steps;
+}
+
+/**
+ * The For each the add-step builder's new step lands in the body of: a drag off a For each's
+ * Each-item handle puts it IN that body; a drag off a body step keeps it in that step's body.
+ * Off the Done side the For each stays on offer.
+ */
+function builderOwnLoop(
+  pendingConnect: PendingConnect,
+  nodes: StepNode[],
+  edges: Edge[],
+): string | undefined {
+  const dragged = nodes.find((n) => n.id === pendingConnect.nodeId);
+  return pendingConnect.lane === "each" && isForeachStep(dragged?.data.step)
+    ? pendingConnect.nodeId
+    : loopMembership(nodes, edges)[pendingConnect.nodeId];
+}
+
+/** The `loop` source for the add-step builder's new step — the same decision as its rail. */
+export function stepBuilderLoop(
+  pendingConnect: PendingConnect | null,
+  nodes: StepNode[],
+  edges: Edge[],
+  shapes?: StepShapeContext,
+): ExpressionLoopSource | undefined {
+  if (!pendingConnect || pendingConnect.handleType === "target") return undefined;
+  const ownLoop = builderOwnLoop(pendingConnect, nodes, edges);
+  return ownLoop ? loopSourceFor(ownLoop, nodes, shapes) : undefined;
 }
 
 /**
@@ -290,7 +442,10 @@ export async function fetchSeedSources(
  * ⚠️ Single-step scope only. A full run (`POST /workflows/:id/run`) builds its
  * own scope and is not affected by this.
  */
-export function startStateFromSeeds(seeds: SeedSource[]): StepStartState | undefined {
+export function startStateFromSeeds(
+  seeds: SeedSource[],
+  loop?: { item?: unknown; index?: number },
+): StepStartState | undefined {
   const steps: Record<string, { output?: unknown; meta?: StepMeta }> = {};
   for (const s of seeds) {
     const output = s.test.lastRunOutput;
@@ -303,11 +458,57 @@ export function startStateFromSeeds(seeds: SeedSource[]): StepStartState | undef
     const meta = s.test.lastRunMeta;
     steps[s.stepId] = { output: hasOutput ? output : null, ...(meta ? { meta } : {}) };
   }
-  return Object.keys(steps).length > 0 ? { steps } : undefined;
+  const hasSteps = Object.keys(steps).length > 0;
+  // Off a loop body the result is exactly what it was before `loop` existed.
+  if (!loop) return hasSteps ? { steps } : undefined;
+  // A loop-body step also carries the iteration scope (`state.foreach`, the same wire shape the
+  // engine's inner scope has); the `item` key is present only when there is one.
+  return {
+    ...(hasSteps ? { steps } : {}),
+    foreach: { ...(loop.item !== undefined ? { item: loop.item } : {}), index: loop.index ?? 0 },
+  };
+}
+
+/** The default `{ item, index }` a loop-body Test is seeded with: the sample item, index 0. */
+export function loopSeedFromSource(
+  loop: ExpressionLoopSource | undefined,
+): { item?: unknown; index?: number } | undefined {
+  if (!loop) return undefined;
+  return { ...("itemSample" in loop ? { item: loop.itemSample } : {}), index: 0 };
+}
+
+/** The editable "Current item" text a loop's sample item starts as (`""` when there is none). */
+export function loopItemText(loop: ExpressionLoopSource | undefined): string {
+  if (!loop || !("itemSample" in loop)) return "";
+  return JSON.stringify(loop.itemSample, null, 2) ?? "";
 }
 
 /**
- * Sample values for a step's `steps.<id>.meta.*` refs, from a saved fixture's
+ * Parse the loop seed control's two fields. A blank item means "no item"; a blank index means 0.
+ * Invalid item JSON, or an index that is not a non-negative integer, is an ERROR — the caller
+ * refuses the run rather than falling back to the sample.
+ */
+export function parseLoopSeed(
+  itemText: string,
+  indexText: string,
+): { ok: true; value: { item?: unknown; index: number } } | { ok: false; error: string } {
+  let item: unknown;
+  if (itemText.trim() !== "") {
+    try {
+      item = JSON.parse(itemText);
+    } catch {
+      return { ok: false, error: "The current item must be valid JSON." };
+    }
+  }
+  const idx = indexText.trim() === "" ? 0 : Number(indexText.trim());
+  if (!Number.isInteger(idx) || idx < 0) {
+    return { ok: false, error: "The index must be a whole number, 0 or more." };
+  }
+  return { ok: true, value: { ...(item !== undefined ? { item } : {}), index: idx } };
+}
+
+/**
+ * Sample values for a step's `nodes.<id>.meta.*` refs (and the `steps.` alias), from a saved fixture's
  * `lastRunMeta`. Reads the four named fields only; absent meta yields nothing
  * (a version or connection is never derived from anywhere else).
  */
@@ -316,11 +517,59 @@ export function stepMetaSampleValues(
   meta: StepMeta | null | undefined,
 ): Record<string, unknown> {
   if (!meta) return {};
-  const p = `steps.${stepId}.meta`;
-  return {
-    [`${p}.app`]: meta.app,
-    [`${p}.version`]: meta.version,
-    [`${p}.action`]: meta.action,
-    [`${p}.connectionId`]: meta.connectionId,
+  const out: Record<string, unknown> = {};
+  // `nodes.` is what the picker inserts; `steps.` stays as its compat alias.
+  for (const root of ["nodes", "steps"]) {
+    const p = `${root}.${stepId}.meta`;
+    out[`${p}.app`] = meta.app;
+    out[`${p}.version`] = meta.version;
+    out[`${p}.action`] = meta.action;
+    out[`${p}.connectionId`] = meta.connectionId;
+  }
+  return out;
+}
+
+/**
+ * The flat `sampleValues` the expression editor's Result preview reads: each upstream step's
+ * last test output on the very refs the picker inserts (`nodes.<id>.output`, `.output.<key>`,
+ * each offered nested path), mirrored under `steps.` (the compat alias), plus metadata and,
+ * for a loop-body step, `foreach.item` / `foreach.item.<key>` / `foreach.index` (= 0, the
+ * sample element's position). Lives here (not in WFE) so a render test can drive it.
+ */
+export function upstreamSampleValues(
+  steps: ExpressionStepSource[],
+  testOutputs: Record<string, unknown>,
+  testMetas: Record<string, StepMeta>,
+  loop?: ExpressionLoopSource,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {};
+  const put = (path: string, value: unknown) => {
+    next[`nodes.${path}`] = value;
+    next[`steps.${path}`] = value;
   };
+  for (const st of steps) {
+    Object.assign(next, stepMetaSampleValues(st.id, testMetas[st.id]));
+    const output = testOutputs[st.id];
+    if (output === undefined) continue;
+    put(`${st.id}.output`, output);
+    if (typeof output === "object" && output !== null && !Array.isArray(output)) {
+      for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
+        put(`${st.id}.output.${k}`, v);
+      }
+    }
+    for (const o of st.outputs ?? []) {
+      if (!o.path || !o.key.includes(".")) continue;
+      const v = valueAtPath(output, o.key);
+      if (v !== undefined) put(`${st.id}.output.${o.key}`, v);
+    }
+  }
+  if (loop && "itemSample" in loop) {
+    next["foreach.item"] = loop.itemSample;
+    for (const o of loop.itemOutputs ?? []) {
+      const v = valueAtPath(loop.itemSample, o.key);
+      if (v !== undefined) next[`foreach.item.${o.key}`] = v;
+    }
+    next["foreach.index"] = 0;
+  }
+  return next;
 }

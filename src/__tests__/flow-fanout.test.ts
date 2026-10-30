@@ -51,3 +51,17 @@ test("A3 fanOutLabel wording is pinned", () => {
   assert.equal(fanOutLabel(3, "parallel"), "Runs these 3 nodes in parallel");
   assert.equal(fanOutLabel(2, "sequential"), "Runs these 2 nodes in sequence");
 });
+
+test("fanOutState ignores the each lane", () => {
+  const eachE = (t: string): Edge => ({
+    id: `a->${t}`,
+    source: "a",
+    target: t,
+    data: { when: "each" },
+  });
+  assert.deepEqual(fanOutState("a", [eachE("b"), e("c", "success")]), { enabled: false, count: 1 });
+  assert.deepEqual(fanOutState("a", [eachE("b"), e("c", "success"), e("d", "success")]), {
+    enabled: true,
+    count: 2,
+  });
+});

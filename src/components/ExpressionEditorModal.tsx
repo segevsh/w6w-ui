@@ -15,6 +15,7 @@ import {
   isRefSafeKey,
   isRefSafePath,
   makeChip,
+  outputFieldTree,
   paintParts,
   placeCaretAtEnd,
   promoteCompletedMarkerAtCaret,
@@ -72,6 +73,12 @@ export interface ExpressionEditorModalProps {
   jsonValue?: unknown;
   /** json-binding mode: Save from the compose pane, with the parsed JSON. */
   onSaveJson?: (next: unknown) => void;
+  /**
+   * json-binding mode only: the field takes one whole value (`ActionParam.whole`). A source click
+   * into an empty draft, or one parsing to exactly `[]` / `{}`, binds the bare ref. Any other
+   * draft composes as usual.
+   */
+  whole?: boolean;
 }
 
 export function ExpressionEditorModal({
@@ -85,6 +92,7 @@ export function ExpressionEditorModal({
   mode,
   jsonValue,
   onSaveJson,
+  whole: wholeField,
 }: ExpressionEditorModalProps) {
   const jsonBinding = mode === "json-binding";
   // json-binding mode's compose pane: the draft text, whether it parses, and the CodeMirror
@@ -116,7 +124,18 @@ export function ExpressionEditorModal({
     } catch {
       whole = null;
     }
-    if (doc.trim() === "" || whole !== null) {
+    let emptyContainer = false;
+    if (wholeField) {
+      try {
+        const parsed: unknown = JSON.parse(doc);
+        emptyContainer = Array.isArray(parsed)
+          ? parsed.length === 0
+          : typeof parsed === "object" && parsed !== null && Object.keys(parsed).length === 0;
+      } catch {
+        emptyContainer = false;
+      }
+    }
+    if (doc.trim() === "" || whole !== null || emptyContainer) {
       onSaveJson?.(`{{ ${ref} }}`);
       onClose();
       return;
@@ -241,7 +260,12 @@ export function ExpressionEditorModal({
   const inputs = options.inputs ?? [];
   const documents = options.documents ?? [];
   const steps = options.steps ?? [];
-  const hasState = steps.length > 0 || !!options.hasTrigger;
+  const loop = options.loop;
+  const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
+  const hasState = hasWorkflowState || !!loop;
+  const loopFields = (loop?.itemOutputs ?? []).filter((o) =>
+    o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
+  );
   const template = serializeTemplate(parts);
 
   // The sample map the Result pane previews against: host-seeded defaults
@@ -304,17 +328,26 @@ export function ExpressionEditorModal({
     sigil: string | null,
     composite = false,
     ariaLabel?: string,
+    // `name` replaces `label` in the tooltip (a tree row shows a short label but
+    // names its full ref on hover); `depth` indents a tree row.
+    tree?: { name: string; depth: number },
   ) => (
     <div
       key={`${part.kind}:${part.ref ?? label}`}
       className="w6w-exprmodal-item"
-      style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        minWidth: 0,
+        ...(tree && tree.depth > 0 ? { paddingLeft: tree.depth * 14 } : {}),
+      }}
     >
       <button
         type="button"
         className={`w6w-exprmodal-source ${cls}`}
         style={{ flex: 1, minWidth: 0 }}
-        title={composite || jsonBinding ? `Insert ${label}` : `Use ${label}`}
+        title={`${composite || jsonBinding ? "Insert" : "Use"} ${tree?.name ?? label}`}
         aria-label={ariaLabel}
         onClick={() =>
           jsonBinding
@@ -338,6 +371,19 @@ export function ExpressionEditorModal({
       )}
     </div>
   );
+
+  // A step's output fields as a tree of plain rows, each showing only its own
+  // name (`outputFieldTree`). Each SAVES the canonical `nodes.<id>.output.<key>`
+  // (the only form the engine resolves) — the key goes into the ref VERBATIM;
+  // the short name and `o.label` are display data and never reach a ref.
+  const fieldSources = (stepId: string, fields: { key: string; path?: boolean }[]) =>
+    outputFieldTree(fields).map(({ field, depth, name }) => {
+      const ref = `nodes.${stepId}.output.${field.key}`;
+      return source(name, { kind: "var", ref }, "w6w-exprmodal-field", null, false, undefined, {
+        name: varLabel(ref),
+        depth,
+      });
+    });
 
   return (
     <Modal
@@ -411,7 +457,23 @@ export function ExpressionEditorModal({
           {jsonBinding && !hasState && (
             <span className="w6w-expr-menu-empty">No upstream steps</span>
           )}
-          {hasState && (
+          {loop && (
+            <div className="w6w-exprmodal-group" data-testid="expr-loop-group">
+              <span className="w6w-exprmodal-group-label">Loop</span>
+              {source(
+                "Current item",
+                { kind: "var", ref: "foreach.item" },
+                "w6w-expr-chip-var",
+                "↻",
+              )}
+              {source("Index", { kind: "var", ref: "foreach.index" }, "w6w-expr-chip-var", "#")}
+              {loopFields.map((o) => {
+                const ref = `foreach.item.${o.key}`;
+                return source(o.key, { kind: "var", ref }, "w6w-expr-chip-var", "·");
+              })}
+            </div>
+          )}
+          {hasWorkflowState && (
             <div className="w6w-exprmodal-group">
               <span className="w6w-exprmodal-group-label">Workflow state</span>
               {options.hasTrigger &&
@@ -504,15 +566,7 @@ export function ExpressionEditorModal({
                           </div>
                           {isOpen && (
                             <div className="w6w-exprmodal-subsources">
-                              {fields.map((o) => {
-                                const ref = `nodes.${st.id}.output.${o.key}`;
-                                return source(
-                                  varLabel(ref),
-                                  { kind: "var", ref },
-                                  "w6w-expr-chip-var",
-                                  "·",
-                                );
-                              })}
+                              {fieldSources(st.id, fields)}
                             </div>
                           )}
                         </>
@@ -587,12 +641,8 @@ export function ExpressionEditorModal({
                       </div>
                     )}
                     {/* …and one source per DECLARED output field, nested under
-                        it, collapsed until the toggle above is expanded. Each
-                        SAVES the canonical `nodes.<id>.output.<key>` (the only
-                        form the engine resolves) and SHOWS `varLabel(ref)`,
-                        i.e. the short `<id>.<key>`. The key goes into the ref
-                        VERBATIM — `o.label` is display data and must never be
-                        substituted into a ref. */}
+                        it, collapsed until the toggle above is expanded
+                        (`fieldSources`). */}
                     {fields.length > 0 && isOpen && (
                       <div className="w6w-exprmodal-subsources">
                         {st.outputsFrom === "test" && (
@@ -603,15 +653,7 @@ export function ExpressionEditorModal({
                             Fields from the last test run
                           </span>
                         )}
-                        {fields.map((o) => {
-                          const ref = `nodes.${st.id}.output.${o.key}`;
-                          return source(
-                            varLabel(ref),
-                            { kind: "var", ref },
-                            "w6w-expr-chip-var",
-                            "·",
-                          );
-                        })}
+                        {fieldSources(st.id, fields)}
                       </div>
                     )}
                     {/* External app steps only (`st.hasMeta`, R-7): a fixed group of

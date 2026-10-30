@@ -59,7 +59,7 @@ export function excludeSelfStep(
   return selfId ? steps.filter((s) => s.id !== selfId) : steps;
 }
 
-/** An upstream step whose output this field can reference (`steps.<id>.output`). */
+/** An upstream step whose output this field can reference (`nodes.<id>.output`). */
 export interface ExpressionStepSource {
   /** Step id — the key under `steps` in the run scope. */
   id: string;
@@ -69,7 +69,7 @@ export interface ExpressionStepSource {
    * The step's output field keys, when any are known (a manual trigger's
    * configured `fields`, a built-in node's static output, or an app action's
    * shape — see `outputsFrom`). Each entry feeds exactly one ref —
-   * `steps.<id>.output.<key>` — which is the canonical form the engine resolves
+   * `nodes.<id>.output.<key>` — which is the canonical form the engine resolves (`steps.<id>…` is its compat alias)
    * (`RunScope.steps`; `core/rfcs/workflow.md` §"Expressions", `core/rfcs/node-types.md`
    * "Executing a trigger node yields the run's start payload … which downstream
    * nodes read as `steps.<triggerId>.output`").
@@ -96,11 +96,23 @@ export interface ExpressionStepSource {
   needsTest?: boolean;
   /**
    * `true` for an EXTERNAL app-action step only (R-7): the picker then offers a fixed
-   * Metadata group (`steps.<id>.meta.app|version|action|connectionId`). **Omitted, not
+   * Metadata group (`nodes.<id>.meta.app|version|action|connectionId`). **Omitted, not
    * `false`**, for triggers and every `@w6w/*` node. Carries no metadata VALUE: the group
    * is just labels, and the value exists only at run time.
    */
   hasMeta?: boolean;
+}
+
+/**
+ * The For each a step sits in the body of: offered as the rail's "Loop" group (Current item,
+ * Index, one row per item field). Present only for a loop-body step.
+ */
+export interface ExpressionLoopSource {
+  foreachId: string;
+  /** Element [0] of the For each's resolved `items`. OMITTED (key absent) when unresolvable. */
+  itemSample?: unknown;
+  /** `inferOutputFields(itemSample)`. OMITTED when none. */
+  itemOutputs?: { key: string; label?: string; path?: boolean }[];
 }
 
 /**
@@ -169,10 +181,12 @@ export interface ExpressionOptions {
   documents?: ExpressionDocumentSource[];
   /**
    * The workflow state leading to this step: upstream steps whose output is in
-   * scope (`steps.<id>.output`). Present only in a workflow context; omitted for
+   * scope (`nodes.<id>.output`). Present only in a workflow context; omitted for
    * a standalone field.
    */
   steps?: ExpressionStepSource[];
+  /** The enclosing For each, when the field belongs to a loop-body step (`foreach.item` / `foreach.index`). */
+  loop?: ExpressionLoopSource;
   /** Whether a trigger event is in scope (`trigger.event`). */
   hasTrigger?: boolean;
   /**

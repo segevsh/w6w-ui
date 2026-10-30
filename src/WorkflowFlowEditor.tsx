@@ -69,6 +69,7 @@ import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { Copyable } from "./components/Copyable.tsx";
 import {
+  type ExpressionLoopSource,
   type ExpressionOptions,
   ExpressionOptionsProvider,
   type ExpressionStepSource,
@@ -95,8 +96,21 @@ import {
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
 import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
+import { isForeachStep } from "./flow-loop.ts";
+import {
+  type LoopRefusalReason,
+  bridgeDeletedBodyStep,
+  deleteStepMessage,
+  loopRefusalMessage,
+  stampLoopOf,
+  stripBody,
+} from "./flow-loop.ts";
+import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
 import {
   CALL_APP,
+  CONTROL_APP,
+  type CanvasLane,
+  EACH_SOURCE_HANDLE,
   ERROR_SOURCE_HANDLE,
   type FlowStep,
   type FlowWorkflow,
@@ -132,7 +146,6 @@ import {
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
 // form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
 // header comment for why this lives outside WorkflowFlowEditor.tsx.
-import { valueAtPath } from "./output-shape.ts";
 import {
   type StepMeta,
   type StepStartState,
@@ -148,9 +161,13 @@ import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./
 import {
   type SeedSource,
   type StepShapeContext,
+  loopItemText,
+  parseLoopSeed,
+  resolveLoopItems,
   startStateFromSeeds,
+  stepBuilderLoop,
   stepBuilderUpstreamSteps,
-  stepMetaSampleValues,
+  upstreamSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
 import {
@@ -273,7 +290,7 @@ export interface WorkflowFlowEditorProps {
    * connection no longer exists gets an error ring + tooltip. Omitted ⇒ the
    * canvas renders exactly as today. The host owns detection; this editor never
    * infers a problem itself. Repaints live (same `value.id`) and is never
-   * persisted: `flowToWorkflow` never reads `data.stepProblem`.
+   * persisted: `flowToWorkflow` never reads `data.stepProblems`.
    */
   stepProblems?: StepProblems;
   /**
@@ -435,49 +452,6 @@ function Inner({
   const actionDefs = useAppActionDefs(api, nodes);
   const portsLookup = useMemo(() => portsLookupFromDefs(actionDefs), [actionDefs]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
-  // T1.1.1 — live run-state repaint. `initial` above deliberately re-derives
-  // nodes/edges ONLY on workflow identity change (Trap 1 — its own lint
-  // suppression comment a few lines up says so), so a poll tick that
-  // changes `runState` while `value.id` stays put would be invisible to the
-  // cards if it went through `workflowToFlow` — that memo simply never fires
-  // again. This effect instead patches the already-authoritative React Flow
-  // state directly, the same mechanism a drag/connect/delete already uses to
-  // update `nodes`/`edges` without re-deriving `initial`.
-  //
-  // Only new `data` keys are stamped — `stepStatus`/`runStatus` on nodes, a
-  // run-aware `className`/`label` on edges. `data.step` and `data.when` (the
-  // fields `flowToWorkflow` reads back to build the persisted document) are
-  // never touched here, so nothing run-related can round-trip into a saved
-  // workflow (A6).
-  //
-  // Functional `setNodes`/`setEdges` updaters read the PREVIOUS state
-  // directly, so `nodes`/`edges` need not be dependencies — keeping this
-  // effect keyed on `runState` alone (plus the setters, stable across
-  // renders) is what makes it fire on every run-state change and nothing
-  // else, including a plain drag or edit that doesn't touch `runState`.
-  useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) => {
-        const stepStatus = stepVisualState(runState, n.id);
-        if (n.data.stepStatus === stepStatus && n.data.runStatus === runState?.status) return n;
-        return { ...n, data: { ...n.data, stepStatus, runStatus: runState?.status } };
-      }),
-    );
-    setEdges((eds) =>
-      eds.map((e) => {
-        const lane = edgeLane(e);
-        const run = edgeRunState(runState, e.source, lane);
-        const visuals = edgeVisuals(lane, run);
-        if (e.className === visuals.className && e.label === visuals.label) return e;
-        return { ...e, className: visuals.className, label: visuals.label };
-      }),
-    );
-  }, [runState, setNodes, setEdges]);
-  // Host-supplied step problems — same live-repaint mechanism as runState above:
-  // stamps/clears `data.stepProblem` only, never `data.step`.
-  useEffect(() => {
-    setNodes((nds) => applyStepProblems(nds, stepProblems));
-  }, [stepProblems, setNodes]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Notes + sections: live canvas state (geometry renders live; persistCanvas decides what is
   // written). Re-seeded only on workflow identity change, like nodes/edges.
@@ -523,7 +497,7 @@ function Inner({
      * handle id that is never `ERROR_SOURCE_HANDLE`, so this naturally reads
      * "success" for that gesture without a separate branch.
      */
-    lane: "success" | "error";
+    lane: CanvasLane;
   } | null>(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   // React Flow's `colorMode` defaults to "light", so without this its chrome
@@ -541,6 +515,56 @@ function Inner({
     setEditingId(null);
     setCanvas(initialCanvas);
   }, [initial, initialCanvas, setNodes, setEdges]);
+
+  // These two stamps are declared AFTER the workflow-swap reset above on purpose: effects run in
+  // declaration order, so the reset (which reseeds nodes from `initial`, with neither stamp) would
+  // otherwise overwrite a first-render `runState`/`stepProblems`. `initial` is a dep so they
+  // re-stamp after a swap too.
+  // T1.1.1 — live run-state repaint. `initial` above deliberately re-derives
+  // nodes/edges ONLY on workflow identity change (Trap 1 — its own lint
+  // suppression comment a few lines up says so), so a poll tick that
+  // changes `runState` while `value.id` stays put would be invisible to the
+  // cards if it went through `workflowToFlow` — that memo simply never fires
+  // again. This effect instead patches the already-authoritative React Flow
+  // state directly, the same mechanism a drag/connect/delete already uses to
+  // update `nodes`/`edges` without re-deriving `initial`.
+  //
+  // Only new `data` keys are stamped — `stepStatus`/`runStatus` on nodes, a
+  // run-aware `className`/`label` on edges. `data.step` and `data.when` (the
+  // fields `flowToWorkflow` reads back to build the persisted document) are
+  // never touched here, so nothing run-related can round-trip into a saved
+  // workflow (A6).
+  //
+  // Functional `setNodes`/`setEdges` updaters read the PREVIOUS state
+  // directly, so `nodes`/`edges` need not be dependencies — keeping this
+  // effect keyed on `runState` alone (plus the setters, stable across
+  // renders) is what makes it fire on every run-state change and nothing
+  // else, including a plain drag or edit that doesn't touch `runState`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((n) => {
+        const stepStatus = stepVisualState(runState, n.id);
+        if (n.data.stepStatus === stepStatus && n.data.runStatus === runState?.status) return n;
+        return { ...n, data: { ...n.data, stepStatus, runStatus: runState?.status } };
+      }),
+    );
+    setEdges((eds) =>
+      eds.map((e) => {
+        const lane = edgeLane(e);
+        const run = edgeRunState(runState, e.source, lane);
+        const visuals = edgeVisuals(lane, run);
+        if (e.className === visuals.className && e.label === visuals.label) return e;
+        return { ...e, className: visuals.className, label: visuals.label };
+      }),
+    );
+  }, [runState, initial, setNodes, setEdges]);
+  // Host-supplied step problems — same live-repaint mechanism as runState above:
+  // stamps/clears `data.stepProblems` only, never `data.step`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
+  useEffect(() => {
+    setNodes((nds) => applyStepProblems(nds, stepProblems));
+  }, [stepProblems, initial, setNodes]);
 
   // Stamp the `canvas` key onto an outgoing workflow. Omitted entirely when there is nothing to
   // keep (no notes, no sections), so a workflow that never used the feature round-trips unchanged.
@@ -566,6 +590,31 @@ function Inner({
     (c: Connection | Edge) => canConnect(c.source, c.target, nodes, edges, portsLookup),
     [nodes, edges, portsLookup],
   );
+
+  // The typed reason a loop-breaking connection was refused, anchored to the node it
+  // was drawn from (D-A6, D-B2). Its own channel — never the edge-lane panel, which
+  // needs a selected edge. Cleared on the next successful connect and when the
+  // selected node changes (guarded by `loopNoticeSelRef`: React Flow re-invokes
+  // `onSelectionChange` after every render, so an unguarded clear would wipe the
+  // notice before it paints).
+  const [loopNotice, setLoopNotice] = useState<{
+    nodeId: string;
+    reason: LoopRefusalReason;
+  } | null>(null);
+  const loopNoticeSelRef = useRef<string | null>(null);
+  // The handle a drag started on (see `dragLane`): xyflow's end-state handle is wrong for Done.
+  const connectStartRef = useRef<{
+    nodeId: string | null;
+    handleId: string | null;
+    handleType: string | null;
+  } | null>(null);
+
+  // Mark each loop-body step with its For each (`data.loopOf`) from the each-lane
+  // edges. Its own effect, never folded into the runState / stepProblems ones, and
+  // never touching `canvas` — the stamp is canvas-only and `flowToWorkflow` ignores it.
+  useEffect(() => {
+    setNodes((nds) => stampLoopOf(nds, edges));
+  }, [edges, setNodes]);
 
   const onConnect = useCallback(
     (params: Parameters<typeof addEdge>[0]) => {
@@ -608,6 +657,10 @@ function Inner({
           lane,
           portsLookup,
         );
+        if (refusal && refusal.refused === "loop") {
+          setLoopNotice({ nodeId: params.source, reason: refusal.reason });
+          return;
+        }
         if (refusal) {
           const holder = edges.find((e) => e.source === params.source && edgeLane(e) === lane);
           if (holder) {
@@ -638,6 +691,7 @@ function Inner({
         return;
       }
       setLaneError(null);
+      setLoopNotice(null);
       setEdges(next);
       emitChange(nodes, next);
     },
@@ -654,6 +708,23 @@ function Inner({
       const fromNode = connectionState.fromNode;
       if (!fromNode) return;
       const handleType = connectionState.fromHandle?.type === "target" ? "target" : "source";
+      // A drop ON an existing node that the editor rejected is a refusal, never "add a
+      // new node here": when the loop rule names why (e.g. the Done handle onto the
+      // loop's own first step), show that reason anchored to the source and stop.
+      const toNode = connectionState.toNode;
+      if (toNode && handleType === "source") {
+        const reason = connectDropRefusal(
+          fromNode.id,
+          toNode.id,
+          dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
+          nodes,
+          edges,
+        );
+        if (reason) {
+          setLoopNotice({ nodeId: fromNode.id, reason });
+          return;
+        }
+      }
       // Only spawn if the origin handle can participate at all — a source handle
       // needs an exit port, a target handle an entry port. (A full single-slot
       // port is fine: the auto-wire below replaces its existing edge.)
@@ -674,11 +745,11 @@ function Inner({
         nodeId: fromNode.id,
         handleType,
         position,
-        lane: laneForSourceHandle(connectionState.fromHandle?.id),
+        lane: dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
       });
       setBuilderOpen(true);
     },
-    [readOnly, screenToFlowPosition, nodes, portsLookup],
+    [readOnly, screenToFlowPosition, nodes, edges, portsLookup],
   );
 
   // A plain click on a port: the same "new step wired to this port" as a drag
@@ -697,7 +768,9 @@ function Inner({
           ? { x: r.x - r.w - gap, y: r.y }
           : lane === "error"
             ? { x: r.x, y: r.y + r.h + gap }
-            : { x: r.x + r.w + gap, y: r.y };
+            : lane === "each"
+              ? { x: r.x + r.w + gap, y: r.y - r.h - gap / 2 }
+              : { x: r.x + r.w + gap, y: r.y };
       setPendingConnect({ nodeId, handleType, position, lane });
       setBuilderOpen(true);
     },
@@ -721,7 +794,7 @@ function Inner({
     (id: string) => {
       if (readOnly) return;
       const nextNodes = nodes.filter((n) => n.id !== id);
-      const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
+      const nextEdges = bridgeDeletedBodyStep(id, nodes, edges);
       const nextCanvas = pruneSectionMembers(canvas, id);
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -867,7 +940,7 @@ function Inner({
         nodes.map((n) => n.id),
         `${src.data.step.id}_copy`,
       );
-      const cloned: FlowStep = { ...structuredClone(src.data.step), id: newId };
+      const cloned: FlowStep = { ...stripBody(structuredClone(src.data.step)), id: newId };
       const newNode: StepNode = {
         id: newId,
         type: src.type,
@@ -914,6 +987,18 @@ function Inner({
       // source handle points the edge at the new node; a target handle reverses it.
       // Gated + replacing per the port rules (applyConnect) against the new node.
       let nextEdges = edges;
+      // A loop-breaking auto-wire is never silent (D-B2): the step is added
+      // unconnected only together with the typed notice, anchored to the source node.
+      let loopRefused: { nodeId: string; reason: LoopRefusalReason } | null = null;
+      const noteLoopRefusal = (
+        source: string,
+        target: string,
+        lane: CanvasLane,
+        anchor: string,
+      ) => {
+        const r = connectRefusal(source, target, nextNodes, edges, lane, portsLookup);
+        if (r && r.refused === "loop") loopRefused = { nodeId: anchor, reason: r.reason };
+      };
       if (pendingConnect) {
         const [source, target] =
           pendingConnect.handleType === "target"
@@ -922,8 +1007,16 @@ function Inner({
         // The lane captured at drag-release time (T1.1.1) — a step spawned by
         // dragging the error port onto empty canvas is wired error, one spawned
         // from the ordinary exit is wired success.
-        nextEdges =
-          applyConnect(source, target, nextNodes, edges, pendingConnect.lane, portsLookup) ?? edges;
+        const wired = applyConnect(
+          source,
+          target,
+          nextNodes,
+          edges,
+          pendingConnect.lane,
+          portsLookup,
+        );
+        if (!wired) noteLoopRefusal(source, target, pendingConnect.lane, pendingConnect.nodeId);
+        nextEdges = wired ?? edges;
       } else {
         // "+ Node" (no drag) — human override, 2026-08-30. A trigger
         // auto-wires to the CURRENT chain root, but ONLY when no trigger
@@ -936,9 +1029,11 @@ function Inner({
         if (isTriggerApp(built.uses.app)) {
           if (!existingTrigger) {
             const root = findChainRoot(nodes, edges);
-            if (root)
-              nextEdges =
-                applyConnect(id, root.id, nextNodes, edges, "success", portsLookup) ?? edges;
+            if (root) {
+              const wired = applyConnect(id, root.id, nextNodes, edges, "success", portsLookup);
+              if (!wired) noteLoopRefusal(id, root.id, "success", root.id);
+              nextEdges = wired ?? edges;
+            }
           }
         } else {
           const unconnectedTrigger =
@@ -946,14 +1041,17 @@ function Inner({
               ? existingTrigger
               : undefined;
           const from = unconnectedTrigger ?? findChainTail(nodes, edges);
-          if (from)
-            nextEdges =
-              applyConnect(from.id, id, nextNodes, edges, "success", portsLookup) ?? edges;
+          if (from) {
+            const wired = applyConnect(from.id, id, nextNodes, edges, "success", portsLookup);
+            if (!wired) noteLoopRefusal(from.id, id, "success", from.id);
+            nextEdges = wired ?? edges;
+          }
         }
       }
 
       setNodes(nextNodes);
       if (nextEdges !== edges) setEdges(nextEdges);
+      setLoopNotice(loopRefused);
       setSelectedId(id);
       // Progressive commit (T4.1.1): the builder stays open past this first
       // commit to keep taking edits via `onDraftChange`, so closing is
@@ -1348,10 +1446,6 @@ function Inner({
   // so it needs the RUNNING step's graph ancestors — the step editor's own
   // `upstreamState` below is computed for `editingId`, a different step.
   const collecting = runResult?.status === "collect" && !!runningStep;
-  const runUpstreamSteps = useMemo(
-    () => (runResult ? upstreamStateSources(runResult.stepId, nodes, edges).steps : []),
-    [runResult, nodes, edges],
-  );
 
   const fanOutCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -1383,18 +1477,31 @@ function Inner({
     }),
     [actionDefs, stepTestOutputs],
   );
+  // The ▶ Run modal's projection, kept WHOLE: ONE call yields both the seed chips' ancestors
+  // (`.steps`) and the `loop` the Current item / Index seed comes from (never a second membership
+  // derivation). It passes `stepShapes` so the loop's sample item resolves.
+  const runUpstreamSteps = useMemo(
+    () =>
+      runResult ? upstreamStateSources(runResult.stepId, nodes, edges, stepShapes) : undefined,
+    [runResult, nodes, edges, stepShapes],
+  );
+  const runSteps = useMemo(() => runUpstreamSteps?.steps ?? [], [runUpstreamSteps]);
   // While the add-step builder is open `editingId` is null, which makes
   // `upstreamStateSources` offer EVERY node — including the step being drafted
   // (progressively committed as a node). Exclude it from its own rail sources.
   const [draftStepId, setDraftStepId] = useState<string | null>(null);
   const upstreamState = useMemo(() => {
-    const st = upstreamStateSources(editingId, nodes, edges, stepShapes);
+    const st = upstreamStateSources(editingId, nodes, edges, stepShapes, draftStepId);
     return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
   }, [editingId, draftStepId, nodes, edges, stepShapes]);
   // A stable identity for *which* steps are upstream. The memo above rebuilds on
   // every node drag and every field edit; this string changes only when the SET
   // does, so the fetch below doesn't re-run on each keystroke.
-  const upstreamIdsKey = JSON.stringify(upstreamState.steps.map((s) => s.id));
+  // Includes the saved tests the projection reads beyond `steps` (an after-loop For each's last body step).
+  const upstreamIdsKey = JSON.stringify([
+    ...upstreamState.steps.map((s) => s.id),
+    ...(upstreamState.extraSampleIds ?? []),
+  ]);
 
   // Design-time sample values for the expression editor's Result pane: what each
   // upstream step's LAST TEST RUN actually captured, flattened onto the very refs
@@ -1450,28 +1557,11 @@ function Inner({
   // The last test output, flattened onto the very refs the picker inserts: the
   // whole output, and each offered field path (nested ones included). Values
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
-  const stepSampleValues = useMemo(() => {
-    const next: Record<string, unknown> = {};
-    for (const st of upstreamState.steps) {
-      Object.assign(next, stepMetaSampleValues(st.id, stepTestMetas[st.id]));
-      const output = stepTestOutputs[st.id];
-      if (output === undefined) continue;
-      next[`steps.${st.id}.output`] = output;
-      // Every own key of a plain object, as before…
-      if (typeof output === "object" && output !== null && !Array.isArray(output)) {
-        for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
-          next[`steps.${st.id}.output.${k}`] = v;
-        }
-      }
-      // …plus each offered nested field path.
-      for (const o of st.outputs ?? []) {
-        if (!o.path || !o.key.includes(".")) continue;
-        const v = valueAtPath(output, o.key);
-        if (v !== undefined) next[`steps.${st.id}.output.${o.key}`] = v;
-      }
-    }
-    return next;
-  }, [upstreamState.steps, stepTestOutputs, stepTestMetas]);
+  const stepSampleValues = useMemo(
+    () =>
+      upstreamSampleValues(upstreamState.steps, stepTestOutputs, stepTestMetas, upstreamState.loop),
+    [upstreamState.steps, upstreamState.loop, stepTestOutputs, stepTestMetas],
+  );
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
   // editor's left panel shows every source at once.
@@ -1492,6 +1582,7 @@ function Inner({
       ...(exprOptions ?? {}),
       steps: upstreamState.steps,
       hasTrigger: upstreamState.hasTrigger,
+      loop: upstreamState.loop,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
@@ -1549,7 +1640,11 @@ function Inner({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onConnectStart={(_e, p) => {
+                      connectStartRef.current = p;
+                    }}
                     onConnectEnd={onConnectEnd}
+                    onPaneClick={() => setLoopNotice(null)}
                     isValidConnection={isValidConnection}
                     // A finished drag is what makes a new coordinate stick: until this
                     // existed, dragging went only through `onNodesChange` and never
@@ -1611,6 +1706,10 @@ function Inner({
                       // a silent CPU burn in a page, a frozen main thread under Storybook.
                       setSelectedId(sel[0]?.id ?? null);
                       setSelectedEdgeId(edgeSel[0]?.id ?? null);
+                      if (loopNoticeSelRef.current !== (sel[0]?.id ?? null)) {
+                        loopNoticeSelRef.current = sel[0]?.id ?? null;
+                        setLoopNotice(null);
+                      }
                       // Deliberately NOT clearing `laneError` here — see its declaration.
                     }}
                     nodeTypes={nodeTypes}
@@ -1752,7 +1851,7 @@ function Inner({
                     chosen by which handle it was dragged from — this panel keeps its
                     job as the RE-LANE affordance for an edge already drawn on the
                     wrong port, not the only way to author an error edge. */}
-                    {!readOnly && selectedEdge && (
+                    {!readOnly && selectedEdge && edgeLane(selectedEdge) !== "each" && (
                       <Panel position="top-right">
                         <div className="w6w-edge-lane">
                           <span className="w6w-muted w6w-small">Run on</span>
@@ -1777,6 +1876,13 @@ function Inner({
                           )}
                         </div>
                       </Panel>
+                    )}
+                    {loopNotice && (
+                      <NodeToolbar nodeId={loopNotice.nodeId} position={Position.Bottom} isVisible>
+                        <div className="w6w-loop-notice w6w-small" role="alert">
+                          {loopRefusalMessage(loopNotice.reason)}
+                        </div>
+                      </NodeToolbar>
                     )}
                     <CanvasLayer
                       canvas={canvas}
@@ -1828,6 +1934,7 @@ function Inner({
                       // own Test tab can seed `{{ steps.<id>.output.<field> }}` the
                       // same way the step editor's Test tab already does.
                       upstreamSteps={stepBuilderUpstreamSteps(pendingConnect, nodes, edges)}
+                      loop={stepBuilderLoop(pendingConnect, nodes, edges, stepShapes)}
                     />
                   )}
 
@@ -1842,10 +1949,16 @@ function Inner({
                       // (via `mergedExprOptions`) — the incoming-state picker seeds from
                       // each ancestor's latest saved step-test rather than re-walking the graph.
                       upstreamSteps={mergedExprOptions.steps ?? []}
+                      loop={mergedExprOptions.loop}
+                      foreachItemCount={
+                        isForeachStep(editingStep)
+                          ? resolveLoopItems(editingStep.with?.items, stepTestOutputs)?.length
+                          : undefined
+                      }
                       readOnly={readOnly}
                       fanOutCount={fanOutCounts.get(editingId) ?? 0}
                       initialView={editView}
-                      stepProblem={editingNode?.data.stepProblem}
+                      stepProblems={editingNode?.data.stepProblems}
                       onChange={(next) => updateStep(editingId, next)}
                       onClose={() => setEditingId(null)}
                       onTestRun={onTestRun}
@@ -1863,7 +1976,8 @@ function Inner({
                           key={runResult.stepId}
                           workflowId={value.id}
                           step={runningStep}
-                          upstreamSteps={runUpstreamSteps}
+                          upstreamSteps={runSteps}
+                          loop={runUpstreamSteps?.loop}
                           onCancel={() => setRunResult(null)}
                           onRun={(values, state) => performRunStep(runResult.stepId, values, state)}
                         />
@@ -1948,7 +2062,7 @@ function Inner({
                   {pendingDelete !== null && (
                     <ConfirmModal
                       title="Delete node"
-                      message={`Delete node "${pendingDelete}"? Its connections are removed too.`}
+                      message={deleteStepMessage(pendingDelete, nodes, edges)}
                       confirmLabel="Delete"
                       onConfirm={() => {
                         performDeleteStep(pendingDelete);
@@ -1980,6 +2094,67 @@ function parseStateOverride(text: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The loop seed a test of a For each BODY step is sent as `state.foreach`: the sample item
+ * (editable JSON) and the index (default 0). While "Current item" is untouched it FOLLOWS the
+ * loop's `itemSample` (which can arrive after mount); once edited, the edit wins.
+ */
+function useLoopSeed(loop: ExpressionLoopSource | undefined) {
+  const [editedItem, setEditedItem] = useState<string | null>(null);
+  const [indexText, setIndexText] = useState("0");
+  const itemText = editedItem ?? loopItemText(loop);
+  const parsed = loop ? parseLoopSeed(itemText, indexText) : undefined;
+  return { active: !!loop, itemText, indexText, setItemText: setEditedItem, setIndexText, parsed };
+}
+type LoopSeed = ReturnType<typeof useLoopSeed>;
+
+/** The seed `startStateFromSeeds` takes: absent off a loop and while the control is invalid. */
+function loopSeedValue(seed: LoopSeed): { item?: unknown; index?: number } | undefined {
+  return seed.parsed?.ok ? seed.parsed.value : undefined;
+}
+
+/** Why a loop seed refuses the run (`null` when it is fine, or there is no loop). */
+function loopSeedError(seed: LoopSeed): string | null {
+  return seed.parsed && !seed.parsed.ok ? seed.parsed.error : null;
+}
+
+/** Sibling of {@link IncomingStateField}: the Current item / Index a loop-body test runs with. */
+function LoopSeedField({ seed, readOnly }: { seed: LoopSeed; readOnly?: boolean }) {
+  if (!seed.active) return null;
+  const error = loopSeedError(seed);
+  return (
+    <div className="w6w-field w6w-loop-seed">
+      <span>Current item</span>
+      <textarea
+        rows={3}
+        value={seed.itemText}
+        readOnly={readOnly}
+        spellCheck={false}
+        aria-label="Current item"
+        onChange={(e) => seed.setItemText(e.target.value)}
+      />
+      <span>Index</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={seed.indexText}
+        readOnly={readOnly}
+        aria-label="Index"
+        onChange={(e) => seed.setIndexText(e.target.value)}
+      />
+      <span className="w6w-hint">
+        This step runs once per item of the For each. Test it as one iteration — starting from the
+        sample item, or edit it.
+      </span>
+      {error && (
+        <span className="w6w-hint" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -2115,6 +2290,7 @@ function StepRunCollect({
   workflowId,
   step,
   upstreamSteps,
+  loop,
   onRun,
   onCancel,
 }: {
@@ -2123,6 +2299,8 @@ function StepRunCollect({
   step: FlowStep;
   /** Graph ancestors of this step; their saved tests are offered as seeds. */
   upstreamSteps: ExpressionStepSource[];
+  /** The enclosing For each when this step is in its body (from the same projection call). */
+  loop?: ExpressionLoopSource;
   /**
    * Fired when the user presses Run — with the trigger's filled values, or (for
    * every other step) the incoming-state override alone, plus the start state
@@ -2183,7 +2361,8 @@ function StepRunCollect({
   const seeds = useSeedSources(workflowId, upstreamSteps, !isTrigger);
   // The same fixtures the chips offer, projected into the run's start state —
   // one source, so what the chips SAY is upstream is what the run is GIVEN.
-  const startState = startStateFromSeeds(seeds);
+  const loopSeed = useLoopSeed(loop);
+  const startState = startStateFromSeeds(seeds, loopSeedValue(loopSeed));
 
   // …then layered with what was entered the last time this step was tested or
   // run. `listStepTests` is oldest-first, so the LAST entry is the most recent
@@ -2231,7 +2410,9 @@ function StepRunCollect({
   // the Test tab sends — so the required-params gate is applied to that, not to
   // the override alone. Never a second required-check.
   const effective = isTrigger ? values : { ...(step.with ?? {}), ...(state ?? {}) };
-  const canRun = !!params && seeded && validDraft && requiredParamsFilled(params, effective);
+  const loopError = isTrigger ? null : loopSeedError(loopSeed);
+  const canRun =
+    !!params && seeded && validDraft && !loopError && requiredParamsFilled(params, effective);
 
   return (
     // `.w6w-stepconfig` frame + body + pinned footer (D-3): this component is a
@@ -2266,6 +2447,7 @@ function StepRunCollect({
                 only the incoming state changes per run. Edit the node to change how it is
                 configured.
               </p>
+              <LoopSeedField seed={loopSeed} />
               <IncomingStateField text={stateText} onChange={setStateText} seeds={seeds} />
             </>
           )}
@@ -2277,13 +2459,15 @@ function StepRunCollect({
         </button>
         {!canRun && params !== null && seeded && (
           <span className="w6w-muted w6w-small">
-            {!validDraft
-              ? isTrigger
-                ? "The payload must be a JSON object to run."
-                : "The incoming state must be a JSON object to run."
-              : isTrigger
-                ? "Fill the required fields to test."
-                : "This step is missing required configuration — set it on the Configure tab."}
+            {loopError
+              ? `${loopError} Fix it to run.`
+              : !validDraft
+                ? isTrigger
+                  ? "The payload must be a JSON object to run."
+                  : "The incoming state must be a JSON object to run."
+                : isTrigger
+                  ? "Fill the required fields to test."
+                  : "This step is missing required configuration — set it on the Configure tab."}
           </span>
         )}
         <button
@@ -2319,6 +2503,20 @@ function StepRunCollect({
  * second handle component and no raw inline `<Handle>` at either node card's
  * call site (`building-blocks.md`'s anti-duplication callout).
  */
+/** `@w6w/control` · `foreach` — the only card that renders the Each item handle. */
+function isForeachCard(step: FlowStep): boolean {
+  return step.uses.app === CONTROL_APP && step.uses.action === "foreach";
+}
+
+/** The loop-region badge: names the For each a body step runs inside. */
+function LoopBadge({ loopOf }: { loopOf: string }) {
+  return (
+    <span className="w6w-loop-badge w6w-small" title={`Runs once per item of ${loopOf}`}>
+      in loop · {loopOf}
+    </span>
+  );
+}
+
 function PortHandle({
   type,
   position,
@@ -2330,7 +2528,7 @@ function PortHandle({
   position: Position;
   multiple: boolean;
   id?: string;
-  variant?: "error";
+  variant?: "error" | "each";
 }) {
   const nodeId = useNodeId();
   const ctrl = useContext(StepControlsCtx);
@@ -2341,16 +2539,24 @@ function PortHandle({
   const what =
     variant === "error"
       ? "a step that handles this step's failure"
-      : type === "target"
-        ? "a step before this one"
-        : "the next step";
+      : variant === "each"
+        ? "the first step of this loop's body"
+        : type === "target"
+          ? "a step before this one"
+          : "the next step";
   return (
     <Handle
       type={type}
       position={position}
       id={id}
       className={
-        variant === "error" ? "w6w-handle-error" : multiple ? "w6w-handle-multi" : undefined
+        variant === "error"
+          ? "w6w-handle-error"
+          : variant === "each"
+            ? "w6w-handle-each"
+            : multiple
+              ? "w6w-handle-multi"
+              : undefined
       }
       style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
       // A click (no drag) adds a step from this port; a drag still draws a connection.
@@ -2360,11 +2566,13 @@ function PortHandle({
           ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
           : variant === "error"
             ? "On error — drag to route this step's failure separately"
-            : multiple
-              ? type === "target"
-                ? "Accepts multiple incoming connections"
-                : "Multiple outgoing connections"
-              : undefined
+            : variant === "each"
+              ? "Each item — drag to the first step to repeat for every item"
+              : multiple
+                ? type === "target"
+                  ? "Accepts multiple incoming connections"
+                  : "Multiple outgoing connections"
+                : undefined
       }
     />
   );
@@ -2429,6 +2637,43 @@ function FanOutBadge({ step, count }: { step: FlowStep; count: number }) {
   );
 }
 
+/** `data-step-problem` (codes, space-joined) + `title` (tooltips, newline-joined); absent with no problems. */
+function problemAttrs(problems: StepProblem[] | undefined) {
+  if (!problems || problems.length === 0) return {};
+  return {
+    "data-step-problem": problems.map((p) => p.code).join(" "),
+    title: problems.map(stepProblemTooltip).join("\n"),
+  };
+}
+
+function ProblemBadge({ problems }: { problems: StepProblem[] | undefined }) {
+  if (!problems || problems.length === 0) return null;
+  const tip = problems.map(stepProblemTooltip).join("\n");
+  return (
+    <span
+      data-step-problem-badge=""
+      role="img"
+      aria-label={tip}
+      title={tip}
+      style={{
+        position: "absolute",
+        top: -9,
+        right: -9,
+        width: 18,
+        height: 18,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--w6w-danger)",
+        color: "#fff",
+      }}
+    >
+      <Icon name="warning" size={12} />
+    </span>
+  );
+}
+
 function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const apps = useContext(AppsCtx);
@@ -2442,18 +2687,17 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
-    <div>
+    <div className={data.loopOf ? "w6w-node-in-loop" : undefined} data-loop-of={data.loopOf}>
       <NodeControls id={id} runnable />
       <div
         data-run-status={data.stepStatus ?? "no-run"}
-        data-step-problem={data.stepProblem?.code}
-        title={data.stepProblem ? stepProblemTooltip(data.stepProblem) : undefined}
+        {...problemAttrs(data.stepProblems)}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node
           // (which also spans the meta line below) — keeps ports vertically centered.
           position: "relative",
           // Missing-connection ring; the border stays the run-status visual.
-          ...(data.stepProblem ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
+          ...(data.stepProblems ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
           // Selection always wins the BORDER COLOUR (unchanged from before
           // T1.1.1 — the ternary this extends); width/style/opacity keep
           // reflecting the run status underneath so a selected running/failed
@@ -2473,29 +2717,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
-        {data.stepProblem && (
-          <span
-            data-step-problem-badge=""
-            role="img"
-            aria-label={stepProblemTooltip(data.stepProblem)}
-            title={stepProblemTooltip(data.stepProblem)}
-            style={{
-              position: "absolute",
-              top: -9,
-              right: -9,
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "var(--w6w-danger)",
-              color: "#fff",
-            }}
-          >
-            <Icon name="warning" size={12} />
-          </span>
-        )}
+        <ProblemBadge problems={data.stepProblems} />
         {ports.in > 0 && (
           <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
         )}
@@ -2526,6 +2748,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
         className="w6w-muted"
@@ -2561,21 +2784,31 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // subscription, never as a node), so this card is the only one that needs
   // the guard.
   const isTrigger = isTriggerApp(step.uses.app);
+  const isForeach = isForeachCard(step);
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
-    <div>
+    <div
+      className={
+        [isForeach ? "w6w-node-foreach" : "", data.loopOf ? "w6w-node-in-loop" : ""]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      data-loop-of={data.loopOf}
+    >
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
         className={isTrigger ? "w6w-node-trigger" : undefined}
         data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
+        {...problemAttrs(data.stepProblems)}
         style={{
           // `relative` so the Handles center on the CARD, not the whole node
           // (which also spans the meta line below) — keeps ports vertically centered.
           position: "relative",
+          ...(data.stepProblems ? { boxShadow: "0 0 0 2px var(--w6w-danger)" } : {}),
           border: `${visual.borderWidth}px ${visual.borderStyle} ${
             selected ? "var(--w6w-accent)" : visual.borderColor
           }`,
@@ -2592,6 +2825,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           gap: 10,
         }}
       >
+        <ProblemBadge problems={data.stepProblems} />
         {ports.in > 0 && (
           <PortHandle type="target" position={Position.Left} multiple={ports.in > 1} />
         )}
@@ -2602,8 +2836,23 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
+        {isForeach && (
+          <div className="w6w-foreach-ports w6w-small" aria-hidden="true">
+            <span>Each item</span>
+            <span>Done</span>
+          </div>
+        )}
         {ports.out > 0 && (
           <>
+            {isForeach && (
+              <PortHandle
+                type="source"
+                position={Position.Right}
+                multiple={false}
+                id={EACH_SOURCE_HANDLE}
+                variant="each"
+              />
+            )}
             <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
             {!isTrigger && (
               <PortHandle
@@ -2618,6 +2867,13 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
+      {data.legacyLoop && (
+        <div className="w6w-loop-legacy-note w6w-small">
+          This loop was converted from an older definition. Its steps after For each now run once
+          per item; check the order, then save.
+        </div>
+      )}
       {/* Meta line under the card: the step id (internal nodes carry no version). */}
       <div
         className="w6w-muted"
@@ -2641,18 +2897,24 @@ export function StepEditModal({
   workflowId,
   step: initialStep,
   upstreamSteps,
+  loop,
+  foreachItemCount,
   onChange,
   onClose,
   readOnly,
   initialView = "props",
   fanOutCount = 0,
   onTestRun,
-  stepProblem,
+  stepProblems,
 }: {
   workflowId: string;
   step: FlowStep;
   /** Graph ancestors of this step (from `upstreamStateSources`); the incoming-state picker seeds from their saved tests. */
   upstreamSteps: ExpressionStepSource[];
+  /** The enclosing For each when this step is in its body: seeds `state.foreach` on Test. */
+  loop?: ExpressionLoopSource;
+  /** On a For each step: how many items its Items resolve to now (`undefined` = unknown). */
+  foreachItemCount?: number;
   onChange: (next: FlowStep) => void;
   onClose: () => void;
   readOnly?: boolean;
@@ -2661,19 +2923,24 @@ export function StepEditModal({
   fanOutCount?: number;
   /** Fired the instant the footer Test button is clicked, before the test runs (T1.1.1). */
   onTestRun?: () => void;
-  /** Host-supplied problem for this step; a dangling connection locks Configure/Test. */
-  stepProblem?: StepProblem;
+  /** Host-supplied problems for this step; a dangling connection locks Configure/Test, a fixable one gets a button. */
+  stepProblems?: StepProblem[];
 }) {
   const api = useW6WApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
   // Checked against the LOCAL step so choosing another connection unblocks at once.
-  const blocked = isConnectionBlocked(step, stepProblem);
+  const blocked = isConnectionBlocked(step, stepProblems);
+  const connectionProblem = stepProblems?.find(
+    (p): p is Extract<StepProblem, { code: "unknown_connection" }> =>
+      p.code === "unknown_connection" && p.connection === step.uses.connection,
+  );
+  const fixable = (stepProblems ?? []).filter((p) => "fix" in p);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
   // tab showing form (props) / full-step JSON (code) / params JSON
   // (params-code) / node settings (config).
   const [tab, setTab] = useState<"setup" | "configure" | "test">(
-    isConnectionBlocked(initialStep, stepProblem) ? "setup" : "configure",
+    isConnectionBlocked(initialStep, stepProblems) ? "setup" : "configure",
   );
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
@@ -2805,7 +3072,8 @@ export function StepEditModal({
   // …and the start state the test is SENT with, from those same fixtures. This
   // is what makes `{{ steps.<id>.output.<field> }}` in this step's `with`
   // resolve to what that step last produced instead of to "".
-  const testStartState = startStateFromSeeds(seedSources);
+  const loopSeed = useLoopSeed(testable && !isTrigger ? loop : undefined);
+  const testStartState = startStateFromSeeds(seedSources, loopSeedValue(loopSeed));
 
   // The incoming state this step was last tested or run with comes back (T4.1.3
   // on this surface's own noun): the fixture's `input` slot is where both
@@ -2839,7 +3107,7 @@ export function StepEditModal({
   // The resolved incoming state saved alongside the fixture — the slot the ▶ Run
   // collect form reads back, and what the upstream seed chips write into.
   const testInput = testOverride ?? {};
-  const canTest = !!params && requiredParamsFilled(params, testValues);
+  const canTest = !!params && !loopSeedError(loopSeed) && requiredParamsFilled(params, testValues);
 
   // Header icon mirrors the canvas node: the app's icon for app steps, the
   // internal glyph for triggers/actions/control nodes (same as the node cards).
@@ -2942,9 +3210,36 @@ export function StepEditModal({
           )}
         </div>
 
-        {blocked && stepProblem && (
+        {blocked && connectionProblem && (
           <div role="alert" className="w6w-field-error">
-            Connection {stepProblem.connection} no longer exists — choose another to continue.
+            Connection {connectionProblem.connection} no longer exists — choose another to continue.
+          </div>
+        )}
+        {fixable.length > 0 && (
+          <div className="w6w-stepproblem-fixes" style={{ display: "grid", gap: 6 }}>
+            {fixable.map((p) => (
+              <div
+                key={p.code}
+                className="w6w-small"
+                style={{ display: "flex", gap: 8, alignItems: "center" }}
+              >
+                <span>{stepProblemTooltip(p)}</span>
+                <button
+                  type="button"
+                  className="w6w-btn"
+                  data-fix-code={p.code}
+                  disabled={readOnly}
+                  onClick={() => {
+                    const next = applyStepProblemFix(step, p);
+                    commit(next);
+                    setCodeText(stepToJson(next));
+                    setParamsCodeText(paramsToJson(next));
+                  }}
+                >
+                  {"fix" in p ? p.fix.label : ""}
+                </button>
+              </div>
+            ))}
           </div>
         )}
         <div className="w6w-stepconfig-body">
@@ -3090,6 +3385,7 @@ export function StepEditModal({
                       Tests <code>{step.uses.action}</code> with the configuration saved on this
                       step — only the incoming state changes per run.
                     </p>
+                    <LoopSeedField seed={loopSeed} readOnly={readOnly} />
                     <IncomingStateField
                       text={testState}
                       onChange={setTestState}
@@ -3124,6 +3420,19 @@ export function StepEditModal({
                     />
                   </>
                 )
+              ) : isForeachStep(step) ? (
+                <>
+                  <p className="w6w-muted w6w-small">
+                    A For each can't be tested on its own — it runs only as part of the workflow. To
+                    test the loop, test a step on its <strong>Each item</strong> output: it runs
+                    once, on one item.
+                  </p>
+                  {foreachItemCount !== undefined && (
+                    <p className="w6w-small">
+                      {foreachItemCount} {foreachItemCount === 1 ? "item" : "items"}
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="w6w-muted w6w-small">
                   Flow-control nodes can't be tested on their own.

@@ -20,13 +20,15 @@ import {
   relaneRefusal,
   setEdgeWhen,
 } from "../flow-connect.ts";
+import { eachLaneEdge, loopRefusal, loopRefusalMessage } from "../flow-loop.ts";
 import {
+  EACH_SOURCE_HANDLE,
   ERROR_SOURCE_HANDLE,
   type NodePorts,
   laneForSourceHandle,
   sourceHandleForLane,
 } from "../flow-types.ts";
-import { type StepNode, flowEdgeId } from "../flow-utils.ts";
+import { type StepNode, flowEdgeId, flowToWorkflow } from "../flow-utils.ts";
 
 /** A canvas node for step `id`, optionally with persisted per-step ports. */
 function node(id: string, ports?: NodePorts): StepNode {
@@ -406,4 +408,199 @@ test("U5 — setEdgeWhen re-lanes the sourceHandle both ways on ONE edge object"
   const backToSuccess = setEdgeWhen(errored, "a->b:error", "success", ABCD);
   assert.ok(backToSuccess, "error→success re-lane must be allowed");
   assert.equal(backToSuccess[0].sourceHandle, undefined);
+});
+
+// ── each lane (loop core) ──────────────────────────────────────────────────
+test("each lane: edgeLane, handles, and relane refusal", () => {
+  const eachEdge: Edge = {
+    id: "a->b",
+    source: "a",
+    target: "b",
+    sourceHandle: "out-each",
+    data: { when: "each" },
+  };
+  assert.equal(edgeLane(eachEdge), "each");
+  assert.equal(laneForSourceHandle("out-each"), "each");
+  assert.equal(laneForSourceHandle("out-each-x"), "success");
+  assert.equal(sourceHandleForLane("each"), "out-each");
+  assert.equal(flowEdgeId("a", "b", "each"), "a->b");
+  assert.equal(setEdgeWhen([eachEdge], "a->b", "error", [node("a"), node("b")]), null);
+  assert.equal(setEdgeWhen([eachEdge], "a->b", "success", [node("a"), node("b")]), null);
+});
+
+test("each lane: applyConnect mints the each edge", () => {
+  // Only a For each (or a body step) has an each lane to draw from (T2.3.1 P3f).
+  const next = applyConnect("a", "b", [ctl("a", "foreach"), node("b")], [], "each");
+  assert.equal(next?.[0].id, "a->b");
+  assert.deepEqual(next?.[0].data, { when: "each" });
+  assert.equal(next?.[0].sourceHandle, "out-each");
+  assert.equal(next?.[0].className, "w6w-edge-each");
+});
+
+// ── Loop refusals (T2.3.1, §5.3) ───────────────────────────────────────────
+
+function ctl(id: string, action: string, extra: Record<string, unknown> = {}): StepNode {
+  const n = node(id);
+  return {
+    ...n,
+    data: { ...n.data, step: { id, uses: { app: "@w6w/control", action }, ...extra } },
+  };
+}
+
+/**
+ * x → fe (success), fe → d (Done), body fe ⇒ b0 ⇒ b1, a second loop fe2 ⇒ c0, free nodes
+ * f and g, and an `if` control node `iff`.
+ */
+function loopWorld() {
+  const nodes: StepNode[] = [
+    node("x"),
+    ctl("fe", "foreach", { with: { items: ["a"] } }),
+    node("d"),
+    node("b0"),
+    node("b1"),
+    ctl("fe2", "foreach", { with: { items: ["a"] } }),
+    node("c0"),
+    node("f"),
+    node("g"),
+    ctl("iff", "if"),
+    ctl("fe3", "foreach", { with: { items: ["a"] } }),
+  ];
+  const edges: Edge[] = [
+    rf("x", "fe", "success"),
+    rf("fe", "d", "success"),
+    eachLaneEdge("fe", "b0", true),
+    eachLaneEdge("b0", "b1", false),
+    eachLaneEdge("fe2", "c0", true),
+  ];
+  return { nodes, edges };
+}
+
+function refuses(
+  src: string,
+  tgt: string,
+  when: "success" | "error" | "each",
+  reason: string,
+  w = loopWorld(),
+) {
+  assert.deepEqual(connectRefusal(src, tgt, w.nodes, w.edges, when), { refused: "loop", reason });
+  assert.equal(applyConnect(src, tgt, w.nodes, w.edges, when), null);
+}
+
+test("C1 control targets are refused in the body, including a nested For each", () => {
+  refuses("fe3", "iff", "each", "control_in_body");
+  refuses("fe3", "fe2", "each", "control_in_body");
+  // The body-continuation gesture (success connect from a body node) is each-lane too.
+  refuses("b1", "fe3", "success", "control_in_body");
+  refuses("b1", "iff", "success", "control_in_body");
+});
+
+test("C2 a target already in another loop is refused", () => {
+  refuses("fe3", "c0", "each", "already_in_loop");
+});
+
+test("C3 a second Each-item edge is refused", () => {
+  refuses("fe", "f", "each", "body_branch");
+});
+
+test("C4 body branching is refused", () => {
+  refuses("b0", "f", "success", "body_branch");
+});
+
+test("C5 Done-side / outside → body node is refused", () => {
+  refuses("x", "b0", "success", "outside_inbound");
+  refuses("fe", "b1", "success", "outside_inbound");
+  refuses("f", "b0", "success", "outside_inbound");
+});
+
+test("C6 body → Done-side or other wired node is refused; error lane both ways", () => {
+  refuses("b1", "d", "success", "body_exit");
+  refuses("b1", "x", "success", "body_exit");
+  refuses("fe3", "d", "each", "body_exit");
+  refuses("b0", "f", "error", "error_lane_in_body");
+  refuses("f", "b0", "error", "error_lane_in_body");
+});
+
+test("C7 body → its own For each (cycle) is refused", () => {
+  refuses("b1", "fe", "success", "loop_cycle");
+  refuses("b1", "b0", "success", "loop_cycle");
+});
+
+test("C8 eviction regression: a refused outside_inbound evicts nothing", () => {
+  const w = loopWorld();
+  assert.equal(w.nodes.find((n) => n.id === "b0")?.data.step.ports, undefined);
+  refuses("x", "b0", "success", "outside_inbound", w);
+  // fe → b0 already exists as a pair, so `canConnect` (the live isValidConnection)
+  // stops it before planConnect: still null, still no eviction. The reason is the
+  // pure rule's.
+  assert.equal(loopRefusal("fe", "b0", "success", w.nodes, w.edges), "outside_inbound");
+  assert.equal(applyConnect("fe", "b0", w.nodes, w.edges, "success"), null);
+  assert.ok(w.edges.some((e) => e.id === "fe->b0" && e.sourceHandle === EACH_SOURCE_HANDLE));
+  assert.equal(applyConnect("fe", "b0", w.nodes, w.edges, "success"), null);
+});
+
+test("C9 legal edges still pass; promoted edge shape", () => {
+  const w = loopWorld();
+  const add = (s: string, t: string, when: "success" | "error" | "each") => {
+    const next = applyConnect(s, t, w.nodes, w.edges, when);
+    assert.ok(next, `${s}->${t} ${when} added`);
+    assert.equal(next.length, w.edges.length + 1);
+    return next[next.length - 1];
+  };
+  const eachItem = add("fe3", "f", "each");
+  assert.equal(eachItem.data?.when, "each");
+  assert.equal(eachItem.sourceHandle, EACH_SOURCE_HANDLE);
+  const tail = add("b1", "f", "success");
+  assert.equal(tail.data?.when, "each");
+  assert.equal(tail.sourceHandle, undefined);
+  assert.equal(tail.id, "b1->f");
+  add("fe3", "g", "success"); // Done
+  add("fe3", "g", "error"); // For each error → handler
+  add("f", "g", "success"); // ordinary main graph
+  add("f", "g", "error");
+});
+
+test("C10 a 3-step body authored by applyConnect serializes to with.body, no body edges", () => {
+  const w = loopWorld();
+  const nodes = [...w.nodes, node("h")];
+  let edges: Edge[] = [];
+  const step = (a: string, b: string, when: "success" | "each") => {
+    const next = applyConnect(a, b, nodes, edges, when);
+    assert.ok(next, `${a}->${b}`);
+    edges = next;
+  };
+  step("fe3", "f", "each");
+  step("f", "g", "success");
+  step("g", "h", "success");
+  const wf = { nodes: nodes.map((n) => n.data.step) } as never;
+  const out = flowToWorkflow(wf, nodes, edges);
+  const fe3 = out.nodes.find((n) => n.id === "fe3");
+  assert.deepEqual((fe3?.with as { body: string[] }).body, ["f", "g", "h"]);
+  const body = new Set(["f", "g", "h"]);
+  assert.ok(!(out.edges ?? []).some((e) => body.has(e.from) || body.has(e.to)));
+});
+
+test("C11 loopRefusalMessage: seven distinct non-empty strings", () => {
+  const reasons = [
+    "error_lane_in_body",
+    "outside_inbound",
+    "loop_cycle",
+    "already_in_loop",
+    "control_in_body",
+    "body_branch",
+    "body_exit",
+  ] as const;
+  const msgs = reasons.map((r) => loopRefusalMessage(r));
+  assert.equal(new Set(msgs).size, 7);
+  assert.ok(msgs.every((m) => m.length > 0));
+});
+
+test("C12b canConnect is unchanged: a body node → Done-side node is still connectable", () => {
+  const w = loopWorld();
+  assert.equal(canConnect("b1", "d", w.nodes, w.edges), true);
+});
+
+test("an each lane from a step that is neither a For each nor in a body mints nothing", () => {
+  const w = loopWorld();
+  assert.equal(applyConnect("f", "g", w.nodes, w.edges, "each"), null);
+  assert.equal(connectRefusal("f", "g", w.nodes, w.edges, "each"), null);
 });

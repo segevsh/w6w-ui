@@ -27,6 +27,7 @@ import { type UseDynamicFields, useDynamicFields } from "./use-dynamic-fields.ts
  * would block the gate even while hidden.
  */
 export function isParamVisible(param: ActionParam, getValue: (key: string) => unknown): boolean {
+  if (param.hidden === true) return false;
   if (!param.showIf) return true;
   return matchesParamCondition(param.showIf, getValue);
 }
@@ -1223,6 +1224,7 @@ function JsonParamField({
           jsonValue={value}
           options={exprOptions}
           fieldLabel={label}
+          whole={param.whole}
           onSaveJson={(next) => onChange(param.key, next)}
           onClose={() => setPickerOpen(false)}
         />

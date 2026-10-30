@@ -201,3 +201,66 @@ test("M2 — flowToWorkflow ignores a run-stamped edge className/label — edges
   assert.deepEqual(withRun.edges, withoutRun.edges);
   assert.deepEqual(withRun.edges, WF.edges);
 });
+
+test("each lane: edgeVisuals classes and edgeRunState arms", () => {
+  assert.deepEqual(edgeVisuals("each"), { className: "w6w-edge-each" });
+  assert.deepEqual(edgeVisuals("each", "taken"), { className: "w6w-edge-each w6w-edge-taken" });
+  const rs = (status: "skipped" | "succeeded") =>
+    ({ steps: { p: { status } } }) as unknown as RunState;
+  assert.equal(edgeRunState(rs("skipped"), "p", "each"), "skipped");
+  assert.equal(edgeRunState(rs("succeeded"), "p", "each"), undefined);
+  assert.equal(edgeRunState(undefined, "p", "each"), undefined);
+});
+
+// ── T1.5.1 — body-node status from the owning For each's iterations (I3) ───
+
+const t151Loop = (its: Array<Record<string, { status: never }>>) =>
+  ({
+    status: "running",
+    nodes: {
+      fe: { status: "running", iterations: its.map((nodes) => ({ nodes })) },
+    },
+  }) as unknown as RunState;
+const st = (status: string) => ({ status }) as never;
+
+test("T151-V1 a failed iteration in the middle makes the body node failed", () => {
+  const run = t151Loop([{ b: st("succeeded") }, { b: st("failed") }, { b: st("succeeded") }]);
+  assert.equal(stepVisualState(run, "b"), "failed");
+});
+
+test("T151-V2 precedence: failed > running > succeeded > skipped; none ⇒ pending", () => {
+  assert.equal(
+    stepVisualState(t151Loop([{ b: st("running") }, { b: st("succeeded") }]), "b"),
+    "running",
+  );
+  assert.equal(
+    stepVisualState(t151Loop([{ b: st("running") }, { b: st("failed") }]), "b"),
+    "failed",
+  );
+  assert.equal(
+    stepVisualState(t151Loop([{ b: st("skipped") }, { b: st("succeeded") }]), "b"),
+    "succeeded",
+  );
+  assert.equal(stepVisualState(t151Loop([{ b: st("skipped") }]), "b"), "skipped");
+  assert.equal(stepVisualState(t151Loop([{ a: st("failed") }]), "b"), "pending");
+  assert.equal(stepVisualState(t151Loop([]), "b"), "pending");
+});
+
+test("T151-V3 the legacy `steps` alias is read too", () => {
+  const run = {
+    status: "running",
+    steps: { fe: { status: "running", iterations: [{ nodes: { b: st("failed") } }] } },
+  } as unknown as RunState;
+  assert.equal(stepVisualState(run, "b"), "failed");
+});
+
+test("T151-V4 an own record wins over iteration records", () => {
+  const run = {
+    status: "running",
+    nodes: {
+      b: { status: "succeeded" },
+      fe: { status: "running", iterations: [{ nodes: { b: st("failed") } }] },
+    },
+  } as unknown as RunState;
+  assert.equal(stepVisualState(run, "b"), "succeeded");
+});
