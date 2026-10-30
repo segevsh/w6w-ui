@@ -127,6 +127,14 @@ export interface AppPickerProps {
    */
   category?: string;
   /**
+   * Server-side "declares at least one trigger" filter for the bounded paged
+   * fetch (`GET /apps?hasTriggers=true`), forwarded to `listAppsPage` exactly
+   * like {@link category}: the page `total` is the FILTERED total, so the footer
+   * reads the server's `N of M`. Part of the query identity — changing it
+   * restarts the fetch. Ignored when `apps` is supplied or via a custom `loadPage`.
+   */
+  hasTriggers?: boolean;
+  /**
    * Server-side id allow-list (`GET /apps?ids=a,b&paged=true`) for the bounded
    * paged fetch: the page `total` is the FILTERED total, so the footer reads
    * `N of N`. Sent to `listAppsPage`/`loadPage`; ignored when `apps` is supplied.
@@ -183,6 +191,7 @@ export function AppPicker({
   providerFilter = false,
   bridgeSupport,
   category,
+  hasTriggers,
   ids,
   pageLimit = DEFAULT_PAGE_LIMIT,
   loadPage,
@@ -271,6 +280,7 @@ export function AppPicker({
           : (listAppsPage as NonNullable<typeof listAppsPage>)({
               q: query.q || undefined,
               category: query.category,
+              ...(hasTriggers ? { hasTriggers: true } : {}),
               ...(query.ids ? { ids: query.ids } : {}),
               cursor,
               limit: pageLimit,
@@ -328,7 +338,7 @@ export function AppPicker({
           dispatch({ type: "page-failed", generation, error: (e as Error).message });
         });
     },
-    [api, pageLimit],
+    [api, pageLimit, hasTriggers],
   );
 
   // Debounce the search box; cancelled on every keystroke and on unmount.
