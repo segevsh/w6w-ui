@@ -833,3 +833,31 @@ T0.2.1, T0.3.1, T1.2.1 in `.ai/projects/.work/26-10-28-00-updates/`).
   conflicts are union merges (`outcomes/T0.1.1.outcome.md` "For the merge").
 - Pending human visual checks: HV-1/HV-2 (viewer panes, incl. the four panes with no jsdom mount — FOLLOWUPS T0.1.2),
   HV-3 (combobox in real Studio), HV-4 (restored-run time label) — `plan-ui.md`.
+
+## 26-10-30-00-foreach-loop-authoring — authorable For each
+
+**verified: 2026-10-30** — against `proj/26-10-30-00-foreach-loop-authoring` @ `d73b488` (landed on `main`).
+
+- **The loop core is pure and lives in `src/flow-loop.ts`**: body derivation from the canvas-only
+  `each` lane (never serialized; the chain on Each item becomes `with.body`), legacy conversion
+  (a body-less For each whose success chain is a valid linear non-control chain loads onto Each item
+  with a "converted from an older definition" notice; expressions are never rewritten on load),
+  `loopRefusal` (connect-time refusals, rendered as a node-anchored `role="alert"`), and lifecycle
+  helpers (rename/delete/duplicate/paste/undo keep `body` consistent). Detectors and one-click fixes are
+  `src/flow-problems.ts` (`foreach_wrapped_items`, `foreach_body_refs_output`, `loop_body_invalid`);
+  `StepProblem` is a discriminated union (`src/step-problems.ts`) — add a code there and in
+  `stepProblemTooltip`, or the switch stops being exhaustive.
+- **`ActionParam.whole` / `.hidden`**: `items` binds whole (no per-field form), `body` is hidden.
+  The picker's Loop group (Current item `foreach.item`, Index `foreach.index`) gets its sample from
+  `resolveLoopItems(items, testOutputs)` exported by `step-preview-state.ts`; after-loop fields appear
+  as `items.0.<field>`.
+- **Trap — mount-order of the three stamp effects in `WorkflowFlowEditor.tsx`**: the runState and
+  stepProblems stamp effects MUST be declared after the `initial` reset effect and depend on `initial`,
+  or a host passing `stepProblems`/`runState` on first render (or across a workflow swap) loses them
+  (T3.2.1; guard G6 pins it).
+- **New real-Chromium guard suite** `pnpm test:foreach-loop` (`test/foreach-loop/`, host browser:
+  `HOST_BROWSER=1 PW_CORE=<playwright-core>`): **7/7** (G1–G6 + G4b, a real pointer drag from the
+  For each's Done handle). Unit suite **1296 pass · 0 fail** on the merged tip (`2f3ebbe`, 2026-10-30).
+- The engine now refuses at plan time a body step that reads its own For each's output (D-X4), so a
+  ui fixture that deliberately builds that shape (`src/__tests__/flow-loop.test.ts` legacy round trip)
+  is a PlanError if fed to `planWorkflow` — expected, not a regression.
