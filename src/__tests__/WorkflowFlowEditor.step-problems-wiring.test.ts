@@ -71,7 +71,11 @@ test("W2b — the stamp effects run AFTER the workflow-swap reset and re-run whe
       return d && ts.isArrayLiteralExpression(d) && d.elements.some((e) => e.getText(sf) === key);
     });
     assert.ok(stamp, `the ${key} effect exists`);
-    assert.match(depsOf(stamp), /\binitial\b/, `${key} effect must re-stamp after a swap (initial dep)`);
+    assert.match(
+      depsOf(stamp),
+      /\binitial\b/,
+      `${key} effect must re-stamp after a swap (initial dep)`,
+    );
     assert.ok(
       stamp.getStart(sf) > reset.getStart(sf),
       `${key} effect must be declared after the reset, or the mount-time reset wipes its stamp`,

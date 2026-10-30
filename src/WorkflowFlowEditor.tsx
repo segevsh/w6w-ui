@@ -540,6 +540,7 @@ function Inner({
   // effect keyed on `runState` alone (plus the setters, stable across
   // renders) is what makes it fire on every run-state change and nothing
   // else, including a plain drag or edit that doesn't touch `runState`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
   useEffect(() => {
     setNodes((nds) =>
       nds.map((n) => {
@@ -560,6 +561,7 @@ function Inner({
   }, [runState, initial, setNodes, setEdges]);
   // Host-supplied step problems — same live-repaint mechanism as runState above:
   // stamps/clears `data.stepProblems` only, never `data.step`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
   useEffect(() => {
     setNodes((nds) => applyStepProblems(nds, stepProblems));
   }, [stepProblems, initial, setNodes]);
