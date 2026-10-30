@@ -33,6 +33,8 @@ export interface AppSummary {
    * `packages/server/packages/api/wire-summary.ts`'s `zeroCredential`).
    */
   zeroCredential?: boolean;
+  /** Number of triggers the app declares (wire already carries it). */
+  triggerCount?: number;
 }
 
 /** One trigger an app declares, as returned by GET /apps/:id/triggers. */
@@ -47,6 +49,8 @@ export interface TriggerSummary {
   type?: "webhook" | "poll";
   /** Host floor for a poll trigger's interval, in milliseconds. */
   minIntervalMs?: number;
+  /** The trigger's declared parameters (the route returns the full declaration). */
+  params?: ActionParam[];
 }
 
 /** A Subscription (rfcs/trigger.md) as returned by the console subscription routes. */
