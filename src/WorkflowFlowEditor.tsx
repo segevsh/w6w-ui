@@ -96,8 +96,18 @@ import {
 // them (see `flow-connect.ts`). This file is their only production caller.
 import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
 import {
+  type LoopRefusalReason,
+  bridgeDeletedBodyStep,
+  deleteStepMessage,
+  loopRefusalMessage,
+  stampLoopOf,
+  stripBody,
+} from "./flow-loop.ts";
+import {
   CALL_APP,
+  CONTROL_APP,
   type CanvasLane,
+  EACH_SOURCE_HANDLE,
   ERROR_SOURCE_HANDLE,
   type FlowStep,
   type FlowWorkflow,
@@ -567,6 +577,25 @@ function Inner({
     [nodes, edges, portsLookup],
   );
 
+  // The typed reason a loop-breaking connection was refused, anchored to the node it
+  // was drawn from (D-A6, D-B2). Its own channel — never the edge-lane panel, which
+  // needs a selected edge. Cleared on the next successful connect and when the
+  // selected node changes (guarded by `loopNoticeSelRef`: React Flow re-invokes
+  // `onSelectionChange` after every render, so an unguarded clear would wipe the
+  // notice before it paints).
+  const [loopNotice, setLoopNotice] = useState<{
+    nodeId: string;
+    reason: LoopRefusalReason;
+  } | null>(null);
+  const loopNoticeSelRef = useRef<string | null>(null);
+
+  // Mark each loop-body step with its For each (`data.loopOf`) from the each-lane
+  // edges. Its own effect, never folded into the runState / stepProblems ones, and
+  // never touching `canvas` — the stamp is canvas-only and `flowToWorkflow` ignores it.
+  useEffect(() => {
+    setNodes((nds) => stampLoopOf(nds, edges));
+  }, [edges, setNodes]);
+
   const onConnect = useCallback(
     (params: Parameters<typeof addEdge>[0]) => {
       if (readOnly) return;
@@ -608,6 +637,10 @@ function Inner({
           lane,
           portsLookup,
         );
+        if (refusal && refusal.refused === "loop") {
+          setLoopNotice({ nodeId: params.source, reason: refusal.reason });
+          return;
+        }
         if (refusal) {
           const holder = edges.find((e) => e.source === params.source && edgeLane(e) === lane);
           if (holder) {
@@ -638,6 +671,7 @@ function Inner({
         return;
       }
       setLaneError(null);
+      setLoopNotice(null);
       setEdges(next);
       emitChange(nodes, next);
     },
@@ -697,7 +731,9 @@ function Inner({
           ? { x: r.x - r.w - gap, y: r.y }
           : lane === "error"
             ? { x: r.x, y: r.y + r.h + gap }
-            : { x: r.x + r.w + gap, y: r.y };
+            : lane === "each"
+              ? { x: r.x + r.w + gap, y: r.y - r.h - gap / 2 }
+              : { x: r.x + r.w + gap, y: r.y };
       setPendingConnect({ nodeId, handleType, position, lane });
       setBuilderOpen(true);
     },
@@ -721,7 +757,7 @@ function Inner({
     (id: string) => {
       if (readOnly) return;
       const nextNodes = nodes.filter((n) => n.id !== id);
-      const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
+      const nextEdges = bridgeDeletedBodyStep(id, nodes, edges);
       const nextCanvas = pruneSectionMembers(canvas, id);
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -867,7 +903,7 @@ function Inner({
         nodes.map((n) => n.id),
         `${src.data.step.id}_copy`,
       );
-      const cloned: FlowStep = { ...structuredClone(src.data.step), id: newId };
+      const cloned: FlowStep = { ...stripBody(structuredClone(src.data.step)), id: newId };
       const newNode: StepNode = {
         id: newId,
         type: src.type,
@@ -914,6 +950,18 @@ function Inner({
       // source handle points the edge at the new node; a target handle reverses it.
       // Gated + replacing per the port rules (applyConnect) against the new node.
       let nextEdges = edges;
+      // A loop-breaking auto-wire is never silent (D-B2): the step is added
+      // unconnected only together with the typed notice, anchored to the source node.
+      let loopRefused: { nodeId: string; reason: LoopRefusalReason } | null = null;
+      const noteLoopRefusal = (
+        source: string,
+        target: string,
+        lane: CanvasLane,
+        anchor: string,
+      ) => {
+        const r = connectRefusal(source, target, nextNodes, edges, lane, portsLookup);
+        if (r && r.refused === "loop") loopRefused = { nodeId: anchor, reason: r.reason };
+      };
       if (pendingConnect) {
         const [source, target] =
           pendingConnect.handleType === "target"
@@ -922,8 +970,16 @@ function Inner({
         // The lane captured at drag-release time (T1.1.1) — a step spawned by
         // dragging the error port onto empty canvas is wired error, one spawned
         // from the ordinary exit is wired success.
-        nextEdges =
-          applyConnect(source, target, nextNodes, edges, pendingConnect.lane, portsLookup) ?? edges;
+        const wired = applyConnect(
+          source,
+          target,
+          nextNodes,
+          edges,
+          pendingConnect.lane,
+          portsLookup,
+        );
+        if (!wired) noteLoopRefusal(source, target, pendingConnect.lane, pendingConnect.nodeId);
+        nextEdges = wired ?? edges;
       } else {
         // "+ Node" (no drag) — human override, 2026-08-30. A trigger
         // auto-wires to the CURRENT chain root, but ONLY when no trigger
@@ -936,9 +992,11 @@ function Inner({
         if (isTriggerApp(built.uses.app)) {
           if (!existingTrigger) {
             const root = findChainRoot(nodes, edges);
-            if (root)
-              nextEdges =
-                applyConnect(id, root.id, nextNodes, edges, "success", portsLookup) ?? edges;
+            if (root) {
+              const wired = applyConnect(id, root.id, nextNodes, edges, "success", portsLookup);
+              if (!wired) noteLoopRefusal(id, root.id, "success", root.id);
+              nextEdges = wired ?? edges;
+            }
           }
         } else {
           const unconnectedTrigger =
@@ -946,14 +1004,17 @@ function Inner({
               ? existingTrigger
               : undefined;
           const from = unconnectedTrigger ?? findChainTail(nodes, edges);
-          if (from)
-            nextEdges =
-              applyConnect(from.id, id, nextNodes, edges, "success", portsLookup) ?? edges;
+          if (from) {
+            const wired = applyConnect(from.id, id, nextNodes, edges, "success", portsLookup);
+            if (!wired) noteLoopRefusal(from.id, id, "success", from.id);
+            nextEdges = wired ?? edges;
+          }
         }
       }
 
       setNodes(nextNodes);
       if (nextEdges !== edges) setEdges(nextEdges);
+      setLoopNotice(loopRefused);
       setSelectedId(id);
       // Progressive commit (T4.1.1): the builder stays open past this first
       // commit to keep taking edits via `onDraftChange`, so closing is
@@ -1599,6 +1660,10 @@ function Inner({
                       // a silent CPU burn in a page, a frozen main thread under Storybook.
                       setSelectedId(sel[0]?.id ?? null);
                       setSelectedEdgeId(edgeSel[0]?.id ?? null);
+                      if (loopNoticeSelRef.current !== (sel[0]?.id ?? null)) {
+                        loopNoticeSelRef.current = sel[0]?.id ?? null;
+                        setLoopNotice(null);
+                      }
                       // Deliberately NOT clearing `laneError` here — see its declaration.
                     }}
                     nodeTypes={nodeTypes}
@@ -1740,7 +1805,7 @@ function Inner({
                     chosen by which handle it was dragged from — this panel keeps its
                     job as the RE-LANE affordance for an edge already drawn on the
                     wrong port, not the only way to author an error edge. */}
-                    {!readOnly && selectedEdge && (
+                    {!readOnly && selectedEdge && edgeLane(selectedEdge) !== "each" && (
                       <Panel position="top-right">
                         <div className="w6w-edge-lane">
                           <span className="w6w-muted w6w-small">Run on</span>
@@ -1765,6 +1830,13 @@ function Inner({
                           )}
                         </div>
                       </Panel>
+                    )}
+                    {loopNotice && (
+                      <NodeToolbar nodeId={loopNotice.nodeId} position={Position.Bottom} isVisible>
+                        <div className="w6w-loop-notice w6w-small" role="alert">
+                          {loopRefusalMessage(loopNotice.reason)}
+                        </div>
+                      </NodeToolbar>
                     )}
                     <CanvasLayer
                       canvas={canvas}
@@ -1936,7 +2008,7 @@ function Inner({
                   {pendingDelete !== null && (
                     <ConfirmModal
                       title="Delete node"
-                      message={`Delete node "${pendingDelete}"? Its connections are removed too.`}
+                      message={deleteStepMessage(pendingDelete, nodes, edges)}
                       confirmLabel="Delete"
                       onConfirm={() => {
                         performDeleteStep(pendingDelete);
@@ -2307,6 +2379,20 @@ function StepRunCollect({
  * second handle component and no raw inline `<Handle>` at either node card's
  * call site (`building-blocks.md`'s anti-duplication callout).
  */
+/** `@w6w/control` · `foreach` — the only card that renders the Each item handle. */
+function isForeachCard(step: FlowStep): boolean {
+  return step.uses.app === CONTROL_APP && step.uses.action === "foreach";
+}
+
+/** The loop-region badge: names the For each a body step runs inside. */
+function LoopBadge({ loopOf }: { loopOf: string }) {
+  return (
+    <span className="w6w-loop-badge w6w-small" title={`Runs once per item of ${loopOf}`}>
+      in loop · {loopOf}
+    </span>
+  );
+}
+
 function PortHandle({
   type,
   position,
@@ -2318,7 +2404,7 @@ function PortHandle({
   position: Position;
   multiple: boolean;
   id?: string;
-  variant?: "error";
+  variant?: "error" | "each";
 }) {
   const nodeId = useNodeId();
   const ctrl = useContext(StepControlsCtx);
@@ -2329,16 +2415,24 @@ function PortHandle({
   const what =
     variant === "error"
       ? "a step that handles this step's failure"
-      : type === "target"
-        ? "a step before this one"
-        : "the next step";
+      : variant === "each"
+        ? "the first step of this loop's body"
+        : type === "target"
+          ? "a step before this one"
+          : "the next step";
   return (
     <Handle
       type={type}
       position={position}
       id={id}
       className={
-        variant === "error" ? "w6w-handle-error" : multiple ? "w6w-handle-multi" : undefined
+        variant === "error"
+          ? "w6w-handle-error"
+          : variant === "each"
+            ? "w6w-handle-each"
+            : multiple
+              ? "w6w-handle-multi"
+              : undefined
       }
       style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
       // A click (no drag) adds a step from this port; a drag still draws a connection.
@@ -2348,11 +2442,13 @@ function PortHandle({
           ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
           : variant === "error"
             ? "On error — drag to route this step's failure separately"
-            : multiple
-              ? type === "target"
-                ? "Accepts multiple incoming connections"
-                : "Multiple outgoing connections"
-              : undefined
+            : variant === "each"
+              ? "Each item — drag to the first step to repeat for every item"
+              : multiple
+                ? type === "target"
+                  ? "Accepts multiple incoming connections"
+                  : "Multiple outgoing connections"
+                : undefined
       }
     />
   );
@@ -2430,7 +2526,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
-    <div>
+    <div className={data.loopOf ? "w6w-node-in-loop" : undefined} data-loop-of={data.loopOf}>
       <NodeControls id={id} runnable />
       <div
         data-run-status={data.stepStatus ?? "no-run"}
@@ -2514,6 +2610,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
         className="w6w-muted"
@@ -2549,11 +2646,19 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // subscription, never as a node), so this card is the only one that needs
   // the guard.
   const isTrigger = isTriggerApp(step.uses.app);
+  const isForeach = isForeachCard(step);
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
-    <div>
+    <div
+      className={
+        [isForeach ? "w6w-node-foreach" : "", data.loopOf ? "w6w-node-in-loop" : ""]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      data-loop-of={data.loopOf}
+    >
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
@@ -2590,8 +2695,23 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <code>{step.uses.action || "—"}</code>
           </div>
         </div>
+        {isForeach && (
+          <div className="w6w-foreach-ports w6w-small" aria-hidden="true">
+            <span>Each item</span>
+            <span>Done</span>
+          </div>
+        )}
         {ports.out > 0 && (
           <>
+            {isForeach && (
+              <PortHandle
+                type="source"
+                position={Position.Right}
+                multiple={false}
+                id={EACH_SOURCE_HANDLE}
+                variant="each"
+              />
+            )}
             <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
             {!isTrigger && (
               <PortHandle
@@ -2606,6 +2726,13 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
+      {data.legacyLoop && (
+        <div className="w6w-loop-legacy-note w6w-small">
+          This loop was converted from an older definition. Its steps after For each now run once
+          per item; check the order, then save.
+        </div>
+      )}
       {/* Meta line under the card: the step id (internal nodes carry no version). */}
       <div
         className="w6w-muted"

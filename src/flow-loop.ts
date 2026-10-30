@@ -27,6 +27,7 @@ import {
   type FlowStep,
   type FlowWorkflow,
   edgeVisuals,
+  isControlApp,
 } from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
@@ -182,6 +183,97 @@ export function stripBody<T extends UsesLike & { with?: Record<string, unknown> 
   if (!isForeachStep(step) || !step.with || !("body" in step.with)) return step;
   const { body: _body, ...rest } = step.with;
   return { ...step, with: rest };
+}
+
+// ── Connect-time refusal (T2.3.1) ──────────────────────────────────────────
+
+/** Why a connection would break the v1 linear-body rule (exhaustive; see {@link loopRefusal}). */
+export type LoopRefusalReason =
+  | "error_lane_in_body"
+  | "outside_inbound"
+  | "loop_cycle"
+  | "already_in_loop"
+  | "control_in_body"
+  | "body_branch"
+  | "body_exit";
+
+/**
+ * The loop rule for drawing `source → target` in `lane` (already promoted: a success
+ * connect from a body node arrives as `"each"`). First match wins. Pure; run on the
+ * INPUT edges, never a post-eviction set.
+ */
+export function loopRefusal(
+  source: string,
+  target: string,
+  lane: "success" | "error" | "each",
+  nodes: StepNode[],
+  edges: Edge[],
+): LoopRefusalReason | null {
+  const M = loopMembership(nodes, edges);
+  if (lane === "error") {
+    return M[source] !== undefined || M[target] !== undefined ? "error_lane_in_body" : null;
+  }
+  if (lane === "success") return M[target] !== undefined ? "outside_inbound" : null;
+  const stepOf = (id: string) => nodes.find((n) => n.id === id)?.data?.step;
+  const owner = isForeachStep(stepOf(source)) ? source : M[source];
+  if (owner === undefined) return null;
+  if (target === owner || M[target] === owner) return "loop_cycle";
+  if (M[target] !== undefined) return "already_in_loop";
+  const app = stepOf(target)?.uses?.app;
+  if (app !== undefined && isControlApp(app)) return "control_in_body";
+  if (edges.some((e) => e.source === source && edgeLane(e) === "each")) return "body_branch";
+  if (edges.some((e) => e.source === target || e.target === target)) return "body_exit";
+  return null;
+}
+
+/** The author-facing sentence for each refusal (shown in the node-anchored notice). */
+const LOOP_REFUSAL_MESSAGES: Record<LoopRefusalReason, string> = {
+  error_lane_in_body:
+    "A step inside a loop can't have an error connection. Handle the failure outside the loop.",
+  outside_inbound:
+    "This step is inside a loop, so nothing outside it can connect into it. Connect from the loop's Each item side instead.",
+  loop_cycle: "A loop body can't connect back to its own For each.",
+  already_in_loop: "That step is already inside another loop.",
+  control_in_body:
+    "A loop body can only hold plain steps. If, For each, Parallel, Wait and similar steps can't go inside it yet.",
+  body_branch:
+    "A loop body is one straight line of steps. This step already continues to another step.",
+  body_exit:
+    "That step is already connected elsewhere in the workflow. Use a step with no connections, or disconnect it first.",
+};
+
+export function loopRefusalMessage(reason: LoopRefusalReason): string {
+  return LOOP_REFUSAL_MESSAGES[reason];
+}
+
+/**
+ * Set or clear `data.loopOf` from {@link loopMembership}. Same array reference when
+ * nothing changed, and the same node object for every unchanged node.
+ */
+export function stampLoopOf(nodes: StepNode[], edges: Edge[]): StepNode[] {
+  const M = loopMembership(nodes, edges);
+  let changed = false;
+  const out = nodes.map((n) => {
+    const want = M[n.id];
+    if (n.data.loopOf === want) return n;
+    changed = true;
+    if (want === undefined) {
+      const { loopOf: _drop, ...data } = n.data;
+      return { ...n, data };
+    }
+    return { ...n, data: { ...n.data, loopOf: want } };
+  });
+  return changed ? out : nodes;
+}
+
+/** The delete-confirm text. Byte-identical to the plain message unless a For each owns a body. */
+export function deleteStepMessage(id: string, nodes: StepNode[], edges: Edge[]): string {
+  const base = `Delete node "${id}"? Its connections are removed too.`;
+  const step = nodes.find((n) => n.id === id)?.data?.step;
+  if (!isForeachStep(step)) return base;
+  const body = loopBody(id, nodes, edges);
+  if (body.length === 0) return base;
+  return `${base} Its loop body steps ${body.map((b) => `"${b}"`).join(", ")} stay as standalone steps.`;
 }
 
 // ── Definition side ────────────────────────────────────────────────────────

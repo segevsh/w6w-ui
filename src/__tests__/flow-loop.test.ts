@@ -10,8 +10,10 @@ import {
   type LoopInvalidReason,
   bridgeDeletedBodyStep,
   definitionLoops,
+  deleteStepMessage,
   loopBody,
   loopMembership,
+  stampLoopOf,
   stripBody,
 } from "../flow-loop.ts";
 import type { FlowEdge, FlowStep, FlowWorkflow } from "../flow-types.ts";
@@ -388,4 +390,37 @@ test("the persisted FlowEdge.when never gains 'each'", () => {
   // @ts-expect-error — "each" is canvas-only; widening the persisted type must turn tsc red.
   const bad: FlowEdge = { from: "a", to: "b", when: "each" };
   assert.ok(bad);
+});
+
+// ── T2.3.1: stamp + delete message ─────────────────────────────────────────
+test("C14 stampLoopOf stamps F0 legacy, is identity on re-run, clears on edge removal", () => {
+  const g = workflowToFlow(f0());
+  const bare = g.nodes.map((n) => {
+    const { loopOf: _l, ...data } = n.data;
+    return { ...n, data };
+  });
+  const stamped = stampLoopOf(bare, g.edges);
+  assert.equal(stamped.find((n) => n.id === "update_event_ticket_1")?.data.loopOf, "for_each_1");
+  assert.equal(stampLoopOf(stamped, g.edges), stamped);
+  const cleared = stampLoopOf(
+    stamped,
+    g.edges.filter((e) => (e.data as { when?: string }).when !== "each"),
+  );
+  assert.equal(cleared.find((n) => n.id === "update_event_ticket_1")?.data.loopOf, undefined);
+  assert.equal(
+    "loopOf" in (cleared.find((n) => n.id === "update_event_ticket_1")?.data ?? {}),
+    false,
+  );
+  assert.equal(cleared[0], stamped[0]);
+});
+
+test("C17 deleteStepMessage: plain text unless a For each owns a body", () => {
+  const g = workflowToFlow(f0());
+  const plain = (id: string) => `Delete node "${id}"? Its connections are removed too.`;
+  assert.equal(deleteStepMessage("create_event_1", g.nodes, g.edges), plain("create_event_1"));
+  const noBody = workflowToFlow(wfOf([fe("only")]));
+  assert.equal(deleteStepMessage("only", noBody.nodes, noBody.edges), plain("only"));
+  const m = deleteStepMessage("for_each_1", g.nodes, g.edges);
+  assert.ok(m.startsWith(plain("for_each_1")));
+  assert.ok(m.includes('"update_event_ticket_1"'));
 });
