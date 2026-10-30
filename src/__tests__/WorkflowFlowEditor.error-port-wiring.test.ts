@@ -199,8 +199,8 @@ test("U10 — ControlNodeCard gates that error port behind a trigger check", () 
   const body = fn.getText(sf);
   assert.match(
     body,
-    /isTriggerApp\(step\.uses\.app\)/,
-    "ControlNodeCard must derive a trigger check from isTriggerApp",
+    /isTriggerStep\(step\.uses\)/,
+    "ControlNodeCard must derive a trigger check from isTriggerStep",
   );
   // The error PortHandle's JSX must sit inside a `!isTrigger &&` guard.
   let guarded = false;
