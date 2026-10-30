@@ -137,8 +137,12 @@ export function buildResolveScope(
   const sv = sampleValues ?? {};
   const hasItem = Object.hasOwn(sv, "foreach.item");
   const hasIndex = typeof sv["foreach.index"] === "number";
-  const foreach =
-    hasItem || hasIndex
+  // A seeded `testStartState.foreach` is what the invoke is SENT, so it wins whole — exactly as
+  // `steps` come only from `testStartState` — and the flat sample keys are never mixed in.
+  const seeded = testStartState?.foreach;
+  const foreach = seeded
+    ? { ...seeded }
+    : hasItem || hasIndex
       ? {
           ...(hasItem ? { item: sv["foreach.item"] } : {}),
           ...(hasIndex ? { index: sv["foreach.index"] as number } : {}),

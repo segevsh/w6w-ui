@@ -108,6 +108,11 @@ export interface StepStartState {
   steps?: Record<string, { output?: unknown; meta?: StepMeta }>;
   /** Trigger context; only `event` is honoured → `trigger.event`. */
   trigger?: { event?: unknown };
+  /**
+   * The iteration scope of a step inside a For each body → `foreach.item` / `foreach.index`
+   * (on the wire `state.foreach = { item, index }`, index defaulting to 0).
+   */
+  foreach?: { item?: unknown; index?: number };
 }
 
 /**
