@@ -158,7 +158,7 @@ test("M1 - composed projection, before any test: exactly one Metadata group, for
   const m = await mountModal({ options: { steps }, onSave: (v) => saved.push(v) });
   await click(toggles(m.container)[0]);
   await click(leafBtn(m.container, 0));
-  assert.deepEqual(saved, [{ type: "expr", parts: [{ kind: "var", ref: "nodes.ev.meta.app" }] }]);
+  assert.deepEqual(saved, ["{{ nodes.ev.meta.app }}"]);
 });
 
 for (const [i, k] of KEYS.entries()) {
@@ -166,9 +166,7 @@ for (const [i, k] of KEYS.entries()) {
     const { container, onSaveCalls } = await mountExt();
     await click(toggles(container)[0]);
     await click(leafBtn(container, i));
-    assert.deepEqual(onSaveCalls, [
-      { type: "expr", parts: [{ kind: "var", ref: `nodes.ev.meta.${k}` }] },
-    ]);
+    assert.deepEqual(onSaveCalls, [`{{ nodes.ev.meta.${k} }}`]);
   });
   test(`M3 - the copy icon on the ${k} leaf inserts a chip with that ref`, async () => {
     const { container } = await mountExt();
@@ -259,11 +257,11 @@ test("M6 - save/reload: meta chips read readably; other values round-trip", asyn
     assert.equal(onSaveCalls.length, 1);
     const saved = onSaveCalls[0];
     const ref = text.includes("vars") ? "vars.x" : "nodes.ev.output.id";
-    assert.deepEqual(saved, { type: "expr", parts: [{ kind: "var", ref }] });
+    assert.deepEqual(saved, `{{ ${ref} }}`);
   }
 });
 
-test("M7 - json-binding mode: one Metadata toggle per app step; a click inserts, Save commits", async () => {
+test("M7 - json-binding mode: one Metadata toggle per app step; a click into an empty draft binds", async () => {
   const saved: unknown[] = [];
   const { container } = await mountModal({
     mode: "json-binding",
@@ -276,10 +274,8 @@ test("M7 - json-binding mode: one Metadata toggle per app step; a click inserts,
     (l) => l.querySelector(".w6w-exprmodal-source-label")?.textContent === "App",
   );
   await click(app?.querySelector(".w6w-exprmodal-source") as HTMLElement);
-  assert.deepEqual(saved, [], "a click never saves");
-  const save = q(container, "button").find((b) => b.textContent === "Save");
-  await click(save as HTMLElement);
-  assert.deepEqual(saved, [{ $: "nodes.ev.meta.app" }]);
+  // Into an empty draft a click binds and closes.
+  assert.deepEqual(saved, ["{{ nodes.ev.meta.app }}"]);
 });
 
 test("V0 - varLabel meta labels are exact for an id sharing no letters with any key", () => {

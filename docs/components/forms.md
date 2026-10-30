@@ -135,26 +135,31 @@ name, kept so references written before the rename keep working.
 A `json` parameter, or a `group` parameter shown as JSON, has a ƒx button too. It opens a JSON
 editor beside a list of what's in scope: each upstream node's **Entire output**, its fields and,
 for an app step, its **Metadata** (`app`, `version`, `action`, `connectionId`), plus your variables
-and inputs. Clicking one inserts a reference at the cursor: `{ "$": "<ref>" }` where a value goes,
-which keeps the referenced value's type, or `{{ <ref> }}` inside a string, which interpolates it as
-text. Into a blank editor, or one you haven't clicked into yet, the click replaces the draft. The
+and inputs. Clicking one inserts a reference at the cursor: `"{{ <ref> }}"` (quoted) where a value
+goes, which keeps the referenced value's type, or `{{ <ref> }}` inside a string, which interpolates
+it as text. Into a blank editor, or one holding only a reference, the click binds that reference
+and closes the editor. Into JSON you are composing it never replaces anything: it goes at the cursor
+when the cursor sits where a value or property fits, otherwise it is added as a new property (or
+array element) at the end, named after the reference (`nodes.get_event.output.id` → `"id"`). The
 **Result** pane previews the value against sample data, and **Save** stores the JSON. For example,
 a conversion context that combines a literal with the previous step's metadata:
 
 ```json
 {
   "companyId": "c_123",
-  "app": { "$": "nodes.get_event_1.meta.app" },
-  "connectionId": { "$": "nodes.get_event_1.meta.connectionId" }
+  "app": "{{ nodes.get_event_1.meta.app }}",
+  "connectionId": "{{ nodes.get_event_1.meta.connectionId }}"
 }
 ```
 
-A value that is just one reference, `{ "$": "nodes.<id>.output" }`, binds the whole field. The
+A value that is just one reference, `"{{ nodes.<id>.output }}"`, binds the whole field (the older
+`{ "$": "nodes.<id>.output" }` form is still read). The
 field then shows the reference as a chip, like an expression in a text field: **×** removes it and
 goes back to the JSON you had typed, and **ƒx** reopens the editor. In `readOnly` mode only the
 chip shows.
 
-Typing a single `{{ <ref> }}` as the whole field also binds it, once the field loses focus.
+Typing a single `{{ <ref> }}` without quotes as the whole field also binds it, once the field loses
+focus.
 
 ## `PropertyEntryForm`
 

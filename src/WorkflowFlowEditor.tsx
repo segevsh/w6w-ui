@@ -1483,7 +1483,7 @@ function Inner({
   //
   // `sampleValues` is the one key that must UNION rather than replace, and that
   // is why the inherited scope is read explicitly: three disjoint ref
-  // namespaces contribute to it (`vars.*`/`documents.*` from the app shell,
+  // namespaces contribute to it (`var.*`/`documents.*` from the app shell,
   // anything the prop adds, and `steps.*` computed here), and layering alone
   // would let the object built below shadow the inherited one wholesale.
   const inheritedExprOptions = useExpressionOptions();

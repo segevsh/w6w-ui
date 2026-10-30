@@ -194,13 +194,13 @@ const clearBtns = () =>
   );
 const rowNamed = (name: string) => entireRows().find((r) => r.getAttribute("aria-label") === name);
 /** Pick a source in the open picker and Save: what binding the field takes now. */
+/** A click into an empty (or reference-only) draft binds and closes the picker on its own. */
 async function pick(row: Element | undefined) {
   await click(row);
   await settle(20);
-  await click(byText("Save")[0]);
 }
 
-test("Acc1 - one fx on a json and on a childless group; Entire output per step; binds {$}", async () => {
+test('Acc1 - one fx on a json and on a childless group; Entire output per step; binds "{{ ref }}"', async () => {
   const { container, root, box } = await render([JSON_PARAM, GROUP_PARAM]);
   assert.equal(fxButtons().length, 2);
   for (const b of fxButtons()) {
@@ -225,15 +225,13 @@ test("Acc1 - one fx on a json and on a childless group; Entire output per step; 
   assert.equal(doc().querySelectorAll('dialog [aria-label="Expression"]').length, 0);
   assert.equal(doc().querySelectorAll('[data-testid="expr-copy-to-editor"]').length, 0);
 
-  // A click inserts — it writes nothing and keeps the picker open until Save.
+  // Into an empty draft a click binds and closes, exactly like a click in expression mode.
   await click(rowNamed("Entire output of Step B"));
-  assert.equal(box.calls, 0);
-  assert.equal(draftOf(doc().body, "Compose"), '{ "$": "nodes.b.output" }');
-  await click(byText("Save")[0]);
   assert.equal(box.calls, 1);
-  const v = box.current.cfg as Record<string, unknown>;
-  assert.deepEqual(v, { $: "nodes.b.output" });
-  assert.deepEqual(Object.keys(v), ["$"]);
+  assert.equal(doc().querySelector('dialog [aria-label="Compose JSON"]'), null, "picker closed");
+  const v = box.current.cfg;
+  assert.deepEqual(v, "{{ nodes.b.output }}");
+  assert.equal(typeof v, "string", "a whole-value binding is a template string");
   await unmount(root);
   void container;
 });
@@ -243,7 +241,7 @@ test("Acc1 - a field leaf binds nodes.<id>.output.<key>", async () => {
   await click(fxButtons()[0]);
   await click(doc().querySelector('[data-testid="expr-caret-fields"]') ?? undefined);
   await pick(buttons().find((b) => b.textContent?.includes("a.id")));
-  assert.deepEqual(box.current.cfg, { $: "nodes.a.output.id" });
+  assert.deepEqual(box.current.cfg, "{{ nodes.a.output.id }}");
   await unmount(root);
 });
 
@@ -261,6 +259,8 @@ test("Acc2 - Cancel from fx and from Edit writes nothing; invalid draft is byte-
   assert.equal(before, '{"a": ');
   const calls0 = box.calls;
   await click(fxButtons()[0]);
+  // A draft being composed: the click adds to it, and Cancel throws all of it away.
+  await typeDraft(doc().body, "Compose", '{ "x": 1 }');
   await click(rowNamed("Entire output of Step A"));
   await click(byText("Cancel")[0]);
   assert.equal(box.calls, calls0);
@@ -279,8 +279,10 @@ test("Acc3 - bound field: one chip, ƒx and ×, no preview box; Edit rebinds; ×
   const { container, root, box } = await render([JSON_PARAM]);
   await typeDraft(container, "cfg", '{"keep": [1, 2]}');
   await click(fxButtons()[0]);
+  // The picker opens on that JSON; a click would ADD to it, so empty the pane to bind instead.
+  await typeDraft(doc().body, "Compose", "");
   await pick(entireRows()[0]);
-  assert.deepEqual(box.current.cfg, { $: "nodes.a.output" });
+  assert.deepEqual(box.current.cfg, "{{ nodes.a.output }}");
   assert.equal(chipRef(container), "nodes.a.output");
   assert.equal(editBtns().length, 1);
   assert.equal(clearBtns().length, 1);
@@ -289,11 +291,11 @@ test("Acc3 - bound field: one chip, ƒx and ×, no preview box; Edit rebinds; ×
   assert.equal(container.querySelector("pre"), null, "no resolved-JSON preview");
   assert.equal(byText("Edit").length + byText("Clear").length, 0, "no text buttons");
 
-  // Edit opens on the bound ref; an untouched draft is replaced by the next pick.
+  // Edit opens on the bound ref; a draft that is only a reference is rebound by the next pick.
   await click(editBtns()[0]);
-  assert.equal(draftOf(doc().body, "Compose").replace(/\s/g, ""), '{"$":"nodes.a.output"}');
+  assert.equal(draftOf(doc().body, "Compose").replace(/\s/g, ""), '"{{nodes.a.output}}"');
   await pick(rowNamed("Entire output of Step B"));
-  assert.deepEqual(box.current.cfg, { $: "nodes.b.output" });
+  assert.deepEqual(box.current.cfg, "{{ nodes.b.output }}");
   assert.equal(chipRef(container), "nodes.b.output");
 
   const callsBefore = box.calls;
@@ -308,7 +310,7 @@ test("Acc3 - × with an empty draft -> undefined", async () => {
   const { root, box } = await render([JSON_PARAM]);
   await click(fxButtons()[0]);
   await pick(rowNamed("Entire output of Step C"));
-  assert.deepEqual(box.current.cfg, { $: "nodes.c.output" });
+  assert.deepEqual(box.current.cfg, "{{ nodes.c.output }}");
   await click(clearBtns()[0]);
   assert.equal(box.current.cfg, undefined);
   await unmount(root);
@@ -369,7 +371,7 @@ test("C4 - a childless group binds, shows the chip, and × returns to the litera
   const { container, root, box } = await render([GROUP_PARAM]);
   await click(fxButtons()[0]);
   await pick(entireRows()[0]);
-  assert.deepEqual(box.current.grp, { $: "nodes.a.output" });
+  assert.deepEqual(box.current.grp, "{{ nodes.a.output }}");
   assert.equal(clearBtns().length, 1, "bound chip renders");
   assert.equal(hasEditor(container, "grp"), false);
   await click(clearBtns()[0]);
@@ -398,6 +400,7 @@ test("I-1 - valid draft: bind then × shows no hint", async () => {
   await typeDraft(container, "cfg", '{"a": 1}');
   assert.equal(hintShown(container), false);
   await click(fxButtons()[0]);
+  await typeDraft(doc().body, "Compose", "");
   await pick(entireRows()[0]);
   assert.equal(hintShown(container), false);
   await click(clearBtns()[0]);
@@ -405,17 +408,39 @@ test("I-1 - valid draft: bind then × shows no hint", async () => {
   await unmount(root);
 });
 
-test("C5 - compose: a click into a blank draft is a $ ref; Result previews it; Save binds", async () => {
+test("C5 - compose: a click into a blank draft binds and closes; a typed one-ref draft previews typed", async () => {
   const { root, box } = await render([JSON_PARAM]);
   await click(fxButtons()[0]);
   await click(rowNamed("Entire output of Step A"));
   await settle(50);
-  assert.equal(draftOf(doc().body, "Compose"), '{ "$": "nodes.a.output" }');
+  assert.equal(doc().querySelector('dialog [aria-label="Compose JSON"]'), null, "closed");
+  assert.deepEqual(box.current.cfg, "{{ nodes.a.output }}");
+  await unmount(root);
+
+  const r2 = await render([JSON_PARAM]);
+  await click(fxButtons()[0]);
+  await typeDraft(doc().body, "Compose", '"{{ nodes.a.output }}"');
   const result = doc().querySelector('[data-testid="expr-json-result"]')?.textContent ?? "";
-  assert.deepEqual(JSON.parse(result), SAMPLE);
-  assert.equal(box.calls, 0, "inserting writes nothing until Save");
+  assert.deepEqual(JSON.parse(result), SAMPLE, "one reference previews as the value itself");
+  await unmount(r2.root);
+});
+
+test("C5b - a click never replaces a draft being composed: it is added to the object", async () => {
+  const { root, box } = await render([JSON_PARAM], { cfg: { companyId: "c1" } });
+  await click(fxButtons()[0]);
+  await click(rowNamed("Entire output of Step A"));
+  assert.equal(box.calls, 0, "adding writes nothing until Save");
+  assert.deepEqual(JSON.parse(draftOf(doc().body, "Compose")), {
+    companyId: "c1",
+    a: "{{ nodes.a.output }}",
+  });
+  await click(rowNamed("Entire output of Step B"));
   await click(byText("Save")[0]);
-  assert.deepEqual(box.current.cfg, { $: "nodes.a.output" });
+  assert.deepEqual(box.current.cfg, {
+    companyId: "c1",
+    a: "{{ nodes.a.output }}",
+    b: "{{ nodes.b.output }}",
+  });
   await unmount(root);
 });
 
@@ -458,13 +483,13 @@ test("C7 - once the author has worked in the draft, a click inserts at the caret
   await click(rowNamed("Entire output of Step A"));
   let now = draftOf(doc().body, "Compose");
   assert.equal(now, '{ "label": "id: {{ nodes.a.output }}", "connectionId":  }');
-  // Where a value goes: a $ object, and the rest of the draft is kept.
+  // Where a value goes: a quoted marker, and the rest of the draft is kept.
   await caretAt(now.lastIndexOf(":") + 2);
   await click(rowNamed("Entire output of Step B"));
   now = draftOf(doc().body, "Compose");
   assert.deepEqual(JSON.parse(now), {
     label: "id: {{ nodes.a.output }}",
-    connectionId: { $: "nodes.b.output" },
+    connectionId: "{{ nodes.b.output }}",
   });
   await unmount(root);
 });
@@ -487,7 +512,7 @@ test("C8 - an app step's Metadata leaves are offered and insert like any source"
     doc().querySelectorAll('[data-testid="expr-meta-fields"] .w6w-exprmodal-source'),
   ).find((b) => b.querySelector(".w6w-exprmodal-source-label")?.textContent?.trim() === "App");
   await pick(app);
-  assert.deepEqual(box.current.cfg, { $: "nodes.ev.meta.app" });
+  assert.deepEqual(box.current.cfg, "{{ nodes.ev.meta.app }}");
   await unmount(root);
 });
 
@@ -500,6 +525,6 @@ test("C9 - a field typed as one bare {{ ref }} becomes that binding when it lose
     content.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true }));
   });
   await settle();
-  assert.deepEqual(box.current.cfg, { $: "nodes.a.output" });
+  assert.deepEqual(box.current.cfg, "{{ nodes.a.output }}");
   await unmount(root);
 });

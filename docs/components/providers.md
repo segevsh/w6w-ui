@@ -186,7 +186,7 @@ import { ExpressionOptionsProvider } from "@w6w/ui";
   value={{
     vars: ["from_email", "region"],
     secrets: ["stripe_key"],
-    sampleValues: { "vars.from_email": "team@example.com" },
+    sampleValues: { "var.from_email": "team@example.com" },
   }}
 >
   <StepEditor />
@@ -195,7 +195,8 @@ import { ExpressionOptionsProvider } from "@w6w/ui";
 
 | `value` key | What it adds |
 | --- | --- |
-| `vars`, `secrets` | Names offered as `vars.<name>` and `secrets.<name>`. Names only: secret values never reach the browser. |
+| `vars`, `secrets` | Names offered as `var.<name>` and `secrets.<name>`. Names only: secret values never reach the browser. |
+| `constants` | Read-only account constants, offered as `const.<name>`. There is no create control. |
 | `inputs` | `inputs.<name>`, for fields inside a Function or Endpoint. |
 | `documents` | `documents.<key>` (and `.<field>` when you list `fields`). |
 | `steps` | Upstream steps, offered as `steps.<id>.output` and `steps.<id>.output.<key>`. |

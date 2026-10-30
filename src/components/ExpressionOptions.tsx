@@ -147,6 +147,12 @@ export interface ExpressionDocumentSource {
 /** Known variable/secret names offered in an ExpressionInput's insert menu. */
 export interface ExpressionOptions {
   vars?: string[];
+  /**
+   * Account-level constants (`const.<name>`): read-only, set by an
+   * administrator, ordinary data (not secret). Offered as insertable chips
+   * only — there is deliberately no create callback.
+   */
+  constants?: string[];
   secrets?: string[];
   /**
    * Function/run input keys in scope (`inputs.<name>`). Present when the field
@@ -171,7 +177,7 @@ export interface ExpressionOptions {
   hasTrigger?: boolean;
   /**
    * Design-time sample values the Result preview substitutes for known refs,
-   * keyed by FULL ref (`"vars.from_email"`, `"documents.test"`). Seeded by the
+   * keyed by FULL ref (`"var.from_email"`, `"documents.test"`). Seeded by the
    * host from the project's real vars/documents so the preview shows actual
    * values instead of the raw `{{ ref }}` template. Optional — a user-typed
    * Sample value still overrides, and unknown refs keep the raw fallback.

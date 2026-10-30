@@ -1,3 +1,4 @@
+import { holdsExpression } from "./components/expression-template.ts";
 /**
  * Pure decisions for form-resolved dynamic options (no React). The hook in
  * `use-dynamic-fields.ts` only sequences; everything decidable lives here.
@@ -6,7 +7,6 @@ import {
   type ActionParam,
   type ParamOption,
   type ResolveFieldsBody,
-  isExprValue,
   isFormResolvedOptions,
   isSecretValue,
 } from "./types.ts";
@@ -51,7 +51,7 @@ function flat(list: ActionParam[]): ActionParam[] {
 
 /** D-5: expression, secret, or a plain object with own key `$` can't be sent as a literal. */
 export function isUnresolvedValue(v: unknown): boolean {
-  if (isExprValue(v) || isSecretValue(v)) return true;
+  if (holdsExpression(v) || isSecretValue(v)) return true;
   return (
     typeof v === "object" &&
     v !== null &&

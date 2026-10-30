@@ -225,6 +225,34 @@ test("onInput wiring — a closed {{ vars.a }} marker promotes to a chip on a re
   assert.deepEqual(readParts(editor), [{ kind: "var", ref: "vars.a" }]);
 });
 
+for (const [typed, expected] of [
+  ["\\{{ var.a }}", [{ kind: "text", value: "\\{{ var.a }}" }]],
+  [
+    "\\\\{{ var.a }}",
+    [
+      { kind: "text", value: "\\\\" },
+      { kind: "var", ref: "var.a" },
+    ],
+  ],
+] as const) {
+  test(`onInput wiring — escape: ${JSON.stringify(typed)} ${expected.length === 1 ? "stays text" : "is a backslash then a chip"}`, async () => {
+    const { container } = await mountModal({ value: "" });
+    const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+    await act(async () => {
+      const textNode = dom.window.document.createTextNode(typed);
+      editor.appendChild(textNode);
+      const range = dom.window.document.createRange();
+      range.setStart(textNode, textNode.length);
+      range.collapse(true);
+      const sel = dom.window.document.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      editor.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    });
+    assert.deepEqual(readParts(editor), expected);
+  });
+}
+
 test("onInput wiring — an UNCLOSED marker (no trailing }}) is left alone: no chip, text unchanged", async () => {
   const { container } = await mountModal({ value: "" });
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;

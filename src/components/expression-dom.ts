@@ -25,14 +25,14 @@ const STEP_META_REF = /^(?:nodes|steps)\.([^.]+)\.meta\.(app|version|action|conn
  * The name a source or chip DISPLAYS. Never the ref it SAVES.
  *
  * A saved ref is always canonical and engine-resolvable — the run scope offers
- * exactly `vars.* · steps.<id>.output.* · steps.<id>.meta.* · trigger.* · secrets.* · documents.* ·
+ * exactly `var.* · steps.<id>.output.* · steps.<id>.meta.* · trigger.* · secrets.* · documents.* · const.* ·
  * inputs.* · foreach.* · output.*` (`core/rfcs/workflow.md` §Expressions, built
  * in `w6w-workflow/packages/engine/src/run.ts`). Those read long in a field, so
  * the label drops the root the chip's sigil and colour already imply:
  *
  * | ref                         | label          |
  * |-----------------------------|----------------|
- * | `vars.from_email`           | `from_email`   |
+ * | `var.from_email`            | `from_email`   |
  * | `steps.gate_1.output`       | `gate_1`       |
  * | `steps.gate_1.output.email` | `gate_1.email` |
  * | `steps.gate_1.meta.version` | `gate_1 meta · version` |
@@ -45,7 +45,9 @@ const STEP_META_REF = /^(?:nodes|steps)\.([^.]+)\.meta\.(app|version|action|conn
  * attribute carries the ref, this function only ever feeds `label.textContent`.
  */
 export const varLabel = (ref: string): string => {
+  if (ref.startsWith("var.")) return ref.slice("var.".length);
   if (ref.startsWith("vars.")) return ref.slice("vars.".length);
+  if (ref.startsWith("const.")) return ref.slice("const.".length);
   const m = STEP_OUTPUT_REF.exec(ref);
   if (m) return m[2] ? `${m[1]}.${m[2]}` : m[1];
   const meta = STEP_META_REF.exec(ref);
@@ -532,6 +534,10 @@ export function promoteCompletedMarkerAtCaret(
   const marker = text.slice(openIdx, offset);
   const parsed = parseRootAnchoredTemplate(marker);
   if (parsed.length !== 1 || parsed[0].kind === "text") return false;
+  // `\{{ … }}` is an escaped, literal marker — it stays text (`\\{{` does not escape).
+  let slashes = 0;
+  while (openIdx - 1 - slashes >= 0 && text[openIdx - 1 - slashes] === "\\") slashes += 1;
+  if (slashes % 2 === 1) return false;
 
   const markerRange = doc.createRange();
   markerRange.setStart(node, openIdx);

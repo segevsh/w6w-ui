@@ -475,7 +475,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Fields",
         type: "array",
         default: [],
-        hint: 'The fields this trigger emits into the run. Reference them downstream as {"$": "steps.<trigger>.output.<key>"}.',
+        hint: "The fields this trigger emits into the run. Reference them downstream as {{ nodes.<trigger>.output.<key> }}.",
         item: {
           type: "object",
           fields: [
@@ -693,7 +693,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Condition",
         required: true,
         default: true,
-        hint: 'A boolean, or an expression binding like { "$": "steps.x.output.ok" }.',
+        hint: "A boolean, or an expression like {{ nodes.x.output.ok }}.",
       },
     ],
   },

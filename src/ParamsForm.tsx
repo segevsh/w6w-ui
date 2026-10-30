@@ -9,11 +9,11 @@ import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { varLabel } from "./components/expression-dom.ts";
-import { bareRefBinding } from "./components/json-compose.ts";
+import { holdsExpression } from "./components/expression-template.ts";
+import { bareRefBinding, wholeValueRef } from "./components/json-compose.ts";
 import { type DynamicContext, allowCustomOf } from "./dynamic-fields.ts";
 import { useOptionalW6WApi, useWorkflowProject } from "./provider.tsx";
-import { isDollarPath } from "./resolve-params.ts";
-import { type ActionParam, type ExprValue, type SecretValue, isExprValue } from "./types.ts";
+import type { ActionParam, ExprValue, SecretValue } from "./types.ts";
 import { type UseDynamicFields, useDynamicFields } from "./use-dynamic-fields.ts";
 
 /**
@@ -157,9 +157,8 @@ export interface ParamsFormProps {
  * tidy. Widget is chosen by `param.type` — same field-driven approach as
  * `AuthFieldsForm`, extended with `text` (textarea) and `json` (JsonEditor).
  *
- * Values are collected into a plain object suitable for a step's `with`. For
- * expression bindings (`{ $: "steps.x.output.y" }`) authors drop to the JSON
- * view; this form deals in literals.
+ * Values are collected into a plain object suitable for a step's `with`. A field
+ * bound to a reference holds a `{{ }}` template string (`"{{ nodes.x.output.y }}"`).
  */
 export function ParamsForm({ params, values, onChange, readOnly, dynamic }: ParamsFormProps) {
   const dyn = useDynamicFields(params, values, dynamic, onChange);
@@ -929,7 +928,7 @@ function FxField({
   // free — the modal's `onClose` writes nothing, so `value`, and therefore `fx`,
   // is unchanged. A value that arrives after mount (a saved test seeded into a
   // field that mounted empty) is picked up on the next render, no effect needed.
-  const fx = isExprValue(value);
+  const fx = holdsExpression(value);
   // Multi-line text fields keep their newlines in expression mode too: Enter
   // inserts a literal "\n" instead of being swallowed. Same predicate the
   // textarea branch above renders on, so the two can never disagree.
@@ -1047,8 +1046,9 @@ function JsonParamField({
 }) {
   // "Bound" is DERIVED from the stored value on every render — never a local
   // flag — so control and value cannot disagree (same stance as `FxField`'s `fx`).
-  const bound = isDollarPath(value) && typeof value.$ === "string";
-  const boundRef = bound ? String((value as { $: string }).$) : "";
+  // A whole-value binding: `"{{ ref }}"`, or a legacy `{ "$": ref }`.
+  const boundRef = wholeValueRef(value) ?? "";
+  const bound = boundRef !== "";
   const seed = value ?? param.default;
   // The draft is NEVER seeded from a binding (R-18a): Clear must be able to give
   // back the literal JSON the author had, or "" if there was none.
@@ -1097,8 +1097,8 @@ function JsonParamField({
     }
     setInvalid(!valid);
   };
-  // A whole field typed as one `{{ ref }}` is not JSON, but it means exactly the binding
-  // `{ $: ref }` the ƒx picker stores. Applied when the field loses focus, never per keystroke:
+  // A whole field typed as one `{{ ref }}` is not JSON (no quotes), but it means exactly the
+  // binding `"{{ ref }}"` the ƒx picker stores. Applied when the field loses focus, never per keystroke:
   // auto-closed braces make `{{ nodes}}` a complete marker halfway through typing a ref.
   const commitBareRef = () => {
     const binding = bareRefBinding(text);

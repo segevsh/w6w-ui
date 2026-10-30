@@ -28,7 +28,7 @@ import {
   serializeTemplate,
   valueToParts,
 } from "./expression-template.ts";
-import { refInsertion, resolveComposed, sampleStepsState } from "./json-compose.ts";
+import { addRefToDraft, resolveComposed, sampleStepsState, wholeValueRef } from "./json-compose.ts";
 
 /**
  * A near-full-screen editor for an expression value. Left: the data sources in
@@ -60,10 +60,11 @@ export interface ExpressionEditorModalProps {
   /**
    * `"json-binding"`: the value of a whole `json`/`group` param, composed as JSON. The rail
    * shows Workflow state (each step's "Entire output", its fields and, for an app step, its
-   * Metadata), Inputs and Variables — no Secrets or Documents. A click on a source inserts a
-   * reference at the caret of the JSON pane (the whole draft when it is blank): `{ "$": ref }`
-   * where a value goes, `{{ ref }}` inside a string (`json-compose.ts`). Save calls
-   * `onSaveJson` with the parsed JSON; a draft of just `{ "$": ref }` is a plain binding.
+   * Metadata), Inputs and Variables — no Secrets or Documents. A click on a source into an empty
+   * draft (or one holding only a reference) binds it: `onSaveJson("{{ ref }}")` and close. Into a
+   * draft being composed it ADDS the reference (`addRefToDraft`, `json-compose.ts`): at the caret
+   * where a value or property fits, else as a new property/element at the end — never replacing
+   * the draft. Save calls `onSaveJson` with the parsed JSON.
    * Absent ⇒ expression mode, unchanged.
    */
   mode?: "json-binding";
@@ -106,19 +107,28 @@ export function ExpressionEditorModal({
   }, [jsonText]);
   const insertJsonRef = (ref: string) => {
     const view = jsonView.current;
-    if (!view) return;
-    const doc = view.state.doc.toString();
-    if (doc.trim() === "" || !jsonTouched.current) {
-      const text = `{ "$": ${JSON.stringify(ref)} }`;
-      view.dispatch({ changes: { from: 0, to: doc.length, insert: text } });
-    } else {
-      const { from, to } = view.state.selection.main;
-      const text = refInsertion(doc, from, ref);
-      view.dispatch({
-        changes: { from, to, insert: text },
-        selection: { anchor: from + text.length },
-      });
+    const doc = view ? view.state.doc.toString() : jsonText;
+    // An empty draft — or one that is only a reference (a bound field being re-picked) — is a
+    // binding: the click saves that reference and closes, as a click does in expression mode.
+    let whole: string | null = null;
+    try {
+      whole = doc.trim() === "" ? null : wholeValueRef(JSON.parse(doc));
+    } catch {
+      whole = null;
     }
+    if (doc.trim() === "" || whole !== null) {
+      onSaveJson?.(`{{ ${ref} }}`);
+      onClose();
+      return;
+    }
+    if (!view) return;
+    // Otherwise the author is composing: ADD the reference, never replace their JSON.
+    const pos = jsonTouched.current ? view.state.selection.main.head : doc.length;
+    const next = addRefToDraft(doc, pos, ref);
+    view.dispatch({
+      changes: { from: 0, to: doc.length, insert: next.text },
+      selection: { anchor: next.caret },
+    });
     view.focus();
   };
   const [parts, setParts] = useState<ExprPart[]>(() => valueToParts(value).parts);
@@ -226,6 +236,7 @@ export function ExpressionEditorModal({
   };
 
   const vars = options.vars ?? [];
+  const constants = options.constants ?? [];
   const secrets = options.secrets ?? [];
   const inputs = options.inputs ?? [];
   const documents = options.documents ?? [];
@@ -661,9 +672,18 @@ export function ExpressionEditorModal({
               </div>
               {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
               {vars.map((v) =>
-                source(v, { kind: "var", ref: `vars.${v}` }, "w6w-expr-chip-var", "◆"),
+                source(v, { kind: "var", ref: `var.${v}` }, "w6w-expr-chip-var", "◆"),
               )}
             </div>
+
+            {constants.length > 0 && (
+              <div className="w6w-exprmodal-group" data-testid="expr-constants-group">
+                <span className="w6w-exprmodal-group-label">Constants</span>
+                {constants.map((c) =>
+                  source(c, { kind: "var", ref: `const.${c}` }, "w6w-expr-chip-var", "◈"),
+                )}
+              </div>
+            )}
           </>
           {!jsonBinding && (
             <>
@@ -786,7 +806,7 @@ export function ExpressionEditorModal({
                   height="100%"
                   minHeight="0px"
                   aria-label="Compose JSON"
-                  placeholder='{ "key": { "$": "nodes.step_1.output" } }'
+                  placeholder='{ "key": "{{ nodes.step_1.output }}" }'
                   onCreateEditor={(view) => {
                     jsonView.current = view;
                   }}
