@@ -120,5 +120,9 @@ test("W7 — onConnectEnd consults connectDropRefusal before it can open the bui
   assert.ok(refusal > 0);
   assert.ok(refusal < end.indexOf("setBuilderOpen(true)"), "refusal check precedes the builder");
   assert.match(end, /setLoopNotice\(\{ nodeId: fromNode\.id, reason \}\);\s*return;/);
+  // Both lane sites (refusal + builder) read the lane the drag STARTED on, not fromHandle.
+  assert.equal(end.split("dragLane(connectStartRef.current").length - 1, 2);
+  assert.doesNotMatch(end, /laneForSourceHandle\(connectionState/);
+  assert.match(text, /onConnectStart=\{/);
   assert.match(text, /onPaneClick=\{\(\) => setLoopNotice\(null\)\}/);
 });

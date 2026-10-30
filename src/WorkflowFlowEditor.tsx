@@ -103,7 +103,7 @@ import {
   stampLoopOf,
   stripBody,
 } from "./flow-loop.ts";
-import { applyStepProblemFix, connectDropRefusal } from "./flow-problems.ts";
+import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -589,6 +589,12 @@ function Inner({
     reason: LoopRefusalReason;
   } | null>(null);
   const loopNoticeSelRef = useRef<string | null>(null);
+  // The handle a drag started on (see `dragLane`): xyflow's end-state handle is wrong for Done.
+  const connectStartRef = useRef<{
+    nodeId: string | null;
+    handleId: string | null;
+    handleType: string | null;
+  } | null>(null);
 
   // Mark each loop-body step with its For each (`data.loopOf`) from the each-lane
   // edges. Its own effect, never folded into the runState / stepProblems ones, and
@@ -697,7 +703,7 @@ function Inner({
         const reason = connectDropRefusal(
           fromNode.id,
           toNode.id,
-          laneForSourceHandle(connectionState.fromHandle?.id),
+          dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
           nodes,
           edges,
         );
@@ -726,7 +732,7 @@ function Inner({
         nodeId: fromNode.id,
         handleType,
         position,
-        lane: laneForSourceHandle(connectionState.fromHandle?.id),
+        lane: dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
       });
       setBuilderOpen(true);
     },
@@ -1616,6 +1622,9 @@ function Inner({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onConnectStart={(_e, p) => {
+                      connectStartRef.current = p;
+                    }}
                     onConnectEnd={onConnectEnd}
                     onPaneClick={() => setLoopNotice(null)}
                     isValidConnection={isValidConnection}

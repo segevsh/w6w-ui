@@ -125,7 +125,8 @@ async function flush() {
 
 type StepProblem = import("../step-problems.ts").StepProblem;
 const { applyStepProblemFix } = await import("../flow-problems.ts");
-const { connectDropRefusal } = await import("../flow-problems.ts");
+const { connectDropRefusal, dragLane, findLoopProblems } = await import("../flow-problems.ts");
+const { applyStepProblems } = await import("../step-problems.ts");
 const { workflowToFlow } = await import("../flow-utils.ts");
 
 const BODY_STEP: FlowStep = {
@@ -252,6 +253,46 @@ test("D2: Each item handle onto an already-owned step, and a body step onto its 
   const { nodes, edges } = workflowToFlow(LOOP_WF as never);
   assert.equal(connectDropRefusal("f", "b0", "each", nodes, edges), "loop_cycle");
   assert.equal(connectDropRefusal("b1", "f", "success", nodes, edges), "loop_cycle");
+});
+
+// The REAL xyflow shape: an id-less Done port reports `fromHandle.id === "out-each"`
+// (getHandle(bounds, null) -> bounds[0]); only onConnectStart carries the true id (null).
+const DONE_START = { nodeId: "f", handleId: null, handleType: "source" };
+const EACH_START = { nodeId: "f", handleId: "out-each", handleType: "source" };
+const XY_FROM = { id: "out-each", type: "source" };
+
+test("D4: real Done drag (start handleId null, fromHandle.id out-each) -> success lane -> outside_inbound", () => {
+  const { nodes, edges } = workflowToFlow(LOOP_WF as never);
+  const lane = dragLane(DONE_START, "f", XY_FROM);
+  assert.equal(lane, "success");
+  assert.equal(connectDropRefusal("f", "b0", lane, nodes, edges), "outside_inbound");
+});
+
+test("D5: real Each item drag keeps the each lane; no recorded start falls back to fromHandle", () => {
+  const { nodes, edges } = workflowToFlow(LOOP_WF as never);
+  const lane = dragLane(EACH_START, "f", XY_FROM);
+  assert.equal(lane, "each");
+  assert.equal(connectDropRefusal("f", "b0", lane, nodes, edges), "loop_cycle");
+  assert.equal(dragLane(null, "f", XY_FROM), "each");
+  assert.equal(dragLane({ ...DONE_START, nodeId: "other" }, "f", XY_FROM), "each");
+});
+
+test("D6: prototype-named step ids never throw in problem maps", () => {
+  const nodes = [
+    { id: "constructor", data: {} },
+    { id: "toString", data: {} },
+  ];
+  assert.doesNotThrow(() => applyStepProblems(nodes as never, {}));
+  assert.equal(applyStepProblems(nodes as never, {}).length, 2);
+  assert.doesNotThrow(() =>
+    findLoopProblems({
+      ...(LOOP_WF as object),
+      nodes: [
+        ...(LOOP_WF as { nodes: unknown[] }).nodes,
+        { id: "constructor", app: "x", action: "y" },
+      ],
+    } as never),
+  );
 });
 
 test("D3: an unrelated drop has no loop reason (falls through to the builder)", () => {

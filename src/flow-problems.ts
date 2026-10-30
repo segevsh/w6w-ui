@@ -19,7 +19,12 @@ import {
   loopMembership,
   loopRefusal,
 } from "./flow-loop.ts";
-import type { FlowStep, FlowWorkflowInput } from "./flow-types.ts";
+import {
+  type CanvasLane,
+  type FlowStep,
+  type FlowWorkflowInput,
+  laneForSourceHandle,
+} from "./flow-types.ts";
 import { type StepNode, normalizeInput } from "./flow-utils.ts";
 import { isDollarPath } from "./resolve-params.ts";
 import type { StepProblem, StepProblems } from "./step-problems.ts";
@@ -118,7 +123,7 @@ export function findLoopProblems(input: FlowWorkflowInput): StepProblems {
     if (!Array.isArray(wf.nodes)) return {};
     const out: StepProblems = {};
     const add = (id: string, p: StepProblem) => {
-      const list = out[id] ?? [];
+      const list = Object.hasOwn(out, id) ? out[id] : [];
       list.push(p);
       out[id] = list;
     };
@@ -174,6 +179,24 @@ export function applyStepProblemFix(step: FlowStep, problem: StepProblem): FlowS
     return { ...step, with: next as Record<string, unknown> };
   }
   return step;
+}
+
+/**
+ * The lane of a drag, read from the handle the pointer went down on. xyflow's
+ * `connectionState.fromHandle` resolves an id-less handle (the Done port) to the
+ * node's FIRST handle (`out-each`), so it cannot tell Done from Each item;
+ * `onConnectStart` reports the real `handleId` (null for Done). Falls back to
+ * `fromHandle.id` when no matching start was recorded.
+ */
+export function dragLane(
+  start: { nodeId: string | null; handleId: string | null; handleType: string | null } | null,
+  fromNodeId: string,
+  fromHandle: { id?: string | null; type?: string } | null | undefined,
+): CanvasLane {
+  if (start && start.nodeId === fromNodeId && start.handleType === (fromHandle?.type ?? "source")) {
+    return laneForSourceHandle(start.handleId);
+  }
+  return laneForSourceHandle(fromHandle?.id);
 }
 
 /**

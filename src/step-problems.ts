@@ -49,7 +49,7 @@ export function applyStepProblems<N extends ProblemNode>(
   problems: StepProblems | undefined,
 ): N[] {
   return nodes.map((n) => {
-    const next = problems?.[n.id];
+    const next = problems && Object.hasOwn(problems, n.id) ? problems[n.id] : undefined;
     const cur = n.data.stepProblems;
     if (next === undefined || next.length === 0) {
       if (cur === undefined && !("stepProblems" in n.data)) return n;
