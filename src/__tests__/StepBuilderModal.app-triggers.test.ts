@@ -339,3 +339,43 @@ test("A5: a built-in right-column pick still opens the unchanged control-node co
   assert.equal(calls.subs, 0);
   await act(async () => root.unmount());
 });
+
+test("A4: '+ New' -> Save connection -> created id becomes uses.connection", async () => {
+  let created = false;
+  let createdFor = "";
+  const { api, calls } = makeTriggerApi();
+  // Two connections after creation so auto-selecting the first cannot mask a dropped setConnectionId.
+  const patch = api as unknown as Record<string, unknown>;
+  patch.listConnectionsForApp = async () =>
+    created
+      ? [
+          { id: "conn_OLD", displayName: "Old" },
+          { id: "conn_NEW", displayName: "Fresh" },
+        ]
+      : [{ id: "conn_OLD", displayName: "Old" }];
+  patch.getAppAuth = async () => [
+    { key: "k", type: "apiKey", displayName: "Key", available: true, fields: [] },
+  ];
+  patch.createConnection = async (appId: string) => {
+    createdFor = appId;
+    created = true;
+    return { id: "conn_NEW" };
+  };
+  const { container, root } = await mountTriggers(api, calls);
+  const col = container.querySelector(".w6w-readytouse-col");
+  await click(buttons(col as Element).find((b) => b.textContent?.includes("Eventbrite")));
+  await flush();
+  await click(byText(container, "+ New"));
+  await flush();
+  await click(byText(container, "Save connection"));
+  await flush();
+  assert.equal(createdFor, "eventbrite");
+  await click(byText(container, "Next →"));
+  await flush();
+  await click(trig(container, "Event Created"));
+  await click(byText(container, "Add trigger"));
+  assert.deepEqual(calls.added, [
+    { uses: { app: "eventbrite", action: "event-created", connection: "conn_NEW", trigger: true } },
+  ]);
+  await act(async () => root.unmount());
+});

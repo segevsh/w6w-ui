@@ -50,7 +50,7 @@ export interface TriggerSummary {
   /** Host floor for a poll trigger's interval, in milliseconds. */
   minIntervalMs?: number;
   /** The trigger's declared parameters (the route returns the full declaration). */
-  params?: ActionParam[];
+  params?: readonly unknown[];
 }
 
 /** A Subscription (rfcs/trigger.md) as returned by the console subscription routes. */

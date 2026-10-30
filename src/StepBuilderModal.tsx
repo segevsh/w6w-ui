@@ -888,7 +888,7 @@ export function AppTriggerConfig({
   }
 
   const selected = (triggers ?? []).find((t) => t.key === triggerKey);
-  const params = selected?.params ?? [];
+  const params = (selected?.params ?? []) as ActionParam[];
   const complete = !!selected && requiredParamsFilled(params, withValues);
   const build = (): BuiltStep => {
     const set: Record<string, unknown> = {};
