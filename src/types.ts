@@ -254,6 +254,8 @@ export interface ParamConfig {
   multiline?: boolean;
   /** With options: accept a value not in the list (Combobox `forceSelection` off). */
   allowCustom?: boolean;
+  /** Multiselect storage format. Defaults to an array; CSV preserves string-based API inputs. */
+  valueFormat?: "array" | "csv";
 }
 
 /** Summary of an action an app exposes, as returned by GET /apps/:id. */

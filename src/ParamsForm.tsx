@@ -1268,7 +1268,8 @@ function JsonParamField({
  * A `multiselect` param — a Material-style chips input: the chosen options render
  * as removable chips *inside* a single input-like box, followed by a dropdown
  * (reading as placeholder text) that appends more. Value is an array of the
- * chosen option values; the dropdown only lists options not already selected.
+ * chosen option values (or CSV with `config.valueFormat`); the dropdown only
+ * lists options not already selected.
  */
 function MultiSelectField({
   param,
@@ -1282,26 +1283,28 @@ function MultiSelectField({
   readOnly?: boolean;
 }) {
   const options = Array.isArray(param.options) ? param.options : [];
-  const selected: Array<string | number> = Array.isArray(value)
-    ? (value as Array<string | number>)
-    : Array.isArray(param.default)
-      ? (param.default as Array<string | number>)
+  const csv = param.config?.valueFormat === "csv";
+  const current = value ?? param.default;
+  const selected: Array<string | number> = Array.isArray(current)
+    ? (current as Array<string | number>)
+    : csv && typeof current === "string"
+      ? current
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean)
       : [];
   const selectedKeys = new Set(selected.map(String));
   const available = options.filter((o) => !selectedKeys.has(String(o.value)));
   const labelFor = (v: string | number) =>
     options.find((o) => String(o.value) === String(v))?.label ?? String(v);
+  const commit = (next: Array<string | number>) => onChange(param.key, csv ? next.join(",") : next);
 
   const add = (raw: string) => {
     if (!raw || selectedKeys.has(raw)) return;
     const opt = options.find((o) => String(o.value) === raw);
-    onChange(param.key, [...selected, opt ? opt.value : raw]);
+    commit([...selected, opt ? opt.value : raw]);
   };
-  const remove = (v: string | number) =>
-    onChange(
-      param.key,
-      selected.filter((x) => String(x) !== String(v)),
-    );
+  const remove = (v: string | number) => commit(selected.filter((x) => String(x) !== String(v)));
 
   const placeholder =
     typeof param.placeholder === "string" && param.placeholder ? param.placeholder : "Select…";
