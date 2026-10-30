@@ -418,6 +418,11 @@ test("Inner mounts — <StepEditModal foreachItemCount> is resolveLoopItems(…w
   assert.equal(/\.with\?\.items$/.test(calls[0].arguments[0].getText(sf)), true);
   assert.equal(calls[0].arguments[1].getText(sf), "stepTestOutputs");
   assert.equal(lens.length, 1);
+  // the count is the bare `.length` — nothing added to / subtracted from it
+  assert.equal(ts.isConditionalExpression(expr), true);
+  const when = (expr as ts.ConditionalExpression).whenTrue;
+  assert.equal(ts.isPropertyAccessChain(when) || ts.isPropertyAccessExpression(when), true);
+  assert.equal(when.getText(sf).endsWith("?.length"), true);
   assert.equal(
     (lens[0] as ts.PropertyAccessExpression).expression.getText(sf).startsWith("resolveLoopItems("),
     true,
