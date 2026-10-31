@@ -712,10 +712,15 @@ function NodeRow({
 }
 
 /**
- * Triggers tab — two columns (F-2): **Connected apps** that declare at least one
- * trigger on the left, the built-in triggers (Manual / Webhook / Schedule) on
- * the right, plus a "Search all apps" button that opens an Apps-tab-style
- * `AppPicker` narrowed SERVER-side to apps with triggers (`hasTriggers`).
+ * Triggers tab — the "Ready to use" layout (F-2): **Your apps** on the left,
+ * the connected apps that declare at least one trigger; **Built-in** on the
+ * right (Manual / Webhook / Schedule); and a "Search all apps" button that opens
+ * an Apps-tab-style `AppPicker` narrowed SERVER-side to apps with triggers
+ * (`hasTriggers`).
+ *
+ * Unlike the home tab, BOTH columns always render: an empty left column says
+ * so and points at the search, rather than vanishing and leaving the built-ins
+ * to read as the only triggers there are.
  *
  * Picking an app, from either place, runs account → trigger
  * ({@link AppTriggerConfig}) and adds ONE trigger node through `onAdd`; no
@@ -765,16 +770,13 @@ function TriggersFlow({
     );
   }
 
-  const apps =
-    data.state === "ready"
-      ? data.apps
-          .filter((a) => (a.triggerCount ?? 0) > 0)
-          .sort(byLabel((a: AppSummary) => a.displayName))
-      : [];
+  const apps = data.apps
+    .filter((a) => (a.triggerCount ?? 0) > 0)
+    .sort(byLabel((a: AppSummary) => a.displayName));
   const leftRows: ReactNode[] = apps.map((a) => (
     <AppRow key={a.id} app={a} theme={theme} onSelect={onSelectApp} />
   ));
-  if (data.state === "ready" && data.moreApps) {
+  if (data.moreApps) {
     leftRows.push(
       <button
         key="__load_more_apps"
@@ -786,23 +788,42 @@ function TriggersFlow({
       </button>,
     );
   }
-  const left = readyToUseColumn("Connected apps", leftRows);
-  const right = readyToUseColumn(
-    "Built-in triggers",
-    nodes.map((n) => <NodeRow key={`${n.app}:${n.action}`} node={n} onSelect={onSelect} />),
-  );
-  return (
-    <div className="w6w-stack">
-      <p className="w6w-muted w6w-small">
-        Triggers start a workflow — from an app you have connected, a manual run, a webhook, or a
-        schedule.
+  let leftBody: ReactNode;
+  if (data.state === "error") {
+    leftBody = <div className="w6w-result w6w-error">{data.error}</div>;
+  } else if (data.state === "loading") {
+    leftBody = <p className="w6w-muted w6w-small">Loading…</p>;
+  } else if (leftRows.length === 0) {
+    leftBody = (
+      <p className="w6w-muted w6w-small w6w-readytouse-empty">
+        No connected apps with triggers yet ·{" "}
+        <button type="button" className="w6w-linkbtn" onClick={() => setSearching(true)}>
+          Search all apps
+        </button>
       </p>
-      {data.state === "error" && <div className="w6w-result w6w-error">{data.error}</div>}
-      <div className="w6w-readytouse" data-cols={(left ? 1 : 0) + (right ? 1 : 0)}>
-        {left}
-        {right}
+    );
+  } else {
+    leftBody = <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">{leftRows}</div>;
+  }
+  return (
+    <div className="w6w-apppicker-host">
+      <div className="w6w-readytouse" data-cols={2}>
+        <section className="w6w-readytouse-col" data-col="your-apps">
+          <h4 className="w6w-readytouse-heading">Your apps</h4>
+          {leftBody}
+        </section>
+        <div className="w6w-readytouse-stack">
+          <section className="w6w-readytouse-col" data-col="built-in">
+            <h4 className="w6w-readytouse-heading">Built-in</h4>
+            <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">
+              {nodes.map((n) => (
+                <NodeRow key={`${n.app}:${n.action}`} node={n} onSelect={onSelect} />
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
-      <div>
+      <div className="w6w-readytouse-footer">
         <button type="button" className="w6w-btn" onClick={() => setSearching(true)}>
           Search all apps
         </button>
@@ -2218,13 +2239,15 @@ export function useReadyToUse(
     };
   }, [api, bounded]);
 
+  // Re-armed on every mount: StrictMode mounts, unmounts and remounts once, and
+  // a ref left `false` by that simulated unmount drops every batch's answer.
   const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const resolveBatch = useCallback(
     (batch: string[]) => {
@@ -2402,8 +2425,8 @@ function CallableRow({
  * `search={false}`, and short scoped lists are not the surface a search box
  * earns. The Apps/Workflows/Functions tabs each keep their own.
  */
-/** One column: a heading and its rows. Rendered only when it HAS rows. Shared by
- * the home tab and the Triggers tab, so both draw `.w6w-readytouse` the same way. */
+/** One home-tab column: a heading and its rows. Rendered only when it HAS rows. The
+ * Triggers tab draws the same `.w6w-readytouse` markup but keeps an empty column. */
 function readyToUseColumn(title: string, rows: ReactNode[]) {
   return rows.length === 0 ? null : (
     <section key={title} className="w6w-readytouse-col">
