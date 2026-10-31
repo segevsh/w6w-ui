@@ -239,6 +239,9 @@ test("G3: the picker of a loop-body field offers Loop > Current item / Index / t
     await page.locator('button[aria-label="Edit expression for Ticket"]').click();
     const group = '[data-testid="expr-loop-group"]';
     await page.waitForSelector(group);
+    // The item's keys sit collapsed under Current item's "N fields ›" toggle.
+    const toggle = page.locator(`${group} [data-testid="expr-toggle-fields"]`);
+    await toggle.click();
     const rail = page.locator("aside.w6w-exprmodal-sources");
     const railText = await rail.innerText();
     assert.ok(/\bLoop\b/i.test(railText), `a "Loop" group heading: ${railText}`);
@@ -263,6 +266,7 @@ test("G3: the picker of a loop-body field offers Loop > Current item / Index / t
       if (i > 0) {
         await page.locator('button[aria-label="Edit expression for Ticket"]').click();
         await page.waitForSelector(group);
+        await toggle.click();
       }
       await page.locator(entries).nth(i).click();
       await page.waitForFunction(() => !document.querySelector("aside.w6w-exprmodal-sources"));

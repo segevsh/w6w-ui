@@ -383,6 +383,14 @@ export function ExpressionEditorModal({
     </div>
   );
 
+  const loopOpen = expanded.has("loop:item");
+  const currentItemBtn = source(
+    "Current item",
+    { kind: "var", ref: "foreach.item" },
+    "w6w-expr-chip-var",
+    "↻",
+  );
+
   // The Metadata disclosure (external app steps, R-7, and any node with config).
   // It sits directly under the "N fields" toggle (same left edge, same glyph)
   // when the step has fields, else on its own row.
@@ -524,17 +532,29 @@ export function ExpressionEditorModal({
           {loop && (
             <div className="w6w-exprmodal-group" data-testid="expr-loop-group">
               <span className="w6w-exprmodal-group-label">Loop</span>
-              {source(
-                "Current item",
-                { kind: "var", ref: "foreach.item" },
-                "w6w-expr-chip-var",
-                "↻",
+              {/* The item's keys nest under "Current item", collapsed behind the
+                  same "N fields ›" toggle a Workflow state step uses. */}
+              {loopFields.length > 0 ? (
+                <div className="w6w-exprmodal-source-row">
+                  {currentItemBtn}
+                  <FieldsToggle
+                    count={loopFields.length}
+                    open={loopOpen}
+                    onToggle={() => toggleExpanded("loop:item")}
+                  />
+                </div>
+              ) : (
+                currentItemBtn
+              )}
+              {loopFields.length > 0 && loopOpen && (
+                <div className="w6w-exprmodal-subsources" data-testid="expr-loop-fields">
+                  {loopFields.map((o) => {
+                    const ref = `foreach.item.${o.key}`;
+                    return source(o.key, { kind: "var", ref }, "w6w-expr-chip-var", "·");
+                  })}
+                </div>
               )}
               {source("Index", { kind: "var", ref: "foreach.index" }, "w6w-expr-chip-var", "#")}
-              {loopFields.map((o) => {
-                const ref = `foreach.item.${o.key}`;
-                return source(o.key, { kind: "var", ref }, "w6w-expr-chip-var", "·");
-              })}
             </div>
           )}
           {hasWorkflowState && (
