@@ -71,7 +71,7 @@ function controlCard(): JsxEl {
   return els[0];
 }
 
-test("TS1 — isTrigger is derived from isTriggerApp(step.uses.app)", () => {
+test("TS1 — isTrigger is derived from isTriggerStep(step.uses)", () => {
   const fn = findFunction("ControlNodeCard");
   let init: string | undefined;
   const visit = (node: ts.Node) => {
@@ -81,7 +81,7 @@ test("TS1 — isTrigger is derived from isTriggerApp(step.uses.app)", () => {
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(fn, visit);
-  assert.equal(init, "isTriggerApp(step.uses.app)");
+  assert.equal(init, "isTriggerStep(step.uses)");
 });
 
 test('TS2 — the card div carries className={isTrigger ? "w6w-node-trigger" : undefined}', () => {
