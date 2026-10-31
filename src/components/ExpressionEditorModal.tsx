@@ -262,7 +262,17 @@ export function ExpressionEditorModal({
   const steps = options.steps ?? [];
   const nodeConfigs = options.nodeConfigs ?? [];
   const loop = options.loop;
-  const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
+  // Every node's literal settings, offered inside its Metadata disclosure as
+  // `config` (`nodes.<id>.meta.config.<key>`). A node that is not upstream still
+  // gets a row, so its settings stay reachable.
+  const configKeys = new Map(
+    nodeConfigs
+      .map((n) => [n.id, n.keys.filter(isRefSafeKey)] as const)
+      .filter(([, keys]) => keys.length > 0),
+  );
+  const stepIds = new Set(steps.map((st) => st.id));
+  const configOnly = [...configKeys.keys()].filter((id) => !stepIds.has(id));
+  const hasWorkflowState = steps.length > 0 || configOnly.length > 0 || !!options.hasTrigger;
   const hasState = hasWorkflowState || !!loop;
   const loopFields = (loop?.itemOutputs ?? []).filter((o) =>
     o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
@@ -372,6 +382,59 @@ export function ExpressionEditorModal({
       )}
     </div>
   );
+
+  // The Metadata disclosure (external app steps, R-7, and any node with config).
+  // It sits directly under the "N fields" toggle (same left edge, same glyph)
+  // when the step has fields, else on its own row.
+  const metaToggle = (id: string) => {
+    const open = expanded.has(`meta:${id}`);
+    return (
+      <button
+        type="button"
+        className="w6w-exprmodal-toggle-btn"
+        data-testid="expr-meta-toggle"
+        aria-expanded={open}
+        title={open ? "Hide metadata" : "Show metadata"}
+        onClick={() => toggleExpanded(`meta:${id}`)}
+      >
+        Metadata {open ? "⌄" : "›"}
+      </button>
+    );
+  };
+  // Metadata's `config` entry: the node's static settings, collapsed until its
+  // own toggle opens, each saving `nodes.<id>.meta.config.<key>`.
+  const configEntry = (id: string, keys: string[]) => {
+    if (keys.length === 0) return null;
+    const open = expanded.has(`cfg:${id}`);
+    return (
+      <>
+        <div className="w6w-exprmodal-source-row">
+          <button
+            type="button"
+            className="w6w-exprmodal-toggle-btn"
+            data-testid="expr-config-toggle"
+            aria-expanded={open}
+            title={open ? "Hide config" : "Show config"}
+            onClick={() => toggleExpanded(`cfg:${id}`)}
+          >
+            config {open ? "⌄" : "›"}
+          </button>
+        </div>
+        {open && (
+          <div className="w6w-exprmodal-subsources" data-testid="expr-config-fields">
+            {keys.map((k) =>
+              source(
+                k,
+                { kind: "var", ref: `nodes.${id}.meta.config.${k}` },
+                "w6w-expr-chip-var",
+                "·",
+              ),
+            )}
+          </div>
+        )}
+      </>
+    );
+  };
 
   // A step's output fields as a tree of plain rows, each showing only its own
   // name (`outputFieldTree`). Each SAVES the canonical `nodes.<id>.output.<key>`
@@ -485,24 +548,9 @@ export function ExpressionEditorModal({
                   "⚡",
                 )}
               {steps.map((st) => {
-                // The Metadata disclosure (external app steps only, R-7). It sits
-                // directly under the "N fields" toggle (same left edge, same
-                // glyph) when the step has fields, else on its own row.
-                const metaToggle = (id: string) => {
-                  const open = expanded.has(`meta:${id}`);
-                  return (
-                    <button
-                      type="button"
-                      className="w6w-exprmodal-toggle-btn"
-                      data-testid="expr-meta-toggle"
-                      aria-expanded={open}
-                      title={open ? "Hide metadata" : "Show metadata"}
-                      onClick={() => toggleExpanded(`meta:${id}`)}
-                    >
-                      Metadata {open ? "⌄" : "›"}
-                    </button>
-                  );
-                };
+                const cfg = configKeys.get(st.id) ?? [];
+                // Metadata shows for an external app step (R-7) or any node with config.
+                const showMeta = st.hasMeta === true || cfg.length > 0;
                 // Only keys that can become a ref the ENGINE resolves are
                 // offered. The guard lives here, at the one place a ref is
                 // built, so it holds for any host that supplies `steps` —
@@ -572,7 +620,7 @@ export function ExpressionEditorModal({
                           )}
                         </>
                       )}
-                      {st.hasMeta === true && (
+                      {showMeta && (
                         <>
                           <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
                             {metaToggle(st.id)}
@@ -588,14 +636,16 @@ export function ExpressionEditorModal({
                                 "w6w-expr-chip-var",
                                 "·",
                               )}
-                              {META_LEAVES.map(([key, label]) =>
-                                source(
-                                  label,
-                                  { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
-                                  "w6w-expr-chip-var",
-                                  "·",
-                                ),
-                              )}
+                              {st.hasMeta === true &&
+                                META_LEAVES.map(([key, label]) =>
+                                  source(
+                                    label,
+                                    { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
+                                    "w6w-expr-chip-var",
+                                    "·",
+                                  ),
+                                )}
+                              {configEntry(st.id, cfg)}
                             </div>
                           )}
                         </>
@@ -625,7 +675,7 @@ export function ExpressionEditorModal({
                             open={isOpen}
                             onToggle={() => toggleExpanded(stepKey)}
                           />
-                          {st.hasMeta === true && metaToggle(st.id)}
+                          {showMeta && metaToggle(st.id)}
                         </div>
                       </div>
                     ) : (
@@ -657,10 +707,11 @@ export function ExpressionEditorModal({
                         {fieldSources(st.id, fields)}
                       </div>
                     )}
-                    {/* External app steps only (`st.hasMeta`, R-7): a fixed group of
-                        four LABELS. No value is ever shown: it exists only at run
-                        time. Independent of the fields caret and of `needsTest`. */}
-                    {st.hasMeta === true && (
+                    {/* External app steps (`st.hasMeta`, R-7): a fixed group of four
+                        LABELS — no value is ever shown, it exists only at run time —
+                        plus, for any node with settings, `config`. Independent of the
+                        fields caret and of `needsTest`. */}
+                    {showMeta && (
                       <>
                         {fields.length === 0 && (
                           <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
@@ -669,14 +720,16 @@ export function ExpressionEditorModal({
                         )}
                         {expanded.has(`meta:${st.id}`) && (
                           <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
-                            {META_LEAVES.map(([key, label]) =>
-                              source(
-                                label,
-                                { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
-                                "w6w-expr-chip-var",
-                                "·",
-                              ),
-                            )}
+                            {st.hasMeta === true &&
+                              META_LEAVES.map(([key, label]) =>
+                                source(
+                                  label,
+                                  { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
+                                  "w6w-expr-chip-var",
+                                  "·",
+                                ),
+                              )}
+                            {configEntry(st.id, cfg)}
                           </div>
                         )}
                       </>
@@ -684,25 +737,23 @@ export function ExpressionEditorModal({
                   </Fragment>
                 );
               })}
-            </div>
-          )}
-
-          {/* Every node's configuration (`nodes.<id>.config.<key>`), whether or not it runs. */}
-          {nodeConfigs.length > 0 && (
-            <div className="w6w-exprmodal-group" data-testid="expr-node-settings">
-              <span className="w6w-exprmodal-group-label">Node settings</span>
-              {nodeConfigs.map((n) =>
-                n.keys
-                  .filter(isRefSafeKey)
-                  .map((k) =>
-                    source(
-                      `${n.id} · ${k}`,
-                      { kind: "var", ref: `nodes.${n.id}.config.${k}` },
-                      "w6w-expr-chip-var",
-                      "⚙",
-                    ),
-                  ),
-              )}
+              {/* Nodes with config that are not upstream: no output to offer,
+                  only Metadata › config. */}
+              {configOnly.map((id) => (
+                <Fragment key={`cfg-only:${id}`}>
+                  <span className="w6w-exprmodal-shape-note" data-testid="expr-config-node">
+                    {id}
+                  </span>
+                  <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
+                    {metaToggle(id)}
+                  </div>
+                  {expanded.has(`meta:${id}`) && (
+                    <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
+                      {configEntry(id, configKeys.get(id) ?? [])}
+                    </div>
+                  )}
+                </Fragment>
+              ))}
             </div>
           )}
 
