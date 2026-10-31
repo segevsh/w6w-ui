@@ -113,6 +113,15 @@ import {
   stampLoopOf,
   stripBody,
 } from "./flow-loop.ts";
+import {
+  DISABLED_LABEL,
+  PAUSED_LABEL,
+  isDisabledStep,
+  isPausedStep,
+  pausedStopAt,
+  withDisabled,
+  withPaused,
+} from "./flow-node-flags.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
 import { ROUTER_APP, routeFromHandle, routerPortLayout, routesForStep } from "./flow-types.ts";
 import {
@@ -337,6 +346,32 @@ export interface WorkflowFlowEditorProps {
    * `onChange` and never overwrites the stored viewport.
    */
   fitViewKey?: string | number | boolean;
+  /**
+   * Run from a node: ▶ runs THAT node and then continues through every node downstream of it,
+   * following the edges the way a real run does, and stops BEFORE each paused node
+   * (`ui.paused`). The host enqueues it as a real run (`POST /workflows/:id/nodes/:nodeId/run`
+   * with `continue: true`) and shows it like any run — `runState` + its run log.
+   *
+   * Called from the ▶ collect form's Run button with:
+   * - `stopAt` — every paused node except the start node itself;
+   * - `state` — the upstream outputs the form seeded (saved step tests / the last run), the same
+   *   start state a single-node run is given;
+   * - `input` — the filled values, only when the start node is a trigger.
+   *
+   * Omitted ⇒ ▶ test-runs the single node exactly as before (and flow-control nodes have no ▶).
+   * A rejected promise is shown in the run modal.
+   */
+  onRunFromNode?: (nodeId: string, req: RunFromNodeRequest) => Promise<void> | void;
+}
+
+/** What {@link WorkflowFlowEditorProps.onRunFromNode} is called with. */
+export interface RunFromNodeRequest {
+  /** Paused node ids the run must stop before (never the start node). */
+  stopAt: string[];
+  /** Upstream outputs seeded from saved step tests / the last run; absent when none. */
+  state?: StepStartState;
+  /** The trigger's filled values — present only when the start node is a trigger. */
+  input?: Record<string, unknown>;
 }
 
 /**
@@ -399,6 +434,12 @@ interface StepControls {
   onRun: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Toggle `ui.paused` — test runs started from ▶ stop before a paused node. */
+  onTogglePause: (id: string) => void;
+  /** Toggle `disabled` — a disabled node is skipped in every run. */
+  onToggleDisable: (id: string) => void;
+  /** True when ▶ runs on from the node (`onRunFromNode`), so flow-control nodes get a ▶ too. */
+  runsFromNode: boolean;
   /**
    * Open the step builder for a new step wired to this port — a plain click on the
    * port. Same path as dropping a dragged connection on empty canvas.
@@ -473,6 +514,7 @@ function Inner({
   stepProblems,
   onTestRun,
   fitViewKey,
+  onRunFromNode,
 }: WorkflowFlowEditorProps) {
   const api = useW6WApi();
   const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
@@ -1364,11 +1406,67 @@ function Inner({
   const runStep = useCallback(
     (id: string) => {
       const node = nodes.find((n) => n.id === id);
-      // Flow-control nodes can't run standalone; app + compute/trigger nodes can.
-      if (!node || isControlApp(node.data.step.uses.app)) return;
+      // Flow-control nodes can't run standalone; app + compute/trigger nodes can. A run that
+      // continues downstream is a real run, so it can start at a flow-control node too.
+      if (!node || (!onRunFromNode && isControlApp(node.data.step.uses.app))) return;
       setRunResult({ stepId: id, status: "collect" });
     },
-    [nodes],
+    [nodes, onRunFromNode],
+  );
+
+  // ▶ with a host that runs on from the node: the collect form's values become a real run that
+  // continues downstream and stops before every paused node. The host owns the request and the
+  // run it shows, so the modal closes once the run has started; a refusal stays in the modal.
+  const performRunFromNode = useCallback(
+    async (id: string, values: Record<string, unknown>, state?: StepStartState) => {
+      if (!onRunFromNode) return;
+      const node = nodes.find((n) => n.id === id);
+      if (!node) return;
+      const isTrigger = isTriggerStep(node.data.step.uses);
+      const req: RunFromNodeRequest = {
+        stopAt: pausedStopAt(
+          nodes.map((n) => n.data.step),
+          id,
+        ),
+        ...(state ? { state } : {}),
+        ...(isTrigger ? { input: values } : {}),
+      };
+      setRunResult({ stepId: id, status: "running" });
+      try {
+        await onRunFromNode(id, req);
+        setRunResult(null);
+      } catch (e) {
+        const err = e as { message?: string; code?: string };
+        setRunResult({
+          stepId: id,
+          status: "error",
+          error: err.message ?? String(e),
+          errorCode: err.code,
+        });
+      }
+    },
+    [nodes, onRunFromNode],
+  );
+
+  // Pause / disable: flip one flag on one step, keeping the node's run/problem stamps.
+  const patchStep = useCallback(
+    (id: string, fn: (step: FlowStep) => FlowStep) => {
+      if (readOnly) return;
+      const nextNodes = nodes.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, step: fn(n.data.step) } } : n,
+      );
+      setNodes(nextNodes);
+      emitChange(nextNodes, edges);
+    },
+    [nodes, edges, setNodes, emitChange, readOnly],
+  );
+  const togglePause = useCallback(
+    (id: string) => patchStep(id, (s) => withPaused(s, !isPausedStep(s))),
+    [patchStep],
+  );
+  const toggleDisable = useCallback(
+    (id: string) => patchStep(id, (s) => withDisabled(s, !isDisabledStep(s))),
+    [patchStep],
   );
 
   // Invoke one step through the invoke API with the properties collected in the
@@ -1463,10 +1561,22 @@ function Inner({
       onRun: runStep,
       onDuplicate: duplicateStep,
       onDelete: deleteStep,
+      onTogglePause: togglePause,
+      onToggleDisable: toggleDisable,
+      runsFromNode: !!onRunFromNode,
       onAddFromPort: addFromPort,
       readOnly,
     }),
-    [runStep, duplicateStep, deleteStep, addFromPort, readOnly],
+    [
+      runStep,
+      duplicateStep,
+      deleteStep,
+      togglePause,
+      toggleDisable,
+      onRunFromNode,
+      addFromPort,
+      readOnly,
+    ],
   );
 
   // Opens the step editor on a canvas node double-click — deliberately NOT
@@ -2076,8 +2186,22 @@ function Inner({
                           step={runningStep}
                           upstreamSteps={runSteps}
                           loop={runUpstreamSteps?.loop}
+                          continues={
+                            onRunFromNode
+                              ? {
+                                  stopAt: pausedStopAt(
+                                    nodes.map((n) => n.data.step),
+                                    runResult.stepId,
+                                  ),
+                                }
+                              : undefined
+                          }
                           onCancel={() => setRunResult(null)}
-                          onRun={(values, state) => performRunStep(runResult.stepId, values, state)}
+                          onRun={(values, state) =>
+                            onRunFromNode
+                              ? performRunFromNode(runResult.stepId, values, state)
+                              : performRunStep(runResult.stepId, values, state)
+                          }
                         />
                       )}
                       {/* The collect phase renders its own actions (Run + Cancel),
@@ -2396,6 +2520,7 @@ function StepRunCollect({
   loop,
   onRun,
   onCancel,
+  continues,
 }: {
   /** Fixture key, with `step.id` — where the remembered values are read from. */
   workflowId: string;
@@ -2413,6 +2538,8 @@ function StepRunCollect({
    */
   onRun: (values: Record<string, unknown>, state?: StepStartState) => void;
   onCancel: () => void;
+  /** Present when Run continues downstream (`onRunFromNode`): the paused ids it stops before. */
+  continues?: { stopAt: string[] };
 }) {
   const api = useW6WApi();
   const isTrigger = isTriggerStep(step.uses);
@@ -2524,6 +2651,25 @@ function StepRunCollect({
     <div className="w6w-stepconfig">
       <div className="w6w-modal-body">
         <div className="w6w-stack">
+          {continues && (
+            <p className="w6w-muted w6w-small" data-testid="run-from-node-hint">
+              Runs this node, then continues through every node after it
+              {continues.stopAt.length > 0 ? (
+                <>
+                  {" "}
+                  and stops before{" "}
+                  {continues.stopAt.length === 1 ? "the paused node" : "paused nodes"}{" "}
+                  {continues.stopAt.map((id, i) => (
+                    <span key={id}>
+                      {i > 0 ? ", " : ""}
+                      <code>{id}</code>
+                    </span>
+                  ))}
+                </>
+              ) : null}
+              . Disabled nodes are skipped.
+            </p>
+          )}
           {params === null || !seeded ? (
             <p className="w6w-muted w6w-small">
               {params === null ? "Loading parameters…" : "Loading saved values…"}
@@ -2690,22 +2836,60 @@ function PortHandle({
   );
 }
 
-function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
+/**
+ * The node's hover toolbar: the run controls — ▶ run, ⏸ pause, ⃠ disable — then a divider, then
+ * the edit controls (edit, copy, delete).
+ */
+function NodeControls({ id, step, runnable }: { id: string; step: FlowStep; runnable?: boolean }) {
   const ctrl = useContext(StepControlsCtx);
   if (!ctrl || ctrl.readOnly) return null;
+  // A run that continues downstream is a real run, so any node — flow control too — can start it.
+  const canRun = runnable || ctrl.runsFromNode;
+  const runLabel = ctrl.runsFromNode
+    ? "Run from this node — continues through the nodes after it"
+    : "Test-run this node";
+  const paused = isPausedStep(step);
+  const disabled = isDisabledStep(step);
   return (
     <NodeToolbar position={Position.Top} className="w6w-node-toolbar">
-      {runnable && (
+      {canRun && (
         <button
           type="button"
           className="w6w-node-toolbar-btn"
-          title="Test-run this node"
-          aria-label="Test-run this node"
+          title={runLabel}
+          aria-label={runLabel}
           onClick={() => ctrl.onRun(id)}
         >
           <Icon name="run" size={15} />
         </button>
       )}
+      <button
+        type="button"
+        className="w6w-node-toolbar-btn"
+        data-testid="node-pause-toggle"
+        aria-pressed={paused}
+        title={
+          paused
+            ? "Resume — test runs go through this node"
+            : "Pause — test runs stop before this node"
+        }
+        aria-label={paused ? "Unpause node" : "Pause node"}
+        onClick={() => ctrl.onTogglePause(id)}
+      >
+        <Icon name="pause" size={15} />
+      </button>
+      <button
+        type="button"
+        className="w6w-node-toolbar-btn"
+        data-testid="node-disable-toggle"
+        aria-pressed={disabled}
+        title={disabled ? "Enable — this node runs again" : "Disable — skip this node in every run"}
+        aria-label={disabled ? "Enable node" : "Disable node"}
+        onClick={() => ctrl.onToggleDisable(id)}
+      >
+        <Icon name="ban" size={15} />
+      </button>
+      <span className="w6w-node-toolbar-divider" aria-hidden="true" />
       <button
         type="button"
         className="w6w-node-toolbar-btn"
@@ -2745,6 +2929,39 @@ function FanOutBadge({ step, count }: { step: FlowStep; count: number }) {
   return (
     <div className="w6w-fanout-badge" role="img" aria-label={label} title={label}>
       <span aria-hidden="true">{parallel ? "⇉" : "→"}</span> {count}
+    </div>
+  );
+}
+
+/** Persistent flags under a card — visible without hovering: ⏸ paused, ⃠ disabled. */
+function NodeFlagBadges({ step }: { step: FlowStep }) {
+  const paused = isPausedStep(step);
+  const disabled = isDisabledStep(step);
+  if (!paused && !disabled) return null;
+  return (
+    <div>
+      {disabled && (
+        <span
+          className="w6w-node-flag w6w-node-flag-disabled"
+          data-testid="step-disabled-badge"
+          role="img"
+          aria-label={DISABLED_LABEL}
+          title={DISABLED_LABEL}
+        >
+          <Icon name="ban" size={11} /> Disabled
+        </span>
+      )}
+      {paused && (
+        <span
+          className="w6w-node-flag w6w-node-flag-paused"
+          data-testid="step-paused-badge"
+          role="img"
+          aria-label={PAUSED_LABEL}
+          title={PAUSED_LABEL}
+        >
+          <Icon name="pause" size={11} /> Paused
+        </span>
+      )}
     </div>
   );
 }
@@ -2924,8 +3141,17 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
   return (
-    <div className={data.loopOf ? "w6w-node-in-loop" : undefined} data-loop-of={data.loopOf}>
-      <NodeControls id={id} runnable />
+    <div
+      className={
+        [data.loopOf ? "w6w-node-in-loop" : "", isDisabledStep(step) ? "w6w-node-disabled" : ""]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      data-loop-of={data.loopOf}
+      data-disabled={isDisabledStep(step) || undefined}
+      data-paused={isPausedStep(step) || undefined}
+    >
+      <NodeControls id={id} step={step} runnable />
       <div
         data-run-status={data.stepStatus ?? "no-run"}
         {...problemAttrs(data.stepProblems)}
@@ -2942,7 +3168,8 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           border: `${visual.borderWidth}px ${visual.borderStyle} ${
             selected ? "var(--w6w-accent)" : visual.borderColor
           }`,
-          opacity: selected ? 1 : visual.opacity,
+          // A disabled node reads greyed out whatever its run status (`.w6w-node-disabled`).
+          opacity: isDisabledStep(step) ? 0.45 : selected ? 1 : visual.opacity,
           background: "var(--w6w-panel)",
           color: "var(--w6w-text)",
           borderRadius: 4,
@@ -2987,6 +3214,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      <NodeFlagBadges step={step} />
       {isTrigger && step.uses.trigger === true && <TriggerRegistrationBadge nodeId={id} />}
       {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
       {/* Meta line under the card: the step id and (when known) the app version. */}
@@ -3039,14 +3267,20 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   return (
     <div
       className={
-        [isForeach ? "w6w-node-foreach" : "", data.loopOf ? "w6w-node-in-loop" : ""]
+        [
+          isForeach ? "w6w-node-foreach" : "",
+          data.loopOf ? "w6w-node-in-loop" : "",
+          isDisabledStep(step) ? "w6w-node-disabled" : "",
+        ]
           .filter(Boolean)
           .join(" ") || undefined
       }
       data-loop-of={data.loopOf}
+      data-disabled={isDisabledStep(step) || undefined}
+      data-paused={isPausedStep(step) || undefined}
     >
-      {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
-      <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
+      {/* Compute/trigger nodes can be test-run; flow-control nodes only start a run that continues. */}
+      <NodeControls id={id} step={step} runnable={!isControlApp(step.uses.app)} />
       <div
         className={isTrigger ? "w6w-node-trigger" : isRouter ? "w6w-node-router" : undefined}
         data-node-kind={isTrigger ? "trigger" : undefined}
@@ -3060,7 +3294,8 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           border: `${visual.borderWidth}px ${visual.borderStyle} ${
             selected ? "var(--w6w-accent)" : visual.borderColor
           }`,
-          opacity: selected ? 1 : visual.opacity,
+          // A disabled node reads greyed out whatever its run status (`.w6w-node-disabled`).
+          opacity: isDisabledStep(step) ? 0.45 : selected ? 1 : visual.opacity,
           background: "var(--w6w-panel-2)",
           color: "var(--w6w-text)",
           // A trigger's half-pill radius + padding live in `.w6w-node-trigger`
@@ -3166,6 +3401,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      <NodeFlagBadges step={step} />
       {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
       {data.legacyLoop && (
         <div className="w6w-loop-legacy-note w6w-small">

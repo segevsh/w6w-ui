@@ -13,7 +13,14 @@
  * compiled in from `@xyflow/react/dist/style`), so no second import is needed.
  */
 export { WorkflowFlowEditor } from "./WorkflowFlowEditor.tsx";
-export type { WorkflowFlowEditorProps } from "./WorkflowFlowEditor.tsx";
+export type { RunFromNodeRequest, WorkflowFlowEditorProps } from "./WorkflowFlowEditor.tsx";
+export {
+  isDisabledStep,
+  isPausedStep,
+  pausedStopAt,
+  withDisabled,
+  withPaused,
+} from "./flow-node-flags.ts";
 
 export { ExpressionOptionsProvider } from "./components/ExpressionOptions.tsx";
 export type { ExpressionOptions } from "./components/ExpressionOptions.tsx";

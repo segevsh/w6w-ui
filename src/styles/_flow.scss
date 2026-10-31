@@ -207,6 +207,42 @@
   background: var(--w6w-danger);
   color: white;
 }
+/* A toggle (pause / disable) shows its on state; the divider splits the run controls
+   (run, pause, disable) from the edit controls (edit, copy, delete). */
+.w6w-node-toolbar-btn[aria-pressed="true"] {
+  background: var(--w6w-panel-2);
+  color: var(--w6w-accent);
+}
+.w6w-node-toolbar-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px var(--w6w-sp-0-5);
+  background: var(--w6w-border);
+}
+
+/* Persistent node flags under the card: ⏸ paused (test runs stop before it), ⃠ disabled
+   (skipped in every run). The glyph and the text carry the state, not colour. */
+.w6w-flow .w6w-node-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: var(--w6w-sp-0-5);
+  margin-right: var(--w6w-sp-1);
+  padding: 0 var(--w6w-sp-1);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius-sm, 3px);
+  font-size: var(--w6w-fs-xs);
+  background: var(--w6w-panel);
+  color: var(--w6w-text);
+}
+.w6w-flow .w6w-node-flag-paused {
+  border-color: var(--w6w-accent);
+  color: var(--w6w-accent);
+}
+/* The card's opacity is inline (it is also the run-status visual), so only the grey is here. */
+.w6w-flow .w6w-node-disabled > [data-run-status] {
+  filter: grayscale(1);
+}
 
 .w6w-params-optional > summary {
   cursor: pointer;
