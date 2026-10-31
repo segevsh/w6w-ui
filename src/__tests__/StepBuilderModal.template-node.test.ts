@@ -98,7 +98,7 @@ function mountRoot() {
   return { container, root };
 }
 
-test("the Utilities tab renders a 'Render template' row through the real StepBuilderModal", async () => {
+test("the picker shows templates in Utilities and store actions in Data", async () => {
   const { container, root } = mountRoot();
   await act(async () => {
     root.render(
@@ -132,6 +132,33 @@ test("the Utilities tab renders a 'Render template' row through the real StepBui
     rows.includes("Render template"),
     `the Utilities tab must render a "Render template" row through the real component; got ${JSON.stringify(rows)}`,
   );
+
+  const storeLabels = [
+    "Get entry",
+    "Set entry",
+    "Delete entry",
+    "Increment counter",
+    "List entries",
+    "Query rows",
+    "Insert row",
+  ];
+  for (const label of storeLabels) {
+    assert.ok(!rows.includes(label), `${label} must not appear in Utilities`);
+  }
+  assert.ok(rows.includes("Model allowance"), "model actions remain in Utilities");
+
+  const dataTab = Array.from(container.querySelectorAll("button")).find(
+    (b) => b.textContent === "Data",
+  );
+  assert.ok(dataTab, "the Data tab button must render");
+  await act(async () => dataTab.click());
+  const dataRows = Array.from(container.querySelectorAll(".w6w-stepbuilder-item strong")).map(
+    (el) => (el.textContent || "").trim(),
+  );
+  for (const label of storeLabels) {
+    assert.ok(dataRows.includes(label), `${label} must appear in Data`);
+  }
+  assert.ok(!dataRows.includes("Render template"), "templates remain in Utilities");
 
   await act(async () => root.unmount());
 });

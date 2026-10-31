@@ -40,6 +40,7 @@ import { createPortal } from "react-dom";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { CanvasLayer } from "./CanvasLayer.tsx";
+import { ConditionEditor } from "./ConditionEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
@@ -1517,7 +1518,7 @@ function Inner({
   // is sent to the engine.
   useEffect(() => {
     const ids = JSON.parse(upstreamIdsKey) as string[];
-    if (!editingId || ids.length === 0) {
+    if ((!editingId && !draftStepId) || ids.length === 0) {
       setStepTestOutputs({});
       setStepTestMetas({});
       return;
@@ -1557,7 +1558,7 @@ function Inner({
     return () => {
       canceled = true;
     };
-  }, [api, value.id, editingId, upstreamIdsKey]);
+  }, [api, value.id, editingId, draftStepId, upstreamIdsKey]);
   // The last test output, flattened onto the very refs the picker inserts: the
   // whole output, and each offered field path (nested ones included). Values
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
@@ -3360,6 +3361,12 @@ function ActionStepEditModal({
               ) : configView === "props" ? (
                 step.uses.action === "wait" && isControlApp(step.uses.app) ? (
                   <WaitEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : step.uses.action === "if" && isControlApp(step.uses.app) ? (
+                  <ConditionEditor
                     values={step.with ?? {}}
                     readOnly={readOnly}
                     onChange={(w) => commit({ ...step, with: w })}

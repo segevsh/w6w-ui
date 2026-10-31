@@ -10,6 +10,7 @@ import {
 } from "react";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
+import { ConditionEditor } from "./ConditionEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
@@ -33,6 +34,7 @@ import {
   DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
+  STORE_APP,
   internalNodeDefaults,
   isControlApp,
   isInternalApp,
@@ -832,11 +834,15 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
   );
 }
 
-/** Utilities tab — compute + request nodes (script, HTTP, respond). The `@w6w/data`
- * node lives in its own **Data** tab, so exclude it here. */
+/** Utilities tab — compute + request nodes. Variables and store actions live in Data. */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
   const nodes = INTERNAL_NODES.filter(
-    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP && !n.hidden,
+    (n) =>
+      n.group !== "control" &&
+      n.group !== "trigger" &&
+      n.app !== DATA_APP &&
+      n.app !== STORE_APP &&
+      !n.hidden,
   );
   return (
     <div className="w6w-stack">
@@ -848,14 +854,15 @@ function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void
   );
 }
 
-/** Data tab — the `@w6w/data` node: declare typed key/value variables for
- * downstream steps to reference. */
+/** Data tab — typed variables and persistent data-store actions. */
 function DataFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.app === DATA_APP);
+  const nodes = INTERNAL_NODES.filter(
+    (n) => (n.app === DATA_APP || n.app === STORE_APP) && !n.hidden,
+  );
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Declare typed key/value variables for downstream steps to reference.
+        Declare typed variables, read and write store entries, or query stored rows.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
@@ -981,6 +988,8 @@ export function ControlStepConfig({
           (configView === "props" ? (
             node.action === "wait" && isControlApp(node.app) ? (
               <WaitEditor values={withValues} onChange={setWithValues} />
+            ) : node.action === "if" && isControlApp(node.app) ? (
+              <ConditionEditor values={withValues} onChange={setWithValues} />
             ) : (
               <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
             )
