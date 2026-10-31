@@ -1,61 +1,109 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type ScriptLanguage,
+  convertCodeBindingsToReads,
   findCodeBindings,
-  moveCodeBindingsToInput,
 } from "../script-bindings.ts";
 
+function languageOf(values: Record<string, unknown>): ScriptLanguage {
+  return values.language === "python" || values.language === "typescript"
+    ? values.language
+    : "javascript";
+}
+
+export interface ScriptConversion {
+  /** What the open-time conversion did, until Undo. */
+  converted: number;
+  undo: () => void;
+}
+
 /**
- * The Run script Configure tab's warning for `{{ }}` typed into the CODE. The host never
- * substitutes inside code (see `script-bindings.ts`), so such a marker is literal text at run
- * time. Says so, and offers the one explicit fix: move each marker to an `input` read with the
- * binding under Input. Renders nothing when the code has no running marker.
+ * A Run script's `{{ }}` markers, converted when the step opens. The host never substitutes
+ * inside code (see `script-bindings.ts`), so a marker there is literal text at run time. When
+ * the step opens, each convertible marker is rewritten to the code read it names
+ * (`state.nodes.<id>.output…`, `vars.…`, `consts.…`); {@link ScriptBindingsNotice} says so,
+ * with Undo. Runs once per mount of the step editor, so after Undo the code stays as it was
+ * until the step is opened again. Read-only (or not a script), nothing is rewritten.
+ */
+export function useScriptConversion({
+  enabled,
+  values,
+  onChange,
+}: {
+  /** A writable `@w6w/script` step. */
+  enabled: boolean;
+  /** The step's `with`: `code`, `language`, `input`. */
+  values: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+}): ScriptConversion | null {
+  const [done, setDone] = useState<{
+    original: string;
+    converted: number;
+  } | null>(null);
+  const ran = useRef(false);
+  const code = typeof values.code === "string" ? values.code : "";
+
+  useEffect(() => {
+    if (!enabled || ran.current) return;
+    ran.current = true;
+    const r = convertCodeBindingsToReads(code, languageOf(values));
+    if (r.converted === 0) return;
+    setDone({ original: code, converted: r.converted });
+    onChange({ ...values, code: r.code });
+  }, [enabled, code, values, onChange]);
+
+  if (!done) return null;
+  return {
+    converted: done.converted,
+    undo: () => {
+      onChange({ ...values, code: done.original });
+      setDone(null);
+    },
+  };
+}
+
+/**
+ * The quiet line under a Run script's Configure tab: "Converted 2 references to code reads ·
+ * Undo" after the open-time conversion, and, for any marker still in the code, that it stays
+ * literal text. Renders nothing otherwise.
  */
 export function ScriptBindingsNotice({
   values,
+  conversion,
   readOnly,
-  onChange,
 }: {
-  /** The step's `with`: `code`, `language`, `input`. */
+  /** The step's `with`: `code`, `language`. */
   values: Record<string, unknown>;
+  conversion: ScriptConversion | null;
   readOnly?: boolean;
-  onChange: (next: Record<string, unknown>) => void;
 }) {
-  const [refusal, setRefusal] = useState<string | null>(null);
   const code = typeof values.code === "string" ? values.code : "";
-  const language: ScriptLanguage =
-    values.language === "python" || values.language === "typescript"
-      ? values.language
-      : "javascript";
-  const found = findCodeBindings(code, language);
-  if (found.length === 0) return null;
-  const move = () => {
-    const r = moveCodeBindingsToInput(code, values.input, language);
-    if (!r.ok) {
-      setRefusal(r.reason);
-      return;
-    }
-    setRefusal(
-      r.left > 0
-        ? `${r.left} reference${r.left === 1 ? " sits" : "s sit"} inside a longer Python string — rewrite ${r.left === 1 ? "it" : "them"} to read from input.`
-        : null,
-    );
-    onChange({ ...values, code: r.code, input: r.input });
-  };
+  const done = conversion;
+  const left = findCodeBindings(code, languageOf(values)).length;
+  if (!done && left === 0) return null;
   return (
-    <div role="alert" className="w6w-field-error w6w-script-bindings">
-      <span>
-        {found.length === 1 ? "This script has a " : `This script has ${found.length} `}
-        <code>{"{{ }}"}</code> reference{found.length === 1 ? "" : "s"} in its code. Code is never
-        substituted, so at run time {found.length === 1 ? "it is" : "they are"} the literal text.
-        Bind the data under <strong>Input</strong> and read it from <code>input</code>.
-      </span>
-      {!readOnly && (
-        <button type="button" className="w6w-btn" onClick={move}>
-          Move to Input
-        </button>
+    <output className="w6w-hint w6w-script-converted">
+      {done && (
+        <>
+          Converted {done.converted} reference{done.converted === 1 ? "" : "s"} to code reads
+          {!readOnly && (
+            <>
+              {" · "}
+              <button type="button" className="w6w-script-converted-undo" onClick={done.undo}>
+                Undo
+              </button>
+            </>
+          )}
+          {left > 0 && " · "}
+        </>
       )}
-      {refusal && <span className="w6w-hint">{refusal}</span>}
-    </div>
+      {left > 0 && (
+        <>
+          {left} <code>{"{{ }}"}</code> left in the code stay
+          {left === 1 ? "s" : ""} literal text — read {left === 1 ? "it" : "them"} from{" "}
+          <code>state</code>, or bind under Custom input
+        </>
+      )}
+    </output>
   );
 }

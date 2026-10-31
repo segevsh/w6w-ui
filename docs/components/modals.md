@@ -166,8 +166,9 @@ anywhere you need a node or a target.
 | `upstreamSteps` | `{ id, label? }[]` | Earlier nodes, so `nodes.<id>.output` references resolve in a test. The older `steps.<id>.output` spelling still works. |
 | `theme` | `"light" \| "dark"` | |
 
-The Triggers tab has two columns: **Connected apps** that declare at least one trigger, and the
-**Built-in triggers** (Manual, Webhook, Schedule). **Search all apps** opens an app picker that
+The Triggers tab has two columns: **Your apps**, the connected apps that declare at least one
+trigger, and **Built-in** (Manual, Webhook, Schedule). Both always render; an empty **Your apps**
+shows an empty state that links to the search. **Search all apps** opens an app picker that
 the server narrows to apps with triggers (`listAppsPage({ hasTriggers: true })`), so its count
 covers only those apps. Picking an app asks for an account (skipped when the app needs none),
 then a trigger and its settings, and adds a **trigger node** through `onAdd`:

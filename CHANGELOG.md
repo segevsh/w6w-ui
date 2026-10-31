@@ -9,9 +9,14 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
-- Run script shows how to feed it: its **Input** param is visible, a whole-value JSON param offers
-  "Use the output of <step>" chips, a `{{ }}` typed into the code gets a warning with **Move to
-  Input**, and the Test tab shows script code verbatim. `ResolvedParams` takes `literalKeys`.
+- Run script reads data as code: a `{{ }}` in its code is converted to `state.nodes.<id>.output…`,
+  `vars.…` or `consts.…` (Python indexes them) when the step opens, behind a quiet note with
+  **Undo**; step chips and ƒx under the code insert those reads; the hint is one line plus a
+  collapsed "How to read data". **Input** moved under a collapsed "Custom input (advanced)"
+  section (open when set). A whole-value JSON param offers "Use the output of <step>" chips, and
+  the Test tab shows script code verbatim. `ResolvedParams` takes `literalKeys`; `CodeEditor`
+  takes `onCreateEditor`; a collapsible section param takes `openWhenSet`, a code param
+  `scriptReads`.
 - A JSON param can be composed from references: the picker shows each step's outputs with their
   metadata, a click inserts the reference at the cursor (adding to the draft, never replacing it),
   a bound field renders as a chip, and the editor fills its pane.
