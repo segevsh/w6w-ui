@@ -195,31 +195,61 @@ const rowNames = (col: Element | null) =>
     (n.textContent ?? "").trim(),
   );
 
-test("A1: two columns — connected apps with triggerCount > 0 (the 0 one absent) | built-ins; Search all apps present", async () => {
+test("A1: two columns — Your apps (triggerCount > 0, the 0 one absent) | Built-in; Search all apps present", async () => {
   const { api, calls } = makeTriggerApi();
   const { container, root } = await mountTriggers(api, calls);
   const grid = container.querySelector(".w6w-readytouse");
   assert.ok(grid);
   assert.equal(grid.getAttribute("data-cols"), "2");
   const cols = grid.querySelectorAll(".w6w-readytouse-col");
+  assert.equal(cols[0].querySelector(".w6w-readytouse-heading")?.textContent, "Your apps");
+  assert.equal(cols[1].querySelector(".w6w-readytouse-heading")?.textContent, "Built-in");
   assert.deepEqual(rowNames(cols[0]), ["Eventbrite", "Slackish"]);
   assert.deepEqual(rowNames(cols[1]), ["Manual trigger", "Webhook", "Schedule"]);
   assert.ok(byText(container, "Search all apps"));
   await act(async () => root.unmount());
 });
 
-test("A1: no connected app declares a trigger -> the left column disappears; right + button remain", async () => {
+test("A1: no connected app declares a trigger -> the left column stays, with an empty state that searches", async () => {
   const { api, calls } = makeTriggerApi({ connected: ["plainapp"] });
   const { container, root } = await mountTriggers(api, calls);
   const grid = container.querySelector(".w6w-readytouse");
-  assert.equal(grid?.getAttribute("data-cols"), "1");
-  assert.equal(grid?.querySelectorAll(".w6w-readytouse-col").length, 1);
-  assert.deepEqual(rowNames(grid?.querySelector(".w6w-readytouse-col") ?? null), [
-    "Manual trigger",
-    "Webhook",
-    "Schedule",
-  ]);
-  assert.ok(byText(container, "Search all apps"));
+  assert.equal(grid?.getAttribute("data-cols"), "2");
+  const cols = grid?.querySelectorAll(".w6w-readytouse-col") ?? [];
+  assert.equal(cols.length, 2);
+  assert.deepEqual(rowNames(cols[0]), []);
+  assert.match(cols[0].textContent ?? "", /No connected apps with triggers yet/);
+  assert.deepEqual(rowNames(cols[1]), ["Manual trigger", "Webhook", "Schedule"]);
+  await click(buttons(cols[0]).find((b) => b.textContent === "Search all apps"));
+  await flush();
+  assert.equal(calls.pageOpts[0]?.hasTriggers, true, "the empty state opens the filtered search");
+  await act(async () => root.unmount());
+});
+
+test("A1: under StrictMode the connected apps still resolve into the left column", async () => {
+  const { api, calls } = makeTriggerApi();
+  const { container, root } = mountRoot();
+  await act(async () => {
+    root.render(
+      React.createElement(
+        React.StrictMode,
+        null,
+        React.createElement(W6WUIProvider, {
+          api,
+          children: React.createElement(StepBuilderModal, {
+            onClose: () => {},
+            onAdd: () => "step_1",
+            workflowId: "wf_1",
+          }),
+        }),
+      ),
+    );
+  });
+  await openTriggersTab(container);
+  await flush();
+  const cols = container.querySelectorAll(".w6w-readytouse-col");
+  assert.deepEqual(rowNames(cols[0]), ["Eventbrite", "Slackish"]);
+  assert.ok(calls.byIds.length >= 1);
   await act(async () => root.unmount());
 });
 

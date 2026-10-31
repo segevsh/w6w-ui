@@ -3229,6 +3229,28 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-muted-text, var(--w6w-text));
 }
 
+/* Triggers tab: the "Search all apps" row under the two columns, outside the
+   grid so the columns keep the host's remaining height. */
+.w6w-readytouse-footer {
+  flex: 0 0 auto;
+  padding-top: var(--w6w-sp-3);
+}
+
+.w6w-readytouse-empty {
+  margin: 0;
+}
+
+/* A button that reads as an inline link — the empty state's "Search all apps". */
+.w6w-linkbtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--w6w-accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* A Function/Workflow row, distinct from an app row at a glance: an app is
    somebody else's service, a Function/Workflow is something YOU built here.
    Applied by `CallableRow`, which both the home tab and the Workflows/
