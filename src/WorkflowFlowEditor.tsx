@@ -114,7 +114,14 @@ import {
   stripBody,
 } from "./flow-loop.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
-import { ROUTER_APP, routeFromHandle, routerPortLayout, routesForStep } from "./flow-types.ts";
+import {
+  ROUTER_APP,
+  ifPortLayout,
+  isIfStep,
+  routeFromHandle,
+  routerPortLayout,
+  routesForStep,
+} from "./flow-types.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -176,6 +183,7 @@ import {
   foreachTestSample,
   loopItemText,
   nodeConfigSources,
+  nodeConfigValues,
   parseLoopSeed,
   resolveLoopItemsInState,
   startStateFromSeeds,
@@ -359,10 +367,15 @@ const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
 /** The workflow's node-bound Subscriptions, read once per editor (not per card). */
 interface TriggerRegistrationValue {
   byNode: ReadonlyMap<string, SubscriptionSummary>;
+  /** The whole list — a webhook node's `nodes.<id>.meta.config.url` comes from it. */
+  subs: readonly SubscriptionSummary[];
   /** Present only when the host can retry; re-reads the list after the retry. */
   retry?: (subscriptionId: string) => Promise<void>;
 }
-const TriggerRegistrationCtx = createContext<TriggerRegistrationValue>({ byNode: new Map() });
+const TriggerRegistrationCtx = createContext<TriggerRegistrationValue>({
+  byNode: new Map(),
+  subs: [],
+});
 
 /** `AppsCtx` plus the trigger-registration context (one provider, no extra nesting level). */
 function CardDataProvider({
@@ -1660,6 +1673,11 @@ function Inner({
   const inheritedExprOptions = useExpressionOptions();
   // Every node's `nodes.<id>.config` keys — offered whether or not the node is upstream.
   const nodeConfigs = useMemo(() => nodeConfigSources(nodes), [nodes]);
+  // …and their values, so the Test tab previews a config ref instead of calling it unresolved.
+  const nodeConfig = useMemo(
+    () => nodeConfigValues(nodes, triggerRegistration.subs),
+    [nodes, triggerRegistration.subs],
+  );
   const mergedExprOptions = useMemo<ExpressionOptions>(
     () => ({
       ...(exprOptions ?? {}),
@@ -1667,13 +1685,21 @@ function Inner({
       hasTrigger: upstreamState.hasTrigger,
       loop: upstreamState.loop,
       nodeConfigs: nodeConfigs,
+      nodeConfig,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
         ...stepSampleValues,
       },
     }),
-    [exprOptions, inheritedExprOptions.sampleValues, upstreamState, stepSampleValues, nodeConfigs],
+    [
+      exprOptions,
+      inheritedExprOptions.sampleValues,
+      upstreamState,
+      stepSampleValues,
+      nodeConfigs,
+      nodeConfig,
+    ],
   );
 
   return (
@@ -2899,23 +2925,28 @@ function useTriggerRegistration(value: FlowWorkflow): TriggerRegistrationValue {
   const list = api.listSubscriptionsForWorkflow;
   const retrySub = api.retrySubscriptionRegistration;
   const workflowId = value.id;
-  const triggers = appTriggerNodesOf(value.nodes);
+  // App triggers, plus `@w6w/webhook` nodes: their URL is `nodes.<id>.meta.config.url`.
+  const triggers = [
+    ...appTriggerNodesOf(value.nodes),
+    ...(value.nodes ?? []).filter((n) => n.uses?.app === WEBHOOK_APP && n.uses.trigger !== true),
+  ];
   const hasTrigger = triggers.length > 0;
   const triggerSig = triggers
     .map((n) => `${n.id}:${n.uses.app}:${n.uses.action}:${n.uses.connection ?? ""}`)
     .join("|");
-  const [byNode, setByNode] = useState<ReadonlyMap<string, SubscriptionSummary>>(new Map());
+  const [subs, setSubs] = useState<readonly SubscriptionSummary[]>([]);
+  const byNode = useMemo(() => subscriptionsByNode(subs), [subs]);
   const [tick, setTick] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: triggerSig/tick are refetch keys
   useEffect(() => {
     if (!list || !hasTrigger) {
-      setByNode(new Map());
+      setSubs([]);
       return;
     }
     let canceled = false;
     list
       .call(api, workflowId)
-      .then((subs) => !canceled && setByNode(subscriptionsByNode(subs)))
+      .then((next) => !canceled && setSubs(next))
       .catch(() => {});
     return () => {
       canceled = true;
@@ -2934,7 +2965,7 @@ function useTriggerRegistration(value: FlowWorkflow): TriggerRegistrationValue {
         : undefined,
     [api, retrySub],
   );
-  return useMemo(() => ({ byNode, retry }), [byNode, retry]);
+  return useMemo(() => ({ byNode, subs, retry }), [byNode, subs, retry]);
 }
 
 /** Registration state, last error, last fire and Retry for a trigger node's bound subscription. */
@@ -3087,7 +3118,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const routes = routesForStep(step);
   const isRouter = step.uses.app === ROUTER_APP;
-  const routerPorts = routes.length ? routerPortLayout(routes) : undefined;
+  // An If lays its True/False ports out like a Router's routes (ifPortLayout).
+  const isIf = isIfStep(step);
+  const routerPorts = routes.length ? routerPortLayout(routes) : isIf ? ifPortLayout() : undefined;
   const routeKey = JSON.stringify(routes.map((r) => r.id));
   const updateNodeInternals = useUpdateNodeInternals();
   // biome-ignore lint/correctness/useExhaustiveDependencies: route identities and order change handle positions.
@@ -3226,7 +3259,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             ) : (
               <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
             )}
-            {!isTrigger && !isRouter && (
+            {!isTrigger && !isRouter && !isIf && (
               <PortHandle
                 type="source"
                 position={Position.Bottom}

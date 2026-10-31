@@ -183,6 +183,10 @@ export function edgeRunState(
   const lane = when ?? "success";
   if (route !== undefined && exec.status === "succeeded") {
     const output = exec.output;
+    // An If's routed edge (its False port, or an explicit "true") follows `matched`.
+    if (output && typeof output === "object" && "matched" in output) {
+      return (route === "false") !== (output.matched === true) ? "taken" : "skipped";
+    }
     return output && typeof output === "object" && "route" in output && output.route === route
       ? "taken"
       : "skipped";

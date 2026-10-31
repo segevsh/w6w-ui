@@ -57,10 +57,10 @@ export function ResolvedParams({
   view = "props",
   literalKeys,
 }: ResolvedParamsProps) {
-  const { sampleValues } = useExpressionOptions();
+  const { sampleValues, nodeConfig } = useExpressionOptions();
   const scope = useMemo(
-    () => buildResolveScope(sampleValues, testStartState),
-    [sampleValues, testStartState],
+    () => buildResolveScope(sampleValues, testStartState, nodeConfig),
+    [sampleValues, testStartState, nodeConfig],
   );
   const flat = flattenParams(params);
   const effective = (key: string) =>
@@ -258,6 +258,14 @@ function ResolvedSegmentView({ segment }: { segment: ResolvedSegment }) {
         <>
           <ExprChip kind="var" refName={segment.ref} />
           <span className="w6w-param-unresolved">unresolved</span>
+        </>
+      );
+    case "at-run":
+      // A node config key this client cannot see (the host fills it on the run): neutral.
+      return (
+        <>
+          <ExprChip kind="var" refName={segment.ref} />
+          <span className="w6w-param-unevaluated">resolved at run</span>
         </>
       );
     case "not-evaluated":
