@@ -151,6 +151,8 @@ export interface ListAppsPageOptions {
   q?: string;
   /** Server-side category filter (e.g. `"ai"`). */
   category?: string;
+  /** Server-side filter to apps declaring at least one trigger (`GET /apps?hasTriggers=true`); `total` is then the filtered total. */
+  hasTriggers?: boolean;
   /** Server-side id allow-list (`GET /apps?ids=a,b`); `total` is then the filtered total. */
   ids?: string[];
   /** Opaque pagination cursor from a prior {@link AppsPageResult.nextCursor}. */
@@ -502,11 +504,11 @@ export interface W6WApi {
 
   /**
    * List apps that declare at least one trigger — the Triggers tab's
-   * "App triggers" section (T-0). GETs whatever the host resolves to (e.g.
-   * apps filtered by `triggerCount > 0`).
+   * Apps filtered by `triggerCount > 0`. UNUSED by the step builder: the Triggers
+   * tab resolves connected apps via `listAppsByIds` and searches via
+   * `listAppsPage({ hasTriggers: true })`. The member stays on the public surface.
    *
-   * OPTIONAL, like `listTestRuns?` above: a host that hasn't wired this member
-   * still typechecks and simply doesn't render the App-triggers section.
+   * OPTIONAL, like `listTestRuns?` above.
    */
   listTriggerApps?(): Promise<AppSummary[]>;
 

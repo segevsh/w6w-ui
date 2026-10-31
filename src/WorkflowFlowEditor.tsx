@@ -45,6 +45,7 @@ import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
 import {
+  AppTriggerConfig,
   type BuiltStep,
   type ConfigView,
   ConfigViewToggle,
@@ -124,7 +125,7 @@ import {
   internalNodeParams,
   isControlApp,
   isInternalApp,
-  isTriggerApp,
+  isTriggerStep,
   laneForSourceHandle,
   nodePortsForStep,
 } from "./flow-types.ts";
@@ -1027,8 +1028,8 @@ function Inner({
         // decides if and where it feeds in). A non-trigger step prefers
         // wiring an existing UNCONNECTED trigger forward (the likely intent
         // right after adding one) over extending the current tail.
-        const existingTrigger = nodes.find((n) => isTriggerApp(n.data.step.uses.app));
-        if (isTriggerApp(built.uses.app)) {
+        const existingTrigger = nodes.find((n) => isTriggerStep(n.data.step.uses));
+        if (isTriggerStep(built.uses)) {
           if (!existingTrigger) {
             const root = findChainRoot(nodes, edges);
             if (root) {
@@ -1323,7 +1324,7 @@ function Inner({
       const node = nodes.find((n) => n.id === id);
       if (!node) return;
       const step = node.data.step;
-      const isTrigger = isTriggerApp(step.uses.app);
+      const isTrigger = isTriggerStep(step.uses);
       // A trigger's filled fields ARE the run's starting state: the handler
       // returns `params.input` verbatim, so anything else comes back `{}`. Every
       // other step is ALREADY CONFIGURED — `values` is the incoming state the
@@ -2319,7 +2320,7 @@ function StepRunCollect({
   onCancel: () => void;
 }) {
   const api = useW6WApi();
-  const isTrigger = isTriggerApp(step.uses.app);
+  const isTrigger = isTriggerStep(step.uses);
   const isInternal = isInternalApp(step.uses.app);
   const defs = useMemo(
     () => (isTrigger ? asFieldDefs(step.with?.fields) : []),
@@ -2681,12 +2682,42 @@ function ProblemBadge({ problems }: { problems: StepProblem[] | undefined }) {
   );
 }
 
+/**
+ * The display title of an app trigger node's trigger (`api.getAppTriggers`),
+ * falling back to its key until/unless the catalog answers. Read-only: the
+ * editor never subscribes anything (the server derives that on publish).
+ */
+function useAppTriggerTitle(step: FlowStep): string {
+  const api = useW6WApi();
+  const key = step.uses.action;
+  const [title, setTitle] = useState<string | null>(null);
+  const enabled = step.uses.trigger === true;
+  const app = step.uses.app;
+  useEffect(() => {
+    if (!enabled || !api.getAppTriggers) return;
+    let canceled = false;
+    api
+      .getAppTriggers(app)
+      .then((ts) => !canceled && setTitle(ts.find((t) => t.key === key)?.title ?? null))
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, app, key, enabled]);
+  return title || key;
+}
+
 function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const apps = useContext(AppsCtx);
   const app = apps.get(step.uses.app);
   // The human app name (fall back to the raw id when the app isn't in the list).
   const appName = app?.displayName || step.uses.app || "—";
+  // An app trigger node (`uses.trigger`): entry card — no inbound port, no error
+  // exit — labelled "<App> · <trigger title>".
+  const isTrigger = isTriggerStep(step.uses);
+  const triggerTitle = useAppTriggerTitle(step);
+  const cardName = step.uses.trigger ? `${appName} · ${triggerTitle}` : appName;
   // Per-step ports (T2.3.1): a persisted `ports.in > 1` renders a multi-input handle.
   const ports = nodePortsForStep(step, useContext(PortsLookupCtx));
   // T1.1.1 — run-execution visual, RunStatus × StepStatus (A3). `data.stepStatus`
@@ -2736,7 +2767,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           size={28}
         />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>{appName}</div>
+          <div style={{ fontWeight: 600 }}>{cardName}</div>
           <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
             <code>{step.uses.action || "—"}</code>
           </div>
@@ -2744,13 +2775,15 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         {ports.out > 0 && (
           <>
             <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
-            <PortHandle
-              type="source"
-              position={Position.Bottom}
-              multiple={false}
-              id={ERROR_SOURCE_HANDLE}
-              variant="error"
-            />
+            {!isTrigger && (
+              <PortHandle
+                type="source"
+                position={Position.Bottom}
+                multiple={false}
+                id={ERROR_SOURCE_HANDLE}
+                variant="error"
+              />
+            )}
           </>
         )}
       </div>
@@ -2787,10 +2820,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // A trigger is the run's ENTRY, not a step that acts: it emits the start
   // payload and has no vendor call to fail, so there is no failure of its own
   // to route — no error exit port (human report, 2026-09-01). Triggers on the
-  // canvas are always internal nodes (an app's own trigger binds as a
-  // subscription, never as a node), so this card is the only one that needs
-  // the guard.
-  const isTrigger = isTriggerApp(step.uses.app);
+  // canvas may be internal nodes or an app trigger node (uses.trigger, D-5);
+  // an app trigger renders in StepNodeCard, which guards it separately.
+  const isTrigger = isTriggerStep(step.uses);
   const isForeach = isForeachCard(step);
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
@@ -2900,20 +2932,44 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
-export function StepEditModal({
-  workflowId,
-  step: initialStep,
-  upstreamSteps,
-  loop,
-  foreachItemCount,
-  onChange,
-  onClose,
-  readOnly,
-  initialView = "props",
-  fanOutCount = 0,
-  onTestRun,
-  stepProblems,
-}: {
+export function StepEditModal(props: StepEditModalProps) {
+  // An app trigger node edits as account + trigger + params (`AppTriggerConfig`),
+  // never through the action form: `getAppActions` has no such action.
+  if (props.step.uses.trigger) return <AppTriggerEditModal {...props} />;
+  return <ActionStepEditModal {...props} />;
+}
+
+function AppTriggerEditModal({ step, onChange, onClose }: StepEditModalProps) {
+  const apps = useContext(AppsCtx);
+  const app = apps.get(step.uses.app);
+  return (
+    <Modal
+      ariaLabel="Edit step"
+      title={app?.displayName ?? step.uses.app}
+      subtitle={<code>{step.id}</code>}
+      onClose={onClose}
+    >
+      <div className="w6w-stepbuilder-config">
+        <AppTriggerConfig
+          appId={step.uses.app}
+          app={app}
+          initialConnection={step.uses.connection ?? undefined}
+          initialTrigger={step.uses.action}
+          initialWith={step.with}
+          onDone={(built) => {
+            // Keep the node's id/position/settings; take the picked uses + with.
+            const { with: _prev, ...rest } = step;
+            onChange({ ...rest, uses: built.uses, ...(built.with ? { with: built.with } : {}) });
+            onClose();
+          }}
+          onClose={onClose}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+interface StepEditModalProps {
   workflowId: string;
   step: FlowStep;
   /** Graph ancestors of this step (from `upstreamStateSources`); the incoming-state picker seeds from their saved tests. */
@@ -2932,7 +2988,22 @@ export function StepEditModal({
   onTestRun?: () => void;
   /** Host-supplied problems for this step; a dangling connection locks Configure/Test, a fixable one gets a button. */
   stepProblems?: StepProblem[];
-}) {
+}
+
+function ActionStepEditModal({
+  workflowId,
+  step: initialStep,
+  upstreamSteps,
+  loop,
+  foreachItemCount,
+  onChange,
+  onClose,
+  readOnly,
+  initialView = "props",
+  fanOutCount = 0,
+  onTestRun,
+  stepProblems,
+}: StepEditModalProps) {
   const api = useW6WApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
@@ -3064,7 +3135,7 @@ export function StepEditModal({
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
-  const isTrigger = isTriggerApp(step.uses.app);
+  const isTrigger = isTriggerStep(step.uses);
   // A4/D-7: the tabs-bar toggle is enabled and narrowed to props/code ONLY on
   // this arm — the non-trigger, testable Test tab, the one that mounts
   // `<ResolvedParams>`. The trigger arm keeps the dim four (`PropertyEntryForm`
