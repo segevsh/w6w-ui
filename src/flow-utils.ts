@@ -20,7 +20,9 @@ import {
   type FlowStep,
   type FlowWorkflow,
   type FlowWorkflowInput,
+  IF_FALSE_ROUTE,
   edgeVisuals,
+  isIfStep,
   isInternalApp,
   sourceHandleForLane,
 } from "./flow-types.ts";
@@ -399,7 +401,14 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
     };
   });
 
-  const flowEdges: Edge[] = edges.map((e) => {
+  // An If has no error port: its bottom handle is the False branch (ifPortLayout).
+  // An error edge saved from that handle before it was False is read as False.
+  const ifIds = new Set(defs.filter(isIfStep).map((s) => s.id));
+  const flowEdges: Edge[] = edges.map((saved) => {
+    const e: FlowEdge =
+      saved.when === "error" && saved.route === undefined && ifIds.has(saved.from)
+        ? { from: saved.from, to: saved.to, route: IF_FALSE_ROUTE }
+        : saved;
     // Omitted ⇒ "success" (core rfcs/workflow.md · Edge.when amendment). The
     // lane rides on `data` so flowToWorkflow can read it straight back off the
     // React Flow edge; the className + label that tell an error edge apart on
