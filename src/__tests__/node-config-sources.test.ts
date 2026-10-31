@@ -1,6 +1,6 @@
 // Run: node --test src/__tests__/node-config-sources.test.ts  (Node 24, type-stripped)
 //
-// The picker's "Node settings" group: every node's `nodes.<id>.config.<key>` — its literal
+// The picker's Metadata › config entry: every node's `nodes.<id>.meta.config.<key>` — its literal
 // settings (never a sealed secret, never a binding) plus a webhook trigger's `url` — offered
 // whether or not the node is upstream of the step being edited.
 import assert from "node:assert/strict";

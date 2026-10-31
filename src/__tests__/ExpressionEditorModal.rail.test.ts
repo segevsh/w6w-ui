@@ -315,3 +315,53 @@ test("T-2 — a composite row (step with fields) keeps click = insert, no save",
   assert.equal(onSaveCalls.length, 0);
   assert.equal(onCloseCalls.length, 0);
 });
+
+// ── Metadata › config — each node's settings ────────────────────────────────
+
+test("Metadata › config: no Node settings group; config is collapsed inside Metadata, expands to its keys, inserts nodes.<id>.meta.config.<key>; a non-upstream node still gets a row", async () => {
+  const { container } = await mountModal({
+    options: {
+      steps: [{ id: "data_1" }],
+      nodeConfigs: [
+        { id: "data_1", keys: ["vars"] },
+        { id: "webhook_1", keys: ["url", "auth", "methods"] },
+      ],
+    },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  assert.equal(groupFor(container, "Node settings"), null);
+  const group = groupFor(container, "Workflow state") as HTMLElement;
+  assert.ok(group);
+  assert.deepEqual(
+    Array.from(group.querySelectorAll('[data-testid="expr-config-node"]')).map(
+      (e) => e.textContent,
+    ),
+    ["webhook_1"],
+    "the unconnected webhook still gets a row",
+  );
+
+  // Collapsed: one Metadata toggle per node with settings, nothing inside shown.
+  const metas = Array.from(group.querySelectorAll('[data-testid="expr-meta-toggle"]'));
+  assert.equal(metas.length, 2);
+  assert.equal(group.querySelectorAll('[data-testid="expr-config-toggle"]').length, 0);
+
+  await click(metas[1]);
+  const cfgToggle = group.querySelector('[data-testid="expr-config-toggle"]') as HTMLElement;
+  assert.ok(cfgToggle, "Metadata opens onto a config entry");
+  assert.equal(cfgToggle.getAttribute("aria-expanded"), "false");
+  assert.equal(group.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
+
+  await click(cfgToggle);
+  const fields = group.querySelector('[data-testid="expr-config-fields"]') as HTMLElement;
+  assert.ok(fields, "expanded — the webhook's keys render");
+  assert.deepEqual(
+    Array.from(fields.querySelectorAll(".w6w-exprmodal-source-label")).map((l) => l.textContent),
+    ["url", "auth", "methods"],
+  );
+  await click(copyOf(fields.querySelector(".w6w-exprmodal-source") as Element));
+  const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
+  assert.equal(chip.getAttribute("data-ref"), "nodes.webhook_1.meta.config.url");
+
+  await click(cfgToggle);
+  assert.equal(group.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
+});
