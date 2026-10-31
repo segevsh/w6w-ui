@@ -123,7 +123,14 @@ import {
   withPaused,
 } from "./flow-node-flags.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
-import { ROUTER_APP, routeFromHandle, routerPortLayout, routesForStep } from "./flow-types.ts";
+import {
+  ROUTER_APP,
+  ifPortLayout,
+  isIfStep,
+  routeFromHandle,
+  routerPortLayout,
+  routesForStep,
+} from "./flow-types.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -3242,7 +3249,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const routes = routesForStep(step);
   const isRouter = step.uses.app === ROUTER_APP;
-  const routerPorts = routes.length ? routerPortLayout(routes) : undefined;
+  // An If lays its True/False ports out like a Router's routes (ifPortLayout).
+  const isIf = isIfStep(step);
+  const routerPorts = routes.length ? routerPortLayout(routes) : isIf ? ifPortLayout() : undefined;
   const routeKey = JSON.stringify(routes.map((r) => r.id));
   const updateNodeInternals = useUpdateNodeInternals();
   // biome-ignore lint/correctness/useExhaustiveDependencies: route identities and order change handle positions.
@@ -3388,7 +3397,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             ) : (
               <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
             )}
-            {!isTrigger && !isRouter && (
+            {!isTrigger && !isRouter && !isIf && (
               <PortHandle
                 type="source"
                 position={Position.Bottom}

@@ -17,9 +17,11 @@ import { type Edge, addEdge } from "@xyflow/react";
 import { type LoopRefusalReason, isForeachStep, loopMembership, loopRefusal } from "./flow-loop.ts";
 import {
   type CanvasLane,
+  IF_FALSE_ROUTE,
   type PortsLookup,
   ROUTER_APP,
   edgeVisuals,
+  isIfStep,
   nodePortsForStep,
   routeHandle,
   routesForStep,
@@ -138,8 +140,12 @@ function planConnect(
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return null;
+  const srcIsIf = isIfStep(srcStep);
   if (srcStep.uses.app === ROUTER_APP && when === "success") {
     if (!routesForStep(srcStep).some((r) => r.id === route)) return null;
+  } else if (srcIsIf && when === "success") {
+    // An If's True port is unrouted; its False port is the one route it has.
+    if (route !== undefined && route !== IF_FALSE_ROUTE) return null;
   } else if (route !== undefined) return null;
   // A success connect drawn from a body node extends the body (its ordinary right
   // handle is the only one it has), so it is an each-lane edge. Computed once.
@@ -164,7 +170,8 @@ function planConnect(
   const fromSrc = next.filter(
     (e) => e.source === source && edgeLane(e) === effLane && e.data?.route === route,
   );
-  const cap = route === undefined ? srcPorts.out : 1;
+  // A Router route holds one edge; an If's False port fans out like its True port.
+  const cap = route === undefined || srcIsIf ? srcPorts.out : 1;
   if (fromSrc.length >= cap) {
     return { next: edges, conflict: null, refusal: { refused: "out_cap", cap } };
   }

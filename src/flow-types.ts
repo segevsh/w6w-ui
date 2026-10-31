@@ -369,7 +369,8 @@ export const ROUTER_PORT_STEP = 16;
 
 export interface RouterPort {
   id: string;
-  handleId: string;
+  /** Absent for an If's True port: the unnamed handle a route-less edge anchors to. */
+  handleId?: string;
   label: string;
   /** Handle position along its edge, as a CSS `top` (right-edge ports only). */
   top?: string;
@@ -384,11 +385,13 @@ export interface RouterPort {
  * routes make a slightly taller card. Handle ids stay `route:<id>`, so
  * saved edges keep resolving.
  */
-export function routerPortLayout(routes: RouterRoute[]): {
+export interface PortLayout {
   right: RouterPort[];
   bottom?: RouterPort;
   minHeight?: number;
-} {
+}
+
+export function routerPortLayout(routes: RouterRoute[]): PortLayout {
   const fallback = routes.find((r) => r.default);
   const port = (r: RouterRoute): RouterPort => ({
     id: r.id,
@@ -402,6 +405,31 @@ export function routerPortLayout(routes: RouterRoute[]): {
     ...(side.length > ROUTER_PORTS_AT_BASE_HEIGHT
       ? { minHeight: side.length * ROUTER_PORT_STEP }
       : {}),
+  };
+}
+
+/**
+ * `Edge.route` of an If's false branch (the engine's `IF_FALSE_ROUTE`). The true
+ * branch is an edge with no route, which is what every If edge saved before the
+ * False port existed already is.
+ */
+export const IF_FALSE_ROUTE = "false";
+
+export function isIfStep(step: FlowStep): boolean {
+  return step.uses.app === CONTROL_APP && step.uses.action === "if";
+}
+
+/**
+ * An If's ports, laid out the way {@link routerPortLayout} lays out a Router's
+ * (human report, 2026-10-31: "should not have error, it should have: true port
+ * and false port"). True takes the right edge; False takes the bottom edge, the
+ * slot every other node gives its error port, so an If has no error port. True
+ * keeps the unnamed handle, so saved If edges stay on it; False is `route:false`.
+ */
+export function ifPortLayout(): PortLayout & { bottom: RouterPort } {
+  return {
+    right: [{ id: "true", label: "True", top: "50%" }],
+    bottom: { id: IF_FALSE_ROUTE, handleId: routeHandle(IF_FALSE_ROUTE), label: "False" },
   };
 }
 
