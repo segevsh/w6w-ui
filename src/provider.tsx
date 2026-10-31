@@ -31,6 +31,7 @@ import type {
   SubscriptionSummary,
   ThemeMode,
   TriggerSummary,
+  WebhookListenSession,
   WorkflowDetail,
   WorkflowSummary,
 } from "./types.ts";
@@ -523,6 +524,28 @@ export interface W6WApi {
    * `/workflows/:id/subscriptions`.
    */
   listSubscriptionsForWorkflow?(workflowId: string): Promise<SubscriptionSummary[]>;
+
+  /**
+   * "Listen for test event" on a `@w6w/webhook` subscription: opens a short-lived session in
+   * which the receive URL captures the next request, even for an unpublished workflow. POSTs
+   * `/subscriptions/:id/listen`.
+   */
+  startWebhookListen?(
+    subscriptionId: string,
+  ): Promise<{ session: WebhookListenSession; webhookUrl: string }>;
+
+  /**
+   * Long-poll a listen session (`GET /subscriptions/:id/listen/:sessionId?wait=`). Resolves as
+   * soon as a request is captured or the session expires, else after `waitSeconds` (max 25).
+   */
+  pollWebhookListen?(
+    subscriptionId: string,
+    sessionId: string,
+    opts?: { waitSeconds?: number; signal?: AbortSignal },
+  ): Promise<WebhookListenSession>;
+
+  /** Stop listening (`DELETE /subscriptions/:id/listen/:sessionId`). */
+  stopWebhookListen?(subscriptionId: string, sessionId: string): Promise<void>;
 
   /**
    * Create a Subscription binding an app trigger to a workflow — the one

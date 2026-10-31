@@ -56,6 +56,7 @@ import {
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
+import { pickWebhookSubscription } from "./WebhookListenPanel.tsx";
 import type { FlowCanvas } from "./canvas-types.ts";
 import {
   assignMembership,
@@ -3474,6 +3475,14 @@ function ActionStepEditModal({
                     // <StepTestRun> below, so the values entered here are
                     // remembered and come back on the canvas ▶ Run form.
                     persist={{ workflowId, stepId: step.id, input: testInput }}
+                    // A webhook trigger's primary test is a REAL request: listen for one.
+                    listen={
+                      step.uses.app === WEBHOOK_APP &&
+                      api.listSubscriptionsForWorkflow &&
+                      api.startWebhookListen
+                        ? { stepWith: step.with, readOnly }
+                        : undefined
+                    }
                   />
                 ) : (
                   <>
@@ -3694,7 +3703,7 @@ function WebhookUrlPanel({
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Deliberately keyed on [api, workflowId] only — NOT on `step` (its `with`
+  // Deliberately keyed on [api, workflowId, step.id] only — NOT on `step` (its `with`
   // changes on every keystroke in the panel below). Re-running this on a
   // `with` edit would defeat the "never re-creates" guarantee this panel
   // exists to provide; the list is a one-shot get, not a live subscription.
@@ -3704,13 +3713,13 @@ function WebhookUrlPanel({
     let canceled = false;
     list(workflowId)
       .then((subs) => {
-        if (!canceled) setSub(subs.find((s) => s.appId === WEBHOOK_APP) ?? null);
+        if (!canceled) setSub(pickWebhookSubscription(subs, step.id));
       })
       .catch((e) => !canceled && setError((e as Error).message));
     return () => {
       canceled = true;
     };
-  }, [api, workflowId]);
+  }, [api, workflowId, step.id]);
 
   const create = () => {
     const createSubscription = api.createSubscription;

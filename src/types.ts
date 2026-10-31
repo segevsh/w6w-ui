@@ -62,11 +62,34 @@ export interface SubscriptionSummary {
   connectionId: string | null;
   /** Present only for `appId === "@w6w/webhook"` — the server's own computed receive URL. */
   webhookUrl?: string;
+  /** The trigger node this subscription feeds (`null`/absent = not bound to a node). */
+  nodeId?: string | null;
   type?: "webhook" | "poll";
   status?: string;
   /** Poll interval in milliseconds; null for webhook subscriptions. */
   intervalMs?: number | null;
   lastError?: { code: string; message: string } | null;
+}
+
+/**
+ * A "Listen for test event" session on a `@w6w/webhook` subscription
+ * (`POST /subscriptions/:id/listen`). `request` is the captured, credential-masked call —
+ * exactly what a real run's webhook trigger emits as its output.
+ */
+export interface WebhookListenSession {
+  id: string;
+  subscriptionId: string;
+  nodeId: string | null;
+  expiresAt: string;
+  status: "waiting" | "captured" | "expired";
+  request?: {
+    method: string;
+    path: string;
+    query: Record<string, string>;
+    headers: Record<string, string>;
+    body: unknown;
+  };
+  receivedAt?: string;
 }
 
 /** One field on an Auth method's connection form. Drives the input widgets. */
