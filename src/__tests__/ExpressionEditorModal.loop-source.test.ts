@@ -222,3 +222,179 @@ test("P2 - JSON-mode scope resolves foreach.item.name and foreach.index", () => 
   const idx = resolveParamValue("{{ foreach.index }}", scope)[0];
   assert.equal(idx.status === "resolved" && idx.value, 0);
 });
+
+const { ConditionEditor } = await import("../ConditionEditor.tsx");
+const { ExpressionOptionsProvider } = await import("../components/ExpressionOptions.tsx");
+const { evaluate } = await import("@w6w/expr");
+
+async function mountCondition(condition: unknown = true, readOnly = false) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  let saved: Record<string, unknown> = { condition, other: "preserved" };
+  function Harness() {
+    const [values, setValues] = React.useState(saved);
+    return React.createElement(ExpressionOptionsProvider, {
+      value: {
+        loop: { foreachId: "for_each_1", itemOutputs: [{ key: "enabled" }, { key: "id" }] },
+        sampleValues: { "foreach.item.enabled": true, "foreach.item.id": "hook-1" },
+      },
+      children: React.createElement(ConditionEditor, {
+        values,
+        readOnly,
+        onChange: (next) => {
+          saved = next;
+          setValues(next);
+        },
+      }),
+    });
+  }
+  await act(async () => root.render(React.createElement(Harness)));
+  return { container, root, saved: () => saved };
+}
+
+test("If comparison fields select a webhook field and save an executable typed condition", async () => {
+  const m = await mountCondition();
+  const field = m.container.querySelector<HTMLInputElement>('[aria-label="Condition field"]');
+  assert.ok(field);
+  await act(async () => field.focus());
+  const option = q(m.container, '[role="option"]').find(
+    (el) => el.textContent === "Current item · enabled",
+  );
+  assert.ok(option);
+  await act(async () =>
+    option.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true })),
+  );
+  const condition = m.saved().condition as { $expr: unknown };
+  assert.equal(evaluate(condition.$expr, { foreach: { item: { enabled: true } } }), true);
+  assert.equal(evaluate(condition.$expr, { foreach: { item: { enabled: false } } }), false);
+  assert.equal(m.saved().other, "preserved");
+  const value = m.container.querySelector<HTMLSelectElement>('[aria-label="Condition value"]');
+  assert.ok(value);
+  assert.equal(value.value, "true");
+  await act(async () => {
+    value.value = "false";
+    value.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(
+    evaluate((m.saved().condition as { $expr: unknown }).$expr, {
+      foreach: { item: { enabled: false } },
+    }),
+    true,
+  );
+  const before = structuredClone(m.saved());
+  const advanced = q(m.container, "button").find((el) => el.textContent === "Edit expression");
+  assert.ok(advanced);
+  await click(advanced);
+  assert.ok(m.container.querySelector(".cm-editor"));
+  const simple = q(m.container, "button").find((el) => el.textContent === "Use comparison fields");
+  assert.ok(simple);
+  await click(simple);
+  assert.deepEqual(m.saved(), before, "switching editors preserves the condition");
+  assert.equal(
+    m.container.querySelector<HTMLSelectElement>('[aria-label="Condition value"]')?.value,
+    "false",
+  );
+  await act(async () => m.root.unmount());
+});
+
+test("custom If expressions stay in the advanced editor without being overwritten", async () => {
+  const condition = {
+    $expr: { and: [{ var: "foreach.item.enabled" }, { "!=": [{ var: "foreach.item.id" }, ""] }] },
+  };
+  const m = await mountCondition(condition);
+  assert.ok(m.container.querySelector(".cm-editor"));
+  assert.equal(m.container.querySelector('[aria-label="Condition field"]'), null);
+  assert.deepEqual(m.saved().condition, condition);
+  await act(async () => m.root.unmount());
+});
+
+test("saved comparison fields reopen and honor read-only mode", async () => {
+  const condition = { $expr: { "===": [{ var: "foreach.item.id" }, "hook-1"] } };
+  const m = await mountCondition(condition, true);
+  assert.equal(
+    m.container.querySelector<HTMLInputElement>('[aria-label="Condition field"]')?.disabled,
+    true,
+  );
+  assert.equal(
+    m.container.querySelector<HTMLInputElement>('[aria-label="Condition value"]')?.value,
+    "hook-1",
+  );
+  assert.equal(
+    m.container.querySelector<HTMLInputElement>('[aria-label="Condition value"]')?.readOnly,
+    true,
+  );
+  assert.deepEqual(m.saved().condition, condition);
+  await act(async () => m.root.unmount());
+});
+
+const { RouterEditor } = await import("../RouterEditor.tsx");
+const { StopEditor } = await import("../StopEditor.tsx");
+
+test("Router adds four condition ports plus default and preserves ids when reordered", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  let saved: Record<string, unknown> = {};
+  function Harness() {
+    const [values, setValues] = React.useState(saved);
+    return React.createElement(RouterEditor, {
+      values,
+      onChange: (next) => {
+        saved = next;
+        setValues(next);
+      },
+    });
+  }
+  await act(async () => root.render(React.createElement(Harness)));
+  for (let i = 0; i < 3; i++) {
+    const add = q(container, "button").find((el) => el.textContent === "Add route");
+    assert.ok(add);
+    await click(add);
+  }
+  type Route = { id: string; default?: boolean };
+  const before = (saved.routes as Route[]).map((r) => r.id);
+  assert.equal(container.querySelectorAll("fieldset").length, 5);
+  assert.equal((saved.routes as Route[]).at(-1)?.default, true);
+  const down = q(container, "button").find((el) => el.textContent === "Move down");
+  assert.ok(down);
+  await click(down);
+  assert.deepEqual(
+    (saved.routes as Route[]).map((r) => r.id),
+    [before[1], before[0], ...before.slice(2)],
+  );
+  await act(async () => root.unmount());
+});
+
+test("Stop offers unconditional or conditional termination without an accidental true condition", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  let saved: Record<string, unknown> = {};
+  function Harness() {
+    const [values, setValues] = React.useState(saved);
+    return React.createElement(StopEditor, {
+      values,
+      onChange: (next) => {
+        saved = next;
+        setValues(next);
+      },
+    });
+  }
+  await act(async () => root.render(React.createElement(Harness)));
+  const mode = container.querySelector<HTMLSelectElement>('[aria-label="Stop when"]');
+  assert.ok(mode);
+  assert.equal(mode.value, "always");
+  await act(async () => {
+    mode.value = "condition";
+    mode.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(saved.condition, false);
+  assert.ok(container.querySelector('[aria-label="Condition field"]'));
+  await act(async () => {
+    mode.value = "always";
+    mode.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(saved.condition, true);
+  await act(async () => root.unmount());
+});
