@@ -176,7 +176,10 @@ function planConnect(
     return { next: edges, conflict: null, refusal: { refused: "out_cap", cap } };
   }
   // Free the target's entry port likewise — lane-blind, see the docstring.
-  const toTgt = next.filter((e) => e.target === target);
+  // A join inside one loop body keeps its other inbound edges (a body edge is never evicted).
+  const M = loopMembership(nodes, edges);
+  const isJoin = effLane === "each" && inBody && M[target] !== undefined && M[target] === M[source];
+  const toTgt = isJoin ? [] : next.filter((e) => e.target === target);
   if (toTgt.length >= tgtPorts.in) {
     const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
     next = next.filter((e) => !drop.has(e.id));
