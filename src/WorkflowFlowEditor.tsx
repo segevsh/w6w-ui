@@ -22,6 +22,7 @@ import {
   useNodeId,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
 } from "@xyflow/react";
 import type { FinalConnectionState } from "@xyflow/react";
 import { Handle } from "@xyflow/react";
@@ -40,10 +41,12 @@ import { createPortal } from "react-dom";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { CanvasLayer } from "./CanvasLayer.tsx";
+import { ConditionEditor } from "./ConditionEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
+import { RouterEditor } from "./RouterEditor.tsx";
 import {
   AppTriggerTestNote,
   type BuiltStep,
@@ -55,6 +58,7 @@ import {
   getTriggerDefs,
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
+import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
 import { pickWebhookSubscription } from "./WebhookListenPanel.tsx";
@@ -110,6 +114,7 @@ import {
   stripBody,
 } from "./flow-loop.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
+import { ROUTER_APP, routeFromHandle, routeHandle, routesForStep } from "./flow-types.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -185,6 +190,11 @@ import {
 } from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
+import {
+  appTriggerNodesOf,
+  registrationDisplay,
+  subscriptionsByNode,
+} from "./trigger-registration.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -342,6 +352,33 @@ function outCapMessage(cap: number): string {
 
 const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
 
+/** The workflow's node-bound Subscriptions, read once per editor (not per card). */
+interface TriggerRegistrationValue {
+  byNode: ReadonlyMap<string, SubscriptionSummary>;
+  /** Present only when the host can retry; re-reads the list after the retry. */
+  retry?: (subscriptionId: string) => Promise<void>;
+}
+const TriggerRegistrationCtx = createContext<TriggerRegistrationValue>({ byNode: new Map() });
+
+/** `AppsCtx` plus the trigger-registration context (one provider, no extra nesting level). */
+function CardDataProvider({
+  apps,
+  registration,
+  children,
+}: {
+  apps: Map<string, AppSummary>;
+  registration: TriggerRegistrationValue;
+  children: ReactNode;
+}) {
+  return (
+    <AppsCtx.Provider value={apps}>
+      <TriggerRegistrationCtx.Provider value={registration}>
+        {children}
+      </TriggerRegistrationCtx.Provider>
+    </AppsCtx.Provider>
+  );
+}
+
 /** Which view the step edit modal opens in: the tabbed form, raw JSON, or node settings. */
 type EditView = "props" | "json" | "settings";
 
@@ -432,6 +469,7 @@ function Inner({
 }: WorkflowFlowEditorProps) {
   const api = useW6WApi();
   const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
+  const triggerRegistration = useTriggerRegistration(value);
   const [runResult, setRunResult] = useState<StepRunState | null>(null);
   // Re-hydrate nodes+edges only when the workflow id changes identity. Local
   // edits (drag, connect, delete) go through the useNodesState / useEdgesState
@@ -503,6 +541,7 @@ function Inner({
      * "success" for that gesture without a separate branch.
      */
     lane: CanvasLane;
+    route?: string;
   } | null>(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   // React Flow's `colorMode` defaults to "light", so without this its chrome
@@ -557,7 +596,12 @@ function Inner({
     setEdges((eds) =>
       eds.map((e) => {
         const lane = edgeLane(e);
-        const run = edgeRunState(runState, e.source, lane);
+        const run = edgeRunState(
+          runState,
+          e.source,
+          lane,
+          typeof e.data?.route === "string" ? e.data.route : undefined,
+        );
         const visuals = edgeVisuals(lane, run);
         if (e.className === visuals.className && e.label === visuals.label) return e;
         return { ...e, className: visuals.className, label: visuals.label };
@@ -592,7 +636,8 @@ function Inner({
   // Live gate while dragging a connection — React Flow marks the drop invalid
   // (and won't fire onConnect) when this returns false.
   const isValidConnection = useCallback(
-    (c: Connection | Edge) => canConnect(c.source, c.target, nodes, edges, portsLookup),
+    (c: Connection | Edge) =>
+      canConnect(c.source, c.target, nodes, edges, portsLookup, routeFromHandle(c.sourceHandle)),
     [nodes, edges, portsLookup],
   );
 
@@ -636,6 +681,7 @@ function Inner({
         edges,
         laneForSourceHandle(params.sourceHandle),
         portsLookup,
+        routeFromHandle(params.sourceHandle),
       );
       if (!next) {
         // FAIL LOUDLY when the refusal is one the drag could not have shown. Every
@@ -661,6 +707,7 @@ function Inner({
           edges,
           lane,
           portsLookup,
+          routeFromHandle(params.sourceHandle),
         );
         if (refusal && refusal.refused === "loop") {
           setLoopNotice({ nodeId: params.source, reason: refusal.reason });
@@ -751,6 +798,7 @@ function Inner({
         handleType,
         position,
         lane: dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
+        route: routeFromHandle(connectionState.fromHandle?.id),
       });
       setBuilderOpen(true);
     },
@@ -776,7 +824,7 @@ function Inner({
             : lane === "each"
               ? { x: r.x + r.w + gap, y: r.y - r.h - gap / 2 }
               : { x: r.x + r.w + gap, y: r.y };
-      setPendingConnect({ nodeId, handleType, position, lane });
+      setPendingConnect({ nodeId, handleType, position, lane, route: routeFromHandle(handleId) });
       setBuilderOpen(true);
     },
     [readOnly, nodes],
@@ -1019,6 +1067,7 @@ function Inner({
           edges,
           pendingConnect.lane,
           portsLookup,
+          pendingConnect.route,
         );
         if (!wired) noteLoopRefusal(source, target, pendingConnect.lane, pendingConnect.nodeId);
         nextEdges = wired ?? edges;
@@ -1099,7 +1148,13 @@ function Inner({
         return;
       }
       setNodes(nextNodes);
-      emitChange(nextNodes, edges);
+      const routeIds = new Set(routesForStep(next).map((r) => r.id));
+      const nextEdges = edges.filter(
+        (e) =>
+          e.source !== next.id || e.data?.route === undefined || routeIds.has(String(e.data.route)),
+      );
+      if (nextEdges.length !== edges.length) setEdges(nextEdges);
+      emitChange(nextNodes, nextEdges);
     },
     [nodes, edges, canvas, setNodes, setEdges, selectedId, editingId, emitChange],
   );
@@ -1518,7 +1573,7 @@ function Inner({
   // is sent to the engine.
   useEffect(() => {
     const ids = JSON.parse(upstreamIdsKey) as string[];
-    if (!editingId || ids.length === 0) {
+    if ((!editingId && !draftStepId) || ids.length === 0) {
       setStepTestOutputs({});
       setStepTestMetas({});
       return;
@@ -1558,7 +1613,7 @@ function Inner({
     return () => {
       canceled = true;
     };
-  }, [api, value.id, editingId, upstreamIdsKey]);
+  }, [api, value.id, editingId, draftStepId, upstreamIdsKey]);
   // The last test output, flattened onto the very refs the picker inserts: the
   // whole output, and each offered field path (nested ones included). Values
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
@@ -1601,7 +1656,7 @@ function Inner({
     <StepControlsCtx.Provider value={controls}>
       <PortsLookupCtx.Provider value={portsLookup}>
         <FanOutCountsCtx.Provider value={fanOutCounts}>
-          <AppsCtx.Provider value={appsById}>
+          <CardDataProvider apps={appsById} registration={triggerRegistration}>
             <WorkflowProjectProvider project={project}>
               <ExpressionOptionsProvider value={mergedExprOptions}>
                 <div
@@ -1856,32 +1911,36 @@ function Inner({
                     chosen by which handle it was dragged from — this panel keeps its
                     job as the RE-LANE affordance for an edge already drawn on the
                     wrong port, not the only way to author an error edge. */}
-                    {!readOnly && selectedEdge && edgeLane(selectedEdge) !== "each" && (
-                      <Panel position="top-right">
-                        <div className="w6w-edge-lane">
-                          <span className="w6w-muted w6w-small">Run on</span>
-                          {(["success", "error"] as const).map((lane) => (
-                            <button
-                              key={lane}
-                              type="button"
-                              className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
-                                edgeLane(selectedEdge) === lane ? " active" : ""
-                              }`}
-                              aria-pressed={edgeLane(selectedEdge) === lane}
-                              title={LANE_HINT}
-                              onClick={() => setEdgeLane(lane)}
-                            >
-                              {lane === "success" ? "Success" : "Error"}
-                            </button>
-                          ))}
-                          {laneError?.edgeId === selectedEdge.id && (
-                            <span className="w6w-edge-lane-err w6w-small" role="alert">
-                              {laneError.message}
-                            </span>
-                          )}
-                        </div>
-                      </Panel>
-                    )}
+                    {!readOnly &&
+                      selectedEdge &&
+                      edgeLane(selectedEdge) !== "each" &&
+                      nodes.find((n) => n.id === selectedEdge.source)?.data.step.uses.app !==
+                        ROUTER_APP && (
+                        <Panel position="top-right">
+                          <div className="w6w-edge-lane">
+                            <span className="w6w-muted w6w-small">Run on</span>
+                            {(["success", "error"] as const).map((lane) => (
+                              <button
+                                key={lane}
+                                type="button"
+                                className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                                  edgeLane(selectedEdge) === lane ? " active" : ""
+                                }`}
+                                aria-pressed={edgeLane(selectedEdge) === lane}
+                                title={LANE_HINT}
+                                onClick={() => setEdgeLane(lane)}
+                              >
+                                {lane === "success" ? "Success" : "Error"}
+                              </button>
+                            ))}
+                            {laneError?.edgeId === selectedEdge.id && (
+                              <span className="w6w-edge-lane-err w6w-small" role="alert">
+                                {laneError.message}
+                              </span>
+                            )}
+                          </div>
+                        </Panel>
+                      )}
                     {loopNotice && (
                       <NodeToolbar nodeId={loopNotice.nodeId} position={Position.Bottom} isVisible>
                         <div className="w6w-loop-notice w6w-small" role="alert">
@@ -2088,7 +2147,7 @@ function Inner({
                 </div>
               </ExpressionOptionsProvider>
             </WorkflowProjectProvider>
-          </AppsCtx.Provider>
+          </CardDataProvider>
         </FanOutCountsCtx.Provider>
       </PortsLookupCtx.Provider>
     </StepControlsCtx.Provider>
@@ -2542,12 +2601,16 @@ function PortHandle({
   multiple,
   id,
   variant,
+  top,
+  routeLabel,
 }: {
   type: "source" | "target";
   position: Position;
   multiple: boolean;
   id?: string;
   variant?: "error" | "each";
+  top?: string;
+  routeLabel?: string;
 }) {
   const nodeId = useNodeId();
   const ctrl = useContext(StepControlsCtx);
@@ -2577,21 +2640,29 @@ function PortHandle({
               ? "w6w-handle-multi"
               : undefined
       }
-      style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
+      style={{
+        ...(multiple ? { height: 22, borderRadius: 3, width: 8 } : {}),
+        ...(top ? { top } : {}),
+        ...(routeLabel
+          ? { left: "calc(100% + 28px)", right: "auto", transform: "translate(-50%, -50%)" }
+          : {}),
+      }}
       // A click (no drag) adds a step from this port; a drag still draws a connection.
       onClick={canAdd ? add : undefined}
       title={
-        canAdd
-          ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
-          : variant === "error"
-            ? "On error — drag to route this step's failure separately"
-            : variant === "each"
-              ? "Each item — drag to the first step to repeat for every item"
-              : multiple
-                ? type === "target"
-                  ? "Accepts multiple incoming connections"
-                  : "Multiple outgoing connections"
-                : undefined
+        routeLabel
+          ? `${routeLabel} — drag or click to connect`
+          : canAdd
+            ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
+            : variant === "error"
+              ? "On error — drag to route this step's failure separately"
+              : variant === "each"
+                ? "Each item — drag to the first step to repeat for every item"
+                : multiple
+                  ? type === "target"
+                    ? "Accepts multiple incoming connections"
+                    : "Multiple outgoing connections"
+                  : undefined
       }
     />
   );
@@ -2718,6 +2789,96 @@ function useAppTriggerTitle(step: FlowStep): string {
   return title || key;
 }
 
+/**
+ * ONE `listSubscriptionsForWorkflow` read per mounted workflow, shared with every
+ * trigger card through context. Re-read when the workflow's trigger nodes change
+ * (a publish rewrites them) and after a Retry. Absent API member => empty map.
+ */
+function useTriggerRegistration(value: FlowWorkflow): TriggerRegistrationValue {
+  const api = useW6WApi();
+  const list = api.listSubscriptionsForWorkflow;
+  const retrySub = api.retrySubscriptionRegistration;
+  const workflowId = value.id;
+  const triggers = appTriggerNodesOf(value.nodes);
+  const hasTrigger = triggers.length > 0;
+  const triggerSig = triggers
+    .map((n) => `${n.id}:${n.uses.app}:${n.uses.action}:${n.uses.connection ?? ""}`)
+    .join("|");
+  const [byNode, setByNode] = useState<ReadonlyMap<string, SubscriptionSummary>>(new Map());
+  const [tick, setTick] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: triggerSig/tick are refetch keys
+  useEffect(() => {
+    if (!list || !hasTrigger) {
+      setByNode(new Map());
+      return;
+    }
+    let canceled = false;
+    list
+      .call(api, workflowId)
+      .then((subs) => !canceled && setByNode(subscriptionsByNode(subs)))
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, list, workflowId, hasTrigger, triggerSig, tick]);
+  const retry = useMemo(
+    () =>
+      retrySub
+        ? async (subscriptionId: string) => {
+            try {
+              await retrySub.call(api, subscriptionId);
+            } finally {
+              setTick((t) => t + 1);
+            }
+          }
+        : undefined,
+    [api, retrySub],
+  );
+  return useMemo(() => ({ byNode, retry }), [byNode, retry]);
+}
+
+/** Registration state, last error, last fire and Retry for a trigger node's bound subscription. */
+function TriggerRegistrationBadge({ nodeId }: { nodeId: string }) {
+  const { byNode, retry } = useContext(TriggerRegistrationCtx);
+  const [busy, setBusy] = useState(false);
+  const sub = byNode.get(nodeId);
+  const d = registrationDisplay(sub, retry !== undefined);
+  if (!sub || !d) return null;
+  return (
+    <div
+      className="w6w-small"
+      data-trigger-registration={sub.status}
+      data-tone={d.tone}
+      style={{ marginTop: 3, paddingLeft: 2 }}
+    >
+      <span style={d.tone === "danger" ? { color: "var(--w6w-danger)" } : undefined}>
+        {d.label}
+      </span>
+      <span className="w6w-muted"> · {d.lastFire}</span>
+      {d.error && (
+        <div role="alert" style={{ color: "var(--w6w-danger)" }}>
+          {d.error}
+        </div>
+      )}
+      {d.retryVisible && retry && (
+        <button
+          type="button"
+          className="nodrag"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            retry(sub.id)
+              .catch(() => {})
+              .finally(() => setBusy(false));
+          }}
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const apps = useContext(AppsCtx);
@@ -2799,6 +2960,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      {isTrigger && step.uses.trigger === true && <TriggerRegistrationBadge nodeId={id} />}
       {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
@@ -2823,6 +2985,14 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
+  const routes = routesForStep(step);
+  const isRouter = step.uses.app === ROUTER_APP;
+  const routeKey = JSON.stringify(routes.map((r) => r.id));
+  const updateNodeInternals = useUpdateNodeInternals();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: route identities and order change handle positions.
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, routeKey, updateNodeInternals]);
   const label = internalNodeLabel(step.uses.app, step.uses.action);
   const icon = internalNodeIcon(step.uses.app, step.uses.action);
   // Per-step ports (T2.3.1): triggers have no entry (0 in, 1 out); a fan-in node
@@ -2850,7 +3020,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
-        className={isTrigger ? "w6w-node-trigger" : undefined}
+        className={isTrigger ? "w6w-node-trigger" : isRouter ? "w6w-node-router" : undefined}
         data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
         {...problemAttrs(data.stepProblems)}
@@ -2903,8 +3073,34 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
                 variant="each"
               />
             )}
-            <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
-            {!isTrigger && (
+            {routes.length ? (
+              routes.map((route, index) => {
+                const offset = (index - (routes.length - 1) / 2) * 24;
+                const routeLabel = route.default ? "Fallback" : route.label || route.id;
+                const top = `calc(50% + ${offset}px)`;
+                return (
+                  <div key={route.id}>
+                    <svg className="w6w-router-port-link" aria-hidden="true">
+                      <path d={`M 0 0 C 14 0, 14 ${offset}, 28 ${offset}`} />
+                    </svg>
+                    <span className="w6w-router-port-label" style={{ top }} title={routeLabel}>
+                      {routeLabel}
+                    </span>
+                    <PortHandle
+                      type="source"
+                      position={Position.Right}
+                      multiple={false}
+                      id={routeHandle(route.id)}
+                      top={top}
+                      routeLabel={routeLabel}
+                    />
+                  </div>
+                );
+              })
+            ) : (
+              <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
+            )}
+            {!isTrigger && !isRouter && (
               <PortHandle
                 type="source"
                 position={Position.Bottom}
@@ -3361,6 +3557,24 @@ function ActionStepEditModal({
               ) : configView === "props" ? (
                 step.uses.action === "wait" && isControlApp(step.uses.app) ? (
                   <WaitEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : step.uses.action === "if" && isControlApp(step.uses.app) ? (
+                  <ConditionEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : step.uses.app === "@w6w/stop" ? (
+                  <StopEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : step.uses.app === ROUTER_APP ? (
+                  <RouterEditor
                     values={step.with ?? {}}
                     readOnly={readOnly}
                     onChange={(w) => commit({ ...step, with: w })}

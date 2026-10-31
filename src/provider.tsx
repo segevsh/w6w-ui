@@ -548,6 +548,13 @@ export interface W6WApi {
   stopWebhookListen?(subscriptionId: string, sessionId: string): Promise<void>;
 
   /**
+   * Retry a failed trigger registration. POSTs
+   * `/subscriptions/:id/retry-registration`; resolves the updated Subscription.
+   * Absent => the trigger node offers no Retry.
+   */
+  retrySubscriptionRegistration?(subscriptionId: string): Promise<SubscriptionSummary>;
+
+  /**
    * Create a Subscription binding an app trigger to a workflow — the one
    * explicit user action both the Triggers-tab app section (T-0) and the
    * webhook-URL panel (I-2) call, per DECISIONS.md HITL-1. POSTs

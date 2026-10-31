@@ -3,6 +3,7 @@
 // nodes to short tokens first and runs the RSS watchdog.
 import "./test-assert-guard.mjs";
 import "./test-guards.mjs";
+import "./test-dom-stubs.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { register } from "node:module";

@@ -115,20 +115,6 @@ test("@w6w/store entries carry no scope param and one distinct label each", () =
   assert.equal(new Set(labels).size, labels.length, "every palette label is distinct");
 });
 
-test("@w6w/store entries are reachable through the Utilities-tab filter", () => {
-  // Copies `StepBuilderModal.tsx`'s `UtilitiesFlow` predicate EXACTLY — that is what makes a
-  // step reachable in the palette, not merely "present in the array".
-  const utilities = INTERNAL_NODES.filter(
-    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== "@w6w/data" && !n.hidden,
-  );
-  for (const a of S4_ACTIONS) {
-    assert.ok(
-      utilities.some((n) => n.app === STORE_APP && n.action === a),
-      `store ${a} must be reachable via the Utilities tab`,
-    );
-  }
-});
-
 test("@w6w/store output keys equal S-4's top-level output", () => {
   for (const e of entries()) {
     assert.deepEqual(

@@ -486,12 +486,27 @@ function refuses(
   assert.equal(applyConnect(src, tgt, w.nodes, w.edges, when), null);
 }
 
-test("C1 control targets are refused in the body, including a nested For each", () => {
-  refuses("fe3", "iff", "each", "control_in_body");
+test("C1 nested controls are refused, but If gates can join a loop body", () => {
   refuses("fe3", "fe2", "each", "control_in_body");
   // The body-continuation gesture (success connect from a body node) is each-lane too.
   refuses("b1", "fe3", "success", "control_in_body");
-  refuses("b1", "iff", "success", "control_in_body");
+  for (const [source, lane] of [
+    ["fe3", "each"],
+    ["b1", "success"],
+  ] as const) {
+    const w = loopWorld();
+    const edges = applyConnect(source, "iff", w.nodes, w.edges, lane);
+    assert.ok(edges);
+    assert.ok(
+      edges.some((e) => e.source === source && e.target === "iff" && e.data?.when === "each"),
+    );
+  }
+  const w = loopWorld();
+  const gate = w.nodes.find((n) => n.id === "iff");
+  assert.ok(gate);
+  // biome-ignore lint/suspicious/noThenProperty: then is the workflow's literal branch key.
+  gate.data.step.with = { condition: true, then: ["f"] };
+  refuses("fe3", "iff", "each", "control_in_body", w);
 });
 
 test("C2 a target already in another loop is refused", () => {

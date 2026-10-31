@@ -26,8 +26,8 @@ import {
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
+  ROUTER_APP,
   edgeVisuals,
-  isControlApp,
 } from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
@@ -40,6 +40,15 @@ export function isForeachStep(step: UsesLike | undefined): boolean {
 
 function isControlStep(step: UsesLike | undefined): boolean {
   return step?.uses?.app === CONTROL_APP;
+}
+
+/** A linear loop may contain an If gate; nested control blocks need their own canvas model. */
+function isLoopBodyStep(step: FlowStep | undefined): boolean {
+  if (step?.uses.app === ROUTER_APP) return false;
+  return (
+    !isControlStep(step) ||
+    (step?.uses.action === "if" && step.with?.then === undefined && step.with?.else === undefined)
+  );
 }
 
 /**
@@ -219,8 +228,7 @@ export function loopRefusal(
   if (owner === undefined) return null;
   if (target === owner || M[target] === owner) return "loop_cycle";
   if (M[target] !== undefined) return "already_in_loop";
-  const app = stepOf(target)?.uses?.app;
-  if (app !== undefined && isControlApp(app)) return "control_in_body";
+  if (!isLoopBodyStep(stepOf(target))) return "control_in_body";
   if (edges.some((e) => e.source === source && edgeLane(e) === "each")) return "body_branch";
   if (edges.some((e) => e.source === target || e.target === target)) return "body_exit";
   return null;
@@ -235,7 +243,7 @@ const LOOP_REFUSAL_MESSAGES: Record<LoopRefusalReason, string> = {
   loop_cycle: "A loop body can't connect back to its own For each.",
   already_in_loop: "That step is already inside another loop.",
   control_in_body:
-    "A loop body can only hold plain steps. If, For each, Parallel, Wait and similar steps can't go inside it yet.",
+    "A loop body supports plain steps and If conditions. Nested control blocks aren't supported here yet.",
   body_branch:
     "A loop body is one straight line of steps. This step already continues to another step.",
   body_exit:
@@ -349,7 +357,7 @@ export function definitionLoops(wf: FlowWorkflow): Record<string, LoopResult> {
       if (id === fid) return bad("body_self", id);
       if (seen.has(id)) return bad("body_duplicate", id);
       seen.add(id);
-      if (isControlStep(byId.get(id))) return bad("body_contains_control", id);
+      if (!isLoopBodyStep(byId.get(id))) return bad("body_contains_control", id);
       const own = owners.get(id);
       if (own && [...own].some((o) => o !== fid)) return bad("body_claimed_twice", id);
       if (declared.some((e) => e.from === id || e.to === id)) return bad("body_step_has_edges", id);
@@ -371,7 +379,7 @@ export function definitionLoops(wf: FlowWorkflow): Record<string, LoopResult> {
     while (next !== undefined) {
       const n: string = next;
       const step = byId.get(n);
-      if (!step || seen.has(n) || isControlStep(step) || owners.has(n)) return bad(n);
+      if (!step || seen.has(n) || !isLoopBodyStep(step) || owners.has(n)) return bad(n);
       const inbound = edges.filter((e) => e.to === n);
       if (inbound.length !== 1 || inbound[0].from !== prev) return bad(n);
       const outbound = edges.filter((e) => e.from === n);

@@ -493,6 +493,42 @@ test("L1 — body step: loop source with element [0] and its fields; For each dr
   assert.equal(r.extraSampleIds, undefined);
 });
 
+test("an If draft inside a foreach exposes the current webhook fields and preview values", () => {
+  const webhook = { id: "hook-1", endpoint_url: "https://example.test/hook", enabled: true };
+  const graph = wf(
+    [
+      fstep("find_webhook"),
+      {
+        ...fstep("for_each_1"),
+        uses: FE,
+        with: { items: "{{ nodes.find_webhook.output.webhooks }}", body: ["if_1"] },
+      },
+      { ...fstep("if_1"), uses: { app: "@w6w/control", action: "if" }, with: { condition: true } },
+    ],
+    [E("find_webhook", "for_each_1")],
+  );
+  const testOutputs = { find_webhook: { webhooks: [webhook] } };
+  for (const editing of [true, false]) {
+    const result = upstreamStateSources(
+      editing ? "if_1" : null,
+      graph.nodes,
+      graph.edges,
+      { testOutputs },
+      editing ? null : "if_1",
+    );
+    assert.deepEqual(result.loop?.itemSample, webhook);
+    assert.deepEqual(
+      result.loop?.itemOutputs?.map((f) => f.key),
+      Object.keys(webhook),
+    );
+    assert.equal(
+      upstreamSampleValues(result.steps, testOutputs, {}, result.loop)["foreach.item.enabled"],
+      true,
+    );
+    assert.ok(!result.steps.some((s) => s.id === "for_each_1"));
+  }
+});
+
 test("L2a — legacy F0 gives the same body projection", () => {
   const g = f0({ legacy: true });
   const r = upstreamStateSources("update_event_ticket_1", g.nodes, g.edges);

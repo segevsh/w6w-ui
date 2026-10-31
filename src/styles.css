@@ -3293,6 +3293,111 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   font-family: inherit;
 }
 
+.w6w-router-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-3);
+}
+
+.w6w-router-editor > p {
+  margin: 0;
+}
+
+.w6w-router-routes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+}
+
+.w6w-router-route {
+  min-width: 0;
+}
+
+.w6w-router-route.is-dragging {
+  opacity: 0.45;
+}
+
+.w6w-router-route.is-drop-target {
+  box-shadow: 0 -2px var(--w6w-accent);
+}
+
+.w6w-router-route-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+  margin-bottom: var(--w6w-sp-1);
+}
+
+.w6w-router-route-heading > :last-child {
+  margin-left: auto;
+}
+
+.w6w-router-grip {
+  cursor: grab;
+}
+
+.w6w-router-grip:active {
+  cursor: grabbing;
+}
+
+.w6w-router-route-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  border: 0;
+  background: transparent;
+  padding: var(--w6w-sp-1) 0;
+  font: inherit;
+  font-size: var(--w6w-fs-xs);
+  color: var(--w6w-muted);
+  cursor: pointer;
+}
+
+.w6w-router-route-name:hover {
+  color: var(--w6w-text);
+}
+
+.w6w-router-route-name:disabled {
+  cursor: default;
+}
+
+.w6w-router-add {
+  align-self: flex-start;
+}
+
+.w6w-condition-editor {
+  position: relative;
+  padding-right: var(--w6w-sp-8);
+}
+
+.w6w-condition-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, auto) minmax(0, 1fr);
+  gap: var(--w6w-sp-2);
+  align-items: stretch;
+}
+
+.w6w-condition-row > * {
+  min-width: 0;
+}
+
+.w6w-condition-comparison {
+  min-height: var(--w6w-sp-10);
+  padding: var(--w6w-sp-2);
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-text);
+  font: inherit;
+  font-size: var(--w6w-fs-xs);
+}
+
+.w6w-condition-mode {
+  position: absolute;
+  right: 0;
+  top: var(--w6w-sp-2);
+}
+
 .w6w-stepconfig-header {
   display: flex;
   flex-direction: column;
@@ -3811,6 +3916,31 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   border: 1px solid var(--w6w-danger);
   border-radius: 8px;
   color: var(--w6w-danger);
+}
+
+.w6w-router-port-link {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 28px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: var(--w6w-border);
+}
+
+.w6w-router-port-label {
+  position: absolute;
+  left: calc(100% + var(--w6w-sp-10));
+  transform: translateY(-100%);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: var(--w6w-fs-xs);
+  color: var(--w6w-muted);
 }
 
 .w6w-section {
