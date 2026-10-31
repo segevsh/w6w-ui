@@ -16,7 +16,7 @@ import type {
 } from "./components/ExpressionOptions.tsx";
 import { wholeValueRef } from "./components/json-compose.ts";
 import { isForeachStep, loopBodies, loopMembership } from "./flow-loop.ts";
-import { TRIGGER_APP, internalNodeDef, isInternalApp } from "./flow-types.ts";
+import { TRIGGER_APP, WEBHOOK_APP, internalNodeDef, isInternalApp } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
 import {
   type ActionShapeDef,
@@ -572,4 +572,33 @@ export function upstreamSampleValues(
     next["foreach.index"] = 0;
   }
   return next;
+}
+
+/** A sealed secret, an expression envelope or a `{ "$": path }` binding: not configuration. */
+function isDynamicValue(v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  if (o.type === "secret" || o.type === "expr") return true;
+  const keys = Object.keys(o);
+  return keys.length === 1 && keys[0] === "$";
+}
+
+/**
+ * Each node's configuration keys for the picker's "Node settings" group — what the engine lays
+ * at `nodes.<id>.config` (`nodeConfigOf`): the step's literal `with` keys (never a secret, never a
+ * binding), plus `url` for a webhook trigger node (the host adds it from the node's subscription).
+ * A node with none is left out.
+ */
+export function nodeConfigSources(nodes: StepNode[]): { id: string; keys: string[] }[] {
+  const out: { id: string; keys: string[] }[] = [];
+  for (const n of nodes) {
+    const step = n.data.step;
+    const keys = Object.entries(step.with ?? {})
+      .filter(([, v]) => v !== undefined && !isDynamicValue(v))
+      .map(([k]) => k);
+    const isWebhook = step.uses.app === WEBHOOK_APP || step.uses.trigger === true;
+    if (isWebhook && !keys.includes("url")) keys.unshift("url");
+    if (keys.length > 0) out.push({ id: step.id, keys });
+  }
+  return out;
 }

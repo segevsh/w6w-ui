@@ -353,6 +353,11 @@ export interface W6WApi {
       project?: string;
       state?: StepStartState;
       overrides?: RequestOverrides;
+      /**
+       * The workflow the step belongs to, so the host resolves `nodes.<id>.config` (e.g. a
+       * webhook node's `url`) as on a run. The host reads only the caller's own workflows.
+       */
+      workflowId?: string;
     },
   ): Promise<{
     value: unknown;
@@ -656,19 +661,35 @@ export function useOptionalW6WApi(): W6WApi | undefined {
  * panels render outside the editor too (e.g. connection screens).
  */
 const WorkflowProjectCtx = createContext<string | undefined>(undefined);
+/** The edited workflow's id, so a test-invoke can name it (`nodes.<id>.config`). */
+const WorkflowIdCtx = createContext<string | undefined>(undefined);
 
-/** Scopes test-invokes under it to `project`; the editor wraps its body with this. */
+/**
+ * Scopes test-invokes under it to `project`, and names `workflowId` on them; the editor wraps
+ * its body with this.
+ */
 export function WorkflowProjectProvider({
   project,
+  workflowId,
   children,
 }: {
   project?: string;
+  workflowId?: string;
   children: ReactNode;
 }) {
-  return <WorkflowProjectCtx.Provider value={project}>{children}</WorkflowProjectCtx.Provider>;
+  return (
+    <WorkflowProjectCtx.Provider value={project}>
+      <WorkflowIdCtx.Provider value={workflowId}>{children}</WorkflowIdCtx.Provider>
+    </WorkflowProjectCtx.Provider>
+  );
 }
 
 /** The selected workflow project id in scope, or `undefined` outside the editor. */
 export function useWorkflowProject(): string | undefined {
   return useContext(WorkflowProjectCtx);
+}
+
+/** The edited workflow's id in scope, or `undefined` outside the editor. */
+export function useWorkflowId(): string | undefined {
+  return useContext(WorkflowIdCtx);
 }

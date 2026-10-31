@@ -172,6 +172,7 @@ import {
   type SeedSource,
   type StepShapeContext,
   loopItemText,
+  nodeConfigSources,
   parseLoopSeed,
   resolveLoopItems,
   startStateFromSeeds,
@@ -1405,6 +1406,8 @@ function Inner({
           // Omitted when nothing upstream has a saved output, so a run with no
           // seed sends exactly the request it sent before.
           ...(state ? { state } : {}),
+          // So `{{ nodes.<id>.config.* }}` resolves as on a run.
+          workflowId: value.id,
         });
         // Script nodes may return captured console output alongside the value.
         const logs = (result as { logs?: string[] }).logs;
@@ -1438,7 +1441,7 @@ function Inner({
         persistStepRun(id, fixture, { status: "failed", error: err.message ?? String(e) });
       }
     },
-    [nodes, api, persistStepRun, project, onTestRun],
+    [nodes, api, persistStepRun, project, onTestRun, value.id],
   );
 
   const controls = useMemo<StepControls>(
@@ -1637,19 +1640,22 @@ function Inner({
   // anything the prop adds, and `steps.*` computed here), and layering alone
   // would let the object built below shadow the inherited one wholesale.
   const inheritedExprOptions = useExpressionOptions();
+  // Every node's `nodes.<id>.config` keys — offered whether or not the node is upstream.
+  const nodeConfigs = useMemo(() => nodeConfigSources(nodes), [nodes]);
   const mergedExprOptions = useMemo<ExpressionOptions>(
     () => ({
       ...(exprOptions ?? {}),
       steps: upstreamState.steps,
       hasTrigger: upstreamState.hasTrigger,
       loop: upstreamState.loop,
+      nodeConfigs: nodeConfigs,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
         ...stepSampleValues,
       },
     }),
-    [exprOptions, inheritedExprOptions.sampleValues, upstreamState, stepSampleValues],
+    [exprOptions, inheritedExprOptions.sampleValues, upstreamState, stepSampleValues, nodeConfigs],
   );
 
   return (
@@ -1657,7 +1663,7 @@ function Inner({
       <PortsLookupCtx.Provider value={portsLookup}>
         <FanOutCountsCtx.Provider value={fanOutCounts}>
           <CardDataProvider apps={appsById} registration={triggerRegistration}>
-            <WorkflowProjectProvider project={project}>
+            <WorkflowProjectProvider project={project} workflowId={value.id}>
               <ExpressionOptionsProvider value={mergedExprOptions}>
                 <div
                   ref={flowContainerRef}
