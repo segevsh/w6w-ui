@@ -1239,6 +1239,11 @@ select optgroup {
   gap: var(--w6w-sp-1-5);
 }
 
+/* A whole-value JSON field's "Use the output of <step>" row (ParamsForm). */
+.w6w-json-quickbind {
+  align-items: center;
+}
+
 .w6w-seed-chip {
   cursor: pointer;
 }
