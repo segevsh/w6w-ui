@@ -168,6 +168,21 @@ test("R1 - Loop group: Current item, Index, one row per field; each click saves 
   }
 });
 
+test("R1b - a For each's saved Test sample lists the item keys when nothing upstream resolves", async () => {
+  const { foreachTestFixture, foreachTestSample } = await import("../step-preview-state.ts");
+  const fx = foreachTestFixture([{ id: 7, title: "Gala", venue: { city: "TLV" } }], {});
+  const sample = foreachTestSample({ with: fx.with } as never);
+  assert.ok(sample);
+  const p = upstreamStateSources("update_event_ticket_1", graph.nodes, graph.edges, {
+    loopSamples: { for_each_1: sample },
+  });
+  const labels = ["Current item", "Index", "id", "title", "venue", "venue.city"];
+  const m = await mountModal({ options: { steps: p.steps, loop: p.loop } });
+  assert.deepEqual(loopLabels(m.container), labels);
+  await click(loopBtn(m.container, "title"));
+  assert.deepEqual(m.onSaveCalls, ["{{ foreach.item.title }}"]);
+});
+
 test("R2 - the group renders with empty steps, and without field rows when there is no sample", async () => {
   const { container } = await mountModal({
     options: { steps: [], loop: { foreachId: "for_each_1" } },

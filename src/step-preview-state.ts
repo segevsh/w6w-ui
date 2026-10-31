@@ -42,6 +42,8 @@ export interface StepShapeContext {
   actionDef?: (app: string, action: string) => ActionShapeDef | undefined;
   /** Each step's latest saved test-run output, by step id. */
   testOutputs?: Record<string, unknown>;
+  /** Each For each's saved Test sample (`foreachTestSample`), by step id — the item-shape fallback. */
+  loopSamples?: Record<string, unknown[]>;
 }
 
 /** A graph ancestor carrying a saved step-test, offered as a one-click seed. */
@@ -182,14 +184,51 @@ export function resolveLoopItems(
   items: unknown,
   testOutputs: Record<string, unknown>,
 ): unknown[] | undefined {
+  const steps: Record<string, { output?: unknown }> = {};
+  for (const [id, output] of Object.entries(testOutputs)) steps[id] = { output };
+  return resolveLoopItemsInState(items, { steps });
+}
+
+/**
+ * {@link resolveLoopItems} against a whole Test start state (`startStateFromSeeds`), so a
+ * For each's own Test resolves `items` exactly as the other steps' Test previews do — a
+ * `trigger.event` ref included.
+ */
+export function resolveLoopItemsInState(
+  items: unknown,
+  state: StepStartState | undefined,
+): unknown[] | undefined {
   if (wholeValueRef(items) !== null) {
-    const steps: Record<string, { output?: unknown }> = {};
-    for (const [id, output] of Object.entries(testOutputs)) steps[id] = { output };
-    const segs = resolveParamValue(items, buildResolveScope(undefined, { steps }));
+    const segs = resolveParamValue(items, buildResolveScope(undefined, state));
     const seg = segs.length === 1 ? segs[0] : undefined;
     return seg?.status === "resolved" && Array.isArray(seg.value) ? seg.value : undefined;
   }
   return Array.isArray(items) ? items : undefined;
+}
+
+/** How many items a For each's saved Test keeps: enough for the shape, never the whole list. */
+export const FOREACH_TEST_SAMPLE_MAX = 10;
+
+/**
+ * The step-test fixture a For each's Test saves. Nothing runs, so no run is recorded and
+ * `lastRunOutput` stays empty — the For each's real output is its BODY's results, and an
+ * after-loop step must not preview (or be seeded with) the input list as that. The sample
+ * rides in the fixture's `with` instead: the resolved `items` (capped) and the full count.
+ */
+export function foreachTestFixture(
+  items: unknown[],
+  input: Record<string, unknown>,
+): { input: Record<string, unknown>; with: Record<string, unknown> } {
+  return {
+    input,
+    with: { items: items.slice(0, FOREACH_TEST_SAMPLE_MAX), itemCount: items.length },
+  };
+}
+
+/** The sample a For each's saved Test carries (`foreachTestFixture`), or `undefined`. */
+export function foreachTestSample(test: StepTest | null | undefined): unknown[] | undefined {
+  const items = test?.with?.items;
+  return Array.isArray(items) && items.length > 0 ? items : undefined;
 }
 
 /**
@@ -254,7 +293,10 @@ function loopSourceFor(
 ): ExpressionLoopSource {
   const loop: ExpressionLoopSource = { foreachId };
   const items = nodes.find((n) => n.id === foreachId)?.data.step.with?.items;
-  const arr = resolveLoopItems(items, shapes.testOutputs ?? {});
+  // Live resolution first (it follows the current binding); the For each's own saved Test
+  // covers the case the upstream steps have no saved output to resolve against.
+  const live = resolveLoopItems(items, shapes.testOutputs ?? {});
+  const arr = live && live.length > 0 ? live : shapes.loopSamples?.[foreachId];
   if (arr && arr.length > 0) {
     loop.itemSample = arr[0];
     const outputs = inferOutputFields(arr[0]);
@@ -315,7 +357,10 @@ export function upstreamStateSources(
   hasTrigger: boolean;
   /** Present iff the anchor step is a loop-body member. */
   loop?: ExpressionLoopSource;
-  /** Saved tests the projection reads beyond `steps` (enclosing-ahead For each's last body step). */
+  /**
+   * Saved tests the projection reads beyond `steps`: an after-loop For each's last body step,
+   * and the enclosing For each itself (its Test's item sample).
+   */
   extraSampleIds?: string[];
 } {
   // `draftId` anchors the add-step builder's rail, but only for a draft that already sits in a
@@ -325,6 +370,7 @@ export function upstreamStateSources(
   if (!anchor) return projectStepSources(new Set(nodes.map((n) => n.id)), nodes, shapes);
   const ownLoop = loopMembership(nodes, edges)[anchor];
   const out = loopAwareSources(ancestorIds(anchor, edges), ownLoop, nodes, edges, shapes);
+  if (ownLoop && !out.extraSampleIds.includes(ownLoop)) out.extraSampleIds.push(ownLoop);
   return {
     steps: out.steps,
     hasTrigger: out.hasTrigger,
