@@ -39,7 +39,13 @@ import {
   isTriggerApp,
 } from "./flow-types.ts";
 import { paramsToJson, stepToJson } from "./flow-utils.ts";
-import { type StepMeta, type StepStartState, useW6WApi, useWorkflowProject } from "./provider.tsx";
+import {
+  type StepMeta,
+  type StepStartState,
+  type W6WApi,
+  useW6WApi,
+  useWorkflowProject,
+} from "./provider.tsx";
 import { loopSeedFromSource, startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
@@ -50,7 +56,6 @@ import type {
   ConnectionSummary,
   FunctionSummary,
   ThemeMode,
-  TriggerSummary,
   WorkflowDetail,
   WorkflowSummary,
 } from "./types.ts";
@@ -201,6 +206,12 @@ export interface StepBuilderModalProps {
    * so the only outcome is an infinite loop. Absent ⇒ nothing is excluded.
    */
   excludeCallableIds?: readonly string[];
+  /**
+   * Fired once an app TRIGGER picked on the Triggers tab is committed (needs
+   * `onDraftChange`), with the new node's id: the host closes this modal and
+   * opens that node in its own step editor, as it does for any node.
+   */
+  onOpenStep?: (id: string) => void;
 }
 
 /** {@link StepBuilderModalProps.callables}'s default — both families. Module
@@ -321,6 +332,7 @@ export function StepBuilderModal({
   connectionOnly,
   onConnected,
   excludeCallableIds,
+  onOpenStep,
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
@@ -332,8 +344,9 @@ export function StepBuilderModal({
   // Same collapse for a chosen internal node (trigger / control / compute) — its
   // config form (dynamic ParamsForm over the node's schema) shows before adding.
   const [selectedNode, setSelectedNode] = useState<InternalNodeDef | null>(null);
-  // An app picked on the Triggers tab runs account → trigger (`AppTriggerConfig`)
-  // and adds ONE trigger node, instead of AppStepConfig's action flow.
+  // An app picked on the Triggers tab runs the SAME `AppStepConfig` as an app
+  // picked for an action (app → account → pick), in its `kind="trigger"` mode:
+  // picking a trigger adds ONE trigger node the way picking an action adds one.
   const [selectedTriggerApp, setSelectedTriggerApp] = useState<AppSummary | null>(null);
   // Same collapse for a picked Function/Workflow target (D-12/D-15): both tabs
   // mint the SAME `@w6w/call` step shape, so one piece of state (family + id +
@@ -425,59 +438,30 @@ export function StepBuilderModal({
     );
   }
 
-  if (selectedTriggerApp) {
+  const pickedApp = selectedTriggerApp ?? selectedApp;
+  if (pickedApp) {
+    const kind = selectedTriggerApp ? "trigger" : "action";
+    const changeApp = () => {
+      setSelectedApp(null);
+      setSelectedTriggerApp(null);
+    };
     return (
       <Modal
-        title={selectedTriggerApp.displayName}
-        subtitle={<code>{selectedTriggerApp.id}</code>}
-        onClose={onClose}
-        size="xl"
-        titleIcon={
-          <AppIcon
-            src={selectedTriggerApp.iconSvg}
-            srcDark={selectedTriggerApp.iconSvgDark}
-            brandColor={selectedTriggerApp.brandColor}
-            name={selectedTriggerApp.displayName}
-            theme={theme}
-            size={22}
-          />
-        }
-      >
-        <div className="w6w-stepbuilder-config">
-          <AppTriggerConfig
-            appId={selectedTriggerApp.id}
-            app={selectedTriggerApp}
-            theme={theme}
-            onDone={(built) => {
-              onAdd(built);
-              onClose();
-            }}
-            onClose={onClose}
-            onChangeApp={() => setSelectedTriggerApp(null)}
-          />
-        </div>
-      </Modal>
-    );
-  }
-
-  if (selectedApp) {
-    return (
-      <Modal
-        title={selectedApp.displayName}
+        title={pickedApp.displayName}
         subtitle={
           <>
-            <code>{selectedApp.id}</code>
-            {selectedApp.version && ` · v${selectedApp.version}`}
+            <code>{pickedApp.id}</code>
+            {pickedApp.version && ` · v${pickedApp.version}`}
           </>
         }
         onClose={onClose}
         size="xl"
         titleIcon={
           <AppIcon
-            src={selectedApp.iconSvg}
-            srcDark={selectedApp.iconSvgDark}
-            brandColor={selectedApp.brandColor}
-            name={selectedApp.displayName}
+            src={pickedApp.iconSvg}
+            srcDark={pickedApp.iconSvgDark}
+            brandColor={pickedApp.brandColor}
+            name={pickedApp.displayName}
             theme={theme}
             size={22}
           />
@@ -486,32 +470,34 @@ export function StepBuilderModal({
         <div className="w6w-stepbuilder-config">
           {/* App-switching lives in the Setup tab's "Change" (à la Zapier), not a
               top-right back button. */}
-          {connectionOnly ? (
+          {connectionOnly && kind === "action" ? (
             <AppConnectionOnlyConfig
-              appId={selectedApp.id}
-              app={selectedApp}
+              appId={pickedApp.id}
+              app={pickedApp}
               onClose={onClose}
-              onChangeApp={() => setSelectedApp(null)}
+              onChangeApp={changeApp}
               theme={theme}
               initialConnection={initialConnection}
               onConnected={(connectionId, app) => onConnected?.(connectionId, app)}
             />
           ) : (
             <AppStepConfig
-              appId={selectedApp.id}
-              app={selectedApp}
+              kind={kind}
+              onOpenStep={onOpenStep}
+              appId={pickedApp.id}
+              app={pickedApp}
               onAdd={onAdd}
               onClose={onClose}
               onDraftChange={onDraftChange}
-              onChangeApp={() => setSelectedApp(null)}
+              onChangeApp={changeApp}
               theme={theme}
               workflowId={workflowId}
               stepId={stepId}
               upstreamSteps={upstreamSteps}
               loop={loop}
-              initialAction={initialAction}
-              initialConnection={initialConnection}
-              initialWith={initialWith}
+              // The initial* props pre-fill an ACTION step being edited; a
+              // trigger is always picked fresh.
+              {...(kind === "action" ? { initialAction, initialConnection, initialWith } : {})}
             />
           )}
         </div>
@@ -722,8 +708,9 @@ function NodeRow({
  * so and points at the search, rather than vanishing and leaving the built-ins
  * to read as the only triggers there are.
  *
- * Picking an app, from either place, runs account → trigger
- * ({@link AppTriggerConfig}) and adds ONE trigger node through `onAdd`; no
+ * Picking an app, from either place, runs the app-action flow itself —
+ * {@link AppStepConfig} with `kind="trigger"`: account and trigger on the one
+ * Setup screen, and picking the trigger adds ONE trigger node; no
  * Subscription is created here (the server derives it when the workflow is
  * published). The built-ins keep their existing `onSelect` → `onAdd` path.
  */
@@ -826,167 +813,6 @@ function TriggersFlow({
       <div className="w6w-readytouse-footer">
         <button type="button" className="w6w-btn" onClick={() => setSearching(true)}>
           Search all apps
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * A trigger node's editor: **account → trigger**. The account step is
- * {@link AppConnectionOnlyConfig} (auto-advanced past when the app needs no
- * connection — D-4); the trigger step lists `api.getAppTriggers(appId)`, shows
- * the picked trigger's params via `ParamsForm`, and `onDone`s ONE
- * `{ uses: { app, action: <triggerKey>, connection?, trigger: true }, with }`.
- * `connection` is present only when the user picked/created one — never
- * synthesised for an auto-satisfied app, mirroring `AppStepConfig`'s rule.
- */
-export function AppTriggerConfig({
-  appId,
-  app,
-  theme,
-  initialConnection,
-  initialTrigger,
-  initialWith,
-  onDone,
-  onClose,
-  onChangeApp,
-}: {
-  appId: string;
-  app?: AppSummary;
-  theme?: ThemeMode;
-  initialConnection?: string;
-  initialTrigger?: string;
-  initialWith?: Record<string, unknown>;
-  onDone: (built: BuiltStep) => void;
-  onClose: () => void;
-  onChangeApp?: () => void;
-}) {
-  const api = useW6WApi();
-  // Editing an existing node (a trigger already chosen) opens on the trigger step.
-  const [step, setStep] = useState<"account" | "trigger">(initialTrigger ? "trigger" : "account");
-  const [connectionId, setConnectionId] = useState<string>(initialConnection ?? "");
-  const [skippedAccount, setSkippedAccount] = useState(false);
-  const [triggers, setTriggers] = useState<TriggerSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [triggerKey, setTriggerKey] = useState(initialTrigger ?? "");
-  const [withValues, setWithValues] = useState<Record<string, unknown>>(initialWith ?? {});
-
-  useEffect(() => {
-    if (step !== "trigger") return;
-    const load = api.getAppTriggers;
-    if (!load) {
-      setTriggers([]);
-      return;
-    }
-    let canceled = false;
-    load(appId)
-      .then((r) => !canceled && setTriggers(r))
-      .catch((e) => !canceled && setError((e as Error).message));
-    return () => {
-      canceled = true;
-    };
-  }, [api, appId, step]);
-
-  if (step === "account") {
-    return (
-      <AppConnectionOnlyConfig
-        appId={appId}
-        app={app}
-        theme={theme}
-        onClose={onClose}
-        onChangeApp={onChangeApp}
-        initialConnection={initialConnection}
-        autoAdvance
-        footerLabel="Next →"
-        onConnected={(id, _app, auto) => {
-          setConnectionId(id);
-          setSkippedAccount(auto === true);
-          setStep("trigger");
-        }}
-      />
-    );
-  }
-
-  const selected = (triggers ?? []).find((t) => t.key === triggerKey);
-  const params = (selected?.params ?? []) as ActionParam[];
-  const complete = !!selected && requiredParamsFilled(params, withValues);
-  const build = (): BuiltStep => {
-    const set: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(withValues)) if (v !== undefined) set[k] = v;
-    return {
-      uses: {
-        app: appId,
-        action: triggerKey,
-        ...(connectionId ? { connection: connectionId } : {}),
-        trigger: true,
-      },
-      ...(Object.keys(set).length > 0 ? { with: set } : {}),
-    };
-  };
-
-  return (
-    <div className="w6w-stepconfig">
-      <div className="w6w-stepconfig-body">
-        <div className="w6w-stack">
-          {error && <div className="w6w-result w6w-error">{error}</div>}
-          {triggers === null && !error ? (
-            <p className="w6w-muted w6w-small">Loading triggers…</p>
-          ) : triggers !== null && triggers.length === 0 ? (
-            <p className="w6w-muted w6w-small">This app declares no triggers.</p>
-          ) : (
-            <div className="w6w-stepbuilder-list">
-              {(triggers ?? []).map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  className="w6w-stepbuilder-item"
-                  aria-pressed={t.key === triggerKey}
-                  data-selected={t.key === triggerKey ? "true" : undefined}
-                  onClick={() => {
-                    if (t.key !== triggerKey) setWithValues({});
-                    setTriggerKey(t.key);
-                  }}
-                >
-                  <span className="w6w-stepbuilder-item-main">
-                    <strong>{t.title}</strong>
-                    <code className="w6w-muted w6w-small">{t.key}</code>
-                    {t.description && <span className="w6w-muted w6w-small">{t.description}</span>}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          {selected && params.length > 0 && (
-            <ParamsForm
-              params={params}
-              values={withValues}
-              onChange={setWithValues}
-              dynamic={{
-                appId,
-                actionKey: selected.key,
-                connectionId: connectionId || undefined,
-                appName: app?.displayName,
-              }}
-            />
-          )}
-        </div>
-      </div>
-      <div className="w6w-modal-actions w6w-stepconfig-footer">
-        <button
-          type="button"
-          className="w6w-btn w6w-btn-ghost"
-          onClick={() => (skippedAccount || initialTrigger ? onChangeApp?.() : setStep("account"))}
-        >
-          ← Back
-        </button>
-        <button
-          type="button"
-          className="w6w-btn"
-          disabled={!complete}
-          onClick={() => onDone(build())}
-        >
-          Add trigger
         </button>
       </div>
     </div>
@@ -2553,7 +2379,32 @@ function ReadyToUseFlow({
   );
 }
 
+/** An app's triggers as action-shaped defs ({ key, title, description, params }), so
+ *  the action pickers and param forms take them as they are. No API member => none. */
+export function getTriggerDefs(api: W6WApi, appId: string): Promise<ActionDef[]> {
+  return (api.getAppTriggers?.(appId) ?? Promise.resolve([])).then((ts) =>
+    ts.map((t) => ({
+      key: t.key,
+      title: t.title,
+      description: t.description,
+      params: (t.params ?? []) as ActionParam[],
+    })),
+  );
+}
+
+/** An app trigger's Test tab: it runs when the app reports the event, not by hand. */
+export function AppTriggerTestNote({ title, app }: { title: string; app: string }) {
+  return (
+    <p className="w6w-muted w6w-small">
+      <strong>{title}</strong> runs when {app} reports it, so there is nothing to run by hand.
+      Publish the workflow to start listening.
+    </p>
+  );
+}
+
 export function AppStepConfig({
+  kind = "action",
+  onOpenStep,
   appId,
   app,
   onAdd,
@@ -2569,6 +2420,16 @@ export function AppStepConfig({
   initialConnection,
   initialWith,
 }: {
+  /**
+   * What the Setup tab picks: one of the app's actions, or (`"trigger"`, the
+   * Triggers tab) one of its triggers. Same account step, same picker, same
+   * add-on-pick; a trigger node carries `uses.trigger: true` and lists
+   * `api.getAppTriggers`. Its Test tab only says when it runs: there is no
+   * action to invoke by hand.
+   */
+  kind?: "action" | "trigger";
+  /** See {@link StepBuilderModalProps.onOpenStep}. */
+  onOpenStep?: (id: string) => void;
   appId: string;
   app?: AppSummary;
   // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
@@ -2592,6 +2453,8 @@ export function AppStepConfig({
   initialWith?: Record<string, unknown>;
 }) {
   const api = useW6WApi();
+  const isTrigger = kind === "trigger";
+  const aNoun = isTrigger ? "a trigger" : "an action";
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);
@@ -2624,7 +2487,8 @@ export function AppStepConfig({
   useEffect(() => {
     let canceled = false;
     setMetaError(null);
-    Promise.all([api.getAppAuth(appId), api.listConnectionsForApp(appId), api.getAppActions(appId)])
+    const pickables = isTrigger ? getTriggerDefs(api, appId) : api.getAppActions(appId);
+    Promise.all([api.getAppAuth(appId), api.listConnectionsForApp(appId), pickables])
       .then(([au, co, ac]) => {
         if (canceled) return;
         setAuths(au);
@@ -2644,7 +2508,7 @@ export function AppStepConfig({
     return () => {
       canceled = true;
     };
-  }, [api, appId]);
+  }, [api, appId, isTrigger]);
 
   const refetchConns = async () => {
     const co = await api.listConnectionsForApp(appId);
@@ -2736,6 +2600,7 @@ export function AppStepConfig({
         // live on every call. Never synthesise an id: it does not exist
         // server-side.
         ...((needsConnection || autoSatisfied) && connectionId ? { connection: connectionId } : {}),
+        ...(isTrigger ? { trigger: true as const } : {}),
       },
       with: withValues,
       ...draftConfig,
@@ -2758,6 +2623,7 @@ export function AppStepConfig({
     if (!onDraftChange || committedId !== null || !setupComplete) return;
     const id = onAdd(buildStep());
     if (id) setCommittedId(id);
+    if (id && isTrigger) onOpenStep?.(id);
   }, [onDraftChange, committedId, setupComplete]);
 
   // Update — keep the already-committed node current on every subsequent field
@@ -2814,7 +2680,7 @@ export function AppStepConfig({
       </div>
 
       <div className="w6w-stepconfig-body">
-        {/* Setup — app, connection, action. */}
+        {/* Setup — app, connection, action (or trigger). */}
         {tab === "setup" && (
           <div className="w6w-stack">
             {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
@@ -2945,14 +2811,19 @@ export function AppStepConfig({
             {/* Action */}
             {actions !== null &&
               (actions.length === 0 ? (
-                <p className="w6w-muted w6w-small">This app exposes no actions.</p>
+                <p className="w6w-muted w6w-small">
+                  {isTrigger ? "This app declares no triggers." : "This app exposes no actions."}
+                </p>
               ) : (
                 // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
                 <label className="w6w-field">
-                  <span>Action{actionKey ? "" : " *"}</span>
+                  <span>
+                    {isTrigger ? "Trigger" : "Action"}
+                    {actionKey ? "" : " *"}
+                  </span>
                   <Combobox
                     value={actionKey}
-                    placeholder="— pick an action —"
+                    placeholder={`— pick ${aNoun} —`}
                     // Always the searchable combobox (T-1): a short action list used
                     // to collapse to a native <select>, which hides the filter and
                     // opens an unbounded OS popup over the modal.
@@ -2984,7 +2855,7 @@ export function AppStepConfig({
             (config). */}
         {tab === "configure" &&
           (!selectedAction ? (
-            <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
+            <p className="w6w-muted w6w-small">Pick {aNoun} in Setup first.</p>
           ) : configView === "props" ? (
             <ParamsForm
               params={selectedAction.params ?? []}
@@ -3025,12 +2896,22 @@ export function AppStepConfig({
               }
             />
           ) : (
-            <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
+            // A trigger has no failure of its own to retry or police.
+            <NodeConfigForm
+              config={draftConfig}
+              onChange={setDraftConfig}
+              failureHandling={!isTrigger}
+            />
           ))}
 
         {/* Test — try the action with the current params. */}
         {tab === "test" &&
-          (selectedAction ? (
+          (selectedAction && isTrigger ? (
+            <AppTriggerTestNote
+              title={selectedAction.title ?? selectedAction.key}
+              app={app?.displayName ?? appId}
+            />
+          ) : selectedAction ? (
             <StepTestRun
               app={appId}
               action={selectedAction.key}
@@ -3124,8 +3005,6 @@ export function AppConnectionOnlyConfig({
   theme,
   initialConnection,
   onConnected,
-  autoAdvance,
-  footerLabel,
 }: {
   appId: string;
   app?: AppSummary;
@@ -3134,14 +3013,8 @@ export function AppConnectionOnlyConfig({
   theme?: ThemeMode;
   /** Pre-selected connection id */
   initialConnection?: string;
-  /** Fired once, on the footer button — never on a state change (D-sbm-2), except under
-   *  {@link autoAdvance}, which passes `auto = true` as the third argument. */
-  onConnected: (connectionId: string, app: AppSummary, auto?: boolean) => void;
-  /** Opt-in: when the app needs no connection (auto-satisfied or no auth), fire
-   *  `onConnected("", app, true)` once instead of showing this step. */
-  autoAdvance?: boolean;
-  /** Footer button label (default `"Next →"`). */
-  footerLabel?: string;
+  /** Fired once, on the footer button — never on a state change (D-sbm-2). */
+  onConnected: (connectionId: string, app: AppSummary) => void;
 }) {
   const api = useW6WApi();
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
@@ -3195,14 +3068,6 @@ export function AppConnectionOnlyConfig({
   const needsConnection = availableAuths.length > 0 && !autoSatisfied;
   const hasConnection = (conns ?? []).length > 0;
   const connectionSatisfied = !needsConnection || (hasConnection && !!connectionId);
-
-  const advancedRef = useRef(false);
-  useEffect(() => {
-    if (!autoAdvance || advancedRef.current || auths === null || !app) return;
-    if (needsConnection || initialConnection) return;
-    advancedRef.current = true;
-    onConnected("", app, true);
-  }, [autoAdvance, auths, app, needsConnection, initialConnection, onConnected]);
 
   const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
   // Show the dropdown only before a connection is picked or while changing it;
@@ -3356,7 +3221,7 @@ export function AppConnectionOnlyConfig({
           disabled={!connectionSatisfied || !app}
           onClick={() => app && onConnected(connectionId, app)}
         >
-          {footerLabel ?? "Next →"}
+          Next →
         </button>
       </div>
 
