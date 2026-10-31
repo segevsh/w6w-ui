@@ -1,7 +1,10 @@
 // Run (from packages/ui): node --import ./src/test-jsx-loader.mjs --test src/__tests__/StepBuilderModal.app-triggers.test.ts  (Node 24)
 //
-// Triggers tab (26-10-30-03 T2.1.1): two columns + "Search all apps", and
-// app -> account -> trigger adds ONE trigger node through onAdd. Mirrors
+// Triggers tab (26-10-30-03 T2.1.1): two columns + "Search all apps", and an
+// app picked there runs the app-ACTION flow itself (adhoc/trigger-flow):
+// AppStepConfig's Setup screen (app, account, picker), where picking the
+// trigger adds ONE trigger node through onAdd, exactly as picking an action
+// adds an action node. Mirrors
 // StepBuilderModal.commit.test.ts's JSDOM + react-dom mount rig.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -144,7 +147,7 @@ function makeTriggerApi(
         key: "event-updated",
         title: "Event Updated",
         type: "poll",
-        params: [{ key: "organization", label: "Organization", type: "string" }],
+        params: [{ key: "organization", label: "Organization", type: "string", required: true }],
       },
       { key: "event-created", title: "Event Created" },
     ],
@@ -182,8 +185,6 @@ async function mountTriggers(api: W6WApi, calls: Calls, props: Record<string, un
 const buttons = (c: Element) => Array.from(c.querySelectorAll("button"));
 const byText = (c: Element, t: string) =>
   buttons(c).find((b) => (b.textContent ?? "").trim() === t);
-const trig = (c: Element, title: string) =>
-  buttons(c).find((b) => b.querySelector("strong")?.textContent === title);
 const click = (el: Element | undefined) => {
   assert.ok(el, `expected element to click; DOM text: ${document.body.textContent}`);
   return act(async () => {
@@ -268,44 +269,129 @@ test("A2: Search all apps shows AppPicker; listAppsPage carries hasTriggers:true
   await act(async () => root.unmount());
 });
 
-async function pickAndAdd(container: Element) {
-  // account step
-  assert.ok(container.textContent?.includes("Main"), "the account step lists the connection");
-  await click(byText(container, "Next →"));
-  await flush();
-  // trigger step
-  await click(trig(container, "Event Updated"));
-  const input = container.querySelector("input[type=text], input:not([type])") as HTMLInputElement;
-  assert.ok(input, "the trigger's param renders");
+/** Pick `label` in the Setup tab's searchable picker — the SAME combobox the
+ *  action flow uses (StepBuilderModal.commit.test.ts drives it the same way). */
+async function pick(container: Element, label: string) {
+  const input = container.querySelector(
+    '.w6w-field input[role="combobox"]',
+  ) as HTMLInputElement | null;
+  assert.ok(input, `the picker renders; DOM text: ${container.textContent}`);
   await act(async () => {
+    input.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
+  });
+  const option = Array.from(container.querySelectorAll('[role="option"]')).find((o) =>
+    (o.textContent ?? "").trim().startsWith(label),
+  ) as HTMLElement | undefined;
+  assert.ok(option, `option "${label}" is listed`);
+  await act(async () => {
+    option.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+  });
+}
+
+function typeInto(input: Element | null, value: string) {
+  assert.ok(input, "the trigger's param renders");
+  return act(async () => {
     const setter = Object.getOwnPropertyDescriptor(
       dom.window.HTMLInputElement.prototype,
       "value",
     )?.set;
-    setter?.call(input, "org_9");
+    setter?.call(input, value);
     input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
   });
-  await click(byText(container, "Add trigger"));
 }
 
-const EXPECTED = {
-  uses: { app: "eventbrite", action: "event-updated", connection: "conn_1", trigger: true },
-  with: { organization: "org_9" },
-};
+/** The Setup screen's shape: subtabs, field labels, footer buttons. */
+function setupShape(c: Element) {
+  const text = (n: Element) => (n.textContent ?? "").trim();
+  return {
+    subtabs: Array.from(c.querySelectorAll(".w6w-subtab")).map(text),
+    fields: Array.from(
+      c.querySelectorAll(".w6w-stepconfig-body .w6w-field > span:first-child"),
+    ).map(text),
+    footer: Array.from(c.querySelectorAll(".w6w-stepconfig-footer button")).map(text),
+  };
+}
 
-test("A3: left column -> account -> trigger -> onAdd ONCE with the exact node; no createSubscription", async () => {
-  const { api, calls } = makeTriggerApi();
-  const { container, root } = await mountTriggers(api, calls);
+async function openEventbrite(container: Element) {
   const col = container.querySelector(".w6w-readytouse-col");
   await click(buttons(col as Element).find((b) => b.textContent?.includes("Eventbrite")));
   await flush();
-  await pickAndAdd(container);
-  assert.deepEqual(calls.added, [EXPECTED]);
+}
+
+const EXPECTED_USES = {
+  app: "eventbrite",
+  action: "event-updated",
+  connection: "conn_1",
+  trigger: true,
+};
+
+test("A3: Eventbrite -> account already picked on the one Setup screen -> clicking 'Event Updated' adds the trigger node", async () => {
+  const { api, calls } = makeTriggerApi();
+  const drafts: [string, unknown][] = [];
+  const { container, root } = await mountTriggers(api, calls, {
+    onDraftChange: (id: string, s: unknown) => drafts.push([id, s]),
+  });
+  await openEventbrite(container);
+  // No separate account screen: the one connection is auto-picked on Setup.
+  assert.ok(!container.querySelector(".w6w-stepbuilder-list"), "no trigger card list");
+  assert.ok(container.textContent?.includes("Main"), "the auto-picked account shows");
+  assert.ok(!byText(container, "Add trigger"), "no separate Add trigger button");
+  assert.equal(calls.added.length, 0);
+  await pick(container, "Event Updated");
+  // The click alone adds the node.
+  assert.deepEqual(calls.added, [{ uses: EXPECTED_USES, with: {} }]);
+  // Required params: Configure is the node's config, edits update the SAME node.
+  await click(byText(container, "Next →"));
+  await typeInto(container.querySelector(".w6w-stepconfig-body input"), "org_9");
+  assert.equal(calls.added.length, 1, "no second node");
+  const last = drafts[drafts.length - 1] as [string, { uses: unknown; with: unknown }];
+  assert.equal(last[0], "step_1");
+  assert.deepEqual(last[1].uses, EXPECTED_USES);
+  assert.deepEqual(last[1].with, { organization: "org_9" });
   assert.equal(calls.subs, 0);
   await act(async () => root.unmount());
 });
 
-test("A3: the same flow from Search all apps", async () => {
+test("A3: the trigger flow has the action flow's steps — same Setup screen, Trigger in Action's place, no Test", async () => {
+  const { api, calls } = makeTriggerApi();
+  (api as unknown as Record<string, unknown>).getAppActions = async () => [
+    { key: "get-event", title: "Get Event", params: [] },
+  ];
+  // The action flow: the same app opened for an action.
+  const a = mountRoot();
+  await act(async () => {
+    a.root.render(
+      React.createElement(W6WUIProvider, {
+        api,
+        children: React.createElement(StepBuilderModal, {
+          onClose: () => {},
+          onAdd: () => "step_1",
+          initialApp: eventbrite,
+        }),
+      }),
+    );
+  });
+  await flush();
+  const action = setupShape(a.container);
+  await act(async () => a.root.unmount());
+
+  const { container, root } = await mountTriggers(api, calls);
+  await openEventbrite(container);
+  const trigger = setupShape(container);
+  assert.deepEqual(action, {
+    subtabs: ["Setup", "Configure", "Test"],
+    fields: ["App", "Connection", "Action *"],
+    footer: ["Cancel", "Next →"],
+  });
+  assert.deepEqual(trigger, {
+    subtabs: ["Setup", "Configure"],
+    fields: ["App", "Connection", "Trigger *"],
+    footer: action.footer,
+  });
+  await act(async () => root.unmount());
+});
+
+test("A3: the same flow from Search all apps; without progressive commit, Configure's Add node adds it", async () => {
   const { api, calls } = makeTriggerApi();
   const { container, root } = await mountTriggers(api, calls);
   await click(byText(container, "Search all apps"));
@@ -315,18 +401,21 @@ test("A3: the same flow from Search all apps", async () => {
   );
   await click(card);
   await flush();
-  await pickAndAdd(container);
-  assert.deepEqual(calls.added, [EXPECTED]);
+  await pick(container, "Event Updated");
+  await click(byText(container, "Next →"));
+  const add = byText(container, "Add node");
+  assert.ok(add?.disabled, "a required param gates the add");
+  await typeInto(container.querySelector(".w6w-stepconfig-body input"), "org_9");
+  await click(byText(container, "Add node"));
+  assert.deepEqual(calls.added, [{ uses: EXPECTED_USES, with: { organization: "org_9" } }]);
   assert.equal(calls.subs, 0);
   await act(async () => root.unmount());
 });
 
-test("A4: '+ New' in the account step resolves AddConnectionModal's initialAppId to the app", async () => {
+test("A4: '+ New' on the Setup screen resolves AddConnectionModal's initialAppId to the app", async () => {
   const { api, calls } = makeTriggerApi();
   const { container, root } = await mountTriggers(api, calls);
-  const col = container.querySelector(".w6w-readytouse-col");
-  await click(buttons(col as Element).find((b) => b.textContent?.includes("Eventbrite")));
-  await flush();
+  await openEventbrite(container);
   const before = calls.byIds.length;
   await click(byText(container, "+ New"));
   await flush();
@@ -337,21 +426,17 @@ test("A4: '+ New' in the account step resolves AddConnectionModal's initialAppId
   await act(async () => root.unmount());
 });
 
-test("A5: an auto-satisfied app skips the account step and emits no connection key", async () => {
+test("A5: an auto-satisfied app needs no account and emits no connection key", async () => {
   const { api, calls } = makeTriggerApi({
     auths: [{ key: "t", type: "tenantAuth", available: true, autoSatisfied: true }],
   });
-  const { container, root } = await mountTriggers(api, calls);
-  const col = container.querySelector(".w6w-readytouse-col");
-  await click(buttons(col as Element).find((b) => b.textContent?.includes("Eventbrite")));
-  await flush();
-  assert.ok(!byText(container, "Next →"), "no account step");
-  await click(trig(container, "Event Created"));
-  await click(byText(container, "Add trigger"));
+  const { container, root } = await mountTriggers(api, calls, { onDraftChange: () => {} });
+  await openEventbrite(container);
+  assert.match(container.textContent ?? "", /Connected automatically/);
+  await pick(container, "Event Created");
   assert.deepEqual(calls.added, [
-    { uses: { app: "eventbrite", action: "event-created", trigger: true } },
+    { uses: { app: "eventbrite", action: "event-created", trigger: true }, with: {} },
   ]);
-  assert.ok(!("connection" in (calls.added[0] as { uses: object }).uses));
   await act(async () => root.unmount());
 });
 
@@ -391,21 +476,19 @@ test("A4: '+ New' -> Save connection -> created id becomes uses.connection", asy
     created = true;
     return { id: "conn_NEW" };
   };
-  const { container, root } = await mountTriggers(api, calls);
-  const col = container.querySelector(".w6w-readytouse-col");
-  await click(buttons(col as Element).find((b) => b.textContent?.includes("Eventbrite")));
-  await flush();
+  const { container, root } = await mountTriggers(api, calls, { onDraftChange: () => {} });
+  await openEventbrite(container);
   await click(byText(container, "+ New"));
   await flush();
   await click(byText(container, "Save connection"));
   await flush();
   assert.equal(createdFor, "eventbrite");
-  await click(byText(container, "Next →"));
-  await flush();
-  await click(trig(container, "Event Created"));
-  await click(byText(container, "Add trigger"));
+  await pick(container, "Event Created");
   assert.deepEqual(calls.added, [
-    { uses: { app: "eventbrite", action: "event-created", connection: "conn_NEW", trigger: true } },
+    {
+      uses: { app: "eventbrite", action: "event-created", connection: "conn_NEW", trigger: true },
+      with: {},
+    },
   ]);
   await act(async () => root.unmount());
 });

@@ -317,18 +317,20 @@ test("A3: a second trigger (uses.trigger) stays floating — no edge into it", a
   await flush();
   await click(buttons().find((b) => b.textContent?.includes("Eventbrite")));
   await flush();
-  await click(byText("Next →"));
-  await flush();
-  await click(buttons().find((b) => b.querySelector("strong")?.textContent === "Event Updated"));
-  const input = document.querySelector(".w6w-stepbuilder-config input") as HTMLInputElement;
+  // The app-action flow's Setup screen: picking the trigger adds the node.
+  const picker = document.querySelector(
+    '.w6w-stepbuilder-config input[role="combobox"]',
+  ) as HTMLInputElement;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")?.set?.call(
-      input,
-      "o",
-    );
-    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    picker.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }));
   });
-  await click(byText("Add trigger"));
+  const option = Array.from(document.querySelectorAll('[role="option"]')).find((o) =>
+    (o.textContent ?? "").startsWith("Event Updated"),
+  );
+  assert.ok(option, "Event Updated is listed");
+  await act(async () => {
+    option.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
+  });
   await flush();
   const last = changes.at(-1);
   assert.ok(last, "onChange fired");
