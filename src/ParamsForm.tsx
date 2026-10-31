@@ -196,7 +196,10 @@ export function ParamsForm({ params, values, onChange, readOnly, dynamic }: Para
         if (p.type !== "code") continue;
         const current = values[p.key];
         const isUntouchedBoilerplate =
-          current === undefined || current === p.default || current === PYTHON_CODE_DEFAULT;
+          current === undefined ||
+          current === p.default ||
+          current === PYTHON_CODE_DEFAULT ||
+          LEGACY_CODE_DEFAULTS.includes(current as string);
         if (isUntouchedBoilerplate) {
           next[p.key] = value === "python" ? PYTHON_CODE_DEFAULT : p.default;
         }
@@ -404,7 +407,15 @@ function RepeatField({
 /** The Python default snippet for a `code` param when its sibling `language`
  *  resolves to `"python"` (D-3) — a working `return input`-equivalent, same
  *  shape/intent as `SCRIPT_APP`'s JS default in `flow-types.ts`. */
-const PYTHON_CODE_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
+const PYTHON_CODE_DEFAULT =
+  "# `input` holds the data bound under Input (e.g. an upstream step's output).\n# Runs as a function body. Return the step's output.\nreturn input";
+
+/** The script defaults before they mentioned `input` — still untouched boilerplate a
+ *  `language` switch may swap, on a step saved before the wording changed. */
+const LEGACY_CODE_DEFAULTS = [
+  "// Runs as a function body. Return the step's output.\nreturn input;",
+  "# Runs as a function body. Return the step's output.\nreturn input",
+];
 
 function ParamField(props: ParamFieldProps) {
   const dyn = useContext(DynamicFieldsCtx);
@@ -1141,6 +1152,7 @@ function JsonParamField({
   const [expanded, setExpanded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const exprOptions = useExpressionOptions();
+  const upstream = exprOptions.steps ?? [];
 
   // Re-seed when the field identity changes OR the incoming value changes to
   // something other than what the current draft already represents — i.e. an
@@ -1314,6 +1326,24 @@ function JsonParamField({
         <span className="w6w-hint" style={{ color: "var(--w6w-danger)" }}>
           Invalid JSON
         </span>
+      )}
+      {/* One click binds the whole value to an upstream step's output — the binding the
+          ƒx picker would store, without having to know the `nodes.<id>.output` spelling. */}
+      {param.whole && !bound && !readOnly && upstream.length > 0 && (
+        <div className="w6w-seed-chips w6w-json-quickbind">
+          <span className="w6w-muted w6w-small">Use the output of</span>
+          {upstream.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="w6w-chip w6w-seed-chip"
+              title={`Bind ${label} to {{ nodes.${s.id}.output }}`}
+              onClick={() => onChange(param.key, `{{ nodes.${s.id}.output }}`)}
+            >
+              <code>{s.id}</code>
+            </button>
+          ))}
+        </div>
       )}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
 

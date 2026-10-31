@@ -831,12 +831,20 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         hint: "Execution language for this step's code. Python runs CPython-on-WASM with no network.",
       },
       {
+        key: "input",
+        type: "json",
+        label: "Input",
+        whole: true,
+        hint: 'What the script reads as `input` (null when empty). Bind one step\'s output: {{ nodes.<step-id>.output }}. Or an object of several: {"ticket": "{{ nodes.<step-id>.output }}", "email": "{{ nodes.<other-id>.output.email }}"}. Each value keeps its type.',
+      },
+      {
         key: "code",
         type: "code",
         label: "Script",
         required: true,
-        default: "// Runs as a function body. Return the step's output.\nreturn input;",
-        hint: "Function body; return the step's output.",
+        default:
+          "// `input` holds the data bound under Input (e.g. an upstream step's output).\n// Runs as a function body. Return the step's output.\nreturn input;",
+        hint: "Function body; return the step's output. Read data from `input`: {{ }} is not substituted in code, so bind what the script needs under Input. digest(value) returns a stable SHA-256 hex (await it in JavaScript).",
       },
     ],
   },

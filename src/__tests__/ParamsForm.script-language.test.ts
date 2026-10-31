@@ -65,8 +65,12 @@ const { ParamsForm } = await import("../ParamsForm.tsx");
 const { internalNodeParams, internalNodeDefaults, SCRIPT_APP } = await import("../flow-types.ts");
 type ActionParam = import("../types.ts").ActionParam;
 
-const JS_DEFAULT = "// Runs as a function body. Return the step's output.\nreturn input;";
-const PYTHON_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
+const JS_DEFAULT =
+  "// `input` holds the data bound under Input (e.g. an upstream step's output).\n// Runs as a function body. Return the step's output.\nreturn input;";
+const PYTHON_DEFAULT =
+  "# `input` holds the data bound under Input (e.g. an upstream step's output).\n# Runs as a function body. Return the step's output.\nreturn input";
+// The defaults before they named `input` — what a step saved earlier still stores.
+const LEGACY_JS_DEFAULT = "// Runs as a function body. Return the step's output.\nreturn input;";
 
 function mountRoot() {
   const container = document.getElementById("root");
@@ -332,6 +336,20 @@ test("g — python → javascript: an untouched Python default swaps back to the
     JS_DEFAULT,
     "values.code (the real onChange output) must swap back to the JS default too",
   );
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("h — a step saved with the pre-`input` JS default still counts as boilerplate and swaps", async () => {
+  const { container, root, values } = await render(SCRIPT_PARAMS, {
+    language: "javascript",
+    code: LEGACY_JS_DEFAULT,
+  });
+  await setLanguage(container, "python");
+  assert.equal(viewFor(container, "code code").state.doc.toString(), PYTHON_DEFAULT);
+  assert.equal(values.current.code, PYTHON_DEFAULT);
 
   await act(async () => {
     root.unmount();

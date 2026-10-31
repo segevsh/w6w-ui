@@ -31,6 +31,11 @@ export interface ResolvedParamsProps {
    * the trigger arm, and two side by side is a defect, not a feature).
    */
   view?: "props" | "code";
+  /**
+   * Param keys the host sends as SOURCE TEXT, never resolved (`@w6w/script`'s `code`, the
+   * engine's `LITERAL_PARAMS`): shown verbatim, so a `{{ }}` in them never reads as a value.
+   */
+  literalKeys?: readonly string[];
 }
 
 /**
@@ -50,6 +55,7 @@ export function ResolvedParams({
   values,
   testStartState,
   view = "props",
+  literalKeys,
 }: ResolvedParamsProps) {
   const { sampleValues } = useExpressionOptions();
   const scope = useMemo(
@@ -73,7 +79,7 @@ export function ResolvedParams({
     // Derived fresh on every render from `values` — no draft state — so
     // editing the incoming-state override above updates this text live,
     // exactly as it already updates the row list (A5).
-    const json = buildResolvedJson(visibleRows, values, scope);
+    const json = buildResolvedJson(visibleRows, values, scope, literalKeys);
     return (
       <div className="w6w-resolved-params">
         <JsonEditor
@@ -127,10 +133,11 @@ export function ResolvedParams({
           <ResolvedParamRow
             key={param.key}
             label={param.label ?? param.key}
-            segments={resolveParamValue(
-              values[param.key] !== undefined ? values[param.key] : param.default,
-              scope,
-            )}
+            segments={
+              literalKeys?.includes(param.key)
+                ? [{ status: "resolved", value: effective(param.key) }]
+                : resolveParamValue(effective(param.key), scope)
+            }
           />
         ),
       )}
@@ -149,10 +156,13 @@ function buildResolvedJson(
   rows: ActionParam[],
   values: Record<string, unknown>,
   scope: ResolveScope,
+  literalKeys?: readonly string[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const param of rows) {
-    if (param.type === "vars") {
+    if (literalKeys?.includes(param.key)) {
+      out[param.key] = values[param.key] !== undefined ? values[param.key] : param.default;
+    } else if (param.type === "vars") {
       const raw = Array.isArray(values[param.key])
         ? (values[param.key] as DataVar[])
         : Array.isArray(param.default)
