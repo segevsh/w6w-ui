@@ -23,6 +23,8 @@ function foldOne(seg: ResolvedSegment): unknown {
       return seg.value === undefined ? "<not set>" : seg.value;
     case "unresolved":
       return `<unresolved: ${seg.ref}>`;
+    case "at-run":
+      return `<resolved at run: ${seg.ref}>`;
     case "not-evaluated":
       return "<not evaluated>";
     case "masked":

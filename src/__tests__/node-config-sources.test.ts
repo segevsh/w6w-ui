@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { TRIGGER_APP, WEBHOOK_APP } from "../flow-types.ts";
 import type { FlowWorkflow } from "../flow-types.ts";
 import { workflowToFlow } from "../flow-utils.ts";
-import { nodeConfigSources } from "../step-preview-state.ts";
+import { nodeConfigSources, nodeConfigValues } from "../step-preview-state.ts";
 
 const flow = workflowToFlow({
   nodes: [
@@ -35,4 +35,33 @@ test("every node with configuration is offered — upstream or not", () => {
     { id: "ev", keys: ["url"] },
     { id: "data_1", keys: ["vars"] },
   ]);
+});
+
+test("each node's config values: static `with` (no secret, no binding) + a webhook's subscription url", () => {
+  const subs = [
+    {
+      id: "sub_ev",
+      appId: "eventbrite",
+      triggerKey: "x",
+      workflowId: "w",
+      connectionId: null,
+      nodeId: "ev",
+    },
+    {
+      id: "sub_hook",
+      appId: WEBHOOK_APP,
+      triggerKey: "webhook",
+      workflowId: "w",
+      connectionId: null,
+      webhookUrl: "https://h/triggers/webhooks/sub_hook",
+    },
+  ];
+  assert.deepEqual(nodeConfigValues(flow.nodes, subs), {
+    webhook_1: { auth: "basic", methods: ["POST"], url: "https://h/triggers/webhooks/sub_hook" },
+    data_1: { vars: [] },
+  });
+  // No subscription loaded: the authored literals only, never a sealed value.
+  const bare = nodeConfigValues(flow.nodes, []);
+  assert.deepEqual(bare.webhook_1, { auth: "basic", methods: ["POST"] });
+  assert.ok(!JSON.stringify(bare).includes("ciphertext"));
 });
