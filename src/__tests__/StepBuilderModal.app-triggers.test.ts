@@ -352,7 +352,7 @@ test("A3: Eventbrite -> account already picked on the one Setup screen -> clicki
   await act(async () => root.unmount());
 });
 
-test("A3: the trigger flow has the action flow's steps — same Setup screen, Trigger in Action's place, no Test", async () => {
+test("A3: the trigger flow has the action flow's steps — same Setup screen and tabs, Trigger in Action's place", async () => {
   const { api, calls } = makeTriggerApi();
   (api as unknown as Record<string, unknown>).getAppActions = async () => [
     { key: "get-event", title: "Get Event", params: [] },
@@ -384,14 +384,14 @@ test("A3: the trigger flow has the action flow's steps — same Setup screen, Tr
     footer: ["Cancel", "Next →"],
   });
   assert.deepEqual(trigger, {
-    subtabs: ["Setup", "Configure"],
+    subtabs: action.subtabs,
     fields: ["App", "Connection", "Trigger *"],
     footer: action.footer,
   });
   await act(async () => root.unmount());
 });
 
-test("A3: the same flow from Search all apps; without progressive commit, Configure's Add node adds it", async () => {
+test("A3: the same flow from Search all apps; without progressive commit, Test's Add node adds it", async () => {
   const { api, calls } = makeTriggerApi();
   const { container, root } = await mountTriggers(api, calls);
   await click(byText(container, "Search all apps"));
@@ -403,9 +403,10 @@ test("A3: the same flow from Search all apps; without progressive commit, Config
   await flush();
   await pick(container, "Event Updated");
   await click(byText(container, "Next →"));
-  const add = byText(container, "Add node");
-  assert.ok(add?.disabled, "a required param gates the add");
+  assert.ok(byText(container, "Next →")?.disabled, "a required param gates Configure");
   await typeInto(container.querySelector(".w6w-stepconfig-body input"), "org_9");
+  await click(byText(container, "Next →"));
+  assert.match(container.textContent ?? "", /Event Updated runs when Eventbrite reports it/);
   await click(byText(container, "Add node"));
   assert.deepEqual(calls.added, [{ uses: EXPECTED_USES, with: { organization: "org_9" } }]);
   assert.equal(calls.subs, 0);
@@ -490,5 +491,20 @@ test("A4: '+ New' -> Save connection -> created id becomes uses.connection", asy
       with: {},
     },
   ]);
+  await act(async () => root.unmount());
+});
+
+test("A3: with progressive commit, a picked trigger is handed to the host's step editor (onOpenStep)", async () => {
+  const { api, calls } = makeTriggerApi();
+  const opened: string[] = [];
+  const { container, root } = await mountTriggers(api, calls, {
+    onDraftChange: () => {},
+    onOpenStep: (id: string) => opened.push(id),
+  });
+  await openEventbrite(container);
+  assert.deepEqual(opened, []);
+  await pick(container, "Event Updated");
+  assert.equal(calls.added.length, 1);
+  assert.deepEqual(opened, ["step_1"]);
   await act(async () => root.unmount());
 });

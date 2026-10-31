@@ -204,7 +204,10 @@ test("A5: workflowToFlow -> flowToWorkflow keeps T1's uses/with (independent lit
   assert.equal(back.nodes.length, 4);
 });
 
-test("A4: editing T1 opens AppTriggerConfig preselected; changing the param emits onChange with trigger:true and the same id", async () => {
+const subtabs = () =>
+  Array.from(document.querySelectorAll(".w6w-subtab")).map((b) => (b.textContent ?? "").trim());
+
+test("A4: editing T1 opens the SAME step editor as an action (Setup · Configure · Test), on its params", async () => {
   const { container, root, changes } = await mountEditor(makeWorkflow());
   // Open the editor: double-click the app trigger node.
   await act(async () => {
@@ -212,13 +215,15 @@ test("A4: editing T1 opens AppTriggerConfig preselected; changing the param emit
   });
   await flush();
   await flush();
-  assert.ok(byText("Add trigger"), "AppTriggerConfig's trigger step is open");
-  const sel = document.querySelector('[data-selected="true"] strong');
-  assert.equal(sel?.textContent, "Event Updated");
+  const modal = document.querySelector('[aria-label="Edit step"]');
+  assert.ok(modal, "the step editor is open");
+  assert.equal(modal.querySelector(".w6w-step-rename code")?.textContent, "T1");
+  assert.deepEqual(subtabs(), ["Setup", "Configure", "Test"]);
+  assert.ok(!byText("Add trigger"), "no separate Add trigger button");
   const input = document.querySelector(
-    ".w6w-stepbuilder-config input:not([type=hidden])",
+    ".w6w-stepconfig-body input:not([type=hidden])",
   ) as HTMLInputElement;
-  assert.equal(input?.value, "org_1", "the stored `with` is preselected");
+  assert.equal(input?.value, "org_1", "Configure shows the stored `with`");
   await act(async () => {
     Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")?.set?.call(
       input,
@@ -226,27 +231,38 @@ test("A4: editing T1 opens AppTriggerConfig preselected; changing the param emit
     );
     input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
   });
-  await click(byText("Add trigger"));
   const last = changes.at(-1);
   assert.ok(last, "onChange fired");
   const t1 = last.nodes.find((n: { id: string }) => n.id === "T1");
   assert.deepEqual(t1?.uses, { ...T1_USES });
   assert.deepEqual(t1?.with, { organization: "org_2" });
   assert.equal(last.nodes.length, 4, "same node, no duplicate");
+  // Setup: the app, its account and the trigger, where an action's Action sits.
+  await click(byText("Setup"));
+  const labels = Array.from(
+    document.querySelectorAll(".w6w-stepconfig-body .w6w-field > span:first-child"),
+  ).map((n) => (n.textContent ?? "").trim());
+  assert.ok(labels.includes("Trigger"), `Setup labels: ${labels}`);
+  assert.ok(!labels.includes("Action"));
   void container;
   await act(async () => root.unmount());
 });
 
-test("A4: StepEditModal for a uses.trigger node never reads getAppActions", async () => {
+test("A4: StepEditModal for a uses.trigger node reads getAppTriggers, never getAppActions", async () => {
   const container = document.getElementById("root");
   assert.ok(container);
   container.innerHTML = "";
   const root = createRoot(container);
   let reads = 0;
+  let triggerReads = 0;
   const api = fakeApi({
     getAppActions: async () => {
       reads += 1;
       return [];
+    },
+    getAppTriggers: async () => {
+      triggerReads += 1;
+      return [{ key: "event-updated", title: "Event Updated", params: [] }];
     },
   });
   await act(async () => {
@@ -265,7 +281,9 @@ test("A4: StepEditModal for a uses.trigger node never reads getAppActions", asyn
   });
   await flush();
   assert.equal(reads, 0);
-  assert.ok(byText("Add trigger"));
+  assert.ok(triggerReads >= 1);
+  await click(byText("Test"));
+  assert.match(container.textContent ?? "", /Event Updated runs when/);
   await act(async () => root.unmount());
 });
 
@@ -336,6 +354,11 @@ test("A3: a second trigger (uses.trigger) stays floating — no edge into it", a
   assert.ok(last, "onChange fired");
   const added = last.nodes.find((n: { uses: { trigger?: boolean } }) => n.uses.trigger);
   assert.ok(added, "the app trigger node was added");
+  // …and it opens in its own step editor, on its config.
+  const editor = document.querySelector('[aria-label="Edit step"]');
+  assert.ok(editor, "the new node's step editor is open");
+  assert.equal(editor.querySelector(".w6w-step-rename code")?.textContent, added.id);
+  assert.equal(document.querySelector(".w6w-subtab.active")?.textContent, "Configure");
   assert.deepEqual(
     last.edges,
     [{ from: "T2", to: "B" }],

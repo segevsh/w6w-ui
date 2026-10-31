@@ -45,13 +45,14 @@ import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
 import {
-  AppTriggerConfig,
+  AppTriggerTestNote,
   type BuiltStep,
   type ConfigView,
   ConfigViewToggle,
   StepBuilderModal,
   StepTestRun,
   type StepTestRunHandle,
+  getTriggerDefs,
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
@@ -1931,6 +1932,15 @@ function Inner({
                       // the step's id, every subsequent field change updates that
                       // same node instead of waiting for a final "Add node" click.
                       onDraftChange={(id, next) => updateStep(id, { id, ...next })}
+                      // A picked app trigger lands in the node's own step editor,
+                      // on its config, the way any node opens.
+                      onOpenStep={(id) => {
+                        setBuilderOpen(false);
+                        setPendingConnect(null);
+                        setDraftStepId(null);
+                        setEditView("props");
+                        setEditingId(id);
+                      }}
                       workflowId={value.id}
                       // The new step's known upstream ancestors, from the handle a
                       // connection drag was released from (T1.1.1) — so the builder's
@@ -2933,40 +2943,9 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
 export function StepEditModal(props: StepEditModalProps) {
-  // An app trigger node edits as account + trigger + params (`AppTriggerConfig`),
-  // never through the action form: `getAppActions` has no such action.
-  if (props.step.uses.trigger) return <AppTriggerEditModal {...props} />;
+  // One editor for every node. An app trigger node rides the action editor:
+  // Setup (app, account, trigger) · Configure (its params) · Test.
   return <ActionStepEditModal {...props} />;
-}
-
-function AppTriggerEditModal({ step, onChange, onClose }: StepEditModalProps) {
-  const apps = useContext(AppsCtx);
-  const app = apps.get(step.uses.app);
-  return (
-    <Modal
-      ariaLabel="Edit step"
-      title={app?.displayName ?? step.uses.app}
-      subtitle={<code>{step.id}</code>}
-      onClose={onClose}
-    >
-      <div className="w6w-stepbuilder-config">
-        <AppTriggerConfig
-          appId={step.uses.app}
-          app={app}
-          initialConnection={step.uses.connection ?? undefined}
-          initialTrigger={step.uses.action}
-          initialWith={step.with}
-          onDone={(built) => {
-            // Keep the node's id/position/settings; take the picked uses + with.
-            const { with: _prev, ...rest } = step;
-            onChange({ ...rest, uses: built.uses, ...(built.with ? { with: built.with } : {}) });
-            onClose();
-          }}
-          onClose={onClose}
-        />
-      </div>
-    </Modal>
-  );
 }
 
 interface StepEditModalProps {
@@ -3047,6 +3026,8 @@ function ActionStepEditModal({
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
   const [connsFailed, setConnsFailed] = useState(false);
   const isInternal = isInternalApp(step.uses.app);
+  // An app trigger node (`uses.trigger`): its "actions" are the app's triggers.
+  const isAppTrigger = step.uses.trigger === true;
 
   // Refetch actions + params whenever the app/action identity changes. P-3:
   // this must refetch on an APP change alone (action `""` included) — an
@@ -3065,8 +3046,7 @@ function ActionStepEditModal({
     }
     let canceled = false;
     setParams(null);
-    api
-      .getAppActions(step.uses.app)
+    (isAppTrigger ? getTriggerDefs(api, step.uses.app) : api.getAppActions(step.uses.app))
       .then((acts) => {
         if (canceled) return;
         setActions(acts);
@@ -3078,7 +3058,7 @@ function ActionStepEditModal({
     return () => {
       canceled = true;
     };
-  }, [api, step.uses.app, step.uses.action, isInternal]);
+  }, [api, step.uses.app, step.uses.action, isInternal, isAppTrigger]);
 
   const refetchConns = useCallback(() => {
     if (isInternal || !step.uses.app) return;
@@ -3336,6 +3316,7 @@ function ActionStepEditModal({
               conns={conns}
               connsFailed={connsFailed}
               isInternal={isInternal}
+              actionLabel={isAppTrigger ? "Trigger" : "Action"}
               readOnly={readOnly}
               onChangeAction={(action) =>
                 commit({ ...step, uses: { ...step.uses, action }, with: {} })
@@ -3354,7 +3335,12 @@ function ActionStepEditModal({
                     ? step
                     : {
                         ...step,
-                        uses: { app: appId, action: "", connection: undefined },
+                        uses: {
+                          app: appId,
+                          action: "",
+                          connection: undefined,
+                          ...(isAppTrigger ? { trigger: true as const } : {}),
+                        },
                         with: {},
                       },
                 )
@@ -3465,7 +3451,14 @@ function ActionStepEditModal({
           {tab === "test" && (
             <div className="w6w-stack">
               {testable ? (
-                isTrigger ? (
+                isAppTrigger ? (
+                  <AppTriggerTestNote
+                    title={
+                      actions?.find((a) => a.key === step.uses.action)?.title ?? step.uses.action
+                    }
+                    app={app?.displayName ?? step.uses.app}
+                  />
+                ) : isTrigger ? (
                   <TriggerFillForm
                     app={step.uses.app}
                     action={step.uses.action}
@@ -3851,6 +3844,7 @@ function SetupTab({
   conns,
   connsFailed,
   isInternal,
+  actionLabel = "Action",
   readOnly,
   onChangeAction,
   onChangeConnection,
@@ -3864,6 +3858,8 @@ function SetupTab({
   /** The connections fetch rejected — a distinct state, never "missing". */
   connsFailed: boolean;
   isInternal: boolean;
+  /** The picked thing's name: "Action", or "Trigger" on an app trigger node. */
+  actionLabel?: string;
   readOnly?: boolean;
   onChangeAction: (action: string) => void;
   onChangeConnection: (connection: string | undefined) => void;
@@ -4008,7 +4004,7 @@ function SetupTab({
       ) : (
         // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
         <label className="w6w-field">
-          <span>Action</span>
+          <span>{actionLabel}</span>
           {/* While the action manifest is still loading there is nothing to pick
               from: the current action renders as the single option, so the field
               keeps showing the step's action instead of going empty. */}
