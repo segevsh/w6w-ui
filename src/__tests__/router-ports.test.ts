@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
-  ROUTER_PORT_STEP,
   ROUTER_PORTS_AT_BASE_HEIGHT,
+  ROUTER_PORT_STEP,
   type RouterRoute,
   routeHandle,
   routerPortLayout,
