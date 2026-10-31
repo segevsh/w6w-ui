@@ -2642,6 +2642,9 @@ function PortHandle({
       style={{
         ...(multiple ? { height: 22, borderRadius: 3, width: 8 } : {}),
         ...(top ? { top } : {}),
+        ...(routeLabel
+          ? { left: "calc(100% + 28px)", right: "auto", transform: "translate(-50%, -50%)" }
+          : {}),
       }}
       // A click (no drag) adds a step from this port; a drag still draws a connection.
       onClick={canAdd ? add : undefined}
@@ -2982,6 +2985,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const routes = routesForStep(step);
+  const isRouter = step.uses.app === ROUTER_APP;
   const routeKey = JSON.stringify(routes.map((r) => r.id));
   const updateNodeInternals = useUpdateNodeInternals();
   // biome-ignore lint/correctness/useExhaustiveDependencies: route identities and order change handle positions.
@@ -3015,7 +3019,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
       {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
       <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
       <div
-        className={isTrigger ? "w6w-node-trigger" : undefined}
+        className={isTrigger ? "w6w-node-trigger" : isRouter ? "w6w-node-router" : undefined}
         data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
         {...problemAttrs(data.stepProblems)}
@@ -3033,8 +3037,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           // A trigger's half-pill radius + padding live in `.w6w-node-trigger`
           // (styles/_flow.scss): an inline value here would beat the class.
           ...(isTrigger ? {} : { borderRadius: 4, padding: "6px 14px 6px 8px" }),
-          minWidth: routes.length ? 300 : 140,
-          ...(routes.length ? { minHeight: Math.max(60, routes.length * 30) } : {}),
+          minWidth: 140,
           fontSize: 13,
           display: "flex",
           alignItems: "center",
@@ -3070,33 +3073,33 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
               />
             )}
             {routes.length ? (
-              routes.map((route, index) => (
-                <div key={route.id}>
-                  <span
-                    className="w6w-small"
-                    style={{
-                      position: "absolute",
-                      right: 14,
-                      top: `${((index + 0.5) * 100) / routes.length}%`,
-                      transform: "translateY(-50%)",
-                    }}
-                  >
-                    {route.label || route.id}
-                  </span>
-                  <PortHandle
-                    type="source"
-                    position={Position.Right}
-                    multiple={false}
-                    id={routeHandle(route.id)}
-                    top={`${((index + 0.5) * 100) / routes.length}%`}
-                    routeLabel={route.label || route.id}
-                  />
-                </div>
-              ))
+              routes.map((route, index) => {
+                const offset = (index - (routes.length - 1) / 2) * 24;
+                const routeLabel = route.default ? "Fallback" : route.label || route.id;
+                const top = `calc(50% + ${offset}px)`;
+                return (
+                  <div key={route.id}>
+                    <svg className="w6w-router-port-link" aria-hidden="true">
+                      <path d={`M 0 0 C 14 0, 14 ${offset}, 28 ${offset}`} />
+                    </svg>
+                    <span className="w6w-router-port-label" style={{ top }} title={routeLabel}>
+                      {routeLabel}
+                    </span>
+                    <PortHandle
+                      type="source"
+                      position={Position.Right}
+                      multiple={false}
+                      id={routeHandle(route.id)}
+                      top={top}
+                      routeLabel={routeLabel}
+                    />
+                  </div>
+                );
+              })
             ) : (
               <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
             )}
-            {!isTrigger && (
+            {!isTrigger && !isRouter && (
               <PortHandle
                 type="source"
                 position={Position.Bottom}
