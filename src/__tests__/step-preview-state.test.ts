@@ -16,11 +16,15 @@ import type { StepNode } from "../flow-utils.ts";
 import { workflowToFlow } from "../flow-utils.ts";
 import type { StepMeta, StepTest } from "../provider.tsx";
 import {
+  FOREACH_TEST_SAMPLE_MAX,
   fetchSeedSources,
+  foreachTestFixture,
+  foreachTestSample,
   loopItemText,
   loopSeedFromSource,
   parseLoopSeed,
   resolveLoopItems,
+  resolveLoopItemsInState,
   startStateFromSeeds,
   stepBuilderLoop,
   stepBuilderUpstreamSteps,
@@ -490,7 +494,8 @@ test("L1 — body step: loop source with element [0] and its fields; For each dr
     itemOutputs: ["name", "sourceId", "price", "quantity"].map((key) => ({ key, path: true })),
   });
   assert.deepEqual(ids(r), ["create_event_1", "eventbrite_to_cohost_1"]);
-  assert.equal(r.extraSampleIds, undefined);
+  // The enclosing For each's own saved Test is fetched too (its item sample).
+  assert.deepEqual(r.extraSampleIds, ["for_each_1"]);
 });
 
 test("an If draft inside a foreach exposes the current webhook fields and preview values", () => {
@@ -632,6 +637,49 @@ test("L5 — resolveLoopItems: whole-value ref, literal array, anything else", (
     resolveLoopItems("{{ nodes.eventbrite_to_cohost_1.output.tickets.0 }}", out),
     undefined,
   );
+});
+
+test("FT1 — resolveLoopItemsInState: steps and trigger.event refs; nothing else resolves", () => {
+  const state = { steps: { eventbrite_to_cohost_1: { output: { tickets: TICKETS } } } };
+  assert.deepEqual(resolveLoopItemsInState(ITEMS_REF, state), TICKETS);
+  assert.deepEqual(
+    resolveLoopItemsInState("{{ trigger.event.rows }}", { trigger: { event: { rows: [1, 2] } } }),
+    [1, 2],
+  );
+  assert.equal(resolveLoopItemsInState(ITEMS_REF, undefined), undefined);
+  assert.deepEqual(resolveLoopItemsInState([{ a: 1 }], undefined), [{ a: 1 }]);
+});
+
+test("FT2 — foreachTestFixture caps the sample, keeps the count; foreachTestSample reads it back", () => {
+  const many = Array.from({ length: 25 }, (_, i) => ({ i }));
+  const fx = foreachTestFixture(many, { items: "x" });
+  assert.deepEqual(fx.input, { items: "x" });
+  assert.equal((fx.with.items as unknown[]).length, FOREACH_TEST_SAMPLE_MAX);
+  assert.equal(fx.with.itemCount, 25);
+  const saved = { with: fx.with } as unknown as StepTest;
+  assert.deepEqual(foreachTestSample(saved)?.[0], { i: 0 });
+  assert.equal(foreachTestSample(null), undefined);
+  assert.equal(foreachTestSample({ with: { items: [] } } as unknown as StepTest), undefined);
+  assert.equal(foreachTestSample({ with: {} } as unknown as StepTest), undefined);
+});
+
+test("FT3 — a For each's saved Test sample gives body steps the item keys when nothing upstream resolves", () => {
+  const g = f0();
+  const sample = [{ id: "E1", title: "Gala", seats: 3 }];
+  const r = upstreamStateSources("update_event_ticket_1", g.nodes, g.edges, {
+    loopSamples: { for_each_1: sample },
+  });
+  assert.deepEqual(r.loop, {
+    foreachId: "for_each_1",
+    itemSample: sample[0],
+    itemOutputs: ["id", "title", "seats"].map((key) => ({ key, path: true })),
+  });
+  // Live resolution wins over the saved sample while it resolves.
+  const live = upstreamStateSources("update_event_ticket_1", g.nodes, g.edges, {
+    ...withTickets,
+    loopSamples: { for_each_1: sample },
+  });
+  assert.deepEqual(live.loop?.itemSample, TICKETS[0]);
 });
 
 test("L6 — upstreamSampleValues: nodes. keys mirrored under steps.; foreach.* only with an item sample", () => {

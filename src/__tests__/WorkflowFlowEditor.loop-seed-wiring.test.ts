@@ -297,27 +297,90 @@ const FE_STEP = {
 } as const;
 const GENERIC = "Flow-control nodes can't be tested on their own.";
 
-test("AC6 — For each note: N items / 1 item / no count, no generic line; `if` keeps the generic line", async () => {
-  const { api } = makeApi();
-  const text = async (step: Record<string, unknown>, props: Props) => {
-    const m = await mount(api, step, props);
-    const t = m.container.textContent ?? "";
-    await m.unmount();
-    return t;
-  };
-  const six = await text(FE_STEP, { foreachItemCount: 6 });
-  assert.equal(six.includes("6 items"), true);
-  assert.equal(six.includes("Each item"), true);
-  assert.equal(six.includes(GENERIC), false);
-  const one = await text(FE_STEP, { foreachItemCount: 1 });
-  assert.equal(one.includes("1 item") && !one.includes("1 items"), true);
-  const zero = await text(FE_STEP, { foreachItemCount: 0 });
-  assert.equal(zero.includes("0 items"), true);
-  const none = await text(FE_STEP, {});
-  assert.equal(/\d+ items?/.test(none), false);
-  assert.equal(none.includes("Each item"), true);
-  const iff = await text({ id: "if_1", uses: { app: "@w6w/control", action: "if" } }, {});
-  assert.equal(iff.includes(GENERIC), true);
+// A For each's Test (adhoc/foreach-test): resolves Items against the incoming state, shows
+// the count and the first item, and saves the sample so the body's picker knows the keys.
+function makeForeachApi(upstream: unknown | null) {
+  const saved: { stepId: string; body: { input: unknown; with: Record<string, unknown> } }[] = [];
+  const base = makeApi().api as unknown as Record<string, unknown>;
+  const api = {
+    ...base,
+    listStepTests: async (_wf: string, stepId: string) =>
+      upstream !== null && stepId === "eventbrite_to_cohost_1"
+        ? [
+            {
+              id: "st_up",
+              stepId,
+              input: {},
+              with: {},
+              lastRunStatus: "succeeded",
+              lastRunOutput: upstream,
+            },
+          ]
+        : [],
+    saveStepTest: async (
+      _wf: string,
+      stepId: string,
+      body: { input: unknown; with: Record<string, unknown> },
+    ) => {
+      saved.push({ stepId, body });
+      return { id: "st_fe" };
+    },
+  } as unknown as W6WApi;
+  return { api, saved };
+}
+const FE_UPSTREAM = [{ id: "eventbrite_to_cohost_1", label: "eventbrite_to_cohost_1" }];
+
+test("For each Test — shows the count and the first item, and Test saves the sample", async () => {
+  const { api, saved } = makeForeachApi({ tickets: SIX });
+  const m = await mount(api, FE_STEP, { upstreamSteps: FE_UPSTREAM });
+  await tick();
+  const t = m.container.textContent ?? "";
+  assert.equal(t.includes("6 items"), true);
+  assert.equal(t.includes("First item"), true);
+  assert.equal(t.includes("T0") && t.includes("sourceId"), true);
+  assert.equal(t.includes("T1"), false);
+  assert.equal(t.includes(GENERIC), false);
+  assert.equal(m.footerDisabled(), false);
+  await m.clickTest();
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].stepId, "for_each_1");
+  assert.deepEqual((saved[0].body.with.items as unknown[])[0], SIX[0]);
+  assert.equal(saved[0].body.with.itemCount, 6);
+  const after = m.container.textContent ?? "";
+  assert.equal(after.includes("Saved as this loop's sample"), true);
+  for (const k of ["name", "sourceId", "price", "quantity"]) assert.equal(after.includes(k), true);
+  await m.unmount();
+});
+
+test("For each Test — unresolved Items says so, opens the override, and a pasted array resolves", async () => {
+  const { api, saved } = makeForeachApi(null);
+  const m = await mount(api, FE_STEP, { upstreamSteps: FE_UPSTREAM });
+  const t = m.container.textContent ?? "";
+  assert.equal(t.includes("doesn't resolve to a list yet"), true);
+  assert.equal(/\d+ items?/.test(t), false);
+  const details = m.container.querySelector(".w6w-state-override") as HTMLDetailsElement | null;
+  assert.equal(details?.open, true);
+  assert.equal(m.footerDisabled(), true);
+  await m.setField("Incoming state override (JSON)", JSON.stringify([{ id: 7, title: "Gala" }]));
+  const after = m.container.textContent ?? "";
+  assert.equal(after.includes("1 item") && !after.includes("1 items"), true);
+  assert.equal(after.includes("Gala"), true);
+  await m.clickTest();
+  assert.deepEqual(saved[0].body.with.items, [{ id: 7, title: "Gala" }]);
+  assert.deepEqual(saved[0].body.input, { items: [{ id: 7, title: "Gala" }] });
+  await m.unmount();
+});
+
+test("For each Test — an empty list shows 0 items and cannot be saved; `if` keeps the generic line", async () => {
+  const { api } = makeForeachApi({ tickets: [] });
+  const m = await mount(api, FE_STEP, { upstreamSteps: FE_UPSTREAM });
+  await tick();
+  assert.equal((m.container.textContent ?? "").includes("0 items"), true);
+  assert.equal(m.footerDisabled(), true);
+  await m.unmount();
+  const iff = await mount(api, { id: "if_1", uses: { app: "@w6w/control", action: "if" } }, {});
+  assert.equal((iff.container.textContent ?? "").includes(GENERIC), true);
+  await iff.unmount();
 });
 
 // ── AC5: AST pins for the sites that are not cheaply mountable ─────────────
@@ -400,33 +463,6 @@ function jsxAttr(sf: ts.SourceFile, tag: string, attr: string): ts.Expression {
 test("Inner mounts — <StepEditModal loop> reads mergedExprOptions.loop", () => {
   const sf = parse("../WorkflowFlowEditor.tsx");
   assert.equal(jsxAttr(sf, "StepEditModal", "loop").getText(sf), "mergedExprOptions.loop");
-});
-
-test("Inner mounts — <StepEditModal foreachItemCount> is resolveLoopItems(…with?.items, stepTestOutputs)?.length", () => {
-  const sf = parse("../WorkflowFlowEditor.tsx");
-  const expr = jsxAttr(sf, "StepEditModal", "foreachItemCount");
-  const calls: ts.CallExpression[] = [];
-  const lens: ts.Node[] = [];
-  const v = (n: ts.Node) => {
-    if (ts.isCallExpression(n) && n.expression.getText(sf) === "resolveLoopItems") calls.push(n);
-    if (ts.isPropertyAccessExpression(n) && n.name.getText(sf) === "length") lens.push(n);
-    ts.forEachChild(n, v);
-  };
-  v(expr);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].arguments.length, 2);
-  assert.equal(/\.with\?\.items$/.test(calls[0].arguments[0].getText(sf)), true);
-  assert.equal(calls[0].arguments[1].getText(sf), "stepTestOutputs");
-  assert.equal(lens.length, 1);
-  // the count is the bare `.length` — nothing added to / subtracted from it
-  assert.equal(ts.isConditionalExpression(expr), true);
-  const when = (expr as ts.ConditionalExpression).whenTrue;
-  assert.equal(ts.isPropertyAccessChain(when) || ts.isPropertyAccessExpression(when), true);
-  assert.equal(when.getText(sf).endsWith("?.length"), true);
-  assert.equal(
-    (lens[0] as ts.PropertyAccessExpression).expression.getText(sf).startsWith("resolveLoopItems("),
-    true,
-  );
 });
 
 test("Inner mounts — <StepBuilderModal loop> calls stepBuilderLoop with stepShapes", () => {

@@ -168,6 +168,7 @@ import {
   withViewport,
   workflowToFlow,
 } from "./flow-utils.ts";
+import { inferOutputFields } from "./output-shape.ts";
 // One implementation of the incoming-state pipeline, shared by every surface
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
 // form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
@@ -187,11 +188,13 @@ import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./
 import {
   type SeedSource,
   type StepShapeContext,
+  foreachTestFixture,
+  foreachTestSample,
   loopItemText,
   nodeConfigSources,
   nodeConfigValues,
   parseLoopSeed,
-  resolveLoopItems,
+  resolveLoopItemsInState,
   startStateFromSeeds,
   stepBuilderLoop,
   stepBuilderUpstreamSteps,
@@ -1656,12 +1659,16 @@ function Inner({
   // `steps.<id>.output.<field>` without running anything first.
   const [stepTestOutputs, setStepTestOutputs] = useState<Record<string, unknown>>({});
   const [stepTestMetas, setStepTestMetas] = useState<Record<string, StepMeta>>({});
+  // A For each's own saved Test (its item sample), by step id — read only as the loop's
+  // item-shape fallback (`loopSourceFor`), never as that step's output.
+  const [stepLoopSamples, setStepLoopSamples] = useState<Record<string, unknown[]>>({});
   const stepShapes = useMemo<StepShapeContext>(
     () => ({
       actionDef: (app, action) => actionDefs[app]?.find((a) => a.key === action),
       testOutputs: stepTestOutputs,
+      loopSamples: stepLoopSamples,
     }),
-    [actionDefs, stepTestOutputs],
+    [actionDefs, stepTestOutputs, stepLoopSamples],
   );
   // The ▶ Run modal's projection, kept WHOLE: ONE call yields both the seed chips' ancestors
   // (`.steps`) and the `loop` the Current item / Index seed comes from (never a second membership
@@ -1702,6 +1709,7 @@ function Inner({
     if ((!editingId && !draftStepId) || ids.length === 0) {
       setStepTestOutputs({});
       setStepTestMetas({});
+      setStepLoopSamples({});
       return;
     }
     let canceled = false;
@@ -1714,7 +1722,14 @@ function Inner({
           // `listStepTests` is oldest-first, so the LAST entry is the most recent
           // fixture — the "latest" convention this file already uses twice.
           const latest = tests.length ? tests[tests.length - 1] : null;
-          return latest ? { id, output: latest.lastRunOutput, meta: latest.lastRunMeta } : null;
+          return latest
+            ? {
+                id,
+                output: latest.lastRunOutput,
+                meta: latest.lastRunMeta,
+                loopSample: foreachTestSample(latest),
+              }
+            : null;
         } catch {
           return null;
         }
@@ -1728,13 +1743,16 @@ function Inner({
       if (canceled) return;
       const next: Record<string, unknown> = {};
       const nextMetas: Record<string, StepMeta> = {};
+      const nextLoopSamples: Record<string, unknown[]> = {};
       for (const r of res) {
         if (r?.meta) nextMetas[r.id] = r.meta;
+        if (r?.loopSample) nextLoopSamples[r.id] = r.loopSample;
         if (!r || r.output === undefined || r.output === null) continue;
         next[r.id] = r.output;
       }
       setStepTestOutputs(next);
       setStepTestMetas(nextMetas);
+      setStepLoopSamples(nextLoopSamples);
     });
     return () => {
       canceled = true;
@@ -2165,11 +2183,6 @@ function Inner({
                       // each ancestor's latest saved step-test rather than re-walking the graph.
                       upstreamSteps={mergedExprOptions.steps ?? []}
                       loop={mergedExprOptions.loop}
-                      foreachItemCount={
-                        isForeachStep(editingStep)
-                          ? resolveLoopItems(editingStep.with?.items, stepTestOutputs)?.length
-                          : undefined
-                      }
                       readOnly={readOnly}
                       fanOutCount={fanOutCounts.get(editingId) ?? 0}
                       initialView={editView}
@@ -2329,6 +2342,79 @@ function parseStateOverride(text: string): Record<string, unknown> | null {
 }
 
 /**
+ * A For each Test's override box: the usual JSON object (its `items` key replaces the
+ * binding), or — what a pasted sample usually is — a bare array, taken as `items` itself.
+ */
+function parseForeachOverride(text: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(text);
+    if (Array.isArray(v)) return { items: v };
+  } catch {
+    return null;
+  }
+  return parseStateOverride(text);
+}
+
+type ForeachSave = "idle" | "saving" | "saved" | "failed";
+
+/**
+ * A For each's Test result: what its Items resolve to against the incoming state — the count
+ * and the first item. Nothing inside the loop runs; the footer's Test saves the sample
+ * (`foreachTestFixture`) so the body steps' picker offers the item's keys.
+ */
+function ForeachTestResult({ items, save }: { items: unknown[] | undefined; save: ForeachSave }) {
+  if (!items) {
+    return (
+      <output className="w6w-small" style={{ display: "block" }}>
+        <strong>Items</strong> doesn't resolve to a list yet: no step before this one has a saved
+        test that produces it. Test an earlier step, or paste a sample list under{" "}
+        <strong>Override the incoming state</strong> below.
+      </output>
+    );
+  }
+  const first = items[0];
+  const keys = first !== undefined ? (inferOutputFields(first) ?? []).map((o) => o.key) : [];
+  return (
+    <div className="w6w-testout">
+      <div className="w6w-testout-label">
+        {items.length} {items.length === 1 ? "item" : "items"}
+      </div>
+      {items.length === 0 ? (
+        <p className="w6w-muted w6w-small">The list is empty, so there is no item to sample.</p>
+      ) : (
+        <>
+          <div className="w6w-testout-label">First item</div>
+          <ResultViewer value={first} maxHeight={220} />
+        </>
+      )}
+      {save === "saved" && (
+        <output className="w6w-small" style={{ display: "block" }}>
+          Saved as this loop's sample.
+          {keys.length > 0 && (
+            <>
+              {" "}
+              Steps on <strong>Each item</strong> now offer <strong>Current item</strong> ›{" "}
+              {keys.map((k, i) => (
+                <span key={k}>
+                  {i > 0 && ", "}
+                  <code>{k}</code>
+                </span>
+              ))}
+              .
+            </>
+          )}
+        </output>
+      )}
+      {save === "failed" && (
+        <p className="w6w-small" role="alert">
+          Couldn't save the sample. Try Test again.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * The loop seed a test of a For each BODY step is sent as `state.foreach`: the sample item
  * (editable JSON) and the index (default 0). While "Current item" is untouched it FOLLOWS the
  * loop's `itemSample` (which can arrive after mount); once edited, the edit wins.
@@ -2409,12 +2495,18 @@ function IncomingStateField({
   onChange,
   seeds,
   readOnly,
+  expand,
+  hint,
 }: {
   /** Raw JSON text of the override. `{}` (the default) means "no override". */
   text: string;
   onChange: (next: string) => void;
   seeds: SeedSource[];
   readOnly?: boolean;
+  /** Opens the override disclosure (a caller with nothing to show without one). */
+  expand?: boolean;
+  /** Replaces the default hint under the override box. */
+  hint?: ReactNode;
 }) {
   const parsed = parseStateOverride(text);
   const keyCount = parsed ? Object.keys(parsed).length : 0;
@@ -2430,8 +2522,8 @@ function IncomingStateField({
   // "nothing → something" transition reopens it, so a disclosure the operator
   // closed themselves stays closed while they keep typing in it.
   useEffect(() => {
-    if (hasOverride) setOpen(true);
-  }, [hasOverride]);
+    if (hasOverride || expand) setOpen(true);
+  }, [hasOverride, expand]);
   // Seeding from an ancestor uses the output its last run captured; only a
   // fixture that never ran falls back to its own captured incoming state.
   const seedFrom = (test: StepTest) => {
@@ -2483,11 +2575,16 @@ function IncomingStateField({
           onChange={(e) => onChange(e.target.value)}
         />
         <span className="w6w-hint">
-          JSON whose keys replace this step's parameters by name, for this test only — so a script's
-          data goes under <code>input</code>: <code>{'{"input": {…}}'}</code>. Upstream outputs
-          already reach <code>{"{{ nodes.<id>.output }}"}</code> bindings from their saved tests.
-          Reach for this to test against a state the flow cannot currently produce — a field no
-          upstream step returns yet, or a case you can't reproduce by running the flow.
+          {hint ?? (
+            <>
+              JSON whose keys replace this step's parameters by name, for this test only — so a
+              script's data goes under <code>input</code>: <code>{'{"input": {…}}'}</code>. Upstream
+              outputs already reach <code>{"{{ nodes.<id>.output }}"}</code> bindings from their
+              saved tests. Reach for this to test against a state the flow cannot currently produce
+              — a field no upstream step returns yet, or a case you can't reproduce by running the
+              flow.
+            </>
+          )}
         </span>
       </details>
     </div>
@@ -3450,8 +3547,6 @@ interface StepEditModalProps {
   upstreamSteps: ExpressionStepSource[];
   /** The enclosing For each when this step is in its body: seeds `state.foreach` on Test. */
   loop?: ExpressionLoopSource;
-  /** On a For each step: how many items its Items resolve to now (`undefined` = unknown). */
-  foreachItemCount?: number;
   onChange: (next: FlowStep) => void;
   onClose: () => void;
   readOnly?: boolean;
@@ -3469,7 +3564,6 @@ function ActionStepEditModal({
   step: initialStep,
   upstreamSteps,
   loop,
-  foreachItemCount,
   onChange,
   onClose,
   readOnly,
@@ -3615,6 +3709,8 @@ function ActionStepEditModal({
   };
 
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
+  // A For each's Test resolves its Items (nothing runs) and saves the sample.
+  const isForeach = isForeachStep(step);
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
   const isTrigger = isTriggerStep(step.uses);
@@ -3628,7 +3724,11 @@ function ActionStepEditModal({
   // The editing step's graph ancestors that carry a saved step-test, offered as
   // one-click seeds for the incoming state. The SAME hook the canvas ▶ Run
   // collect form uses — one implementation, so the two surfaces cannot drift.
-  const seedSources = useSeedSources(workflowId, upstreamSteps, testable && !isTrigger);
+  const seedSources = useSeedSources(
+    workflowId,
+    upstreamSteps,
+    (testable && !isTrigger) || isForeach,
+  );
   // …and the start state the test is SENT with, from those same fixtures. This
   // is what makes `{{ steps.<id>.output.<field> }}` in this step's `with`
   // resolve to what that step last produced instead of to "".
@@ -3640,7 +3740,7 @@ function ActionStepEditModal({
   // surfaces write it. Applied only while the box is still untouched, so a slow
   // list can never overwrite what the operator is typing.
   useEffect(() => {
-    if (!testable || isTrigger) return;
+    if ((!testable || isTrigger) && !isForeach) return;
     let canceled = false;
     api
       .listStepTests(workflowId, step.id)
@@ -3657,17 +3757,36 @@ function ActionStepEditModal({
     return () => {
       canceled = true;
     };
-  }, [api, workflowId, step.id, testable, isTrigger]);
+  }, [api, workflowId, step.id, testable, isTrigger, isForeach]);
 
   // The incoming-state override, and the payload it produces. The step's STORED
   // configuration is what runs; the override is merged over it. A box that is
   // not a JSON object overrides nothing (see `parseStateOverride`).
-  const testOverride = parseStateOverride(testState);
+  const testOverride = isForeach ? parseForeachOverride(testState) : parseStateOverride(testState);
   const testValues = { ...(step.with ?? {}), ...(testOverride ?? {}) };
   // The resolved incoming state saved alongside the fixture — the slot the ▶ Run
   // collect form reads back, and what the upstream seed chips write into.
   const testInput = testOverride ?? {};
   const canTest = !!params && !loopSeedError(loopSeed) && requiredParamsFilled(params, testValues);
+  // A For each's Test: its Items against the same start state, and the save of the sample.
+  const foreachItems = isForeach
+    ? resolveLoopItemsInState(testValues.items, testStartState)
+    : undefined;
+  const [foreachSave, setForeachSave] = useState<ForeachSave>("idle");
+  const changeTestState = (next: string) => {
+    setTestState(next);
+    setForeachSave("idle");
+  };
+  const saveForeachTest = async () => {
+    if (!foreachItems) return;
+    setForeachSave("saving");
+    try {
+      await api.saveStepTest(workflowId, step.id, foreachTestFixture(foreachItems, testInput));
+      setForeachSave("saved");
+    } catch {
+      setForeachSave("failed");
+    }
+  };
 
   // Header icon mirrors the canvas node: the app's icon for app steps, the
   // internal glyph for triggers/actions/control nodes (same as the node cards).
@@ -4031,18 +4150,30 @@ function ActionStepEditModal({
                     />
                   </>
                 )
-              ) : isForeachStep(step) ? (
+              ) : isForeach ? (
                 <>
                   <p className="w6w-muted w6w-small">
-                    A For each can't be tested on its own — it runs only as part of the workflow. To
-                    test the loop, test a step on its <strong>Each item</strong> output: it runs
-                    once, on one item.
+                    Resolves <strong>Items</strong> against the incoming state — nothing inside the
+                    loop runs. <strong>Test</strong> saves the first item as this loop's sample, so
+                    the steps on its <strong>Each item</strong> output can pick its keys. To run the
+                    loop's work, test a step on <strong>Each item</strong>: it runs once, on one
+                    item.
                   </p>
-                  {foreachItemCount !== undefined && (
-                    <p className="w6w-small">
-                      {foreachItemCount} {foreachItemCount === 1 ? "item" : "items"}
-                    </p>
-                  )}
+                  <IncomingStateField
+                    text={testState}
+                    onChange={changeTestState}
+                    seeds={seedSources}
+                    readOnly={readOnly}
+                    expand={!foreachItems}
+                    hint={
+                      <>
+                        Paste a sample list — <code>{'[{"id": 1, "name": "…"}]'}</code> — or{" "}
+                        <code>{'{"items": […]}'}</code>. It replaces what <strong>Items</strong>{" "}
+                        resolves to, for this test only.
+                      </>
+                    }
+                  />
+                  <ForeachTestResult items={foreachItems} save={foreachSave} />
                 </>
               ) : (
                 <p className="w6w-muted w6w-small">
@@ -4084,6 +4215,16 @@ function ActionStepEditModal({
                   }}
                 >
                   {testBusy ? "Testing…" : "Test"}
+                </button>
+              )}
+              {isForeach && (
+                <button
+                  type="button"
+                  className="w6w-btn"
+                  disabled={readOnly || !foreachItems?.length || foreachSave === "saving"}
+                  onClick={() => void saveForeachTest()}
+                >
+                  {foreachSave === "saving" ? "Testing…" : "Test"}
                 </button>
               )}
             </>
