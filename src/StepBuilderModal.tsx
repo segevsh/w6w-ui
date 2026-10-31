@@ -44,6 +44,7 @@ import {
   type StepStartState,
   type W6WApi,
   useW6WApi,
+  useWorkflowId,
   useWorkflowProject,
 } from "./provider.tsx";
 import { loopSeedFromSource, startStateFromSeeds } from "./step-preview-state.ts";
@@ -1679,6 +1680,8 @@ export const StepTestRun = forwardRef<
   // Resolve document expressions against the workflow's selected project (the
   // editor provides it; undefined outside the editor → server default project).
   const project = useWorkflowProject();
+  // Named on the invoke so `{{ nodes.<id>.config.* }}` resolves as on a run.
+  const workflowId = useWorkflowId();
   const [state, setState] = useState<TestState | null>(null);
   const [log, setLog] = useState<TestRunLog | null>(null);
   const [logOpen, setLogOpen] = useState(false);
@@ -1745,6 +1748,7 @@ export const StepTestRun = forwardRef<
         ...(connectionId ? { connectionId } : {}),
         ...(project ? { project } : {}),
         ...(startState ? { state: startState } : {}),
+        ...(workflowId ? { workflowId } : {}),
       },
     };
     const finishLog = (response: TestRunLog["response"]) =>
@@ -1762,6 +1766,7 @@ export const StepTestRun = forwardRef<
         // Omitted when the host has no upstream state to offer, so the request
         // is unchanged for every caller that never had one.
         ...(startState ? { state: startState } : {}),
+        ...(workflowId ? { workflowId } : {}),
       });
       finishLog({ ok: true, body: result });
       outcome = {

@@ -275,6 +275,7 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
             connectionId: opts.connectionId,
             project: opts.project,
             state: opts.state,
+            workflowId: opts.workflowId,
           }),
         },
       ),

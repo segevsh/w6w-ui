@@ -260,6 +260,7 @@ export function ExpressionEditorModal({
   const inputs = options.inputs ?? [];
   const documents = options.documents ?? [];
   const steps = options.steps ?? [];
+  const nodeConfigs = options.nodeConfigs ?? [];
   const loop = options.loop;
   const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
   const hasState = hasWorkflowState || !!loop;
@@ -683,6 +684,25 @@ export function ExpressionEditorModal({
                   </Fragment>
                 );
               })}
+            </div>
+          )}
+
+          {/* Every node's configuration (`nodes.<id>.config.<key>`), whether or not it runs. */}
+          {nodeConfigs.length > 0 && (
+            <div className="w6w-exprmodal-group" data-testid="expr-node-settings">
+              <span className="w6w-exprmodal-group-label">Node settings</span>
+              {nodeConfigs.map((n) =>
+                n.keys
+                  .filter(isRefSafeKey)
+                  .map((k) =>
+                    source(
+                      `${n.id} · ${k}`,
+                      { kind: "var", ref: `nodes.${n.id}.config.${k}` },
+                      "w6w-expr-chip-var",
+                      "⚙",
+                    ),
+                  ),
+              )}
             </div>
           )}
 

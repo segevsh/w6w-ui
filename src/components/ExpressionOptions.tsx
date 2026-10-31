@@ -190,6 +190,12 @@ export interface ExpressionOptions {
   /** Whether a trigger event is in scope (`trigger.event`). */
   hasTrigger?: boolean;
   /**
+   * Every node's configuration keys, read as `nodes.<id>.config.<key>` on any run whether or not
+   * the node runs — its literal settings, and a webhook trigger's `url`. Offered as the rail's
+   * "Node settings" group, for every node, not only upstream ones. Workflow context only.
+   */
+  nodeConfigs?: { id: string; keys: string[] }[];
+  /**
    * Design-time sample values the Result preview substitutes for known refs,
    * keyed by FULL ref (`"var.from_email"`, `"documents.test"`). Seeded by the
    * host from the project's real vars/documents so the preview shows actual
