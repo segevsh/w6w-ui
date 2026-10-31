@@ -12,6 +12,7 @@ import {
   effectiveEdges,
   isForeachStep,
   loopBodies,
+  loopBodyDefinitionEdges,
   stripBody,
 } from "./flow-loop.ts";
 import {
@@ -363,6 +364,16 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
   for (const [fid, loop] of Object.entries(definitionLoops(wf))) {
     if ("invalid" in loop) continue;
     let prev = fid;
+    if (loop.edges && loop.body.length > 0) {
+      // A branched body: the Each-item link, then each declared body edge as an each-lane edge.
+      eachEdges.push(eachLaneEdge(fid, loop.body[0], true));
+      for (const e of loop.edges) {
+        drop.add(e);
+        eachEdges.push(eachLaneEdge(e.from, e.to, false, e.route));
+      }
+      for (const id of loop.body) loopOf.set(id, fid);
+      continue;
+    }
     for (const id of loop.body) {
       if (loop.source === "legacy") {
         const e = edges.find(
@@ -596,7 +607,7 @@ export function flowToWorkflow(
   // touch a body step the engine will own (any such edge is a PlanError there).
   const bodyIds = new Set<string>();
   for (const chain of derived.values()) for (const id of chain) bodyIds.add(id);
-  const nextEdges: FlowEdge[] = edges
+  const plainEdges: FlowEdge[] = edges
     .filter((e) => edgeLane(e) !== "each" && !bodyIds.has(e.source) && !bodyIds.has(e.target))
     .map(
       (e): FlowEdge => ({
@@ -607,6 +618,8 @@ export function flowToWorkflow(
       }),
     );
 
+  // A branched body (anything but a plain chain) also emits its body-internal edges.
+  const nextEdges = [...plainEdges, ...loopBodyDefinitionEdges(nodes, edges)];
   return { ...original, nodes: nextSteps, edges: nextEdges };
 }
 

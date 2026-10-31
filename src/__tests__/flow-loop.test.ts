@@ -5,12 +5,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge } from "@xyflow/react";
-import { renameStepInEdges } from "../flow-connect.ts";
+import { applyConnect, connectRefusal, renameStepInEdges } from "../flow-connect.ts";
 import {
   type LoopInvalidReason,
   bridgeDeletedBodyStep,
   definitionLoops,
   deleteStepMessage,
+  eachLaneEdge,
   loopBody,
   loopMembership,
   stampLoopOf,
@@ -440,4 +441,169 @@ test("C17 deleteStepMessage: plain text unless a For each owns a body", () => {
   const m = deleteStepMessage("for_each_1", g.nodes, g.edges);
   assert.ok(m.startsWith(plain("for_each_1")));
   assert.ok(m.includes('"update_event_ticket_1"'));
+});
+
+// ── Branching loop bodies ───────────────────────────────────────────────────
+const IF = { app: "@w6w/control", action: "if" };
+const ROUTER = { app: "@w6w/router", action: "route" };
+const branched = () =>
+  wfOf(
+    [
+      fe("f", { items: ["a"], body: ["gate", "stop", "run"] }),
+      step("gate", { uses: IF, with: { condition: true } }),
+      step("stop"),
+      step("run"),
+    ],
+    [
+      { from: "gate", to: "stop" },
+      { from: "gate", to: "run", route: "false" },
+    ],
+  );
+
+test("branched body: definition -> canvas draws each-lane edges with routes", () => {
+  const g = workflowToFlow(branched());
+  const ids = eachEdges(g).map((e) => `${e.source}>${e.target}:${e.data?.route ?? ""}`);
+  assert.deepEqual(ids, ["f>gate:", "gate>stop:", "gate>run:false"]);
+  assert.equal(eachEdges(g)[2].sourceHandle, "route:false");
+  assert.deepEqual(loopMembership(g.nodes, g.edges), { gate: "f", stop: "f", run: "f" });
+  assert.ok(!g.edges.some((e) => (e.data as { when?: string }).when === "success"));
+});
+
+test("branched body round trips and emits body edges", () => {
+  const wf = branched();
+  assert.equal(JSON.stringify(roundTrip(wf)), JSON.stringify(wf));
+  assert.deepEqual(roundTrip(wf).edges, [
+    { from: "gate", to: "stop" },
+    { from: "gate", to: "run", route: "false" },
+  ]);
+});
+
+test("a plain chain still serializes with no edges", () => {
+  const wf = wfOf([fe("f", { items: ["a"], body: ["a1", "a2"] }), step("a1"), step("a2")], []);
+  assert.deepEqual(roundTrip(wf).edges, []);
+  same(wf);
+});
+
+test("a body edge leaving the body is still invalid", () => {
+  const wf = branched();
+  wf.nodes.push(step("out"));
+  wf.edges = [...(wf.edges ?? []), { from: "run", to: "out" }];
+  const r = definitionLoops(wf).f;
+  assert.ok("invalid" in r && r.invalid.reason === "body_step_has_edges");
+});
+
+const world = () => {
+  const g = workflowToFlow(
+    wfOf(
+      [
+        fe("f", { items: ["a"], body: ["gate", "stop"] }),
+        step("gate", { uses: IF, with: { condition: true } }),
+        step("stop"),
+        step("run"),
+        step("run2"),
+      ],
+      [],
+    ),
+  );
+  return g;
+};
+
+test("If False port inside a body is accepted (the screenshot case)", () => {
+  const g = world();
+  const next = applyConnect("gate", "run", g.nodes, g.edges, "success", undefined, "false");
+  assert.ok(next);
+  const e = next.find((x) => x.source === "gate" && x.target === "run");
+  assert.equal(e?.data?.when, "each");
+  assert.equal(e?.data?.route, "false");
+  const out = flowToWorkflow(branched(), ...([g.nodes, next] as [typeof g.nodes, Edge[]]));
+  assert.deepEqual((out.nodes.find((n) => n.id === "f")?.with as { body: string[] }).body, [
+    "gate",
+    "stop",
+    "run",
+  ]);
+  assert.deepEqual(out.edges, [
+    { from: "gate", to: "stop" },
+    { from: "gate", to: "run", route: "false" },
+  ]);
+});
+
+test("a plain step may fan out inside a body; the Each item port may not", () => {
+  const g = world();
+  const a = applyConnect("stop", "run", g.nodes, g.edges, "success");
+  assert.ok(a);
+  assert.ok(applyConnect("stop", "run2", g.nodes, a, "success"));
+  assert.deepEqual(connectRefusal("f", "run", g.nodes, g.edges, "each"), {
+    refused: "loop",
+    reason: "body_branch",
+  });
+});
+
+test("a Router in a body with two routes to two steps is accepted", () => {
+  const g = workflowToFlow(
+    wfOf(
+      [
+        fe("f", { items: ["a"], body: ["r"] }),
+        step("r", {
+          uses: ROUTER,
+          with: { routes: [{ id: "x" }, { id: "y" }] },
+        } as Partial<FlowStep>),
+        step("p"),
+        step("q"),
+      ],
+      [],
+    ),
+  );
+  const a = applyConnect("r", "p", g.nodes, g.edges, "success", undefined, "x");
+  assert.ok(a);
+  const b = applyConnect("r", "q", g.nodes, a, "success", undefined, "y");
+  assert.ok(b);
+  const out = flowToWorkflow(wfOf([]), g.nodes, b);
+  assert.deepEqual(out.edges, [
+    { from: "r", to: "p", route: "x" },
+    { from: "r", to: "q", route: "y" },
+  ]);
+});
+
+test("join accepted without evicting; cycle refused", () => {
+  const g = world();
+  const a = applyConnect("gate", "run", g.nodes, g.edges, "success", undefined, "false");
+  assert.ok(a);
+  const j = applyConnect("stop", "run", g.nodes, a, "success");
+  assert.ok(j);
+  assert.equal(j.filter((e) => e.target === "run").length, 2);
+  assert.deepEqual(connectRefusal("run", "gate", g.nodes, j, "success"), {
+    refused: "loop",
+    reason: "loop_cycle",
+  });
+});
+
+test("deleting a branching body step drops its edges; a mid step keeps the route bridge", () => {
+  const g = workflowToFlow(branched());
+  const after = bridgeDeletedBodyStep("gate", g.nodes, g.edges);
+  assert.equal(eachEdges({ edges: after }).length, 0);
+  const lin = [
+    eachLaneEdge("f", "gate", true),
+    eachLaneEdge("gate", "stop", false, "false"),
+    eachLaneEdge("stop", "run", false),
+  ];
+  const b = bridgeDeletedBodyStep("stop", g.nodes, lin);
+  assert.ok(b.some((e) => e.source === "gate" && e.target === "run" && e.data?.route === "false"));
+  assert.equal(bridgeDeletedBodyStep("f", g.nodes, lin).length, 0);
+});
+
+test("loopBody is topological with the Each-item target first", () => {
+  const edges = [
+    eachLaneEdge("f", "a", true),
+    eachLaneEdge("a", "c", false),
+    eachLaneEdge("a", "b", false),
+    eachLaneEdge("b", "c", false),
+  ];
+  const nodes = ["f", "a", "b", "c"].map((id) => ({
+    id,
+    data: { step: id === "f" ? fe("f") : step(id) },
+  })) as unknown as StepNode[];
+  assert.deepEqual(
+    loopBody("f", nodes, edges),
+    ["a", "c", "b"].sort().slice(0, 1).concat(["b", "c"]),
+  );
 });

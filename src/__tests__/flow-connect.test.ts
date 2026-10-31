@@ -517,8 +517,11 @@ test("C3 a second Each-item edge is refused", () => {
   refuses("fe", "f", "each", "body_branch");
 });
 
-test("C4 body branching is refused", () => {
-  refuses("b0", "f", "success", "body_branch");
+test("C4 a plain body step may fan out to a second step", () => {
+  const w = loopWorld();
+  const next = applyConnect("b0", "f", w.nodes, w.edges, "success");
+  assert.ok(next);
+  assert.ok(next.some((e) => e.source === "b0" && e.target === "f" && e.data?.when === "each"));
 });
 
 test("C5 Done-side / outside → body node is refused", () => {
