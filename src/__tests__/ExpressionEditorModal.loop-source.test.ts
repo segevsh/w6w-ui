@@ -154,14 +154,36 @@ const loopBtn = (c: ParentNode, label: string) =>
   q(c, '[data-testid="expr-loop-group"] .w6w-exprmodal-source').find(
     (b) => b.querySelector(".w6w-exprmodal-source-label")?.textContent === label,
   ) as HTMLElement;
+const loopToggle = (c: ParentNode) =>
+  q(c, '[data-testid="expr-loop-group"] [data-testid="expr-toggle-fields"]')[0];
 
-test("R1 - Loop group: Current item, Index, one row per field; each click saves its ref", async () => {
+test("R0 - the item keys nest under Current item, collapsed until its 'N fields' toggle opens", async () => {
+  const p = proj(testOutputs);
+  const m = await mountModal({ options: { steps: p.steps, loop: p.loop } });
+  assert.deepEqual(loopLabels(m.container), ["Current item", "Index"]);
+  const toggle = loopToggle(m.container);
+  assert.equal(toggle.textContent, "4 fields ›");
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  await click(toggle);
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.deepEqual(loopLabels(m.container), ["Current item", ...FIELDS, "Index"]);
+  const nested = q(m.container, '[data-testid="expr-loop-fields"] .w6w-exprmodal-source-label');
+  assert.deepEqual(
+    nested.map((e) => e.textContent),
+    FIELDS,
+  );
+  await click(loopBtn(m.container, "price"));
+  assert.deepEqual(m.onSaveCalls, ["{{ foreach.item.price }}"]);
+});
+
+test("R1 - Loop group: Current item, its fields, Index; each click saves its ref", async () => {
   const p = proj(testOutputs);
   assert.equal(p.loop?.itemOutputs?.length, 4);
-  const labels = ["Current item", "Index", ...FIELDS];
-  const refs = ["foreach.item", "foreach.index", ...FIELDS.map((f) => `foreach.item.${f}`)];
+  const labels = ["Current item", ...FIELDS, "Index"];
+  const refs = ["foreach.item", ...FIELDS.map((f) => `foreach.item.${f}`), "foreach.index"];
   for (const [i, label] of labels.entries()) {
     const m = await mountModal({ options: { steps: p.steps, loop: p.loop } });
+    await click(loopToggle(m.container));
     assert.deepEqual(loopLabels(m.container), labels);
     await click(loopBtn(m.container, label));
     assert.deepEqual(m.onSaveCalls, [`{{ ${refs[i]} }}`], label);
@@ -176,8 +198,9 @@ test("R1b - a For each's saved Test sample lists the item keys when nothing upst
   const p = upstreamStateSources("update_event_ticket_1", graph.nodes, graph.edges, {
     loopSamples: { for_each_1: sample },
   });
-  const labels = ["Current item", "Index", "id", "title", "venue", "venue.city"];
+  const labels = ["Current item", "id", "title", "venue", "venue.city", "Index"];
   const m = await mountModal({ options: { steps: p.steps, loop: p.loop } });
+  await click(loopToggle(m.container));
   assert.deepEqual(loopLabels(m.container), labels);
   await click(loopBtn(m.container, "title"));
   assert.deepEqual(m.onSaveCalls, ["{{ foreach.item.title }}"]);
@@ -188,6 +211,7 @@ test("R2 - the group renders with empty steps, and without field rows when there
     options: { steps: [], loop: { foreachId: "for_each_1" } },
   });
   assert.deepEqual(loopLabels(container), ["Current item", "Index"]);
+  assert.equal(loopToggle(container), undefined);
   assert.equal(proj(undefined).loop?.foreachId, "for_each_1");
 });
 
@@ -203,6 +227,8 @@ test("R3 - json-binding mode: group renders and 'No upstream steps' does not", a
       },
     },
   });
+  assert.equal(loopLabels(container).length, 2);
+  await click(loopToggle(container));
   assert.equal(loopLabels(container).length, 6);
   assert.equal(container.textContent?.includes("No upstream steps"), false);
 });
