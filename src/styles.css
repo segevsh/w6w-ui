@@ -3918,28 +3918,30 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-danger);
 }
 
-.w6w-router-port-link {
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  width: 28px;
-  height: 1px;
-  overflow: visible;
+.w6w-flow .w6w-router-ports {
+  align-self: stretch;
+  display: grid;
+  align-items: center;
+  margin: -6px 0;
+  max-width: 120px;
+  text-align: right;
+  color: var(--w6w-muted);
   pointer-events: none;
-  fill: none;
-  stroke: var(--w6w-border);
 }
 
-.w6w-router-port-label {
-  position: absolute;
-  left: calc(100% + var(--w6w-sp-10));
-  transform: translateY(-100%);
-  max-width: 160px;
+.w6w-flow .w6w-router-ports > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.2;
+}
+
+.w6w-flow .w6w-router-fallback-label {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: calc(50% + 8px);
+  white-space: nowrap;
   pointer-events: none;
-  font-size: var(--w6w-fs-xs);
   color: var(--w6w-muted);
 }
 
