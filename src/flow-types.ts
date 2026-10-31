@@ -831,20 +831,30 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         hint: "Execution language for this step's code. Python runs CPython-on-WASM with no network.",
       },
       {
-        key: "input",
-        type: "json",
-        label: "Input",
-        whole: true,
-        hint: 'What the script reads as `input` (null when empty). Bind one step\'s output: {{ nodes.<step-id>.output }}. Or an object of several: {"ticket": "{{ nodes.<step-id>.output }}", "email": "{{ nodes.<other-id>.output.email }}"}. Each value keeps its type.',
-      },
-      {
         key: "code",
         type: "code",
         label: "Script",
         required: true,
-        default:
-          "// Read `input` (bound under Input), plus `vars`, `consts` and `state.nodes.<step-id>.output`.\n// Runs as a function body. Return the step's output.\nreturn input;",
-        hint: 'Function body; return the step\'s output. {{ }} is not substituted in code. Read `input` (what you bind under Input) and, read-only: `vars` (= {{ var.* }}), `consts` (= {{ const.* }}) and `state` (state.nodes.<step-id>.output, state.trigger.event, state.foreach.item). In Python, index them: vars["region"]. Secrets are never in vars, consts or state; bind one under Input if the script needs it. digest(value) returns a stable SHA-256 hex (await it in JavaScript).',
+        scriptReads: true,
+        default: "// Runs as a function body. Return the step's output.\nreturn input;",
+        hint: "Return the step's output. Read data from state, vars and consts; {{ }} isn't substituted in code.",
+      },
+      {
+        // Empty, the script's `input` is the run `state`, so most scripts never open this.
+        key: "custom_input",
+        type: "section",
+        section: "collapsible",
+        title: "Custom input (advanced)",
+        openWhenSet: true,
+        children: [
+          {
+            key: "input",
+            type: "json",
+            label: "Input",
+            whole: true,
+            hint: "Replaces what the script reads as `input` (by default, the run state). Each bound value keeps its type; a secret goes here, since state never holds one.",
+          },
+        ],
       },
     ],
   },
