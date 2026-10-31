@@ -821,8 +821,8 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Script",
         required: true,
         default:
-          "// `input` holds the data bound under Input (e.g. an upstream step's output).\n// Runs as a function body. Return the step's output.\nreturn input;",
-        hint: "Function body; return the step's output. Read data from `input`: {{ }} is not substituted in code, so bind what the script needs under Input. digest(value) returns a stable SHA-256 hex (await it in JavaScript).",
+          "// Read `input` (bound under Input), plus `vars`, `consts` and `state.nodes.<step-id>.output`.\n// Runs as a function body. Return the step's output.\nreturn input;",
+        hint: 'Function body; return the step\'s output. {{ }} is not substituted in code. Read `input` (what you bind under Input) and, read-only: `vars` (= {{ var.* }}), `consts` (= {{ const.* }}) and `state` (state.nodes.<step-id>.output, state.trigger.event, state.foreach.item). In Python, index them: vars["region"]. Secrets are never in vars, consts or state; bind one under Input if the script needs it. digest(value) returns a stable SHA-256 hex (await it in JavaScript).',
       },
     ],
   },

@@ -408,11 +408,13 @@ function RepeatField({
  *  resolves to `"python"` (D-3) — a working `return input`-equivalent, same
  *  shape/intent as `SCRIPT_APP`'s JS default in `flow-types.ts`. */
 const PYTHON_CODE_DEFAULT =
-  "# `input` holds the data bound under Input (e.g. an upstream step's output).\n# Runs as a function body. Return the step's output.\nreturn input";
+  '# Read `input` (bound under Input), plus `vars`, `consts` and `state["nodes"][<step-id>]["output"]`.\n# Runs as a function body. Return the step\'s output.\nreturn input';
 
-/** The script defaults before they mentioned `input` — still untouched boilerplate a
+/** Earlier script defaults (before they named `input`, then `vars`/`consts`/`state`) — still untouched boilerplate a
  *  `language` switch may swap, on a step saved before the wording changed. */
 const LEGACY_CODE_DEFAULTS = [
+  "// `input` holds the data bound under Input (e.g. an upstream step's output).\n// Runs as a function body. Return the step's output.\nreturn input;",
+  "# `input` holds the data bound under Input (e.g. an upstream step's output).\n# Runs as a function body. Return the step's output.\nreturn input",
   "// Runs as a function body. Return the step's output.\nreturn input;",
   "# Runs as a function body. Return the step's output.\nreturn input",
 ];
