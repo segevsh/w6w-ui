@@ -84,8 +84,9 @@ export type StepNode = Node<StepNodeData>;
  * rewrite) in `flow-connect.ts`. A second hand-rolled copy of the template is
  * exactly how the rename path came to drop the qualifier.
  */
-export function flowEdgeId(from: string, to: string, when?: CanvasLane): string {
-  return when === "error" ? `${from}->${to}:error` : `${from}->${to}`;
+export function flowEdgeId(from: string, to: string, when?: CanvasLane, route?: string): string {
+  const base = when === "error" ? `${from}->${to}:error` : `${from}->${to}`;
+  return route === undefined ? base : `${base}:route:${encodeURIComponent(route)}`;
 }
 
 /**
@@ -418,12 +419,12 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
     // reads it back, so this does not touch the persisted `Edge.when` round-trip.
     const when = e.when ?? "success";
     return {
-      id: flowEdgeId(e.from, e.to, when),
+      id: flowEdgeId(e.from, e.to, when, e.route),
       source: e.from,
       target: e.to,
-      sourceHandle: sourceHandleForLane(when),
+      sourceHandle: e.route === undefined ? sourceHandleForLane(when) : `route:${e.route}`,
       animated: false,
-      data: { when },
+      data: { when, ...(e.route === undefined ? {} : { route: e.route }) },
       // No run state here either (T1.1.1): `workflowToFlow` only ever runs
       // on workflow identity change (Trap 1), never on a live run's poll
       // tick, so it has no run state to pass — the live-run repaint effect
@@ -588,10 +589,13 @@ export function flowToWorkflow(
   for (const chain of derived.values()) for (const id of chain) bodyIds.add(id);
   const nextEdges: FlowEdge[] = edges
     .filter((e) => edgeLane(e) !== "each" && !bodyIds.has(e.source) && !bodyIds.has(e.target))
-    .map((e) =>
-      edgeLane(e) === "error"
-        ? { from: e.source, to: e.target, when: "error" }
-        : { from: e.source, to: e.target },
+    .map(
+      (e): FlowEdge => ({
+        from: e.source,
+        to: e.target,
+        ...(edgeLane(e) === "error" ? { when: "error" as const } : {}),
+        ...(typeof e.data?.route === "string" ? { route: e.data.route } : {}),
+      }),
     );
 
   return { ...original, nodes: nextSteps, edges: nextEdges };

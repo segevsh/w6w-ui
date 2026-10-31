@@ -146,6 +146,8 @@ test("the picker shows templates in Utilities and store actions in Data", async 
     assert.ok(!rows.includes(label), `${label} must not appear in Utilities`);
   }
   assert.ok(rows.includes("Model allowance"), "model actions remain in Utilities");
+  assert.ok(rows.includes("Stop workflow"), "Stop workflow is available in Utilities");
+  assert.ok(rows.includes("Router"), "Router is available in Utilities");
 
   const dataTab = Array.from(container.querySelectorAll("button")).find(
     (b) => b.textContent === "Data",

@@ -327,3 +327,74 @@ test("saved comparison fields reopen and honor read-only mode", async () => {
   assert.deepEqual(m.saved().condition, condition);
   await act(async () => m.root.unmount());
 });
+
+const { RouterEditor } = await import("../RouterEditor.tsx");
+const { StopEditor } = await import("../StopEditor.tsx");
+
+test("Router adds four condition ports plus default and preserves ids when reordered", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  let saved: Record<string, unknown> = {};
+  function Harness() {
+    const [values, setValues] = React.useState(saved);
+    return React.createElement(RouterEditor, {
+      values,
+      onChange: (next) => {
+        saved = next;
+        setValues(next);
+      },
+    });
+  }
+  await act(async () => root.render(React.createElement(Harness)));
+  for (let i = 0; i < 3; i++) {
+    const add = q(container, "button").find((el) => el.textContent === "Add route");
+    assert.ok(add);
+    await click(add);
+  }
+  type Route = { id: string; default?: boolean };
+  const before = (saved.routes as Route[]).map((r) => r.id);
+  assert.equal(container.querySelectorAll("fieldset").length, 5);
+  assert.equal((saved.routes as Route[]).at(-1)?.default, true);
+  const down = q(container, "button").find((el) => el.textContent === "Move down");
+  assert.ok(down);
+  await click(down);
+  assert.deepEqual(
+    (saved.routes as Route[]).map((r) => r.id),
+    [before[1], before[0], ...before.slice(2)],
+  );
+  await act(async () => root.unmount());
+});
+
+test("Stop offers unconditional or conditional termination without an accidental true condition", async () => {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  let saved: Record<string, unknown> = {};
+  function Harness() {
+    const [values, setValues] = React.useState(saved);
+    return React.createElement(StopEditor, {
+      values,
+      onChange: (next) => {
+        saved = next;
+        setValues(next);
+      },
+    });
+  }
+  await act(async () => root.render(React.createElement(Harness)));
+  const mode = container.querySelector<HTMLSelectElement>('[aria-label="Stop when"]');
+  assert.ok(mode);
+  assert.equal(mode.value, "always");
+  await act(async () => {
+    mode.value = "condition";
+    mode.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(saved.condition, false);
+  assert.ok(container.querySelector('[aria-label="Condition field"]'));
+  await act(async () => {
+    mode.value = "always";
+    mode.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(saved.condition, true);
+  await act(async () => root.unmount());
+});

@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
+import { inferOutputFields } from "./output-shape.ts";
 
 const comparisons = [
   ["===", "Equals"],
@@ -35,10 +36,12 @@ export function ConditionEditor({
   values,
   onChange,
   readOnly,
+  purpose = "if",
 }: {
   values: Record<string, unknown>;
   onChange: (values: Record<string, unknown>) => void;
   readOnly?: boolean;
+  purpose?: "if" | "stop" | "router";
 }) {
   const options = useExpressionOptions();
   const valueId = useId();
@@ -58,11 +61,20 @@ export function ConditionEditor({
     add("foreach.index", "Loop index");
   }
   for (const step of options.steps ?? []) {
-    for (const field of step.outputs ?? []) {
+    add(`nodes.${step.id}.output`, `${step.label ?? step.id} · Entire output`);
+    const fields =
+      step.outputs ?? inferOutputFields(options.sampleValues?.[`nodes.${step.id}.output`]) ?? [];
+    for (const field of fields) {
       add(
         `nodes.${step.id}.output.${field.key}`,
         `${step.label ?? step.id} · ${field.label ?? field.key}`,
       );
+    }
+  }
+  if (options.hasTrigger) {
+    add("trigger.event", "Trigger event");
+    for (const field of inferOutputFields(options.sampleValues?.["trigger.event"]) ?? []) {
+      add(`trigger.event.${field.key}`, `Trigger · ${field.key}`);
     }
   }
   for (const name of options.vars ?? []) add(`var.${name}`, `Variable · ${name}`);
@@ -146,7 +158,7 @@ export function ConditionEditor({
               </select>
             </label>
             <div className="w6w-field">
-              <label>
+              <label className="w6w-field">
                 <span className="w6w-label">Value type</span>
                 <select
                   aria-label="Condition value type"
@@ -172,7 +184,7 @@ export function ConditionEditor({
                 </select>
               </label>
               {valueType !== "null" && (
-                <label htmlFor={valueId}>
+                <label className="w6w-field" htmlFor={valueId}>
                   <span className="w6w-label">Value</span>
                   {valueType === "boolean" ? (
                     <select
@@ -207,9 +219,13 @@ export function ConditionEditor({
           <p className="w6w-muted w6w-small">
             {!comparison.ref
               ? `Choose a field to compare. The current condition is ${String(condition)}.`
-              : options.loop
-                ? "Compare the current item. When false, the remaining steps for this item are skipped."
-                : "Continue to the next step when the comparison is true."}
+              : purpose === "stop"
+                ? "End the whole workflow when the comparison is true. Otherwise, continue to the next step."
+                : purpose === "router"
+                  ? "Take this route when the comparison is true and no earlier route matched."
+                  : options.loop
+                    ? "Compare the current item. When false, the remaining steps for this item are skipped."
+                    : "Continue to the next step when the comparison is true."}
           </p>
         </>
       )}

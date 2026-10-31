@@ -26,6 +26,7 @@ import {
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
+  ROUTER_APP,
   edgeVisuals,
 } from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
@@ -43,6 +44,7 @@ function isControlStep(step: UsesLike | undefined): boolean {
 
 /** A linear loop may contain an If gate; nested control blocks need their own canvas model. */
 function isLoopBodyStep(step: FlowStep | undefined): boolean {
+  if (step?.uses.app === ROUTER_APP) return false;
   return (
     !isControlStep(step) ||
     (step?.uses.action === "if" && step.with?.then === undefined && step.with?.else === undefined)

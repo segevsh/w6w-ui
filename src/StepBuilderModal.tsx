@@ -14,6 +14,8 @@ import { ConditionEditor } from "./ConditionEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
+import { RouterEditor } from "./RouterEditor.tsx";
+import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
@@ -34,6 +36,8 @@ import {
   DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
+  ROUTER_APP,
+  STOP_APP,
   STORE_APP,
   internalNodeDefaults,
   isControlApp,
@@ -847,7 +851,7 @@ function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Utilities run a script, call an HTTP(S) endpoint, or respond to a webhook.
+        Run scripts, make HTTP requests, respond to webhooks, route the workflow, or stop it.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
@@ -990,6 +994,10 @@ export function ControlStepConfig({
               <WaitEditor values={withValues} onChange={setWithValues} />
             ) : node.action === "if" && isControlApp(node.app) ? (
               <ConditionEditor values={withValues} onChange={setWithValues} />
+            ) : node.app === STOP_APP ? (
+              <StopEditor values={withValues} onChange={setWithValues} />
+            ) : node.app === ROUTER_APP ? (
+              <RouterEditor values={withValues} onChange={setWithValues} />
             ) : (
               <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
             )

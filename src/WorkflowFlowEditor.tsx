@@ -22,6 +22,7 @@ import {
   useNodeId,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
 } from "@xyflow/react";
 import type { FinalConnectionState } from "@xyflow/react";
 import { Handle } from "@xyflow/react";
@@ -45,6 +46,7 @@ import { JsonEditor } from "./JsonEditor.tsx";
 import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
+import { RouterEditor } from "./RouterEditor.tsx";
 import {
   AppTriggerTestNote,
   type BuiltStep,
@@ -56,6 +58,7 @@ import {
   getTriggerDefs,
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
+import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
 import type { FlowCanvas } from "./canvas-types.ts";
@@ -110,6 +113,7 @@ import {
   stripBody,
 } from "./flow-loop.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
+import { ROUTER_APP, routeFromHandle, routeHandle, routesForStep } from "./flow-types.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -503,6 +507,7 @@ function Inner({
      * "success" for that gesture without a separate branch.
      */
     lane: CanvasLane;
+    route?: string;
   } | null>(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   // React Flow's `colorMode` defaults to "light", so without this its chrome
@@ -557,7 +562,12 @@ function Inner({
     setEdges((eds) =>
       eds.map((e) => {
         const lane = edgeLane(e);
-        const run = edgeRunState(runState, e.source, lane);
+        const run = edgeRunState(
+          runState,
+          e.source,
+          lane,
+          typeof e.data?.route === "string" ? e.data.route : undefined,
+        );
         const visuals = edgeVisuals(lane, run);
         if (e.className === visuals.className && e.label === visuals.label) return e;
         return { ...e, className: visuals.className, label: visuals.label };
@@ -592,7 +602,8 @@ function Inner({
   // Live gate while dragging a connection — React Flow marks the drop invalid
   // (and won't fire onConnect) when this returns false.
   const isValidConnection = useCallback(
-    (c: Connection | Edge) => canConnect(c.source, c.target, nodes, edges, portsLookup),
+    (c: Connection | Edge) =>
+      canConnect(c.source, c.target, nodes, edges, portsLookup, routeFromHandle(c.sourceHandle)),
     [nodes, edges, portsLookup],
   );
 
@@ -636,6 +647,7 @@ function Inner({
         edges,
         laneForSourceHandle(params.sourceHandle),
         portsLookup,
+        routeFromHandle(params.sourceHandle),
       );
       if (!next) {
         // FAIL LOUDLY when the refusal is one the drag could not have shown. Every
@@ -661,6 +673,7 @@ function Inner({
           edges,
           lane,
           portsLookup,
+          routeFromHandle(params.sourceHandle),
         );
         if (refusal && refusal.refused === "loop") {
           setLoopNotice({ nodeId: params.source, reason: refusal.reason });
@@ -751,6 +764,7 @@ function Inner({
         handleType,
         position,
         lane: dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
+        route: routeFromHandle(connectionState.fromHandle?.id),
       });
       setBuilderOpen(true);
     },
@@ -776,7 +790,7 @@ function Inner({
             : lane === "each"
               ? { x: r.x + r.w + gap, y: r.y - r.h - gap / 2 }
               : { x: r.x + r.w + gap, y: r.y };
-      setPendingConnect({ nodeId, handleType, position, lane });
+      setPendingConnect({ nodeId, handleType, position, lane, route: routeFromHandle(handleId) });
       setBuilderOpen(true);
     },
     [readOnly, nodes],
@@ -1019,6 +1033,7 @@ function Inner({
           edges,
           pendingConnect.lane,
           portsLookup,
+          pendingConnect.route,
         );
         if (!wired) noteLoopRefusal(source, target, pendingConnect.lane, pendingConnect.nodeId);
         nextEdges = wired ?? edges;
@@ -1099,7 +1114,13 @@ function Inner({
         return;
       }
       setNodes(nextNodes);
-      emitChange(nextNodes, edges);
+      const routeIds = new Set(routesForStep(next).map((r) => r.id));
+      const nextEdges = edges.filter(
+        (e) =>
+          e.source !== next.id || e.data?.route === undefined || routeIds.has(String(e.data.route)),
+      );
+      if (nextEdges.length !== edges.length) setEdges(nextEdges);
+      emitChange(nextNodes, nextEdges);
     },
     [nodes, edges, canvas, setNodes, setEdges, selectedId, editingId, emitChange],
   );
@@ -1856,32 +1877,36 @@ function Inner({
                     chosen by which handle it was dragged from — this panel keeps its
                     job as the RE-LANE affordance for an edge already drawn on the
                     wrong port, not the only way to author an error edge. */}
-                    {!readOnly && selectedEdge && edgeLane(selectedEdge) !== "each" && (
-                      <Panel position="top-right">
-                        <div className="w6w-edge-lane">
-                          <span className="w6w-muted w6w-small">Run on</span>
-                          {(["success", "error"] as const).map((lane) => (
-                            <button
-                              key={lane}
-                              type="button"
-                              className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
-                                edgeLane(selectedEdge) === lane ? " active" : ""
-                              }`}
-                              aria-pressed={edgeLane(selectedEdge) === lane}
-                              title={LANE_HINT}
-                              onClick={() => setEdgeLane(lane)}
-                            >
-                              {lane === "success" ? "Success" : "Error"}
-                            </button>
-                          ))}
-                          {laneError?.edgeId === selectedEdge.id && (
-                            <span className="w6w-edge-lane-err w6w-small" role="alert">
-                              {laneError.message}
-                            </span>
-                          )}
-                        </div>
-                      </Panel>
-                    )}
+                    {!readOnly &&
+                      selectedEdge &&
+                      edgeLane(selectedEdge) !== "each" &&
+                      nodes.find((n) => n.id === selectedEdge.source)?.data.step.uses.app !==
+                        ROUTER_APP && (
+                        <Panel position="top-right">
+                          <div className="w6w-edge-lane">
+                            <span className="w6w-muted w6w-small">Run on</span>
+                            {(["success", "error"] as const).map((lane) => (
+                              <button
+                                key={lane}
+                                type="button"
+                                className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                                  edgeLane(selectedEdge) === lane ? " active" : ""
+                                }`}
+                                aria-pressed={edgeLane(selectedEdge) === lane}
+                                title={LANE_HINT}
+                                onClick={() => setEdgeLane(lane)}
+                              >
+                                {lane === "success" ? "Success" : "Error"}
+                              </button>
+                            ))}
+                            {laneError?.edgeId === selectedEdge.id && (
+                              <span className="w6w-edge-lane-err w6w-small" role="alert">
+                                {laneError.message}
+                              </span>
+                            )}
+                          </div>
+                        </Panel>
+                      )}
                     {loopNotice && (
                       <NodeToolbar nodeId={loopNotice.nodeId} position={Position.Bottom} isVisible>
                         <div className="w6w-loop-notice w6w-small" role="alert">
@@ -2542,12 +2567,16 @@ function PortHandle({
   multiple,
   id,
   variant,
+  top,
+  routeLabel,
 }: {
   type: "source" | "target";
   position: Position;
   multiple: boolean;
   id?: string;
   variant?: "error" | "each";
+  top?: string;
+  routeLabel?: string;
 }) {
   const nodeId = useNodeId();
   const ctrl = useContext(StepControlsCtx);
@@ -2577,21 +2606,26 @@ function PortHandle({
               ? "w6w-handle-multi"
               : undefined
       }
-      style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
+      style={{
+        ...(multiple ? { height: 22, borderRadius: 3, width: 8 } : {}),
+        ...(top ? { top } : {}),
+      }}
       // A click (no drag) adds a step from this port; a drag still draws a connection.
       onClick={canAdd ? add : undefined}
       title={
-        canAdd
-          ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
-          : variant === "error"
-            ? "On error — drag to route this step's failure separately"
-            : variant === "each"
-              ? "Each item — drag to the first step to repeat for every item"
-              : multiple
-                ? type === "target"
-                  ? "Accepts multiple incoming connections"
-                  : "Multiple outgoing connections"
-                : undefined
+        routeLabel
+          ? `${routeLabel} — drag or click to connect`
+          : canAdd
+            ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
+            : variant === "error"
+              ? "On error — drag to route this step's failure separately"
+              : variant === "each"
+                ? "Each item — drag to the first step to repeat for every item"
+                : multiple
+                  ? type === "target"
+                    ? "Accepts multiple incoming connections"
+                    : "Multiple outgoing connections"
+                  : undefined
       }
     />
   );
@@ -2823,6 +2857,13 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
+  const routes = routesForStep(step);
+  const routeKey = JSON.stringify(routes.map((r) => r.id));
+  const updateNodeInternals = useUpdateNodeInternals();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: route identities and order change handle positions.
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, routeKey, updateNodeInternals]);
   const label = internalNodeLabel(step.uses.app, step.uses.action);
   const icon = internalNodeIcon(step.uses.app, step.uses.action);
   // Per-step ports (T2.3.1): triggers have no entry (0 in, 1 out); a fan-in node
@@ -2868,7 +2909,8 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           // A trigger's half-pill radius + padding live in `.w6w-node-trigger`
           // (styles/_flow.scss): an inline value here would beat the class.
           ...(isTrigger ? {} : { borderRadius: 4, padding: "6px 14px 6px 8px" }),
-          minWidth: 140,
+          minWidth: routes.length ? 300 : 140,
+          ...(routes.length ? { minHeight: Math.max(60, routes.length * 30) } : {}),
           fontSize: 13,
           display: "flex",
           alignItems: "center",
@@ -2903,7 +2945,33 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
                 variant="each"
               />
             )}
-            <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
+            {routes.length ? (
+              routes.map((route, index) => (
+                <div key={route.id}>
+                  <span
+                    className="w6w-small"
+                    style={{
+                      position: "absolute",
+                      right: 14,
+                      top: `${((index + 0.5) * 100) / routes.length}%`,
+                      transform: "translateY(-50%)",
+                    }}
+                  >
+                    {route.label || route.id}
+                  </span>
+                  <PortHandle
+                    type="source"
+                    position={Position.Right}
+                    multiple={false}
+                    id={routeHandle(route.id)}
+                    top={`${((index + 0.5) * 100) / routes.length}%`}
+                    routeLabel={route.label || route.id}
+                  />
+                </div>
+              ))
+            ) : (
+              <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
+            )}
             {!isTrigger && (
               <PortHandle
                 type="source"
@@ -3367,6 +3435,18 @@ function ActionStepEditModal({
                   />
                 ) : step.uses.action === "if" && isControlApp(step.uses.app) ? (
                   <ConditionEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : step.uses.app === "@w6w/stop" ? (
+                  <StopEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : step.uses.app === ROUTER_APP ? (
+                  <RouterEditor
                     values={step.with ?? {}}
                     readOnly={readOnly}
                     onChange={(w) => commit({ ...step, with: w })}
