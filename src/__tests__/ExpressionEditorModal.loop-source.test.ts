@@ -253,28 +253,28 @@ async function mountCondition(condition: unknown = true, readOnly = false) {
   return { container, root, saved: () => saved };
 }
 
-test("If comparison fields select a webhook field and save an executable typed condition", async () => {
+test("condition textboxes save typed comparisons and preserve them through editor switches", async () => {
   const m = await mountCondition();
-  const field = m.container.querySelector<HTMLInputElement>('[aria-label="Condition field"]');
+  const field = m.container.querySelector<HTMLElement>('[aria-label="Condition field"]');
+  const value = m.container.querySelector<HTMLElement>('[aria-label="Condition value"]');
   assert.ok(field);
-  await act(async () => field.focus());
-  const option = q(m.container, '[role="option"]').find(
-    (el) => el.textContent === "Current item · enabled",
-  );
-  assert.ok(option);
-  await act(async () =>
-    option.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true })),
-  );
+  assert.ok(value);
+  assert.equal(m.container.querySelector('[aria-label="Condition value type"]'), null);
+  await act(async () => {
+    field.textContent = "{{ foreach.item.enabled }}";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    value.textContent = "true";
+    value.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
   const condition = m.saved().condition as { $expr: unknown };
   assert.equal(evaluate(condition.$expr, { foreach: { item: { enabled: true } } }), true);
   assert.equal(evaluate(condition.$expr, { foreach: { item: { enabled: false } } }), false);
   assert.equal(m.saved().other, "preserved");
-  const value = m.container.querySelector<HTMLSelectElement>('[aria-label="Condition value"]');
-  assert.ok(value);
-  assert.equal(value.value, "true");
   await act(async () => {
-    value.value = "false";
-    value.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    value.textContent = "false";
+    value.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
   });
   assert.equal(
     evaluate((m.saved().condition as { $expr: unknown }).$expr, {
@@ -283,18 +283,19 @@ test("If comparison fields select a webhook field and save an executable typed c
     true,
   );
   const before = structuredClone(m.saved());
-  const advanced = q(m.container, "button").find((el) => el.textContent === "Edit expression");
+  const advanced = m.container.querySelector<HTMLButtonElement>(
+    '[aria-label="Edit condition expression"]',
+  );
   assert.ok(advanced);
   await click(advanced);
   assert.ok(m.container.querySelector(".cm-editor"));
-  const simple = q(m.container, "button").find((el) => el.textContent === "Use comparison fields");
+  const simple = m.container.querySelector<HTMLButtonElement>(
+    '[aria-label="Use comparison fields"]',
+  );
   assert.ok(simple);
   await click(simple);
-  assert.deepEqual(m.saved(), before, "switching editors preserves the condition");
-  assert.equal(
-    m.container.querySelector<HTMLSelectElement>('[aria-label="Condition value"]')?.value,
-    "false",
-  );
+  assert.deepEqual(m.saved(), before);
+  assert.equal(m.container.querySelector('[aria-label="Condition value"]')?.textContent, "false");
   await act(async () => m.root.unmount());
 });
 
@@ -313,16 +314,13 @@ test("saved comparison fields reopen and honor read-only mode", async () => {
   const condition = { $expr: { "===": [{ var: "foreach.item.id" }, "hook-1"] } };
   const m = await mountCondition(condition, true);
   assert.equal(
-    m.container.querySelector<HTMLInputElement>('[aria-label="Condition field"]')?.disabled,
-    true,
+    m.container.querySelector('[aria-label="Condition field"]')?.getAttribute("contenteditable"),
+    "false",
   );
+  assert.equal(m.container.querySelector('[aria-label="Condition value"]')?.textContent, "hook-1");
   assert.equal(
-    m.container.querySelector<HTMLInputElement>('[aria-label="Condition value"]')?.value,
-    "hook-1",
-  );
-  assert.equal(
-    m.container.querySelector<HTMLInputElement>('[aria-label="Condition value"]')?.readOnly,
-    true,
+    m.container.querySelector('[aria-label="Condition value"]')?.getAttribute("contenteditable"),
+    "false",
   );
   assert.deepEqual(m.saved().condition, condition);
   await act(async () => m.root.unmount());
@@ -348,17 +346,24 @@ test("Router adds four condition ports plus default and preserves ids when reord
   }
   await act(async () => root.render(React.createElement(Harness)));
   for (let i = 0; i < 3; i++) {
-    const add = q(container, "button").find((el) => el.textContent === "Add route");
+    const add = q(container, "button").find((el) => el.textContent?.includes("Add route"));
     assert.ok(add);
     await click(add);
   }
   type Route = { id: string; default?: boolean };
   const before = (saved.routes as Route[]).map((r) => r.id);
-  assert.equal(container.querySelectorAll("fieldset").length, 5);
+  assert.equal(container.querySelectorAll(".w6w-router-route").length, 4);
+  assert.equal(container.querySelectorAll("fieldset").length, 0);
+  assert.equal(container.textContent?.includes("Default"), false);
   assert.equal((saved.routes as Route[]).at(-1)?.default, true);
-  const down = q(container, "button").find((el) => el.textContent === "Move down");
-  assert.ok(down);
-  await click(down);
+  const grip = container.querySelector<HTMLButtonElement>('[aria-label="Reorder Route 1"]');
+  assert.ok(grip);
+  assert.equal(grip.draggable, true);
+  await act(async () =>
+    grip.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+    ),
+  );
   assert.deepEqual(
     (saved.routes as Route[]).map((r) => r.id),
     [before[1], before[0], ...before.slice(2)],

@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { ConditionEditor } from "./ConditionEditor.tsx";
+import { DeleteButton } from "./components/DeleteButton.tsx";
+import { Icon } from "./components/Icon.tsx";
 import { ROUTER_APP, type RouterRoute, internalNodeDefaults } from "./flow-types.ts";
 
 export function RouterEditor({
@@ -13,94 +16,137 @@ export function RouterEditor({
   const routes = (
     Array.isArray(values.routes) ? values.routes : internalNodeDefaults(ROUTER_APP, "route").routes
   ) as RouterRoute[];
-  const save = (next: RouterRoute[]) => onChange({ ...values, routes: next });
-  const patch = (index: number, value: Partial<RouterRoute>) =>
-    save(routes.map((r, i) => (i === index ? { ...r, ...value } : r)));
-  const move = (index: number, delta: number) => {
-    const next = [...routes];
-    [next[index], next[index + delta]] = [next[index + delta], next[index]];
+  const conditions = routes.filter((r) => !r.default);
+  const [dragged, setDragged] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  // Keep existing fallback IDs, so editing a route never disconnects its fallback edge.
+  const save = (next: RouterRoute[]) =>
+    onChange({
+      ...values,
+      routes: [...next, ...routes.filter((r) => r.default)],
+    });
+  const patch = (id: string, value: Partial<RouterRoute>) =>
+    save(conditions.map((r) => (r.id === id ? { ...r, ...value } : r)));
+  const move = (id: string, to: number) => {
+    const from = conditions.findIndex((r) => r.id === id);
+    if (from < 0 || to < 0 || to >= conditions.length || from === to) return;
+    const next = [...conditions];
+    const [route] = next.splice(from, 1);
+    next.splice(to, 0, route);
     save(next);
   };
+  const rename = (route: RouterRoute) => {
+    if (draftName.trim()) patch(route.id, { label: draftName.trim() });
+    setRenaming(null);
+  };
   return (
-    <div className="w6w-stack">
-      <p className="w6w-muted w6w-small">
-        Routes are checked from top to bottom. Only the first match runs; the default route runs
-        when none match.
-      </p>
-      {routes.map((route, index) => (
-        <fieldset
-          key={route.id}
-          className="w6w-stack"
-          disabled={readOnly}
-          style={{
-            border: "1px solid var(--w6w-border)",
-            borderRadius: 8,
-            padding: "var(--w6w-sp-3)",
-          }}
-        >
-          <legend>{route.default ? "Default route" : `Route ${index + 1}`}</legend>
-          <label className="w6w-field">
-            <span>Port label</span>
-            <input
-              type="text"
-              aria-label={`Route ${index + 1} label`}
-              value={route.label ?? route.id}
-              onChange={(e) => patch(index, { label: e.target.value })}
-            />
-          </label>
-          {route.default ? (
-            <p className="w6w-muted w6w-small">Used when every condition above is false.</p>
-          ) : (
-            <>
-              <ConditionEditor
-                values={{ condition: route.condition ?? false }}
-                onChange={(next) => patch(index, { condition: next.condition })}
-                readOnly={readOnly}
-                purpose="router"
+    <div className="w6w-router-editor">
+      <p className="w6w-muted w6w-small">First match wins. Drag routes to change their order.</p>
+      <div className="w6w-router-routes">
+        {conditions.map((route, index) => (
+          // Native drag events on the row accept drops from its keyboard-accessible grip.
+          <div
+            key={route.id}
+            className={`w6w-router-route${dragged === route.id ? " is-dragging" : ""}${dropTarget === route.id ? " is-drop-target" : ""}`}
+            data-route-id={route.id}
+            onDragOver={(event) => {
+              if (readOnly || !dragged || dragged === route.id) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setDropTarget(route.id);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (!readOnly && dragged) move(dragged, index);
+              setDragged(null);
+              setDropTarget(null);
+            }}
+          >
+            <div className="w6w-router-route-heading">
+              <button
+                type="button"
+                className="w6w-icon-btn w6w-router-grip"
+                draggable={!readOnly}
+                disabled={readOnly}
+                aria-label={`Reorder ${route.label || route.id}`}
+                title="Drag to reorder · arrow keys to move"
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", route.id);
+                  const row = event.currentTarget.closest(".w6w-router-route");
+                  if (row) event.dataTransfer.setDragImage(row, 16, 16);
+                  setDragged(route.id);
+                }}
+                onDragEnd={() => {
+                  setDragged(null);
+                  setDropTarget(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                  event.preventDefault();
+                  move(route.id, index + (event.key === "ArrowUp" ? -1 : 1));
+                }}
+              >
+                <Icon name="grip" size={14} />
+              </button>
+              <span className="w6w-step-rename">
+                {renaming === route.id && !readOnly ? (
+                  <input
+                    // biome-ignore lint/a11y/noAutofocus: inline rename is explicitly opened by the user
+                    autoFocus
+                    aria-label="Route name"
+                    value={draftName}
+                    onChange={(event) => setDraftName(event.target.value)}
+                    onBlur={() => rename(route)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") rename(route);
+                      if (event.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="w6w-router-route-name"
+                    disabled={readOnly}
+                    aria-label={`Rename ${route.label || route.id}`}
+                    onClick={() => {
+                      setDraftName(route.label || route.id);
+                      setRenaming(route.id);
+                    }}
+                  >
+                    {route.label || route.id}
+                    {!readOnly && <Icon name="edit" size={12} />}
+                  </button>
+                )}
+              </span>
+              <DeleteButton
+                label={`Remove ${route.label || route.id}`}
+                disabled={readOnly}
+                onClick={() => save(conditions.filter((r) => r.id !== route.id))}
               />
-              <div className="w6w-field-row">
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm"
-                  disabled={readOnly || index === 0}
-                  onClick={() => move(index, -1)}
-                >
-                  Move up
-                </button>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm"
-                  disabled={readOnly || !routes[index + 1] || routes[index + 1].default}
-                  onClick={() => move(index, 1)}
-                >
-                  Move down
-                </button>
-                <button
-                  type="button"
-                  className="w6w-btn w6w-btn-sm"
-                  disabled={readOnly}
-                  onClick={() => save(routes.filter((_, i) => i !== index))}
-                >
-                  Remove route
-                </button>
-              </div>
-            </>
-          )}
-        </fieldset>
-      ))}
+            </div>
+            <ConditionEditor
+              values={{ condition: route.condition ?? false }}
+              onChange={(next) => patch(route.id, { condition: next.condition })}
+              readOnly={readOnly}
+              purpose="router"
+            />
+          </div>
+        ))}
+      </div>
       <button
         type="button"
-        className="w6w-btn"
+        className="w6w-btn w6w-btn-ghost w6w-btn-sm w6w-router-add"
         disabled={readOnly}
         onClick={() => {
           let n = 1;
           while (routes.some((r) => r.id === `route_${n}`)) n++;
-          const route: RouterRoute = { id: `route_${n}`, label: `Route ${n}`, condition: false };
-          const fallback = routes.filter((r) => r.default);
-          save([...routes.filter((r) => !r.default), route, ...fallback]);
+          save([...conditions, { id: `route_${n}`, label: `Route ${n}`, condition: false }]);
         }}
       >
-        Add route
+        <span aria-hidden="true">+</span> Add route
       </button>
     </div>
   );

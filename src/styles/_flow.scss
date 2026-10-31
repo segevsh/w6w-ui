@@ -286,3 +286,28 @@
   border-radius: 8px;
   color: var(--w6w-danger);
 }
+
+// Router ports fan out beyond the ordinary card. Labels never affect card dimensions.
+.w6w-router-port-link {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 28px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: var(--w6w-border);
+}
+.w6w-router-port-label {
+  position: absolute;
+  left: calc(100% + var(--w6w-sp-10));
+  transform: translateY(-100%);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: var(--w6w-fs-xs);
+  color: var(--w6w-muted);
+}
