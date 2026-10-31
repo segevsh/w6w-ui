@@ -84,8 +84,21 @@ test("TS1 — isTrigger is derived from isTriggerStep(step.uses)", () => {
   assert.equal(init, "isTriggerStep(step.uses)");
 });
 
-test('TS2 — the card div carries className={isTrigger ? "w6w-node-trigger" : undefined}', () => {
-  assertTriggerConditional(attrExpr(controlCard(), "className"), "w6w-node-trigger", "className");
+test('TS2 — the card div carries className={isTrigger ? "w6w-node-trigger" : …}, absent on a plain non-router control', () => {
+  // 55c674b: the false arm now composes the router class
+  // (`isTrigger ? "w6w-node-trigger" : isRouter ? "w6w-node-router" : undefined`).
+  // The trigger arm is unchanged, and a control that is neither still gets no class.
+  const expr = attrExpr(controlCard(), "className");
+  assert.ok(ts.isConditionalExpression(expr), "className must be conditional on isTrigger");
+  assert.equal(expr.condition.getText(sf), "isTrigger", "className's condition");
+  assert.ok(ts.isStringLiteral(expr.whenTrue), "className's trigger arm must be a string literal");
+  assert.equal(expr.whenTrue.text, "w6w-node-trigger", "className's trigger arm");
+  const rest = expr.whenFalse;
+  assert.ok(ts.isConditionalExpression(rest), "the non-trigger arm must branch on isRouter");
+  assert.equal(rest.condition.getText(sf), "isRouter", "the non-trigger arm's condition");
+  assert.ok(ts.isStringLiteral(rest.whenTrue), "the router arm must be a string literal");
+  assert.equal(rest.whenTrue.text, "w6w-node-router", "the router arm");
+  assert.equal(rest.whenFalse.getText(sf), "undefined", "className must be absent otherwise");
 });
 
 test('TS3 — the card div carries data-node-kind={isTrigger ? "trigger" : undefined}', () => {
