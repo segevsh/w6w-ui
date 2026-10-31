@@ -181,6 +181,7 @@ import {
 } from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
+import { registrationDisplay, subscriptionsByNode } from "./trigger-registration.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -338,6 +339,33 @@ function outCapMessage(cap: number): string {
 
 const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
 
+/** The workflow's node-bound Subscriptions, read once per editor (not per card). */
+interface TriggerRegistrationValue {
+  byNode: ReadonlyMap<string, SubscriptionSummary>;
+  /** Present only when the host can retry; re-reads the list after the retry. */
+  retry?: (subscriptionId: string) => Promise<void>;
+}
+const TriggerRegistrationCtx = createContext<TriggerRegistrationValue>({ byNode: new Map() });
+
+/** `AppsCtx` plus the trigger-registration context (one provider, no extra nesting level). */
+function CardDataProvider({
+  apps,
+  registration,
+  children,
+}: {
+  apps: Map<string, AppSummary>;
+  registration: TriggerRegistrationValue;
+  children: ReactNode;
+}) {
+  return (
+    <AppsCtx.Provider value={apps}>
+      <TriggerRegistrationCtx.Provider value={registration}>
+        {children}
+      </TriggerRegistrationCtx.Provider>
+    </AppsCtx.Provider>
+  );
+}
+
 /** Which view the step edit modal opens in: the tabbed form, raw JSON, or node settings. */
 type EditView = "props" | "json" | "settings";
 
@@ -428,6 +456,7 @@ function Inner({
 }: WorkflowFlowEditorProps) {
   const api = useW6WApi();
   const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
+  const triggerRegistration = useTriggerRegistration(value);
   const [runResult, setRunResult] = useState<StepRunState | null>(null);
   // Re-hydrate nodes+edges only when the workflow id changes identity. Local
   // edits (drag, connect, delete) go through the useNodesState / useEdgesState
@@ -1597,7 +1626,7 @@ function Inner({
     <StepControlsCtx.Provider value={controls}>
       <PortsLookupCtx.Provider value={portsLookup}>
         <FanOutCountsCtx.Provider value={fanOutCounts}>
-          <AppsCtx.Provider value={appsById}>
+          <CardDataProvider apps={appsById} registration={triggerRegistration}>
             <WorkflowProjectProvider project={project}>
               <ExpressionOptionsProvider value={mergedExprOptions}>
                 <div
@@ -2075,7 +2104,7 @@ function Inner({
                 </div>
               </ExpressionOptionsProvider>
             </WorkflowProjectProvider>
-          </AppsCtx.Provider>
+          </CardDataProvider>
         </FanOutCountsCtx.Provider>
       </PortsLookupCtx.Provider>
     </StepControlsCtx.Provider>
@@ -2700,6 +2729,96 @@ function useAppTriggerTitle(step: FlowStep): string {
   return title || key;
 }
 
+/**
+ * ONE `listSubscriptionsForWorkflow` read per mounted workflow, shared with every
+ * trigger card through context. Re-read when the workflow's trigger nodes change
+ * (a publish rewrites them) and after a Retry. Absent API member => empty map.
+ */
+function useTriggerRegistration(value: FlowWorkflow): TriggerRegistrationValue {
+  const api = useW6WApi();
+  const list = api.listSubscriptionsForWorkflow;
+  const retrySub = api.retrySubscriptionRegistration;
+  const workflowId = value.id;
+  const triggers = value.nodes.filter((n) => n.uses.trigger === true);
+  const hasTrigger = triggers.length > 0;
+  const triggerSig = triggers
+    .map((n) => `${n.id}:${n.uses.app}:${n.uses.action}:${n.uses.connection ?? ""}`)
+    .join("|");
+  const [byNode, setByNode] = useState<ReadonlyMap<string, SubscriptionSummary>>(new Map());
+  const [tick, setTick] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: triggerSig/tick are refetch keys
+  useEffect(() => {
+    if (!list || !hasTrigger) {
+      setByNode(new Map());
+      return;
+    }
+    let canceled = false;
+    list
+      .call(api, workflowId)
+      .then((subs) => !canceled && setByNode(subscriptionsByNode(subs)))
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, list, workflowId, hasTrigger, triggerSig, tick]);
+  const retry = useMemo(
+    () =>
+      retrySub
+        ? async (subscriptionId: string) => {
+            try {
+              await retrySub.call(api, subscriptionId);
+            } finally {
+              setTick((t) => t + 1);
+            }
+          }
+        : undefined,
+    [api, retrySub],
+  );
+  return useMemo(() => ({ byNode, retry }), [byNode, retry]);
+}
+
+/** Registration state, last error, last fire and Retry for a trigger node's bound subscription. */
+function TriggerRegistrationBadge({ nodeId }: { nodeId: string }) {
+  const { byNode, retry } = useContext(TriggerRegistrationCtx);
+  const [busy, setBusy] = useState(false);
+  const sub = byNode.get(nodeId);
+  const d = registrationDisplay(sub, retry !== undefined);
+  if (!sub || !d) return null;
+  return (
+    <div
+      className="w6w-small"
+      data-trigger-registration={sub.status}
+      data-tone={d.tone}
+      style={{ marginTop: 3, paddingLeft: 2 }}
+    >
+      <span style={d.tone === "danger" ? { color: "var(--w6w-danger)" } : undefined}>
+        {d.label}
+      </span>
+      <span className="w6w-muted"> · {d.lastFire}</span>
+      {d.error && (
+        <div role="alert" style={{ color: "var(--w6w-danger)" }}>
+          {d.error}
+        </div>
+      )}
+      {d.retryVisible && retry && (
+        <button
+          type="button"
+          className="nodrag"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            retry(sub.id)
+              .catch(() => {})
+              .finally(() => setBusy(false));
+          }}
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const apps = useContext(AppsCtx);
@@ -2781,6 +2900,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
+      {isTrigger && step.uses.trigger === true && <TriggerRegistrationBadge nodeId={id} />}
       {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
