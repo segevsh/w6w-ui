@@ -53,6 +53,8 @@ export interface CodeEditorProps {
   language?: ScriptLanguage;
   /** Accessible label for the editor. */
   "aria-label"?: string;
+  /** Called with the CodeMirror view once it exists — for inserting at the caret. */
+  onCreateEditor?: (view: EditorView) => void;
 }
 
 /**
@@ -85,6 +87,7 @@ export function CodeEditor(props: CodeEditorProps) {
         height={props.height}
         minHeight={props.minHeight ?? "160px"}
         maxHeight={props.maxHeight}
+        onCreateEditor={props.onCreateEditor}
         basicSetup={{
           lineNumbers: true,
           foldGutter: false,

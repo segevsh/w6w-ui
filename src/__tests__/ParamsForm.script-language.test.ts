@@ -65,12 +65,12 @@ const { ParamsForm } = await import("../ParamsForm.tsx");
 const { internalNodeParams, internalNodeDefaults, SCRIPT_APP } = await import("../flow-types.ts");
 type ActionParam = import("../types.ts").ActionParam;
 
-const JS_DEFAULT =
+const JS_DEFAULT = "// Runs as a function body. Return the step's output.\nreturn input;";
+const PYTHON_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
+// The default from when the hint named `input`, `vars`, `consts` and `state` — what a step saved
+// then still stores.
+const LEGACY_JS_DEFAULT =
   "// Read `input` (bound under Input), plus `vars`, `consts` and `state.nodes.<step-id>.output`.\n// Runs as a function body. Return the step's output.\nreturn input;";
-const PYTHON_DEFAULT =
-  '# Read `input` (bound under Input), plus `vars`, `consts` and `state["nodes"][<step-id>]["output"]`.\n# Runs as a function body. Return the step\'s output.\nreturn input';
-// The defaults before they named `input` — what a step saved earlier still stores.
-const LEGACY_JS_DEFAULT = "// Runs as a function body. Return the step's output.\nreturn input;";
 
 function mountRoot() {
   const container = document.getElementById("root");
@@ -342,7 +342,7 @@ test("g — python → javascript: an untouched Python default swaps back to the
   });
 });
 
-test("h — a step saved with the pre-`input` JS default still counts as boilerplate and swaps", async () => {
+test("h — a step saved with an earlier JS default still counts as boilerplate and swaps", async () => {
   const { container, root, values } = await render(SCRIPT_PARAMS, {
     language: "javascript",
     code: LEGACY_JS_DEFAULT,

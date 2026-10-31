@@ -185,6 +185,14 @@ export interface ActionParam {
   layout?: "row" | "stack";
   /** `section: "collapsible"` only — start collapsed (default `true`). */
   collapsed?: boolean;
+  /** `section: "collapsible"` only — start open when any child already holds a value. */
+  openWhenSet?: boolean;
+  /**
+   * `type: "code"` only — a Run script's code, which reads run data from its `state` / `vars` /
+   * `consts` globals: its insert actions write code reads, never `{{ }}` (the host does not
+   * substitute in code).
+   */
+  scriptReads?: boolean;
 }
 
 /** A single choice for a param rendered as a dropdown. */

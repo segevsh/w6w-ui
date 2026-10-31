@@ -83,7 +83,7 @@ import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ResolvedParams } from "./components/ResolvedParams.tsx";
 import { ResultViewer } from "./components/ResultViewer.tsx";
-import { ScriptBindingsNotice } from "./components/ScriptBindingsNotice.tsx";
+import { ScriptBindingsNotice, useScriptConversion } from "./components/ScriptBindingsNotice.tsx";
 import {
   applyConnect,
   canConnect,
@@ -3115,6 +3115,13 @@ function ActionStepEditModal({
     [onChange],
   );
 
+  // A script's `{{ }}` markers become code reads when the step opens (quiet note + Undo).
+  const scriptConversion = useScriptConversion({
+    enabled: step.uses.app === SCRIPT_APP && !readOnly,
+    values: step.with ?? {},
+    onChange: (w) => commit({ ...step, with: w }),
+  });
+
   const changeConfigView = (v: ConfigView) => {
     if (v === "code") setCodeText(stepToJson(step));
     else if (v === "params-code") setParamsCodeText(paramsToJson(step));
@@ -3376,8 +3383,8 @@ function ActionStepEditModal({
                     {step.uses.app === SCRIPT_APP && (
                       <ScriptBindingsNotice
                         values={step.with ?? {}}
+                        conversion={scriptConversion}
                         readOnly={readOnly}
-                        onChange={(w) => commit({ ...step, with: w })}
                       />
                     )}
                     <ParamsForm

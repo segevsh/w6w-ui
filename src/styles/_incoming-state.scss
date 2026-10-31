@@ -48,3 +48,32 @@
   cursor: default;
   opacity: 0.6;
 }
+/* Run script (ParamsForm `ScriptCodeField`, WorkflowFlowEditor `ScriptBindingsNotice`): the
+   insert row under the code, the collapsed "How to read data", and the quiet conversion note. */
+.w6w-script-insert {
+  align-items: center;
+}
+.w6w-script-help > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.w6w-script-help-examples {
+  margin: var(--w6w-sp-1-5) 0;
+  padding: var(--w6w-sp-1-5) var(--w6w-sp-2);
+  border-radius: 6px;
+  background: var(--w6w-bg);
+  font-size: 0.85em;
+  overflow-x: auto;
+}
+.w6w-script-converted {
+  display: block;
+}
+.w6w-script-converted-undo {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--w6w-accent);
+  cursor: pointer;
+  text-decoration: underline;
+}

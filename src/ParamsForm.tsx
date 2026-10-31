@@ -8,6 +8,7 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ScriptCodeField } from "./components/ScriptCodeField.tsx";
 import { varLabel } from "./components/expression-dom.ts";
 import { holdsExpression } from "./components/expression-template.ts";
 import { bareRefBinding, wholeValueRef } from "./components/json-compose.ts";
@@ -268,7 +269,17 @@ function SectionField({
 
   if (param.section === "collapsible") {
     return (
-      <details className="w6w-section" open={param.collapsed === false}>
+      <details
+        className="w6w-section"
+        open={
+          param.collapsed === false ||
+          (param.openWhenSet === true &&
+            visibleChildren.some((c) => {
+              const v = effective(c.key);
+              return v !== undefined && v !== null && v !== "";
+            }))
+        }
+      >
         <summary className="w6w-section-summary">
           <span className="w6w-section-title">{param.title ?? param.label ?? param.key}</span>
           {param.subtitle && <span className="w6w-section-subtitle">{param.subtitle}</span>}
@@ -407,16 +418,15 @@ function RepeatField({
 /** The Python default snippet for a `code` param when its sibling `language`
  *  resolves to `"python"` (D-3) — a working `return input`-equivalent, same
  *  shape/intent as `SCRIPT_APP`'s JS default in `flow-types.ts`. */
-const PYTHON_CODE_DEFAULT =
-  '# Read `input` (bound under Input), plus `vars`, `consts` and `state["nodes"][<step-id>]["output"]`.\n# Runs as a function body. Return the step\'s output.\nreturn input';
+const PYTHON_CODE_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
 
-/** Earlier script defaults (before they named `input`, then `vars`/`consts`/`state`) — still untouched boilerplate a
- *  `language` switch may swap, on a step saved before the wording changed. */
+/** Earlier script defaults (the ones that named `input`, then `vars`/`consts`/`state`) — still untouched
+ *  boilerplate a `language` switch may swap, on a step saved while that wording was current. */
 const LEGACY_CODE_DEFAULTS = [
+  "// Read `input` (bound under Input), plus `vars`, `consts` and `state.nodes.<step-id>.output`.\n// Runs as a function body. Return the step's output.\nreturn input;",
+  '# Read `input` (bound under Input), plus `vars`, `consts` and `state["nodes"][<step-id>]["output"]`.\n# Runs as a function body. Return the step\'s output.\nreturn input',
   "// `input` holds the data bound under Input (e.g. an upstream step's output).\n// Runs as a function body. Return the step's output.\nreturn input;",
   "# `input` holds the data bound under Input (e.g. an upstream step's output).\n# Runs as a function body. Return the step's output.\nreturn input",
-  "// Runs as a function body. Return the step's output.\nreturn input;",
-  "# Runs as a function body. Return the step's output.\nreturn input",
 ];
 
 function ParamField(props: ParamFieldProps) {
@@ -532,6 +542,19 @@ function ParamFieldBody({
           : undefined;
     const fallbackDefault = language === "python" ? PYTHON_CODE_DEFAULT : param.default;
     const current = (value ?? fallbackDefault ?? "") as string;
+    if (param.scriptReads) {
+      return (
+        <ScriptCodeField
+          param={param}
+          value={String(current)}
+          language={siblingLanguage === "python" ? "python" : "javascript"}
+          label={label}
+          req={req}
+          readOnly={readOnly}
+          onChange={(next) => onChange(param.key, next)}
+        />
+      );
+    }
     return (
       <div className="w6w-field">
         <span>
