@@ -67,6 +67,19 @@ export interface FlowStep {
    * tie, so the spelling here must stay identical to the engine's.
    */
   position?: { x: number; y: number };
+  /**
+   * Disabled: skipped in EVERY run, published and triggered included — the node does not
+   * execute and its outgoing edges are skipped, so a node that depends only on it does not run
+   * either. An engine semantic (mirrors `Node.disabled` in `@w6w/workflow-types`). Written as
+   * `true` or absent, never `false`.
+   */
+  disabled?: true;
+  /**
+   * Editor-only metadata; the engine ignores it. `paused`: a test run started from a node's ▶
+   * stops BEFORE this node (it does not execute). Never affects a published or triggered run.
+   * Absent when empty, never `{}`.
+   */
+  ui?: { paused?: true };
 }
 
 export interface FlowEdge {

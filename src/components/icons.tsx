@@ -77,6 +77,8 @@ export type IconName =
   | "circle-half"
   | "layout"
   | "run"
+  | "pause"
+  | "ban"
   | "trash"
   | "maximize"
   | "form"
@@ -856,6 +858,36 @@ export const icons: Record<IconName, IconDef> = {
     body: (
       <>
         <polygon points="6 4 20 12 6 20 6 4" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/WorkflowFlowEditor.tsx's node-toolbar pause toggle — Feather `pause`
+   * (two bars): a test run started from ▶ stops before a paused node.
+   */
+  pause: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <rect x="6" y="4" width="4" height="16" />
+        <rect x="14" y="4" width="4" height="16" />
+      </>
+    ),
+  },
+  /**
+   * ui/src/WorkflowFlowEditor.tsx's node-toolbar disable toggle — Feather `slash`
+   * (a circle with a diagonal line): a disabled node is skipped in every run.
+   */
+  ban: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
       </>
     ),
   },
