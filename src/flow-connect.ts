@@ -18,8 +18,11 @@ import { type LoopRefusalReason, isForeachStep, loopMembership, loopRefusal } fr
 import {
   type CanvasLane,
   type PortsLookup,
+  ROUTER_APP,
   edgeVisuals,
   nodePortsForStep,
+  routeHandle,
+  routesForStep,
   sourceHandleForLane,
 } from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
@@ -100,9 +103,11 @@ export function canConnect(
   nodes: StepNode[],
   edges: Edge[],
   lookup?: PortsLookup,
+  route?: string,
 ): boolean {
   if (!source || !target || source === target) return false;
-  if (edges.some((e) => e.source === source && e.target === target)) return false;
+  if (edges.some((e) => e.source === source && e.target === target && e.data?.route === route))
+    return false;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return false;
@@ -127,11 +132,15 @@ function planConnect(
   edges: Edge[],
   when: CanvasLane,
   lookup?: PortsLookup,
+  route?: string,
 ): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | LoopRefusal | null } | null {
-  if (!canConnect(source, target, nodes, edges, lookup) || !source || !target) return null;
+  if (!canConnect(source, target, nodes, edges, lookup, route) || !source || !target) return null;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return null;
+  if (srcStep.uses.app === ROUTER_APP && when === "success") {
+    if (!routesForStep(srcStep).some((r) => r.id === route)) return null;
+  } else if (route !== undefined) return null;
   // A success connect drawn from a body node extends the body (its ordinary right
   // handle is the only one it has), so it is an each-lane edge. Computed once.
   const inBody = loopMembership(nodes, edges)[source] !== undefined;
@@ -152,9 +161,12 @@ function planConnect(
   let next = edges;
   // The source's exit port IN THIS LANE is full at a finite cap: REFUSE. Nothing is
   // evicted — `next` stays the input edge set. The other lane is untouched.
-  const fromSrc = next.filter((e) => e.source === source && edgeLane(e) === effLane);
-  if (fromSrc.length >= srcPorts.out) {
-    return { next: edges, conflict: null, refusal: { refused: "out_cap", cap: srcPorts.out } };
+  const fromSrc = next.filter(
+    (e) => e.source === source && edgeLane(e) === effLane && e.data?.route === route,
+  );
+  const cap = route === undefined ? srcPorts.out : 1;
+  if (fromSrc.length >= cap) {
+    return { next: edges, conflict: null, refusal: { refused: "out_cap", cap } };
   }
   // Free the target's entry port likewise — lane-blind, see the docstring.
   const toTgt = next.filter((e) => e.target === target);
@@ -175,7 +187,7 @@ function planConnect(
   // because only `planRelane` (re-laning an EXISTING edge) applied it — the
   // create path never did. Same trap `planRelane`'s own comment warns about:
   // this must be an explicit spread here, not left for a later re-render.
-  const id = flowEdgeId(source, target, effLane);
+  const id = flowEdgeId(source, target, effLane, route);
   // A body node has no Each-item handle: stamping `out-each` there would leave the
   // edge unrendered, so only the For each itself anchors to it.
   const sourceHandle = effLane === "each" && inBody ? undefined : sourceHandleForLane(effLane);
@@ -185,8 +197,8 @@ function planConnect(
         source,
         target,
         id,
-        sourceHandle,
-        data: { when: effLane },
+        sourceHandle: route === undefined ? sourceHandle : routeHandle(route),
+        data: { when: effLane, ...(route === undefined ? {} : { route }) },
         // No run state: this mints a freshly DRAWN edge, never a run-taken
         // one — the live run-aware repaint is a separate effect
         // (WorkflowFlowEditor.tsx, T1.1.1), not this creation path.
@@ -238,8 +250,9 @@ export function applyConnect(
   edges: Edge[],
   when: CanvasLane = "success",
   lookup?: PortsLookup,
+  route?: string,
 ): Edge[] | null {
-  const plan = planConnect(source, target, nodes, edges, when, lookup);
+  const plan = planConnect(source, target, nodes, edges, when, lookup, route);
   if (!plan || plan.conflict || plan.refusal) return null;
   return plan.next;
 }
@@ -261,8 +274,9 @@ export function connectConflict(
   edges: Edge[],
   when: CanvasLane = "success",
   lookup?: PortsLookup,
+  route?: string,
 ): string | null {
-  return planConnect(source, target, nodes, edges, when, lookup)?.conflict ?? null;
+  return planConnect(source, target, nodes, edges, when, lookup, route)?.conflict ?? null;
 }
 
 /**
@@ -277,8 +291,9 @@ export function connectRefusal(
   edges: Edge[],
   when: CanvasLane = "success",
   lookup?: PortsLookup,
+  route?: string,
 ): OutCapRefusal | LoopRefusal | null {
-  return planConnect(source, target, nodes, edges, when, lookup)?.refusal ?? null;
+  return planConnect(source, target, nodes, edges, when, lookup, route)?.refusal ?? null;
 }
 
 /**
@@ -314,6 +329,7 @@ function planRelane(
   if (edgeLane(me) === "each") return null;
   const srcStep = nodes.find((n) => n.id === me.source)?.data.step;
   if (!srcStep) return null;
+  if (srcStep.uses.app === ROUTER_APP) return null;
   const out = nodePortsForStep(srcStep, lookup).out;
   // The DESTINATION lane at the source is full at a finite cap: REFUSE, evicting
   // nothing (exactly the rule `applyConnect` applies on creation). `me` is excluded —
@@ -439,6 +455,16 @@ export function renameStepInEdges(edges: Edge[], prevId: string, nextId: string)
   return edges.map((e) => {
     const source = e.source === prevId ? nextId : e.source;
     const target = e.target === prevId ? nextId : e.target;
-    return { ...e, source, target, id: flowEdgeId(source, target, edgeLane(e)) };
+    return {
+      ...e,
+      source,
+      target,
+      id: flowEdgeId(
+        source,
+        target,
+        edgeLane(e),
+        typeof e.data?.route === "string" ? e.data.route : undefined,
+      ),
+    };
   });
 }

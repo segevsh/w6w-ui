@@ -132,6 +132,7 @@ export type {
   FunctionSummary,
   SecretValue,
   SubscriptionSummary,
+  WebhookListenSession,
   ThemeMode,
   TriggerSummary,
   WorkflowDetail,

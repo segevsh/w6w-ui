@@ -72,6 +72,7 @@ export interface FlowStep {
 export interface FlowEdge {
   from: string;
   to: string;
+  route?: string;
   /**
    * Which outcome of the `from` step this edge carries (core
    * `rfcs/workflow.md` · "Amendment — 2026-07-29: failure-conditioned edges
@@ -326,6 +327,27 @@ export const TEMPLATE_APP = "@w6w/template";
  * `@w6w/store` internal-app manifest (pinned by `store-node-parity.test.ts`).
  */
 export const STORE_APP = "@w6w/store";
+/** End the whole workflow successfully when its optional condition matches. */
+export const STOP_APP = "@w6w/stop";
+export const ROUTER_APP = "@w6w/router";
+
+export interface RouterRoute {
+  id: string;
+  label?: string;
+  condition?: unknown;
+  default?: boolean;
+}
+
+export function routesForStep(step: FlowStep): RouterRoute[] {
+  if (step.uses.app !== ROUTER_APP || !Array.isArray(step.with?.routes)) return [];
+  return step.with.routes.filter(
+    (r): r is RouterRoute => !!r && typeof r === "object" && typeof r.id === "string",
+  );
+}
+
+export const routeHandle = (id: string): string => `route:${id}`;
+export const routeFromHandle = (handle: string | null | undefined): string | undefined =>
+  handle?.startsWith("route:") ? handle.slice(6) : undefined;
 
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
@@ -454,6 +476,7 @@ export function nodePorts(app: string, action: string): NodePorts {
  * the `lookup` argument and never written onto the step, so it never serializes.
  */
 export function nodePortsForStep(step: FlowStep, lookup?: PortsLookup): NodePorts {
+  if (step.uses.app === ROUTER_APP) return { in: 1, out: routesForStep(step).length };
   const { app, action } = step.uses;
   // An app trigger node is an entry: nothing flows into it (like the built-in triggers).
   const appTriggerPorts: PortsDecl | undefined = step.uses.trigger ? { in: 0, out: 1 } : undefined;
@@ -517,6 +540,45 @@ const ICON_STORE =
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
+  {
+    app: ROUTER_APP,
+    action: "route",
+    label: "Router",
+    displayName: "Router",
+    group: "compute",
+    icon: ICON_IF,
+    params: [
+      {
+        key: "routes",
+        label: "Routes",
+        type: "json",
+        required: true,
+        default: [
+          { id: "route_1", label: "Route 1", condition: false },
+          { id: "default", label: "Default", default: true },
+        ],
+      },
+    ],
+    output: [{ key: "route", label: "Selected route" }],
+  },
+  {
+    app: STOP_APP,
+    action: "stop",
+    label: "Stop workflow",
+    displayName: "Stop workflow",
+    group: "compute",
+    icon: '<rect x="5" y="5" width="14" height="14" rx="2" />',
+    params: [
+      {
+        key: "condition",
+        label: "Condition",
+        type: "json",
+        default: true,
+        hint: "Stop when this condition is true. Omit it to always stop.",
+      },
+    ],
+    output: [{ key: "stopped", label: "Stopped" }],
+  },
   {
     app: TRIGGER_APP,
     action: "manual",
@@ -652,7 +714,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         key: "responseData",
         label: "Response body (immediate)",
         type: "text",
-        hint: 'Body for "Immediately" responses. Empty = { "message": "Workflow was started" }.',
+        hint: 'Body for "Immediately" responses. Empty = { "runId": "run_…", "status": "started" }. Write {{ runId }} to include the run id.',
         showIf: { field: "responseMode", equals: "onReceived" },
       },
       { key: "rawBody", label: "Raw body", type: "boolean", default: false, advanced: true },

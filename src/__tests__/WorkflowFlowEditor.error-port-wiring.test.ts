@@ -102,13 +102,19 @@ test("U6 — onConnect derives the lane via laneForSourceHandle and passes it to
   assert.equal(applyConnectCalls.length, 1, "onConnect must call applyConnect exactly once");
   assert.equal(
     applyConnectCalls[0].arguments.length,
-    6,
-    "applyConnect must receive 6 arguments (portsLookup last)",
+    7,
+    "applyConnect must receive 7 arguments (portsLookup, then the Router route last)",
   );
   assert.match(
     applyConnectCalls[0].arguments[4].getText(sf),
     /laneForSourceHandle/,
     "applyConnect's 5th argument must derive from laneForSourceHandle",
+  );
+
+  assert.match(
+    applyConnectCalls[0].arguments[6].getText(sf),
+    /routeFromHandle/,
+    "applyConnect's 7th argument must derive from routeFromHandle",
   );
 
   const connectConflictCalls = findCalls(onConnectBody, "connectConflict");
@@ -157,9 +163,9 @@ test("U7 — onConnectEnd captures the lane on pendingConnect, and addBuiltStep 
   // auto-wiring, 2026-08-30) — those calls are plain (no explicit lane,
   // defaulting to "success") and are not this test's concern. Scope to the
   // ONE call that must carry the captured drag lane: the pendingConnect
-  // branch's own applyConnect(source, target, nextNodes, edges, <lane>, portsLookup).
+  // branch's own applyConnect(source, target, nextNodes, edges, <lane>, portsLookup, <route>).
   const laneThreadedCalls = applyConnectCalls.filter(
-    (c) => c.arguments.length === 6 && /pendingConnect/.test(c.arguments[4].getText(sf)),
+    (c) => c.arguments.length === 7 && /pendingConnect/.test(c.arguments[4].getText(sf)),
   );
   assert.equal(
     laneThreadedCalls.length,
@@ -202,14 +208,24 @@ test("U10 — ControlNodeCard gates that error port behind a trigger check", () 
     /isTriggerStep\(step\.uses\)/,
     "ControlNodeCard must derive a trigger check from isTriggerStep",
   );
-  // The error PortHandle's JSX must sit inside a `!isTrigger &&` guard.
+  // The error PortHandle's JSX must sit inside a guard that includes `!isTrigger`.
+  // 55c674b widened it to `!isTrigger && !isRouter && <PortHandle …/>` (a router
+  // routes by its own ports), so `!isTrigger` is now one conjunct of the left side.
+  const conjuncts = (e: ts.Expression): string[] =>
+    ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+      ? [...conjuncts(e.left), ...conjuncts(e.right)]
+      : ts.isParenthesizedExpression(e)
+        ? conjuncts(e.expression)
+        : [e.getText(sf)];
   let guarded = false;
   const visit = (node: ts.Node) => {
     if (
       ts.isJsxExpression(node) &&
-      ts.isBinaryExpression(node.expression ?? ({} as ts.Expression)) &&
-      /^!isTrigger$/.test((node.expression as ts.BinaryExpression).left.getText(sf)) &&
-      /ERROR_SOURCE_HANDLE/.test((node.expression as ts.BinaryExpression).right.getText(sf))
+      node.expression &&
+      ts.isBinaryExpression(node.expression) &&
+      node.expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      conjuncts(node.expression.left).includes("!isTrigger") &&
+      /ERROR_SOURCE_HANDLE/.test(node.expression.right.getText(sf))
     ) {
       guarded = true;
     }

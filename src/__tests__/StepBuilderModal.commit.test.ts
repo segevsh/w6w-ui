@@ -238,17 +238,28 @@ test("ControlStepConfig commits on mount, then routes edits through onDraftChang
 
   assert.equal(onAddCalls.length, 1, "a control node commits on mount, exactly once");
 
-  const condInput = container.querySelector('input[type="text"]');
-  assert.ok(condInput, "the 'cond' param field should be rendered");
+  // 55c674b: the condition is now an expression field (a contentEditable
+  // `role=textbox`, labelled "Condition field"), not an `input[type=text]`.
+  const condInput = container.querySelector('[role="textbox"][aria-label="Condition field"]');
+  assert.ok(condInput, "the condition's expression field should be rendered");
   for (const v of ["a", "b", "c"]) {
     await act(async () => {
-      setInputValue(condInput, v);
+      condInput.textContent = v;
+      condInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
     });
   }
 
   assert.equal(onAddCalls.length, 1, "onAdd must NOT fire again on subsequent edits");
   assert.ok(onDraftChangeCalls.length >= 1);
   for (const [id] of onDraftChangeCalls) assert.equal(id, "gate_1");
+  const lastDraft = onDraftChangeCalls[onDraftChangeCalls.length - 1][1] as {
+    with?: { condition?: { $expr?: Record<string, unknown[]> } };
+  };
+  assert.deepEqual(
+    lastDraft.with?.condition?.$expr?.["==="]?.[0],
+    "c",
+    "the last edit reaches onDraftChange as the comparison's left operand",
+  );
 
   await act(async () => {
     root.unmount();

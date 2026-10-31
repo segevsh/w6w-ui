@@ -68,6 +68,23 @@ test("round trip (c) 3-step body", () => {
     ),
   );
 });
+
+test("If conditions remain loop members after save and reload", () => {
+  const wf = wfOf(
+    [
+      fe("f", { items: [{ enabled: true }], body: ["gate", "op"] }),
+      step("gate", {
+        uses: { app: "@w6w/control", action: "if" },
+        with: { condition: { $: "foreach.item.enabled" } },
+      }),
+      step("op"),
+    ],
+    [],
+  );
+  same(wf);
+  const graph = workflowToFlow(roundTrip(wf));
+  assert.deepEqual(loopMembership(graph.nodes, graph.edges), { gate: "f", op: "f" });
+});
 test("round trip (d) body + Done-side node", () => {
   same(
     wfOf(

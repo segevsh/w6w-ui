@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
 import { type StepTestPersist, requiredParamsFilled } from "./StepBuilderModal.tsx";
+import { type CapturedWebhookRequest, WebhookListenPanel } from "./WebhookListenPanel.tsx";
 import { ResultViewer } from "./components/ResultViewer.tsx";
 import { useW6WApi, useWorkflowProject } from "./provider.tsx";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
@@ -48,12 +49,19 @@ type TestState =
  * `packages/studio/src/lib/workflow-live-run.ts`): it fetches the manual
  * trigger's latest `step_tests` row and sends its `with` verbatim as `input`.
  * This form is not in that path; it only writes the fixture that call reads.
+ *
+ * **Listen for test event.** With `listen` supplied (a `@w6w/webhook` trigger inside a workflow),
+ * the primary action is {@link WebhookListenPanel}: the real request a caller sends becomes the
+ * payload. **Use as test data** runs exactly this form's Test path with the captured request as
+ * the values, so it lands as the trigger's output and saved test like a typed payload would. The
+ * manual payload box stays, folded below as the secondary option.
  */
 export function TriggerFillForm({
   app,
   action,
   fields,
   persist,
+  listen,
 }: {
   app: string;
   action: string;
@@ -65,6 +73,8 @@ export function TriggerFillForm({
    * a fixture by and this form neither reads nor writes one.
    */
   persist?: StepTestPersist;
+  /** Offer "Listen for test event" (webhook triggers in a saved workflow). */
+  listen?: { stepWith: Record<string, unknown> | undefined; readOnly?: boolean };
 }) {
   const api = useW6WApi();
   // The workflow's selected project scopes document-expression resolution in the
@@ -126,13 +136,14 @@ export function TriggerFillForm({
   // payload has nothing to require.
   const canRun = draftValid && requiredParamsFilled(params, values);
 
-  const run = async () => {
+  const run = async (override?: Record<string, unknown>) => {
+    const input = override ?? values;
     setState({ status: "running" });
     let outcome: Exclude<TestState, { status: "running" }>;
     try {
       // The filled values become the trigger's output/run-input — the handler
       // reads `params.input` and returns it verbatim.
-      const result = await api.invokeAction(app, action, { input: values }, { project });
+      const result = await api.invokeAction(app, action, { input }, { project });
       outcome = {
         status: "done",
         value: result.value,
@@ -156,7 +167,7 @@ export function TriggerFillForm({
       try {
         const saved = await api.saveStepTest(persist.workflowId, persist.stepId, {
           input: persist.input,
-          with: values,
+          with: input,
         });
         await api.recordStepTestRun(persist.workflowId, persist.stepId, {
           stepTestId: saved.id,
@@ -173,47 +184,88 @@ export function TriggerFillForm({
 
   const logs = state && state.status !== "running" ? state.logs : undefined;
 
+  // A captured request becomes the payload (shown in the manual box too) and is tested + saved.
+  const useCaptured = (request: CapturedWebhookRequest) => {
+    const payload = { ...request } as Record<string, unknown>;
+    setValues(payload);
+    void run(payload);
+  };
+  const listenPanel = listen && persist && (
+    <WebhookListenPanel
+      workflowId={persist.workflowId}
+      stepId={persist.stepId}
+      stepWith={listen.stepWith}
+      readOnly={listen.readOnly}
+      onUse={useCaptured}
+      using={state?.status === "running"}
+    />
+  );
+
   return (
     <div className="w6w-stack">
-      {/* Held until the saved values land, so the form is never shown with the
-          defaults and then re-written under the operator's cursor. */}
-      {!seeded ? (
-        <p className="w6w-muted w6w-small">Loading saved values…</p>
+      {listenPanel}
+      {listenPanel ? (
+        <details className="w6w-listen-manual">
+          <summary className="w6w-small">Or test with a sample payload</summary>
+          {manualEntry()}
+        </details>
       ) : (
-        <>
-          <PropertyEntryForm
-            params={params}
-            values={values}
-            onChange={setValues}
-            onValidityChange={setDraftValid}
-          />
-          {!hasFields && (
-            <span className="w6w-hint">
-              This trigger declares no fields — provide a sample payload to test with. It becomes
-              the trigger's output state (<code>input</code>).
-            </span>
-          )}
-        </>
+        manualEntry()
       )}
+      {resultBlock()}
+    </div>
+  );
 
-      <div className="w6w-steptest">
-        <div className="w6w-steptest-bar">
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-ghost"
-            disabled={!seeded || !canRun || state?.status === "running"}
-            onClick={run}
-          >
-            {state?.status === "running" ? "Running…" : "▶ Test run"}
-          </button>
-          {seeded && !canRun && (
-            <span className="w6w-muted w6w-small">
-              {draftValid
-                ? "Fill the required fields to test."
-                : "The payload must be a JSON object to test."}
-            </span>
-          )}
+  function manualEntry() {
+    return (
+      <div className="w6w-stack">
+        {/* Held until the saved values land, so the form is never shown with the
+          defaults and then re-written under the operator's cursor. */}
+        {!seeded ? (
+          <p className="w6w-muted w6w-small">Loading saved values…</p>
+        ) : (
+          <>
+            <PropertyEntryForm
+              params={params}
+              values={values}
+              onChange={setValues}
+              onValidityChange={setDraftValid}
+            />
+            {!hasFields && (
+              <span className="w6w-hint">
+                This trigger declares no fields — provide a sample payload to test with. It becomes
+                the trigger's output state (<code>input</code>).
+              </span>
+            )}
+          </>
+        )}
+
+        <div className="w6w-steptest">
+          <div className="w6w-steptest-bar">
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost"
+              disabled={!seeded || !canRun || state?.status === "running"}
+              onClick={() => void run()}
+            >
+              {state?.status === "running" ? "Running…" : "▶ Test run"}
+            </button>
+            {seeded && !canRun && (
+              <span className="w6w-muted w6w-small">
+                {draftValid
+                  ? "Fill the required fields to test."
+                  : "The payload must be a JSON object to test."}
+              </span>
+            )}
+          </div>
         </div>
+      </div>
+    );
+  }
+
+  function resultBlock() {
+    return (
+      <div className="w6w-steptest">
         {state?.status === "error" && (
           <div className="w6w-result w6w-error">
             {state.errorCode && (
@@ -242,6 +294,6 @@ export function TriggerFillForm({
           </div>
         )}
       </div>
-    </div>
-  );
+    );
+  }
 }

@@ -26,6 +26,7 @@ export type StepStatus = "pending" | "running" | "succeeded" | "failed" | "skipp
 /** The slice of `StepExecution` this module reads. */
 export interface StepExecution {
   status: StepStatus;
+  output?: unknown;
   /** For each only (I3): per-iteration body-step records, keyed by body-step id. */
   iterations?: ReadonlyArray<{ nodes?: Record<string, { status: StepStatus }> }>;
 }
@@ -171,6 +172,7 @@ export function edgeRunState(
   runState: RunState | undefined,
   from: string,
   when: CanvasLane | undefined,
+  route?: string,
 ): EdgeRunState | undefined {
   if (!runState) return undefined;
   const exec = execOf(runState, from);
@@ -179,6 +181,12 @@ export function edgeRunState(
   // ids are never `RunState.nodes` keys) — only a skipped parent skips it.
   if (when === "each") return exec.status === "skipped" ? "skipped" : undefined;
   const lane = when ?? "success";
+  if (route !== undefined && exec.status === "succeeded") {
+    const output = exec.output;
+    return output && typeof output === "object" && "route" in output && output.route === route
+      ? "taken"
+      : "skipped";
+  }
   if (exec.status === "succeeded") return lane === "success" ? "taken" : "skipped";
   if (exec.status === "failed") return lane === "error" ? "taken" : "skipped";
   if (exec.status === "skipped") return "skipped";
