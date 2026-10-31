@@ -370,3 +370,91 @@ test("A3: a floating app trigger next to a separate chain still wires FROM the a
   );
   await act(async () => root.unmount());
 });
+
+// T1.3.1 — registration badge: ONE list read per workflow, Retry by subscription id.
+function threeTriggerWorkflow(): FlowWorkflow {
+  return {
+    id: "wf_1",
+    name: "wf",
+    nodes: [
+      { id: "T1", uses: { ...T1_USES }, with: {} },
+      { id: "T2", uses: { ...T1_USES }, with: {} },
+      { id: "T3", uses: { ...T1_USES }, with: {} },
+      { id: "A", uses: { app: "@w6w/script", action: "run" }, with: {} },
+    ],
+    edges: [{ from: "T1", to: "A" }],
+  } as unknown as FlowWorkflow;
+}
+const badge = (id: string) => card(id)?.querySelector("[data-trigger-registration]") ?? null;
+
+test("T1.3.1: one list call for three trigger nodes; failed shows error + Retry (subscription id), refetches, flips to registered without remount; unbound/non-trigger show none", async () => {
+  let listCalls = 0;
+  const retried: string[] = [];
+  let state: Record<string, unknown>[] = [
+    {
+      id: "sub_T1",
+      nodeId: "T1",
+      status: "failed",
+      lastError: { code: "partner_down", message: "partner returned 503" },
+      lastFireAt: null,
+    },
+    { id: "sub_T2", nodeId: "T2", status: "paused", lastFireAt: "2026-10-30T12:34:00Z" },
+    { id: "sub_wf", nodeId: null, status: "registered" },
+  ];
+  const api = fakeApi({
+    listSubscriptionsForWorkflow: async () => {
+      listCalls += 1;
+      return state;
+    },
+    retrySubscriptionRegistration: async (id: string) => {
+      retried.push(id);
+      state = state.map((s) => (s.id === id ? { ...s, status: "registered", lastError: null } : s));
+      return state[0];
+    },
+  });
+  const { root } = await mountEditor(threeTriggerWorkflow(), api);
+  await flush();
+  assert.equal(listCalls, 1, "one fetch for three trigger nodes");
+  assert.match(badge("T1")?.textContent ?? "", /partner returned 503/);
+  assert.equal(badge("T1")?.getAttribute("data-trigger-registration"), "failed");
+  assert.equal(badge("T2")?.getAttribute("data-trigger-registration"), "paused");
+  assert.equal(badge("T3"), null, "trigger with no bound subscription");
+  assert.equal(badge("A"), null, "non-trigger node");
+  const retryBtn = Array.from(card("T1")?.querySelectorAll("button") ?? []).find(
+    (b) => b.textContent === "Retry",
+  );
+  assert.equal(
+    Array.from(card("T2")?.querySelectorAll("button") ?? []).some((b) => b.textContent === "Retry"),
+    false,
+  );
+  const t1Node = card("T1");
+  await click(retryBtn);
+  await flush();
+  assert.deepEqual(retried, ["sub_T1"], "called with the subscription id, not the node id");
+  assert.equal(listCalls, 2, "refetched after retry");
+  assert.equal(card("T1"), t1Node, "same DOM node: no remount");
+  assert.equal(badge("T1")?.getAttribute("data-trigger-registration"), "registered");
+  assert.equal(badge("T1")?.textContent?.includes("partner returned 503"), false);
+  await act(async () => root.unmount());
+});
+
+test("T1.3.1: without retrySubscriptionRegistration a failed badge has no Retry; without the list member no badge", async () => {
+  const failed = [
+    { id: "sub_T1", nodeId: "T1", status: "failed", lastError: { code: "x", message: "boom" } },
+  ];
+  const a = await mountEditor(
+    threeTriggerWorkflow(),
+    fakeApi({ listSubscriptionsForWorkflow: async () => failed }),
+  );
+  await flush();
+  assert.match(badge("T1")?.textContent ?? "", /boom/);
+  assert.equal(
+    Array.from(card("T1")?.querySelectorAll("button") ?? []).some((b) => b.textContent === "Retry"),
+    false,
+  );
+  await act(async () => a.root.unmount());
+  const b = await mountEditor(threeTriggerWorkflow(), fakeApi());
+  await flush();
+  assert.equal(badge("T1"), null);
+  await act(async () => b.root.unmount());
+});
