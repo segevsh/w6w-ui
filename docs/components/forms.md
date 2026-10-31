@@ -32,6 +32,7 @@ A searchable grid of app cards. The same picker the connection modal and the nod
 | `apps` | `AppSummary[] \| null` | None | Supply the catalog yourself. `null` shows the loading state. When set, the picker doesn't fetch. |
 | `filter` | `(app) => boolean` | None | Narrows what's shown, in the browser. Never widens a fetch. When it hides cards, the paged footer drops its total and reports the card count alone. |
 | `ids` | `string[]` | None | Server-side id allow-list for the paged fetch (`GET /apps?ids=a,b&paged=true`). The page's `total` is the filtered total, so the footer reads `N of N`. Prefer it over `filter` when the allowed ids are known up front. |
+| `hasTriggers` | `boolean` | `false` | Server-side filter to apps that declare at least one trigger (`GET /apps?hasTriggers=true`), sent through `listAppsPage`. The page's `total` is the filtered total. |
 | `search` | `boolean` | `true` | Show the search box. |
 | `searchPlaceholder` | `string` | `"Search apps…"` | |
 | `emptyMessage`, `emptyAction` | `string`, `ReactNode` | None | Empty-state text, and a control under it (such as a "Browse all apps" button). |
