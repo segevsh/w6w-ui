@@ -27,6 +27,7 @@ import {
 import type { StepMeta, StepStartState, StepTest } from "./provider.tsx";
 import { buildResolveScope, resolveParamValue } from "./resolve-params.ts";
 import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
+import { type SubscriptionSummary, isExprValue, isSecretValue } from "./types.ts";
 
 /**
  * What the editor knows about upstream steps' output SHAPES beyond the static
@@ -599,6 +600,50 @@ export function nodeConfigSources(nodes: StepNode[]): { id: string; keys: string
     const isWebhook = step.uses.app === WEBHOOK_APP || step.uses.trigger === true;
     if (isWebhook && !keys.includes("url")) keys.unshift("url");
     if (keys.length > 0) out.push({ id: step.id, keys });
+  }
+  return out;
+}
+
+/** `undefined` for a value that is not static configuration — `@w6w/workflow`'s `staticValue`. */
+function staticValue(v: unknown): unknown {
+  if (isExprValue(v) || isSecretValue(v)) return undefined;
+  if (Array.isArray(v)) return v.map(staticValue).filter((x) => x !== undefined);
+  if (typeof v === "object" && v !== null) {
+    const o = v as Record<string, unknown>;
+    const keys = Object.keys(o);
+    if (keys.length === 1 && keys[0] === "$" && typeof o.$ === "string") return undefined;
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(o)) {
+      const sv = staticValue(x);
+      if (sv !== undefined) out[k] = sv;
+    }
+    return out;
+  }
+  return v;
+}
+
+/**
+ * Each node's configuration VALUES — the client's `nodeConfigOf`: the step's static `with`
+ * (sealed secrets and bindings dropped, so nothing sealed ever reaches a preview) with a webhook
+ * trigger node's `url` laid over it from the workflow's subscriptions, picked as the server's
+ * `hostNodeConfig` picks it (the one bound to the node, else for a `@w6w/webhook` node the newest
+ * webhook subscription). A node with nothing to configure is absent.
+ */
+export function nodeConfigValues(
+  nodes: StepNode[],
+  subs: readonly SubscriptionSummary[],
+): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const n of nodes) {
+    const step = n.data.step;
+    const config = { ...((staticValue(step.with ?? {}) ?? {}) as Record<string, unknown>) };
+    if (step.uses.app === WEBHOOK_APP || step.uses.trigger === true) {
+      const sub =
+        subs.find((s) => s.nodeId === step.id) ??
+        (step.uses.app === WEBHOOK_APP ? subs.find((s) => s.appId === WEBHOOK_APP) : undefined);
+      if (sub?.webhookUrl) config.url = sub.webhookUrl;
+    }
+    if (Object.keys(config).length > 0) out[step.id] = config;
   }
   return out;
 }

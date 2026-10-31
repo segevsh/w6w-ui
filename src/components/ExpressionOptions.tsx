@@ -196,6 +196,13 @@ export interface ExpressionOptions {
    */
   nodeConfigs?: { id: string; keys: string[] }[];
   /**
+   * Each node's configuration VALUES, keyed by node id — what a run reads at
+   * `nodes.<id>.meta.config` (`nodeConfigOf`): authored literal params (never a secret, never a
+   * binding) plus a webhook trigger's `url` from its subscription. The Test tab and the Result
+   * preview resolve config refs against it. Workflow context only.
+   */
+  nodeConfig?: Record<string, Record<string, unknown>>;
+  /**
    * Design-time sample values the Result preview substitutes for known refs,
    * keyed by FULL ref (`"var.from_email"`, `"documents.test"`). Seeded by the
    * host from the project's real vars/documents so the preview shows actual
