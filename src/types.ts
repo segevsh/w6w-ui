@@ -46,7 +46,7 @@ export interface TriggerSummary {
   description?: string;
   requiresAuth?: boolean;
   /** `"poll"` triggers are fetched on an interval; absent or `"webhook"` receive pushes. */
-  type?: "webhook" | "poll";
+  type?: "webhook" | "poll" | "protocol";
   /** Host floor for a poll trigger's interval, in milliseconds. */
   minIntervalMs?: number;
   /** The trigger's declared parameters (the route returns the full declaration). */
@@ -62,12 +62,21 @@ export interface SubscriptionSummary {
   connectionId: string | null;
   /** Present only for `appId === "@w6w/webhook"` — the server's own computed receive URL. */
   webhookUrl?: string;
-  type?: "webhook" | "poll";
-  status?: string;
+  type?: "webhook" | "poll" | "protocol";
+  status?: SubscriptionStatus;
   /** Poll interval in milliseconds; null for webhook subscriptions. */
   intervalMs?: number | null;
   lastError?: { code: string; message: string } | null;
+  /** The workflow trigger node this subscription is bound to; null for a workflow-level one. */
+  nodeId?: string | null;
+  /** When registration with the app succeeded; null until it has. */
+  registeredAt?: string | null;
+  /** When the subscription last fired; null/absent when it never has. */
+  lastFireAt?: string | null;
 }
+
+/** Registration state of a Subscription (rfcs/trigger-protocol.md §Lifecycle). */
+export type SubscriptionStatus = "pending" | "registered" | "failed" | "paused" | "destroying";
 
 /** One field on an Auth method's connection form. Drives the input widgets. */
 export interface AuthField {
