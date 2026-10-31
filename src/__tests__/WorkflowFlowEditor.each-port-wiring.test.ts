@@ -164,6 +164,6 @@ test("C16 — delete bridges, the confirm text and duplicate come from the loop 
   assert.match(inner.getText(sf), /message=\{deleteStepMessage\(/);
   assert.match(
     source,
-    /selectedEdge && edgeLane\(selectedEdge\) !== "each" && \(\s*<Panel position="top-right">/,
+    /selectedEdge &&\s*edgeLane\(selectedEdge\) !== "each" &&\s*nodes\.find\(\(n\) => n\.id === selectedEdge\.source\)\?\.data\.step\.uses\.app !==\s*ROUTER_APP && \(\s*<Panel position="top-right">/,
   );
 });
