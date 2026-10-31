@@ -943,6 +943,7 @@ export function ExpressionEditorModal({
                           buildResolveScope(
                             options.sampleValues,
                             sampleStepsState(options.sampleValues),
+                            options.nodeConfig,
                           ),
                         ),
                       ),
