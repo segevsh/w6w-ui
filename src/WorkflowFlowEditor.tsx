@@ -114,7 +114,7 @@ import {
   stripBody,
 } from "./flow-loop.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
-import { ROUTER_APP, routeFromHandle, routeHandle, routesForStep } from "./flow-types.ts";
+import { ROUTER_APP, routeFromHandle, routerPortLayout, routesForStep } from "./flow-types.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -2649,9 +2649,6 @@ function PortHandle({
       style={{
         ...(multiple ? { height: 22, borderRadius: 3, width: 8 } : {}),
         ...(top ? { top } : {}),
-        ...(routeLabel
-          ? { left: "calc(100% + 28px)", right: "auto", transform: "translate(-50%, -50%)" }
-          : {}),
       }}
       // A click (no drag) adds a step from this port; a drag still draws a connection.
       onClick={canAdd ? add : undefined}
@@ -2993,6 +2990,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const routes = routesForStep(step);
   const isRouter = step.uses.app === ROUTER_APP;
+  const routerPorts = routes.length ? routerPortLayout(routes) : undefined;
   const routeKey = JSON.stringify(routes.map((r) => r.id));
   const updateNodeInternals = useUpdateNodeInternals();
   // biome-ignore lint/correctness/useExhaustiveDependencies: route identities and order change handle positions.
@@ -3045,6 +3043,11 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           // (styles/_flow.scss): an inline value here would beat the class.
           ...(isTrigger ? {} : { borderRadius: 4, padding: "6px 14px 6px 8px" }),
           minWidth: 140,
+          // Past three route ports the Router grows a fixed step per port
+          // (routerPortLayout); border-box so that height is the whole card's.
+          ...(routerPorts?.minHeight
+            ? { minHeight: routerPorts.minHeight, boxSizing: "border-box" as const }
+            : {}),
           fontSize: 13,
           display: "flex",
           alignItems: "center",
@@ -3068,6 +3071,22 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <span>Done</span>
           </div>
         )}
+        {/* Route labels inside the card, each beside its right-edge handle, the
+            way For each labels Each item / Done. One row per port over the full
+            card height, so a row's centre is its handle's `top`. */}
+        {!!routerPorts?.right.length && (
+          <div
+            className="w6w-router-ports w6w-small"
+            style={{ gridTemplateRows: `repeat(${routerPorts.right.length}, 1fr)` }}
+            aria-hidden="true"
+          >
+            {routerPorts.right.map((port) => (
+              <span key={port.id} title={port.label}>
+                {port.label}
+              </span>
+            ))}
+          </div>
+        )}
         {ports.out > 0 && (
           <>
             {isForeach && (
@@ -3079,30 +3098,34 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
                 variant="each"
               />
             )}
-            {routes.length ? (
-              routes.map((route, index) => {
-                const offset = (index - (routes.length - 1) / 2) * 24;
-                const routeLabel = route.default ? "Fallback" : route.label || route.id;
-                const top = `calc(50% + ${offset}px)`;
-                return (
-                  <div key={route.id}>
-                    <svg className="w6w-router-port-link" aria-hidden="true">
-                      <path d={`M 0 0 C 14 0, 14 ${offset}, 28 ${offset}`} />
-                    </svg>
-                    <span className="w6w-router-port-label" style={{ top }} title={routeLabel}>
-                      {routeLabel}
-                    </span>
+            {routerPorts ? (
+              <>
+                {routerPorts.right.map((port) => (
+                  <PortHandle
+                    key={port.id}
+                    type="source"
+                    position={Position.Right}
+                    multiple={false}
+                    id={port.handleId}
+                    top={port.top}
+                    routeLabel={port.label}
+                  />
+                ))}
+                {routerPorts.bottom && (
+                  <>
                     <PortHandle
                       type="source"
-                      position={Position.Right}
+                      position={Position.Bottom}
                       multiple={false}
-                      id={routeHandle(route.id)}
-                      top={top}
-                      routeLabel={routeLabel}
+                      id={routerPorts.bottom.handleId}
+                      routeLabel={routerPorts.bottom.label}
                     />
-                  </div>
-                );
-              })
+                    <span className="w6w-router-fallback-label w6w-small" aria-hidden="true">
+                      {routerPorts.bottom.label}
+                    </span>
+                  </>
+                )}
+              </>
             ) : (
               <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
             )}

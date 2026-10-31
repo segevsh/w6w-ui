@@ -349,6 +349,49 @@ export const routeHandle = (id: string): string => `route:${id}`;
 export const routeFromHandle = (handle: string | null | undefined): string | undefined =>
   handle?.startsWith("route:") ? handle.slice(6) : undefined;
 
+/** Route ports the Router card's right edge holds at its natural height. */
+export const ROUTER_PORTS_AT_BASE_HEIGHT = 3;
+/** Card height (px, border-box) added per route port past the third. */
+export const ROUTER_PORT_STEP = 16;
+
+export interface RouterPort {
+  id: string;
+  handleId: string;
+  label: string;
+  /** Handle position along its edge, as a CSS `top` (right-edge ports only). */
+  top?: string;
+}
+
+/**
+ * Where a Router's ports sit (human report, 2026-10-31: "they need to be
+ * attached to the router"). Condition routes go on the card's right edge,
+ * evenly spaced; the fallback route takes the bottom edge, the slot every
+ * other node gives its error port. Up to three right-edge ports fit the
+ * card's natural height; each one past that adds a fixed step, so five
+ * routes make a slightly taller card. Handle ids stay `route:<id>`, so
+ * saved edges keep resolving.
+ */
+export function routerPortLayout(routes: RouterRoute[]): {
+  right: RouterPort[];
+  bottom?: RouterPort;
+  minHeight?: number;
+} {
+  const fallback = routes.find((r) => r.default);
+  const port = (r: RouterRoute): RouterPort => ({
+    id: r.id,
+    handleId: routeHandle(r.id),
+    label: r.default ? "Fallback" : r.label || r.id,
+  });
+  const side = routes.filter((r) => r !== fallback);
+  return {
+    right: side.map((r, i) => ({ ...port(r), top: `${((i + 0.5) / side.length) * 100}%` })),
+    ...(fallback ? { bottom: port(fallback) } : {}),
+    ...(side.length > ROUTER_PORTS_AT_BASE_HEIGHT
+      ? { minHeight: side.length * ROUTER_PORT_STEP }
+      : {}),
+  };
+}
+
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
   return app.startsWith(INTERNAL_APP_PREFIX);
