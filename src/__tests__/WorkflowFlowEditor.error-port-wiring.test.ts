@@ -208,14 +208,24 @@ test("U10 — ControlNodeCard gates that error port behind a trigger check", () 
     /isTriggerStep\(step\.uses\)/,
     "ControlNodeCard must derive a trigger check from isTriggerStep",
   );
-  // The error PortHandle's JSX must sit inside a `!isTrigger &&` guard.
+  // The error PortHandle's JSX must sit inside a guard that includes `!isTrigger`.
+  // 55c674b widened it to `!isTrigger && !isRouter && <PortHandle …/>` (a router
+  // routes by its own ports), so `!isTrigger` is now one conjunct of the left side.
+  const conjuncts = (e: ts.Expression): string[] =>
+    ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+      ? [...conjuncts(e.left), ...conjuncts(e.right)]
+      : ts.isParenthesizedExpression(e)
+        ? conjuncts(e.expression)
+        : [e.getText(sf)];
   let guarded = false;
   const visit = (node: ts.Node) => {
     if (
       ts.isJsxExpression(node) &&
-      ts.isBinaryExpression(node.expression ?? ({} as ts.Expression)) &&
-      /^!isTrigger$/.test((node.expression as ts.BinaryExpression).left.getText(sf)) &&
-      /ERROR_SOURCE_HANDLE/.test((node.expression as ts.BinaryExpression).right.getText(sf))
+      node.expression &&
+      ts.isBinaryExpression(node.expression) &&
+      node.expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      conjuncts(node.expression.left).includes("!isTrigger") &&
+      /ERROR_SOURCE_HANDLE/.test(node.expression.right.getText(sf))
     ) {
       guarded = true;
     }
