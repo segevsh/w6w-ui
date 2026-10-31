@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   NEVER_FIRED,
+  appTriggerNodesOf,
   formatLastFire,
   registrationDisplay,
   subscriptionsByNode,
@@ -71,4 +72,18 @@ test("no status or no subscription => no display; byNode skips workflow-level su
     sub({ id: "s3", nodeId: undefined }),
   ]);
   assert.deepEqual([...m.keys()], ["T1"]);
+});
+
+test("appTriggerNodesOf: a value with no nodes (embed partial mount) has no trigger nodes", () => {
+  assert.deepEqual(appTriggerNodesOf(undefined), []);
+  assert.deepEqual(appTriggerNodesOf(null), []);
+  const nodes = [
+    { id: "t", uses: { app: "vip.cohost.w6w", trigger: true as const } },
+    { id: "s", uses: { app: "@w6w/script" } },
+    { id: "x" },
+  ];
+  assert.deepEqual(
+    appTriggerNodesOf(nodes).map((n) => n.id),
+    ["t"],
+  );
 });

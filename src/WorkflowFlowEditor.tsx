@@ -184,7 +184,11 @@ import {
 } from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
-import { registrationDisplay, subscriptionsByNode } from "./trigger-registration.ts";
+import {
+  appTriggerNodesOf,
+  registrationDisplay,
+  subscriptionsByNode,
+} from "./trigger-registration.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -2756,7 +2760,7 @@ function useTriggerRegistration(value: FlowWorkflow): TriggerRegistrationValue {
   const list = api.listSubscriptionsForWorkflow;
   const retrySub = api.retrySubscriptionRegistration;
   const workflowId = value.id;
-  const triggers = value.nodes.filter((n) => n.uses.trigger === true);
+  const triggers = appTriggerNodesOf(value.nodes);
   const hasTrigger = triggers.length > 0;
   const triggerSig = triggers
     .map((n) => `${n.id}:${n.uses.app}:${n.uses.action}:${n.uses.connection ?? ""}`)

@@ -60,3 +60,13 @@ export function subscriptionsByNode(
   for (const s of subs) if (s.nodeId) m.set(s.nodeId, s);
   return m;
 }
+
+/**
+ * The app trigger nodes of a workflow value. Total over a value that has no `nodes` yet
+ * (embed mounts pass a partial value): an absent list is no trigger nodes.
+ */
+export function appTriggerNodesOf<N extends { uses?: { trigger?: boolean } }>(
+  nodes: readonly N[] | null | undefined,
+): N[] {
+  return (nodes ?? []).filter((n) => n.uses?.trigger === true);
+}
