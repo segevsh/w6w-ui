@@ -1198,6 +1198,49 @@ select optgroup {
   color: var(--w6w-text);
 }
 
+.w6w-fx-wrap:has(> .w6w-multiselect-checks) {
+  align-items: flex-start;
+}
+
+.w6w-multiselect-checks {
+  padding: var(--w6w-sp-1) 0;
+}
+
+.w6w-multiselect-checks-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-3);
+  margin-bottom: var(--w6w-sp-2);
+}
+
+.w6w-multiselect-checks-options {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: var(--w6w-sp-2) var(--w6w-sp-4);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.w6w-field .w6w-multiselect-check {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  margin: 0;
+  font-size: var(--w6w-fs-sm);
+  cursor: pointer;
+}
+
+.w6w-field .w6w-multiselect-check input[type=checkbox] {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--w6w-accent);
+}
+
 /* Incoming state (WorkflowFlowEditor · `IncomingStateField`, mounted by BOTH the
    step editor's Test tab and the canvas ▶ Run collect form). The raw JSON box is
    an OVERRIDE, so it sits behind a disclosure instead of being the first thing

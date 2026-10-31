@@ -133,3 +133,75 @@ test("ordinary multiselects continue storing arrays, including numeric options",
   assert.deepEqual(box.current.status, []);
   await act(async () => root.unmount());
 });
+
+async function check(container: HTMLElement, label: string) {
+  const input = Array.from(container.querySelectorAll("label"))
+    .find((el) => el.textContent === label)
+    ?.querySelector("input");
+  assert.ok(input);
+  await act(async () => input.click());
+}
+
+async function clickText(container: HTMLElement, label: string) {
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (el) => el.textContent === label,
+  );
+  assert.ok(button);
+  await act(async () => button.click());
+}
+
+test("checkbox multiselect selects multiple values, all, and clears without changing array types", async () => {
+  const param: ActionParam = {
+    key: "actions",
+    label: "Actions",
+    type: "multiselect",
+    ui: "checkboxes",
+    options: [
+      { value: "order.placed", label: "Order placed" },
+      { value: "event.created", label: "Event created" },
+      { value: 3, label: "Three" },
+    ],
+  };
+  const { container, root, box } = await render([param], { actions: [] });
+  assert.equal(container.querySelectorAll("select").length, 0);
+  assert.equal(container.querySelectorAll('input[type="checkbox"]').length, 3);
+  assert.ok(container.querySelector('[aria-label="Use an expression for Actions"]'));
+  await check(container, "Order placed");
+  await check(container, "Event created");
+  assert.deepEqual(box.current.actions, ["order.placed", "event.created"]);
+  await clickText(container, "Select all");
+  assert.deepEqual(box.current.actions, ["order.placed", "event.created", 3]);
+  await check(container, "Event created");
+  assert.deepEqual(box.current.actions, ["order.placed", 3]);
+  await clickText(container, "Clear");
+  assert.deepEqual(box.current.actions, []);
+  await act(async () => root.unmount());
+});
+
+test("checkbox multiselect preserves CSV, custom values, and read-only state", async () => {
+  const param = { ...statusParam, ui: "checkboxes" };
+  const { container, root, box } = await render([param], { status: "legacy,draft" });
+  await clickText(container, "Select all");
+  assert.equal(box.current.status, "legacy,draft,live,ended");
+  await check(container, "legacy");
+  assert.equal(box.current.status, "draft,live,ended");
+  await act(async () =>
+    root.render(
+      React.createElement(ParamsForm, {
+        params: [param],
+        values: box.current,
+        readOnly: true,
+        onChange: () => {
+          throw new Error("read-only field changed");
+        },
+      }),
+    ),
+  );
+  assert.ok(
+    Array.from(container.querySelectorAll('input[type="checkbox"]')).every(
+      (el) => (el as HTMLInputElement).disabled,
+    ),
+  );
+  assert.equal(container.querySelectorAll("button").length, 0);
+  await act(async () => root.unmount());
+});

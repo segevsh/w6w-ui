@@ -143,6 +143,8 @@ export interface ActionParam {
   required?: boolean;
   default?: unknown;
   hint?: string;
+  /** Render hint; multiselect supports "checkboxes" or the default chip picker. */
+  ui?: string;
   /** Placeholder text for the input (e.g. the trailing prompt on a multiselect). */
   placeholder?: string;
   /**

@@ -1458,51 +1458,101 @@ function MultiSelectField({
       label={label}
       req={req}
     >
-      {/* One input-like box: chips inline, then the dropdown as the trailing
+      {param.ui === "checkboxes" ? (
+        <div className="w6w-multiselect-checks w6w-fx-grow">
+          <div className="w6w-multiselect-checks-toolbar">
+            <span className="w6w-muted w6w-small">{selected.length} selected</span>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  className="w6w-linkbtn"
+                  disabled={available.length === 0}
+                  onClick={() => commit([...selected, ...available.map((option) => option.value)])}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="w6w-linkbtn"
+                  disabled={selected.length === 0}
+                  onClick={() => commit([])}
+                >
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+          <fieldset className="w6w-multiselect-checks-options" aria-label={label}>
+            {[
+              ...options,
+              ...selected
+                .filter((v) => !options.some((o) => String(o.value) === String(v)))
+                .map((v) => ({ value: v, label: String(v) })),
+            ].map((option) => (
+              <label key={String(option.value)} className="w6w-multiselect-check">
+                <input
+                  type="checkbox"
+                  checked={selectedKeys.has(String(option.value))}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    event.target.checked ? add(String(option.value)) : remove(option.value)
+                  }
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </fieldset>
+        </div>
+      ) : (
+        <>
+          {/* One input-like box: chips inline, then the dropdown as the trailing
           placeholder — chips appear to live inside the field's boundaries. The
           ƒx toggle (via FxField) swaps the whole box for an expression. */}
-      <div className={`w6w-multiselect${readOnly ? " is-readonly" : ""}`}>
-        {selected.map((v) => (
-          <span className="w6w-chip" key={String(v)}>
-            {labelFor(v)}
-            {!readOnly && (
-              <button
-                type="button"
-                className="w6w-chip-x"
-                aria-label={`Remove ${labelFor(v)}`}
-                title="Remove"
-                onClick={() => remove(v)}
-              >
-                ×
-              </button>
-            )}
-          </span>
-        ))}
-        {!readOnly && (
-          // Controlled to "" so it always reads as the trailing placeholder;
-          // picking an option appends a chip and resets.
-          <select
-            className="w6w-multiselect-add"
-            value=""
-            disabled={available.length === 0}
-            aria-label={`Add to ${param.label ?? param.key}`}
-            onChange={(e) => add(e.target.value)}
-          >
-            <option value="">
-              {available.length > 0
-                ? selected.length
-                  ? "Add more…"
-                  : placeholder
-                : "All selected"}
-            </option>
-            {available.map((o) => (
-              <option key={String(o.value)} value={String(o.value)}>
-                {o.label}
-              </option>
+          <div className={`w6w-multiselect${readOnly ? " is-readonly" : ""}`}>
+            {selected.map((v) => (
+              <span className="w6w-chip" key={String(v)}>
+                {labelFor(v)}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="w6w-chip-x"
+                    aria-label={`Remove ${labelFor(v)}`}
+                    title="Remove"
+                    onClick={() => remove(v)}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
             ))}
-          </select>
-        )}
-      </div>
+            {!readOnly && (
+              // Controlled to "" so it always reads as the trailing placeholder;
+              // picking an option appends a chip and resets.
+              <select
+                className="w6w-multiselect-add"
+                value=""
+                disabled={available.length === 0}
+                aria-label={`Add to ${param.label ?? param.key}`}
+                onChange={(e) => add(e.target.value)}
+              >
+                <option value="">
+                  {available.length > 0
+                    ? selected.length
+                      ? "Add more…"
+                      : placeholder
+                    : "All selected"}
+                </option>
+                {available.map((o) => (
+                  <option key={String(o.value)} value={String(o.value)}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </>
+      )}
     </FxField>
   );
 }
