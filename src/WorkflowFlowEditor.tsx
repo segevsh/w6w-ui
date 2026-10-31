@@ -2251,9 +2251,11 @@ function IncomingStateField({
           onChange={(e) => onChange(e.target.value)}
         />
         <span className="w6w-hint">
-          JSON merged into the call (e.g. a script's <code>input</code>). Reach for this to test
-          against a state the flow cannot currently produce — a field no upstream step returns yet,
-          or a case you can't reproduce by running the flow.
+          JSON whose keys replace this step's parameters by name, for this test only — so a script's
+          data goes under <code>input</code>: <code>{'{"input": {…}}'}</code>. Upstream outputs
+          already reach <code>{"{{ nodes.<id>.output }}"}</code> bindings from their saved tests.
+          Reach for this to test against a state the flow cannot currently produce — a field no
+          upstream step returns yet, or a case you can't reproduce by running the flow.
         </span>
       </details>
     </div>

@@ -531,3 +531,36 @@ test("C9 - a field typed as one bare {{ ref }} becomes that binding when it lose
   assert.deepEqual(box.current.cfg, "{{ nodes.a.output }}");
   await unmount(root);
 });
+
+// A `whole` json param (Run script's Input, For each's Items) offers each upstream step's
+// output as a one-click binding, so the author never has to spell `nodes.<id>.output`.
+const WHOLE_PARAM: ActionParam = { key: "cfg", label: "Cfg", type: "json", whole: true };
+const quickBind = () =>
+  Array.from(doc().querySelectorAll(".w6w-json-quickbind button")) as HTMLButtonElement[];
+
+test("Q1 - a whole json param offers one chip per upstream step; a click binds its output", async () => {
+  const { container, root, box } = await render([WHOLE_PARAM]);
+  assert.deepEqual(
+    quickBind().map((b) => b.textContent),
+    ["a", "b", "c"],
+    "one chip per upstream step, named by id",
+  );
+  await click(quickBind()[1]);
+  assert.equal(box.calls, 1);
+  assert.equal(box.current.cfg, "{{ nodes.b.output }}");
+  assert.equal(chipRef(container), "nodes.b.output", "the field now reads as bound");
+  assert.equal(quickBind().length, 0, "no quick-bind row once bound");
+  await unmount(root);
+});
+
+test("Q2 - no quick-bind row without `whole`, without upstream steps, or read-only", async () => {
+  let r = await render([JSON_PARAM]);
+  assert.equal(quickBind().length, 0, "a non-whole json param");
+  await unmount(r.root);
+  r = await render([WHOLE_PARAM], {}, { options: {} });
+  assert.equal(quickBind().length, 0, "no upstream steps");
+  await unmount(r.root);
+  r = await render([WHOLE_PARAM], {}, { readOnly: true });
+  assert.equal(quickBind().length, 0, "read-only");
+  await unmount(r.root);
+});
