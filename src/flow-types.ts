@@ -714,7 +714,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         key: "responseData",
         label: "Response body (immediate)",
         type: "text",
-        hint: 'Body for "Immediately" responses. Empty = { "message": "Workflow was started" }.',
+        hint: 'Body for "Immediately" responses. Empty = { "runId": "run_…", "status": "started" }. Write {{ runId }} to include the run id.',
         showIf: { field: "responseMode", equals: "onReceived" },
       },
       { key: "rawBody", label: "Raw body", type: "boolean", default: false, advanced: true },

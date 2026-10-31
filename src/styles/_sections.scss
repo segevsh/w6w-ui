@@ -33,4 +33,40 @@
   align-items: center;
   gap: var(--w6w-sp-2-5);
 }
+/* Webhook "Listen for test event": the waiting row, its pulse, and the folded manual payload. */
+.w6w-listen-waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2-5);
+  min-width: 0;
+  code {
+    word-break: break-all;
+  }
+}
+.w6w-listen-pulse {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--w6w-accent);
+  animation: w6w-listen-pulse 1.2s ease-in-out infinite;
+}
+@keyframes w6w-listen-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w6w-listen-pulse {
+    animation: none;
+  }
+}
+.w6w-listen-manual > summary {
+  cursor: pointer;
+  margin-bottom: var(--w6w-sp-2);
+}
 /* A labeled test-run output block (Result vs Console). */

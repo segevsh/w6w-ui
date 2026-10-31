@@ -75,6 +75,27 @@ export interface SubscriptionSummary {
   lastFireAt?: string | null;
 }
 
+/**
+ * A "Listen for test event" session on a `@w6w/webhook` subscription
+ * (`POST /subscriptions/:id/listen`). `request` is the captured, credential-masked call —
+ * exactly what a real run's webhook trigger emits as its output.
+ */
+export interface WebhookListenSession {
+  id: string;
+  subscriptionId: string;
+  nodeId: string | null;
+  expiresAt: string;
+  status: "waiting" | "captured" | "expired";
+  request?: {
+    method: string;
+    path: string;
+    query: Record<string, string>;
+    headers: Record<string, string>;
+    body: unknown;
+  };
+  receivedAt?: string;
+}
+
 /** Registration state of a Subscription (rfcs/trigger-protocol.md §Lifecycle). */
 export type SubscriptionStatus = "pending" | "registered" | "failed" | "paused" | "destroying";
 
