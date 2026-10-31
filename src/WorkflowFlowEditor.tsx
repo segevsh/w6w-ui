@@ -82,6 +82,7 @@ import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ResolvedParams } from "./components/ResolvedParams.tsx";
 import { ResultViewer } from "./components/ResultViewer.tsx";
+import { ScriptBindingsNotice } from "./components/ScriptBindingsNotice.tsx";
 import {
   applyConnect,
   canConnect,
@@ -115,6 +116,7 @@ import {
   type FlowStep,
   type FlowWorkflow,
   type PortsLookup,
+  SCRIPT_APP,
   WEBHOOK_APP,
   edgeVisuals,
   internalNodeIcon,
@@ -2081,6 +2083,9 @@ function Inner({
   );
 }
 
+/** `@w6w/script`'s params the host passes through as source text, never resolved (engine `LITERAL_PARAMS`). */
+const SCRIPT_LITERAL_KEYS = ["code"];
+
 /**
  * Parse the incoming-state box into the object it stands for. Anything that is
  * not a JSON **object** — unparseable, an array, a scalar, `null` — is not a
@@ -3296,22 +3301,33 @@ export function StepEditModal({
                     onChange={(w) => commit({ ...step, with: w })}
                   />
                 ) : (
-                  <ParamsForm
-                    params={params}
-                    values={step.with ?? {}}
-                    readOnly={readOnly}
-                    onChange={(w) => commit({ ...step, with: w })}
-                    dynamic={
-                      isInternal || !step.uses.action
-                        ? undefined
-                        : {
-                            appId: step.uses.app,
-                            actionKey: step.uses.action,
-                            connectionId: blocked ? undefined : (step.uses.connection ?? undefined),
-                            appName: app?.displayName,
-                          }
-                    }
-                  />
+                  <>
+                    {step.uses.app === SCRIPT_APP && (
+                      <ScriptBindingsNotice
+                        values={step.with ?? {}}
+                        readOnly={readOnly}
+                        onChange={(w) => commit({ ...step, with: w })}
+                      />
+                    )}
+                    <ParamsForm
+                      params={params}
+                      values={step.with ?? {}}
+                      readOnly={readOnly}
+                      onChange={(w) => commit({ ...step, with: w })}
+                      dynamic={
+                        isInternal || !step.uses.action
+                          ? undefined
+                          : {
+                              appId: step.uses.app,
+                              actionKey: step.uses.action,
+                              connectionId: blocked
+                                ? undefined
+                                : (step.uses.connection ?? undefined),
+                              appName: app?.displayName,
+                            }
+                      }
+                    />
+                  </>
                 )
               ) : configView === "code" ? (
                 // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
@@ -3406,6 +3422,7 @@ export function StepEditModal({
                         values={testValues}
                         testStartState={testStartState}
                         view={testView}
+                        literalKeys={step.uses.app === SCRIPT_APP ? SCRIPT_LITERAL_KEYS : undefined}
                       />
                     )}
                     <StepTestRun
