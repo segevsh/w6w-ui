@@ -81,8 +81,9 @@ What it doesn't, and what that means:
 
 - No `listAppsPage`, so `AppPicker` loads the whole catalog up front (it pages
   through `GET /apps` 200 at a time, up to 20 pages) and filters in the browser.
-- No trigger members (`listTriggerApps`, `getAppTriggers`, `listSubscriptionsForWorkflow`,
-  `createSubscription`), so the step builder doesn't show the app-triggers section.
+- No `getAppTriggers`, so picking an app on the step builder's Triggers tab lists no triggers.
+  No `listSubscriptionsForWorkflow`/`createSubscription` either, so the canvas's webhook panel
+  can't show a URL.
 - `invokeAction` doesn't forward `overrides` yet, so the **Overrides** fields in `ActionTestForm`
   have no effect through this client.
 
@@ -137,7 +138,7 @@ feature-detected: a component that finds one missing falls back or hides that fe
 | Member | Required | Used by |
 | --- | --- | --- |
 | `listApps()` | Optional | `AppPicker`, `AddConnectionModal`, `StepBuilderModal` when the paged members are missing |
-| `listAppsPage(opts)` | Optional | `AppPicker` and the step builder's Apps/AI tabs: server-side search, category and cursor paging |
+| `listAppsPage(opts)` | Optional | `AppPicker` and the step builder's Apps/AI tabs and Triggers search: server-side search, category, `hasTriggers` and cursor paging |
 | `listAppsByIds(ids)` | Optional | `AddConnectionModal`'s `initialAppId`, and the step builder's connected-apps tab, which reads each connection's inline `app` first and calls this only for rows lacking it. `createW6WApi` implements it (one `GET /apps?ids=` per 100 ids) |
 | `getAppAuth(appId)` | Yes | `AddConnectionModal`, `StepBuilderModal` |
 | `createConnection(appId, body)` | Yes | `AddConnectionModal` (API-key and similar auth) |
@@ -156,7 +157,9 @@ feature-detected: a component that finds one missing falls back or hides that fe
 | `rotateCredential(id, body)` | Optional | `EditConnectionModal`'s split: Rotate credential. Without it the modal is the plain edit form |
 | `testCredential(id)` | Optional | `EditConnectionModal`'s "Credential health" line |
 | `setCredentialStatus(id, status)`, `credentialDependents(id)`, `deleteCredential(id)` | Optional | Credential management screens in hosts (no `@w6w/ui` component calls them) |
-| `listTriggerApps`, `getAppTriggers`, `listSubscriptionsForWorkflow`, `createSubscription` | Optional | App triggers in the step builder and the canvas's webhook panel |
+| `getAppTriggers(appId)` | Optional | The trigger list when you add or edit an app trigger node |
+| `listSubscriptionsForWorkflow`, `createSubscription` | Optional | The canvas's webhook panel |
+| `listTriggerApps()` | Optional | Nothing in `@w6w/ui` calls it any more; the Triggers tab uses `listAppsPage({ hasTriggers: true })` |
 | `listDataStores(project?)` | Optional | The `@w6w/store` step's store picker; absent → plain text |
 
 **Credentials are optional end to end.** The eight credential members above use method syntax and

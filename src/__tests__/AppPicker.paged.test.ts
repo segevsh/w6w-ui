@@ -73,6 +73,7 @@ type ListAppsPageOptionsLike = {
   limit?: number;
   compact?: boolean;
   ids?: string[];
+  hasTriggers?: boolean;
   signal?: AbortSignal;
 };
 
@@ -795,5 +796,58 @@ test("server `ids` filter: 9 of a 70-app catalog -> footer '9 of 9', no 'Model p
   const text = container.textContent ?? "";
   assert.match(text, /9 of 9/);
   assert.ok(!text.includes("Model provider"));
+  await act(async () => root.unmount());
+});
+
+test("`hasTriggers` is forwarded to listAppsPage; footer is the server's 'N of M' and nothing is hidden client-side", async () => {
+  const { api, calls } = makeApi({
+    "||": {
+      apps: [
+        { id: "a", displayName: "A" },
+        { id: "b", displayName: "B" },
+      ],
+      nextCursor: "c2",
+      total: 7,
+    } as never,
+  });
+  const { container, root } = mount(React.createElement("div"));
+  await act(async () => {
+    root.render(
+      React.createElement(
+        W6WUIProvider,
+        { api, children: null } as never,
+        React.createElement(AppPicker, {
+          onSelectApp: () => {},
+          pageLimit: 2,
+          hasTriggers: true,
+        } as never),
+      ),
+    );
+  });
+  await flush();
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0] as { hasTriggers?: boolean }).hasTriggers, true);
+  assert.deepEqual(cardIds(container), ["a", "b"]);
+  assert.match(
+    (container.querySelector(".w6w-apppicker-count")?.textContent ?? "").replace(/\s+/g, " "),
+    /2 of 7/,
+  );
+  await act(async () => root.unmount());
+});
+
+test("without `hasTriggers` the listAppsPage options carry no such key", async () => {
+  const { api, calls } = makeApi({ "||": { apps: [{ id: "a", displayName: "A" }] } });
+  const { root } = mount(React.createElement("div"));
+  await act(async () => {
+    root.render(
+      React.createElement(
+        W6WUIProvider,
+        { api, children: null } as never,
+        React.createElement(AppPicker, { onSelectApp: () => {}, pageLimit: 2 } as never),
+      ),
+    );
+  });
+  await flush();
+  assert.equal("hasTriggers" in calls[0], false);
   await act(async () => root.unmount());
 });

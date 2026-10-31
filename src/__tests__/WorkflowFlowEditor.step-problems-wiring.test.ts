@@ -130,8 +130,8 @@ test("W6 — every applyStepProblemFix( call sits inside a JSX onClick handler",
   }
 });
 
-test("W4 — StepEditModal never empties the connection list (no setConns([]))", () => {
-  const text = findFunction("StepEditModal").getText(sf);
+test("W4 — StepEditModal (action form) never empties the connection list (no setConns([]))", () => {
+  const text = findFunction("ActionStepEditModal").getText(sf);
   assert.match(text, /setConns\(/, "the rig must actually see the setConns calls");
   assert.doesNotMatch(text, /setConns\(\s*\[\s*\]\s*\)/);
 });

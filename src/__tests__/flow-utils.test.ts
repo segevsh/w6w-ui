@@ -1017,3 +1017,29 @@ test("canvas survives flowToWorkflow(workflowToFlow(def)) deep-equal", () => {
   const { nodes, edges } = workflowToFlow(def);
   assert.deepEqual(flowToWorkflow(def, nodes, edges).canvas, canvas);
 });
+
+test("round-trip keeps an app trigger node's uses.trigger, connection and with", () => {
+  const wf: FlowWorkflow = {
+    id: "wf_t",
+    name: "t",
+    nodes: [
+      {
+        id: "T1",
+        uses: { app: "eventbrite", action: "event-updated", connection: "conn_1", trigger: true },
+        with: { organization: "org_1" },
+      },
+      { id: "A", uses: { app: "@w6w/script", action: "run" }, with: {} },
+    ],
+    edges: [{ from: "T1", to: "A" }],
+  } as FlowWorkflow;
+  const { nodes, edges } = workflowToFlow(wf);
+  const back = flowToWorkflow(wf, nodes, edges);
+  const t1 = back.nodes.find((n) => n.id === "T1");
+  assert.deepEqual(t1?.uses, {
+    app: "eventbrite",
+    action: "event-updated",
+    connection: "conn_1",
+    trigger: true,
+  });
+  assert.deepEqual(t1?.with, { organization: "org_1" });
+});

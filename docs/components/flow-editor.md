@@ -305,7 +305,9 @@ yourself:
   workflow and React Flow nodes and edges, with the canvas's automatic layout.
 - **Built-in app ids**: `TRIGGER_APP`, `WEBHOOK_APP`, `SCHEDULER_APP`, `CONTROL_APP`, `SCRIPT_APP`,
   `DATA_APP` and `CALL_APP`, with `isInternalApp(app)`, `isTriggerApp(app)` and
-  `isControlApp(app)`.
+  `isControlApp(app)`. `isTriggerApp` matches the built-in triggers only; `isTriggerStep(uses)` also
+  matches an app trigger node (`uses.trigger: true`), which the canvas draws as a trigger with no
+  inbound port.
 - **`INTERNAL_NODES`**: the built-in nodes the builder offers (triggers, control flow, script,
   data and so on), with `internalNodeLabel`, `internalNodeIcon`, `internalNodeParams` and
   `internalNodeDefaults` to look one up by app and action.

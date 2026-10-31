@@ -31,6 +31,7 @@ export {
   isControlApp,
   isInternalApp,
   isTriggerApp,
+  isTriggerStep,
   SCHEDULER_APP,
   SCRIPT_APP,
   TRIGGER_APP,
