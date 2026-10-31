@@ -66,9 +66,9 @@ const { internalNodeParams, internalNodeDefaults, SCRIPT_APP } = await import(".
 type ActionParam = import("../types.ts").ActionParam;
 
 const JS_DEFAULT =
-  "// `input` holds the data bound under Input (e.g. an upstream step's output).\n// Runs as a function body. Return the step's output.\nreturn input;";
+  "// Read `input` (bound under Input), plus `vars`, `consts` and `state.nodes.<step-id>.output`.\n// Runs as a function body. Return the step's output.\nreturn input;";
 const PYTHON_DEFAULT =
-  "# `input` holds the data bound under Input (e.g. an upstream step's output).\n# Runs as a function body. Return the step's output.\nreturn input";
+  '# Read `input` (bound under Input), plus `vars`, `consts` and `state["nodes"][<step-id>]["output"]`.\n# Runs as a function body. Return the step\'s output.\nreturn input';
 // The defaults before they named `input` — what a step saved earlier still stores.
 const LEGACY_JS_DEFAULT = "// Runs as a function body. Return the step's output.\nreturn input;";
 
