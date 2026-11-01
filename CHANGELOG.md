@@ -9,6 +9,13 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- The run state tree: a step's settings get **Write to state** (Off, Merge at root, Under a key, Pick
+  fields, Append; `FlowStep.state`, `FlowWorkflow.initialState`). The expression picker gains a
+  **State** section built before any run from the writers on the paths that reach the step (the old
+  "Workflow state" section is now "Previous steps"), and ƒx previews resolve `state.*` (`state`,
+  `var` and `vars` are one tree). The run log shows each step's state writes and "State after this
+  step" (`ExecutionLogStep.stateWrites` / `stateAfter`), and `findStateWriteProblems` (`@w6w/ui/flow`)
+  flags two parallel branches writing the same path. Script ƒx insertions read `run.*`.
 - Ctrl/Cmd+Z undoes workflow edits to nodes, configuration, edges, connections and canvas layout.
   Ctrl/Cmd+Shift+Z or Ctrl+Y redoes them. History keeps the latest 100 edits while the workflow is
   open; test runs and learned output shapes stay intact, and text fields keep their own undo.
