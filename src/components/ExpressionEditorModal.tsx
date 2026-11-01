@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { JsonEditor } from "../JsonEditor.tsx";
 import { isInternalApp } from "../flow-types.ts";
 import { buildResolveScope } from "../resolve-params.ts";
@@ -180,6 +180,9 @@ export function ExpressionEditorModal({
       return next;
     });
   };
+  // The rail's sections are an accordion: at most one open at a time. "auto" until the author
+  // picks one — then the default (Workflow state, else the first section present) applies.
+  const [openPick, setOpenPick] = useState<RailSectionKey | null | "auto">("auto");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paint on `paintGen`, not on every `parts` change; edits otherwise flow through the DOM.
   useLayoutEffect(() => {
@@ -288,10 +291,29 @@ export function ExpressionEditorModal({
     metaLeavesOf(id, hasMeta).map(([key, label]) =>
       source(label, { kind: "var", ref: `nodes.${id}.meta.${key}` }, "w6w-expr-chip-var", "·"),
     );
-  const stepIds = new Set(steps.map((st) => st.id));
-  const configOnly = [...configKeys.keys()].filter((id) => !stepIds.has(id));
-  const hasWorkflowState = steps.length > 0 || configOnly.length > 0 || !!options.hasTrigger;
+  // Workflow state is only what this node can read at run time — its upstream `steps`, its
+  // trigger's event, its loop's item. Every node's static meta, other paths included, sits in
+  // the separate Metadata section, keyed in node order (`nodeMeta`, then config-only nodes).
+  const metaIds = [...new Set([...Object.keys(nodeMeta), ...configKeys.keys()])];
+  const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
   const hasState = hasWorkflowState || !!loop;
+  const sections: RailSectionKey[] = [
+    ...(hasState ? (["state"] as const) : []),
+    ...(metaIds.length > 0 ? (["meta"] as const) : []),
+    ...(options.inputs !== undefined ? (["inputs"] as const) : []),
+    "vars",
+    ...(constants.length > 0 ? (["consts"] as const) : []),
+    ...(!jsonBinding ? (["docs", "secrets"] as const) : []),
+  ];
+  const openSection =
+    openPick === "auto" || (openPick !== null && !sections.includes(openPick))
+      ? (sections.find((k) => k !== "meta") ?? null)
+      : openPick;
+  // Opening a section closes the open one; clicking the open one collapses it.
+  const sectionProps = (key: RailSectionKey) => ({
+    open: openSection === key,
+    onToggle: () => setOpenPick(openSection === key ? null : key),
+  });
   const loopFields = (loop?.itemOutputs ?? []).filter((o) =>
     o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
   );
@@ -429,9 +451,10 @@ export function ExpressionEditorModal({
   };
   // Metadata's `config` entry: the node's static settings, collapsed until its
   // own toggle opens, each saving `nodes.<id>.meta.config.<key>`.
-  const configEntry = (id: string, keys: string[]) => {
+  // `scope` keeps the Metadata section's disclosure apart from the same node's in Workflow state.
+  const configEntry = (id: string, keys: string[], scope = "cfg") => {
     if (keys.length === 0) return null;
-    const open = expanded.has(`cfg:${id}`);
+    const open = expanded.has(`${scope}:${id}`);
     return (
       <>
         <div className="w6w-exprmodal-source-row">
@@ -441,7 +464,7 @@ export function ExpressionEditorModal({
             data-testid="expr-config-toggle"
             aria-expanded={open}
             title={open ? "Hide config" : "Show config"}
-            onClick={() => toggleExpanded(`cfg:${id}`)}
+            onClick={() => toggleExpanded(`${scope}:${id}`)}
           >
             config {open ? "⌄" : "›"}
           </button>
@@ -474,6 +497,37 @@ export function ExpressionEditorModal({
         depth,
       });
     });
+
+  // A Metadata-section node: its id inserts the whole `nodes.<id>.meta`; the caret beside it
+  // opens its leaves and its `config`, collapsed by default (`mnode:<id>`).
+  const metaNode = (id: string) => {
+    const key = `mnode:${id}`;
+    const open = expanded.has(key);
+    return (
+      <Fragment key={key}>
+        <div className="w6w-exprmodal-source-row" data-testid="expr-metadata-node">
+          <button
+            type="button"
+            className="w6w-exprmodal-caret-btn"
+            data-testid="expr-metadata-node-toggle"
+            aria-expanded={open}
+            aria-label={open ? `Hide ${id} metadata` : `Show ${id} metadata`}
+            title={open ? "Hide metadata" : "Show metadata"}
+            onClick={() => toggleExpanded(key)}
+          >
+            {open ? "▾" : "▸"}
+          </button>
+          {source(id, { kind: "var", ref: `nodes.${id}.meta` }, "w6w-expr-chip-var", null, true)}
+        </div>
+        {open && (
+          <div className="w6w-exprmodal-subsources" data-testid="expr-metadata-fields">
+            {metaSources(id, isExternalAppNode(id))}
+            {configEntry(id, configKeys.get(id) ?? [], "mcfg")}
+          </div>
+        )}
+      </Fragment>
+    );
+  };
 
   return (
     <Modal
@@ -547,37 +601,36 @@ export function ExpressionEditorModal({
           {jsonBinding && !hasState && (
             <span className="w6w-expr-menu-empty">No upstream steps</span>
           )}
-          {loop && (
-            <div className="w6w-exprmodal-group" data-testid="expr-loop-group">
-              <span className="w6w-exprmodal-group-label">Loop</span>
-              {/* The item's keys nest under "Current item", collapsed behind the
-                  same "N fields ›" toggle a Workflow state step uses. */}
-              {loopFields.length > 0 ? (
-                <div className="w6w-exprmodal-source-row">
-                  {currentItemBtn}
-                  <FieldsToggle
-                    count={loopFields.length}
-                    open={loopOpen}
-                    onToggle={() => toggleExpanded("loop:item")}
-                  />
+          {hasState && (
+            <RailSection label="Workflow state" {...sectionProps("state")}>
+              {loop && (
+                <div className="w6w-exprmodal-subgroup" data-testid="expr-loop-group">
+                  <span className="w6w-exprmodal-shape-note">Loop</span>
+                  {/* The item's keys nest under "Current item", collapsed behind the
+                      same "N fields ›" toggle a Workflow state step uses. */}
+                  {loopFields.length > 0 ? (
+                    <div className="w6w-exprmodal-source-row">
+                      {currentItemBtn}
+                      <FieldsToggle
+                        count={loopFields.length}
+                        open={loopOpen}
+                        onToggle={() => toggleExpanded("loop:item")}
+                      />
+                    </div>
+                  ) : (
+                    currentItemBtn
+                  )}
+                  {loopFields.length > 0 && loopOpen && (
+                    <div className="w6w-exprmodal-subsources" data-testid="expr-loop-fields">
+                      {loopFields.map((o) => {
+                        const ref = `foreach.item.${o.key}`;
+                        return source(o.key, { kind: "var", ref }, "w6w-expr-chip-var", "·");
+                      })}
+                    </div>
+                  )}
+                  {source("Index", { kind: "var", ref: "foreach.index" }, "w6w-expr-chip-var", "#")}
                 </div>
-              ) : (
-                currentItemBtn
               )}
-              {loopFields.length > 0 && loopOpen && (
-                <div className="w6w-exprmodal-subsources" data-testid="expr-loop-fields">
-                  {loopFields.map((o) => {
-                    const ref = `foreach.item.${o.key}`;
-                    return source(o.key, { kind: "var", ref }, "w6w-expr-chip-var", "·");
-                  })}
-                </div>
-              )}
-              {source("Index", { kind: "var", ref: "foreach.index" }, "w6w-expr-chip-var", "#")}
-            </div>
-          )}
-          {hasWorkflowState && (
-            <div className="w6w-exprmodal-group">
-              <span className="w6w-exprmodal-group-label">Workflow state</span>
               {options.hasTrigger &&
                 source(
                   "trigger.event",
@@ -761,43 +814,32 @@ export function ExpressionEditorModal({
                   </Fragment>
                 );
               })}
-              {/* Nodes with config that are not upstream: no output to offer,
-                  only Metadata › config. */}
-              {configOnly.map((id) => (
-                <Fragment key={`cfg-only:${id}`}>
-                  <span className="w6w-exprmodal-shape-note" data-testid="expr-config-node">
-                    {id}
-                  </span>
-                  <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
-                    {metaToggle(id)}
-                  </div>
-                  {expanded.has(`meta:${id}`) && (
-                    <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
-                      {metaSources(id, isExternalAppNode(id))}
-                      {configEntry(id, configKeys.get(id) ?? [])}
-                    </div>
-                  )}
-                </Fragment>
-              ))}
-            </div>
+            </RailSection>
+          )}
+          {metaIds.length > 0 && (
+            <RailSection label="Metadata" testId="expr-metadata-group" {...sectionProps("meta")}>
+              {/* Every node in the workflow, other paths included: its static meta
+                  (`nodes.<id>.meta.*`) is readable from anywhere, unlike its data. */}
+              {metaIds.map((id) => metaNode(id))}
+            </RailSection>
           )}
 
           {/* Inputs and Variables in both modes; Documents and Secrets in expression mode only. */}
           <>
             {options.inputs !== undefined && (
-              <div className="w6w-exprmodal-group">
-                <span className="w6w-exprmodal-group-label">Inputs</span>
+              <RailSection label="Inputs" {...sectionProps("inputs")}>
                 {inputs.length === 0 && <span className="w6w-expr-menu-empty">No inputs</span>}
                 {inputs.map((i) =>
                   source(i, { kind: "var", ref: `inputs.${i}` }, "w6w-expr-chip-var", "⇥"),
                 )}
-              </div>
+              </RailSection>
             )}
 
-            <div className="w6w-exprmodal-group">
-              <div className="w6w-field-labelrow">
-                <span className="w6w-exprmodal-group-label">Variables</span>
-                {options.createVar && (
+            <RailSection
+              label="Variables"
+              {...sectionProps("vars")}
+              action={
+                options.createVar && (
                   <button
                     type="button"
                     className="w6w-btn w6w-btn-ghost w6w-btn-sm"
@@ -806,27 +848,30 @@ export function ExpressionEditorModal({
                   >
                     + Add
                   </button>
-                )}
-              </div>
+                )
+              }
+            >
               {vars.length === 0 && <span className="w6w-expr-menu-empty">No variables</span>}
               {vars.map((v) =>
                 source(v, { kind: "var", ref: `var.${v}` }, "w6w-expr-chip-var", "◆"),
               )}
-            </div>
+            </RailSection>
 
             {constants.length > 0 && (
-              <div className="w6w-exprmodal-group" data-testid="expr-constants-group">
-                <span className="w6w-exprmodal-group-label">Constants</span>
+              <RailSection
+                label="Constants"
+                testId="expr-constants-group"
+                {...sectionProps("consts")}
+              >
                 {constants.map((c) =>
                   source(c, { kind: "var", ref: `const.${c}` }, "w6w-expr-chip-var", "◈"),
                 )}
-              </div>
+              </RailSection>
             )}
           </>
           {!jsonBinding && (
             <>
-              <div className="w6w-exprmodal-group">
-                <span className="w6w-exprmodal-group-label">Documents</span>
+              <RailSection label="Documents" {...sectionProps("docs")}>
                 {documents.length === 0 && (
                   <span className="w6w-expr-menu-empty">No documents</span>
                 )}
@@ -896,12 +941,13 @@ export function ExpressionEditorModal({
                     </Fragment>
                   );
                 })}
-              </div>
+              </RailSection>
 
-              <div className="w6w-exprmodal-group">
-                <div className="w6w-field-labelrow">
-                  <span className="w6w-exprmodal-group-label">Secrets</span>
-                  {options.createSecret && (
+              <RailSection
+                label="Secrets"
+                {...sectionProps("secrets")}
+                action={
+                  options.createSecret && (
                     <button
                       type="button"
                       className="w6w-btn w6w-btn-ghost w6w-btn-sm"
@@ -910,13 +956,14 @@ export function ExpressionEditorModal({
                     >
                       + Add
                     </button>
-                  )}
-                </div>
+                  )
+                }
+              >
                 {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
                 {secrets.map((s) =>
                   source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
                 )}
-              </div>
+              </RailSection>
             </>
           )}
         </aside>
@@ -1191,6 +1238,64 @@ export function ExpressionEditorModal({
  * expander but INSERTS the whole value; a bare 20px chevron next to it went
  * unnoticed, leaving authors no visible way to reach `get_event_1.name`.
  */
+/** The rail's accordion sections, in render order. */
+type RailSectionKey = "state" | "meta" | "inputs" | "vars" | "consts" | "docs" | "secrets";
+
+/**
+ * One collapsible rail section. The header (and its `action`, e.g. "+ Add") always shows; the
+ * body stays mounted and animates its height (`grid-template-rows` 0fr → 1fr), made `inert`
+ * while closed so its rows leave the tab order.
+ */
+function RailSection({
+  label,
+  open,
+  onToggle,
+  action,
+  testId,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  action?: ReactNode;
+  testId?: string;
+  children: ReactNode;
+}) {
+  const bodyId = useId();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // Set as a DOM property: React 18 and 19 disagree on how the `inert` attribute is spelled.
+  useLayoutEffect(() => {
+    if (bodyRef.current) bodyRef.current.inert = !open;
+  }, [open]);
+  return (
+    <div
+      className={`w6w-exprmodal-group${open ? " is-open" : ""}`}
+      data-testid={testId}
+      data-section-open={open ? "true" : "false"}
+    >
+      <div className="w6w-exprmodal-group-head">
+        <button
+          type="button"
+          className="w6w-exprmodal-group-toggle"
+          data-testid="expr-section-toggle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={onToggle}
+        >
+          <span className="w6w-exprmodal-group-label">{label}</span>
+          <span className="w6w-exprmodal-group-caret" aria-hidden="true">
+            ›
+          </span>
+        </button>
+        {action}
+      </div>
+      <div id={bodyId} ref={bodyRef} className="w6w-exprmodal-group-body" aria-hidden={!open}>
+        <div className="w6w-exprmodal-group-inner">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function FieldsToggle({
   count,
   open,
