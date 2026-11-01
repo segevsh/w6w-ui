@@ -17,7 +17,7 @@
  * already uses), so this file never actually loads `provider.tsx`'s React
  * import.
  */
-import { parseResolvableText } from "./components/expression-template.ts";
+import { parseResolvableText, stateAliasSpellings } from "./components/expression-template.ts";
 import type { StepMeta, StepStartState } from "./provider.tsx";
 import { type ExprPart, type ExprValue, isExprValue, isSecretValue } from "./types.ts";
 
@@ -58,6 +58,8 @@ export type ResolvedSegment =
  */
 export interface ResolveScope {
   vars: Record<string, unknown>;
+  /** The SAME object as {@link vars}: `state`, `var` and `vars` are one tree (optional: hand-built scopes omit it). */
+  state?: Record<string, unknown>;
   documents: Record<string, unknown>;
   /** Account constants, read as `const.<name>`. */
   constants?: Record<string, unknown>;
@@ -111,11 +113,21 @@ const LEGACY_VARS_PREFIX = "vars.";
 const DOCUMENTS_PREFIX = "documents.";
 const CONST_PREFIX = "const.";
 
-/** `vars.<x>` → `var.<x>`; every other ref unchanged. */
+const STATE_PREFIX = "state.";
+
+/** `vars.<x>`/`state.<x>` → `var.<x>` (bare `vars`/`state` → `var`); every other ref unchanged. */
 function canonicalRef(ref: string): string {
-  return ref.startsWith(LEGACY_VARS_PREFIX)
-    ? VAR_PREFIX + ref.slice(LEGACY_VARS_PREFIX.length)
-    : ref;
+  if (ref === "state" || ref === "vars") return "var";
+  if (ref.startsWith(LEGACY_VARS_PREFIX)) return VAR_PREFIX + ref.slice(LEGACY_VARS_PREFIX.length);
+  if (ref.startsWith(STATE_PREFIX)) return VAR_PREFIX + ref.slice(STATE_PREFIX.length);
+  return ref;
+}
+
+/** Collision rank of a sample key's spelling in the one state tree: `state.` > `var.` > `vars.`. */
+function stateSpellingRank(rawRef: string): number {
+  if (rawRef.startsWith(STATE_PREFIX)) return 3;
+  if (rawRef.startsWith(VAR_PREFIX)) return 2;
+  return 1;
 }
 
 /**
@@ -140,12 +152,19 @@ export function buildResolveScope(
   meta?: Record<string, Record<string, unknown>>,
 ): ResolveScope {
   const vars: Record<string, unknown> = {};
+  const varRanks: Record<string, number> = {};
   const documents: Record<string, unknown> = {};
   const constants: Record<string, unknown> = {};
   for (const [rawRef, value] of Object.entries(sampleValues ?? {})) {
     const ref = canonicalRef(rawRef);
-    if (ref.startsWith(VAR_PREFIX)) vars[ref.slice(VAR_PREFIX.length)] = value;
-    else if (ref.startsWith(DOCUMENTS_PREFIX))
+    if (ref.startsWith(VAR_PREFIX)) {
+      const key = ref.slice(VAR_PREFIX.length);
+      const rank = stateSpellingRank(rawRef);
+      if (!Object.hasOwn(varRanks, key) || rank >= varRanks[key]) {
+        vars[key] = value;
+        varRanks[key] = rank;
+      }
+    } else if (ref.startsWith(DOCUMENTS_PREFIX))
       documents[ref.slice(DOCUMENTS_PREFIX.length)] = value;
     else if (ref.startsWith(CONST_PREFIX)) constants[ref.slice(CONST_PREFIX.length)] = value;
   }
@@ -170,6 +189,7 @@ export function buildResolveScope(
   return {
     ...(foreach ? { foreach } : {}),
     vars,
+    state: vars,
     documents,
     constants,
     steps,
@@ -244,8 +264,8 @@ function resolveRef(ref: string, scope: ResolveScope): ResolvedSegment {
       path.startsWith(DOCUMENTS_PREFIX) ||
       path.startsWith(CONST_PREFIX))
   ) {
-    const key = Object.hasOwn(scope.flat, ref) ? ref : path;
-    if (Object.hasOwn(scope.flat, key)) return { status: "resolved", ref, value: scope.flat[key] };
+    const key = stateAliasSpellings(ref).find((k) => Object.hasOwn(scope.flat as object, k));
+    if (key !== undefined) return { status: "resolved", ref, value: scope.flat[key] };
   }
   // The engine's data root: `var`/`const` over the `vars`/`constants` fields, and
   // `nodes.<id>…`/`steps.<id>…` as two roots over one state object.

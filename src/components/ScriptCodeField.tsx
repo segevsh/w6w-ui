@@ -10,8 +10,8 @@ import { wholeValueRef } from "./json-compose.ts";
 /**
  * A Run script's code (`ActionParam.scriptReads`). The host never substitutes `{{ }}` in code, so
  * every way of inserting data here writes the code read instead: a step chip inserts
- * `state.nodes.<id>.output`, and ƒx opens the reference picker and inserts what was picked as
- * `state.nodes.…`, `vars.…` or `consts.…` (Python indexes them). Below the editor: one short
+ * `run.nodes.<id>.output`, and ƒx opens the reference picker and inserts what was picked as
+ * `run.nodes.…`, `state.…` or `consts.…` (Python indexes them). Below the editor: one short
  * line, and a collapsed "How to read data" with three examples in the step's language.
  */
 export function ScriptCodeField({
@@ -67,13 +67,13 @@ export function ScriptCodeField({
   const stepId = steps[0]?.id ?? "<step-id>";
   const examples = python
     ? [
-        [`state["nodes"]["${stepId}"]["output"]`, "a step's output"],
-        ['vars["region"]', "a variable"],
+        [`run["nodes"]["${stepId}"]["output"]`, "a step's output"],
+        ['state["region"]', "a workflow state value"],
         ['consts["api_base"]', "a constant"],
       ]
     : [
-        [`state.nodes.${stepId}.output`, "a step's output"],
-        ["vars.region", "a variable"],
+        [`run.nodes.${stepId}.output`, "a step's output"],
+        ["state.region", "a workflow state value"],
         ["consts.api_base", "a constant"],
       ];
   const width = Math.max(...examples.map(([c]) => c.length));
@@ -131,7 +131,11 @@ export function ScriptCodeField({
           {examples.map(([code, what]) => `${code.padEnd(width)}  ${comment} ${what}`).join("\n")}
         </pre>
         <span className="w6w-hint">
-          <code>input</code> is the same as <code>state</code> unless you set Custom input.
+          <code>input</code> is the same as <code>run</code> unless you set Custom input.
+        </span>
+        <span className="w6w-hint">
+          <code>state.nodes…</code> is the older spelling of <code>run.nodes…</code> and still works
+          in saved scripts; use <code>run.nodes…</code> in new ones.
         </span>
       </details>
       {pickerOpen && (

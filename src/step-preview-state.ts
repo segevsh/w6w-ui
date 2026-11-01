@@ -82,8 +82,11 @@ interface PendingConnect {
   lane?: "success" | "error" | "each";
 }
 
-/** Every node id that is a graph ancestor of `rootId` — walks `edges` backward. */
-function ancestorIds(rootId: string, edges: Edge[]): Set<string> {
+/**
+ * Every node id that is a graph ancestor of `rootId` — walks `edges` backward. Exported for
+ * `state-shape.ts` (which imports this module, never the reverse).
+ */
+export function ancestorIds(rootId: string, edges: Edge[]): Set<string> {
   const parents = new Map<string, string[]>();
   for (const e of edges) {
     const arr = parents.get(e.target) ?? [];

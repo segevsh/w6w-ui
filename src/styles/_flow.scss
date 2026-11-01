@@ -358,3 +358,8 @@
   pointer-events: none;
   color: var(--w6w-muted);
 }
+
+/* "Write to state" (step settings): the `validateStateConfig` messages for the current config. */
+.w6w-state-write-issues {
+  color: var(--w6w-danger);
+}

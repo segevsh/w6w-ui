@@ -104,6 +104,11 @@ const workflow: FlowWorkflow = {
 - **`fanOut`** (optional, on a node): `"parallel"` runs a node's next nodes at the same time. Leave it
   out and they run one after another. Only `"parallel"` is ever written; `"sequential"` is the
   absence of the key.
+- **`state`** (optional, on a node): where the node's output is written into the run's state tree.
+  See [Write to state](#write-to-state). Leave it out for the default: off, except on a Set data
+  node, which merges into the root.
+- **`initialState`** (optional): the starting data, a JSON object the run's state tree begins with.
+  The editor keeps it as given.
 - **`canvas`** (optional): notes and sections drawn around the graph. The engine ignores it. See
   [Notes and sections](#notes-and-sections).
 
@@ -277,6 +282,28 @@ The same node's card carries a small badge, in edit and read-only mode alike, on
 more edges in a lane. The glyph shows the mode (`⇉` parallel, `→` sequence), followed by the count.
 Its label reads `Runs these N nodes in parallel` or `Runs these N nodes in sequence`, where N is
 the largest number of edges leaving the node in either lane.
+
+## Write to state
+
+A node's settings carry a **Write to state** control, under **Run next nodes**. It decides where the
+node's output lands in the run's state tree, which later nodes read as `state.<path>`. It shows on
+app steps and triggers, not on control nodes such as If or For each. The five modes are:
+
+- **Off**: nothing is written. This is the default, so choosing it removes the `state` key.
+- **Merge at root**: the output's fields merge into the top of the tree (`{ mode: "root" }`).
+- **Under a key**: the whole output is stored at one key (`{ mode: "key", key }`). A dotted key
+  such as `order.id` nests.
+- **Pick fields**: one row per field, from an output field (blank for the whole output) to a state
+  path (`{ mode: "pick", map: [{ from, to }] }`). The rows write in order, and the output field box
+  suggests the node's own output fields.
+- **Append**: adds the output, or one output field, to the end of a list at a state path
+  (`{ mode: "append", path, from? }`). Leave the field blank to append the whole output.
+
+A **Set data** node merges at the root when it has no `state`, so for it **Merge at root** is the
+absence of the key and **Off** is written as `{ mode: "off" }`. A value of `null` deletes its key
+rather than storing `null`, and secrets are stored masked. A node inside a For each writes once per
+item; **Append** collects one entry per item. A key or path the engine would refuse shows its
+reason under the control.
 
 ## Show a run on the canvas
 

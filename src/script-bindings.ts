@@ -3,7 +3,10 @@
  * engine's `LITERAL_PARAMS`, node-types RFC amendment 2026-10-30): a marker typed into the code
  * reaches the sandbox as literal text — `'{{ nodes.a.output.total }}'` is that exact string at
  * run time, never the value. A script reads run data from its read-only globals instead:
- * `state.nodes.<id>.output`, `vars.<name>`, `consts.<name>` (Python indexes them).
+ * `run.nodes.<id>.output` (also `run.trigger`, `run.foreach`), the workflow state tree as
+ * `state.<name>` (or `vars.<name>`, the same tree with no `run` fall-through), and
+ * `consts.<name>` (Python indexes them). `state.nodes…` is the older spelling of `run.nodes…`:
+ * it still works in saved scripts, but is never inserted.
  *
  * {@link findCodeBindings} finds the markers that would run (strings and code, not comments),
  * {@link codeReadFor} spells one reference as that code read, and
@@ -98,22 +101,39 @@ const STEP = /\.([A-Za-z_$][\w$-]*)|\[(\d+)\]|\["([^"\\]*)"\]|\['([^'\\]*)'\]/g;
 
 /** Where each `{{ }}` root lives among a script's globals. */
 const ROOTS: Record<string, string[]> = {
-  nodes: ["state", "nodes"],
-  steps: ["state", "nodes"],
-  trigger: ["state", "trigger"],
-  foreach: ["state", "foreach"],
-  var: ["vars"],
-  vars: ["vars"],
+  nodes: ["run", "nodes"],
+  steps: ["run", "nodes"],
+  trigger: ["run", "trigger"],
+  foreach: ["run", "foreach"],
+  state: ["state"],
+  var: ["state"],
+  vars: ["state"],
   const: ["consts"],
   consts: ["consts"],
 };
 
 /**
+ * The keys the `run` global exposes (`nodes`, `steps`, `trigger`, `foreach`), derived from
+ * {@link ROOTS}. The Script `state` global falls through to `run.<key>` for these when the tree
+ * has no such key, so a tree key with one of these names is read on `vars` (no fall-through).
+ */
+const RUN_KEYS = new Set(
+  Object.entries(ROOTS)
+    .filter(([, base]) => base[0] === "run")
+    .map(([root]) => root),
+);
+
+/** `state`, `var` and `vars` are one tree (the roots that map to the `state` global). */
+const isStateRoot = (root: string): boolean => ROOTS[root]?.[0] === "state";
+
+/**
  * The code that reads what `{{ ref }}` names: `nodes.a.output.total` →
- * `state.nodes.a.output.total` (JavaScript/TypeScript) or `state["nodes"]["a"]["output"]["total"]`
- * (Python); `var.region` → `vars.region`; `const.tier` → `consts.tier`. `null` for anything a
- * script cannot read that way — `secrets.*`, `documents.*`, a Function's `inputs.*`, or an
- * expression with operators or filters.
+ * `run.nodes.a.output.total` (JavaScript/TypeScript) or `run["nodes"]["a"]["output"]["total"]`
+ * (Python); `state.x` / `var.x` / `vars.x` → `state.x`; `const.tier` → `consts.tier`. A state
+ * ref with no path, or whose first key is one `run` exposes (`state.nodes.x`), reads `vars`
+ * instead, which has no fall-through to `run`, so it reads the tree exactly as the expression
+ * does. `null` for anything a script cannot read that way — `secrets.*`, `documents.*`, a
+ * Function's `inputs.*`, or an expression with operators or filters.
  */
 export function codeReadFor(ref: string, language: ScriptLanguage = "javascript"): string | null {
   const text = ref.trim();
@@ -126,6 +146,10 @@ export function codeReadFor(ref: string, language: ScriptLanguage = "javascript"
     path.push(m[2] !== undefined ? Number(m[2]) : (m[1] ?? m[3] ?? m[4]));
   }
   let out = base[0];
+  if (isStateRoot(root)) {
+    const first = path[0];
+    if (first === undefined || (typeof first === "string" && RUN_KEYS.has(first))) out = "vars";
+  }
   for (const seg of path) {
     if (typeof seg === "number") out += `[${seg}]`;
     else if (language !== "python" && /^[A-Za-z_$][\w$]*$/.test(seg)) out += `.${seg}`;

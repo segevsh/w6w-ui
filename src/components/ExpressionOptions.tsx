@@ -116,6 +116,15 @@ export interface ExpressionStepSource {
 }
 
 /**
+ * One field of the merged workflow STATE a step reads (`state-shape.ts`), offered as
+ * `state.<key>` in the picker's "State" section. `paths` says whether every entry path into the
+ * step sets it (`all`) or only some (`some` — e.g. one of two converging triggers writes it).
+ */
+export interface ExpressionStateField extends ExpressionFieldSource {
+  paths: "all" | "some";
+}
+
+/**
  * The For each a step sits in the body of: offered as the rail's "Loop" group (Current item,
  * Index, one row per item field). Present only for a loop-body step.
  */
@@ -199,6 +208,11 @@ export interface ExpressionOptions {
   steps?: ExpressionStepSource[];
   /** The enclosing For each, when the field belongs to a loop-body step (`foreach.item` / `foreach.index`). */
   loop?: ExpressionLoopSource;
+  /**
+   * The merged workflow state this step reads (starting data, variables and upstream writers;
+   * `state-shape.ts`). The picker lists it as the "State" section, only when non-empty.
+   */
+  stateShape?: { fields: ExpressionStateField[] };
   /** Whether a trigger event is in scope (`trigger.event`). */
   hasTrigger?: boolean;
   /**

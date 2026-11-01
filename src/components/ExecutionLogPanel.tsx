@@ -1,3 +1,4 @@
+import type { StateWarningCode } from "@w6w/expr";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { CodeBlock } from "../CodeBlock.tsx";
@@ -116,6 +117,23 @@ export interface ExecutionLogStep {
   iterationsFailed?: number;
   /** `true` when `iterations` holds fewer than `iterationsTotal`. */
   iterationsTruncated?: boolean;
+  /**
+   * The step's state writes (`stateWrites`, the run's state log rows for this step), in write
+   * order: `state.<path>: old → new`, or a warning when `warning` is set (a `StateWarningCode`).
+   * `item` is the For each item a hoisted body write came from. Absent, `null` or `[]` ⇒ no rows.
+   */
+  stateWrites?: Array<{
+    path: string[];
+    item?: number;
+    old?: unknown;
+    new?: unknown;
+    warning?: string;
+  }> | null;
+  /**
+   * The run's state tree after this step, shown as "State after this step" in the State block.
+   * Absent or `null` ⇒ not shown; `{}` shows only alongside writes.
+   */
+  stateAfter?: Record<string, unknown> | null;
 }
 
 /** One For each iteration: its status and the body-step records, in execution order. */
@@ -313,7 +331,9 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
   const error = step.error ? <ExecutionLogErrorBlock error={step.error} /> : null;
   const loop = Array.isArray(step.iterations) ? <ExecutionLogIterations step={step} /> : null;
 
-  if (step.input === undefined && step.output === undefined && !step.meta) {
+  const state = hasStateBlock(step) ? <ExecutionLogState step={step} /> : null;
+
+  if (step.input === undefined && step.output === undefined && !step.meta && !state) {
     return (
       <li className="w6w-execution-log-row">
         <div className="w6w-section">{header}</div>
@@ -338,6 +358,7 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
                 <CodeBlock code={JSON.stringify(step.meta, null, 2)} language="json" />
               </div>
             )}
+            {state}
           </div>
         )}
       </details>
@@ -636,4 +657,88 @@ function ExecutionLogConditions({ input }: { input: unknown }) {
 /** A resolved operand as JSON, so `""`, `"5"` vs `5` and `null` read apart. */
 function operandText(value: unknown): string {
   return JSON.stringify(value) ?? "undefined";
+}
+
+/** Plain-language text for each state-write warning code — never the raw code. */
+const STATE_WARNING_LABELS: Record<StateWarningCode, string> = {
+  not_object: "Not written — the output isn't an object, so it can't be merged at the root",
+  missing_source: "Not written — the output has no value at that field",
+  null_append: "Not appended — the value was null",
+  append_not_array: "Not appended — the existing value isn't a list",
+  write_too_large: "Not written — the value is too large",
+  run_too_large: "Not written — the run's state would grow past its size limit",
+  too_deep: "Not written — the value is nested too deeply",
+  key_too_long: "Not written — a key in the value is too long",
+  forbidden_key: "Not written — the value uses a reserved key name",
+  log_truncated: "Later state changes aren't shown — the run's state log reached its limit",
+};
+
+function stateWarningLabel(code: string): string {
+  return Object.hasOwn(STATE_WARNING_LABELS, code)
+    ? STATE_WARNING_LABELS[code as StateWarningCode]
+    : code;
+}
+
+function hasStateBlock(step: ExecutionLogStep): boolean {
+  const hasWrites = Array.isArray(step.stateWrites) && step.stateWrites.length > 0;
+  const after = step.stateAfter;
+  const hasAfter = typeof after === "object" && after !== null;
+  return hasWrites || (hasAfter && Object.keys(after).length > 0);
+}
+
+const STATE_VALUE_MAX = 120;
+
+function stateValueText(v: unknown): string {
+  if (v === undefined) return "(not set)";
+  const text = JSON.stringify(v) ?? String(v);
+  return text.length > STATE_VALUE_MAX ? `${text.slice(0, STATE_VALUE_MAX)}…` : text;
+}
+
+/**
+ * The State block: one row per state write in the order the run recorded them
+ * (`state.<path>: old → new`, or the warning that stopped it), then the run's
+ * state tree after this step. Rendered only when there is something to show.
+ */
+function ExecutionLogState({ step }: { step: ExecutionLogStep }) {
+  const writes = Array.isArray(step.stateWrites) ? step.stateWrites : [];
+  const after = step.stateAfter;
+  return (
+    <div className="w6w-execution-log-state w6w-stack" data-testid="execution-log-state">
+      <strong className="w6w-small">State</strong>
+      {writes.length > 0 && (
+        <ul className="w6w-execution-log-state-writes">
+          {writes.map((w, i) => {
+            const path = Array.isArray(w.path) ? w.path : [];
+            const label = `state${path.length ? `.${path.join(".")}` : ""}${w.item !== undefined ? ` (item ${w.item})` : ""}`;
+            return w.warning !== undefined ? (
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional, never reordered
+                key={i}
+                className="w6w-execution-log-state-write w6w-execution-log-state-warning w6w-small"
+                data-testid="execution-log-state-write"
+                data-warning={w.warning}
+              >
+                {`${label}: ${stateWarningLabel(w.warning)}`}
+              </li>
+            ) : (
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional, never reordered
+                key={i}
+                className="w6w-execution-log-state-write w6w-small"
+                data-testid="execution-log-state-write"
+              >
+                {`${label}: ${stateValueText(w.old)} → ${stateValueText(w.new)}`}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {typeof after === "object" && after !== null && (
+        <div className="w6w-stack" data-testid="execution-log-state-after">
+          <span className="w6w-small w6w-muted">State after this step</span>
+          <CodeBlock code={JSON.stringify(after, null, 2)} language="json" />
+        </div>
+      )}
+    </div>
+  );
 }

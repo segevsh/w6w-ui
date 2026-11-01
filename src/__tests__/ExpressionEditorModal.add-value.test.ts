@@ -148,7 +148,7 @@ test("A2 — the + Add control renders iff the matching host callback is supplie
     groupFor(withCallbacks, "Secrets")?.querySelector('[data-testid="expr-add-secret"]'),
     "the Secrets group must carry the secret + Add button",
   );
-  for (const label of ["Inputs", "Documents", "Workflow state"]) {
+  for (const label of ["Inputs", "Documents", "Previous steps"]) {
     const group = groupFor(withCallbacks, label);
     assert.ok(group, `expected a ${label} group to be present in this fixture`);
     assert.equal(

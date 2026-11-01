@@ -1,3 +1,4 @@
+import { effectiveStateConfig, statePathsOverlap, staticWritePaths } from "@w6w/expr";
 import type { Edge } from "@xyflow/react";
 /**
  * Pure loop-problem detectors and their one-click fixes (D-A2). Host-called:
@@ -14,12 +15,16 @@ import type { Edge } from "@xyflow/react";
 import { parseRootAnchoredTemplate, serializeTemplate } from "./components/expression-template.ts";
 import {
   type LoopRefusalReason,
+  controlOwnedIds,
   definitionLoops,
+  effectiveEdges,
+  isEachLink,
   isForeachStep,
   loopMembership,
   loopRefusal,
 } from "./flow-loop.ts";
 import {
+  CONTROL_APP,
   type CanvasLane,
   type FlowStep,
   type FlowWorkflowInput,
@@ -153,6 +158,203 @@ export function findLoopProblems(input: FlowWorkflowInput): StepProblems {
             fix: { kind: "use_current_item", foreachId: fid, label: "Use Current item" },
           });
         }
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** One editor-side parallel-write warning — the engine's `StateWriteWarning`, this code only. */
+export interface StateParallelWrite {
+  code: "state_parallel_write";
+  nodes: string[];
+  path: string[];
+}
+
+/** The ids inside one `@w6w/control` `parallel` branch (strings at any array depth). */
+function branchIds(branch: unknown): Set<string> {
+  const out = new Set<string>();
+  const collect = (v: unknown) => {
+    if (typeof v === "string") out.add(v);
+    else if (Array.isArray(v)) for (const el of v) collect(el);
+  };
+  collect(branch);
+  return out;
+}
+
+/**
+ * The editor mirror of the engine's plan-time parallel-write warning (R16, plan
+ * §2.3; proven equal on `core/packages/expr/tests/fixtures/state-write-conflicts.json`).
+ * Two writers are concurrent iff they sit in different branches of one
+ * `@w6w/control` `parallel`; else never when they share an anchor (outermost
+ * owning control, else the step) or one anchor reaches the other; else iff one
+ * `fanOut: "parallel"` step has two distinct outgoing edges in the SAME lane
+ * whose targets reach the two anchors. Each overlapping pair of static write
+ * paths gives one warning on the shorter path; deduped, sorted by the engine's
+ * order (`code`, then `nodes`, then `path`). Never throws (→ `[]`), never mutates.
+ */
+export function stateWriteConflicts(input: FlowWorkflowInput): StateParallelWrite[] {
+  try {
+    const wf = normalizeInput(input);
+    if (!Array.isArray(wf.nodes)) return [];
+    const steps = wf.nodes.filter(
+      (s): s is FlowStep => typeof s === "object" && s !== null && typeof s.id === "string",
+    );
+    const edges = effectiveEdges({ ...wf, nodes: steps }).filter(
+      (e) => typeof e?.from === "string" && typeof e?.to === "string",
+    );
+
+    // Writers and their static paths, in node order.
+    const writers: Array<{ id: string; paths: string[][] }> = [];
+    for (const s of steps) {
+      try {
+        const paths = staticWritePaths(effectiveStateConfig(s.uses?.app, s.uses?.action, s.state));
+        if (paths.length > 0) writers.push({ id: s.id, paths });
+      } catch {
+        // An unreadable `state` writes nothing statically; the save route reports it.
+      }
+    }
+    if (writers.length < 2) return [];
+
+    // Owner (direct owning control) and anchor (outermost owning control, else self).
+    const owner = new Map<string, string>();
+    for (const s of steps) {
+      for (const id of controlOwnedIds(s)) if (!owner.has(id)) owner.set(id, s.id);
+    }
+    const chain = (id: string): string[] => {
+      const out = [id];
+      let cur = id;
+      while (owner.has(cur)) {
+        cur = owner.get(cur) as string;
+        if (out.includes(cur)) break;
+        out.push(cur);
+      }
+      return out;
+    };
+    const anchor = (id: string): string => {
+      const c = chain(id);
+      return c[c.length - 1];
+    };
+
+    // Reachability over every edge (all lanes, each-links included), non-reflexive.
+    const succ = new Map<string, string[]>();
+    for (const e of edges) {
+      const list = succ.get(e.from) ?? [];
+      list.push(e.to);
+      succ.set(e.from, list);
+    }
+    const reachCache = new Map<string, Set<string>>();
+    const reach = (from: string): Set<string> => {
+      const hit = reachCache.get(from);
+      if (hit) return hit;
+      const seen = new Set<string>();
+      const stack = [...(succ.get(from) ?? [])];
+      while (stack.length > 0) {
+        const n = stack.pop() as string;
+        if (seen.has(n)) continue;
+        seen.add(n);
+        for (const m of succ.get(n) ?? []) stack.push(m);
+      }
+      reachCache.set(from, seen);
+      return seen;
+    };
+    const reachesRefl = (from: string, to: string) => from === to || reach(from).has(to);
+
+    // (i) `@w6w/control` parallel branches.
+    const parallels = steps
+      .filter((s) => s.uses?.app === CONTROL_APP && s.uses.action === "parallel")
+      .map((s) => {
+        const branches = s.with?.branches;
+        return Array.isArray(branches) ? branches.map(branchIds) : [];
+      });
+    const branchOf = (branches: Set<string>[], id: string): number => {
+      for (const c of chain(id)) {
+        const i = branches.findIndex((b) => b.has(c));
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    // (iv) fan-out points: per parallel step, its same-lane outgoing edge groups.
+    const fanGroups: string[][] = [];
+    for (const s of steps) {
+      if (s.fanOut !== "parallel") continue;
+      const lanes = new Map<string, string[]>();
+      for (const e of edges) {
+        if (e.from !== s.id || isEachLink(e)) continue;
+        const lane = e.when ?? "success";
+        const list = lanes.get(lane) ?? [];
+        list.push(e.to);
+        lanes.set(lane, list);
+      }
+      for (const targets of lanes.values()) if (targets.length >= 2) fanGroups.push(targets);
+    }
+
+    const concurrent = (a: string, b: string): boolean => {
+      for (const branches of parallels) {
+        const ia = branchOf(branches, a);
+        const ib = branchOf(branches, b);
+        if (ia >= 0 && ib >= 0 && ia !== ib) return true;
+      }
+      const aa = anchor(a);
+      const ab = anchor(b);
+      if (aa === ab || reach(aa).has(ab) || reach(ab).has(aa)) return false;
+      return fanGroups.some((targets) =>
+        targets.some((ta, i) =>
+          targets.some((tb, j) => i !== j && reachesRefl(ta, aa) && reachesRefl(tb, ab)),
+        ),
+      );
+    };
+
+    const seen = new Set<string>();
+    const out: StateParallelWrite[] = [];
+    for (let i = 0; i < writers.length; i++) {
+      for (let j = i + 1; j < writers.length; j++) {
+        const A = writers[i];
+        const B = writers[j];
+        if (A.id === B.id || !concurrent(A.id, B.id)) continue;
+        for (const pa of A.paths) {
+          for (const pb of B.paths) {
+            if (!statePathsOverlap(pa, pb)) continue;
+            const w: StateParallelWrite = {
+              code: "state_parallel_write",
+              nodes: [A.id, B.id].sort(),
+              path: [...(pa.length <= pb.length ? pa : pb)],
+            };
+            const key = JSON.stringify([w.nodes, w.path]);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(w);
+          }
+        }
+      }
+    }
+    const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+    return out.sort(
+      (x, y) =>
+        cmp(x.code, y.code) ||
+        cmp(x.nodes.join(","), y.nodes.join(",")) ||
+        cmp(x.path.join("."), y.path.join(".")),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `stateWriteConflicts` as canvas problems: each warning lands on both of its
+ * steps, naming the other one (`with`). Never throws (→ `{}`), never mutates.
+ */
+export function findStateWriteProblems(input: FlowWorkflowInput): StepProblems {
+  try {
+    const out: StepProblems = {};
+    for (const w of stateWriteConflicts(input)) {
+      for (const n of w.nodes) {
+        const list = Object.hasOwn(out, n) ? out[n] : [];
+        list.push({ code: w.code, path: [...w.path], with: w.nodes.filter((x) => x !== n) });
+        out[n] = list;
       }
     }
     return out;

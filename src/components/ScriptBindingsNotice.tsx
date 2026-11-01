@@ -21,7 +21,7 @@ export interface ScriptConversion {
  * A Run script's `{{ }}` markers, converted when the step opens. The host never substitutes
  * inside code (see `script-bindings.ts`), so a marker there is literal text at run time. When
  * the step opens, each convertible marker is rewritten to the code read it names
- * (`state.nodes.<id>.output…`, `vars.…`, `consts.…`); {@link ScriptBindingsNotice} says so,
+ * (`run.nodes.<id>.output…`, `state.…`, `consts.…`); {@link ScriptBindingsNotice} says so,
  * with Undo. Runs once per mount of the step editor, so after Undo the code stays as it was
  * until the step is opened again. Read-only (or not a script), nothing is rewritten.
  */

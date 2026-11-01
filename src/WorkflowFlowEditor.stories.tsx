@@ -108,6 +108,28 @@ export const ParallelFanOut: Story = {
   },
 };
 
+/** "Write to state": `send` stores its output under `state.email`, and the Set data node with no
+ *  `state` merges into the root by default. Open a node's settings to see the control. */
+export const WriteToState: Story = {
+  args: {
+    value: {
+      ...SAMPLE_WORKFLOW,
+      initialState: { plan: "free" },
+      nodes: [
+        SAMPLE_WORKFLOW.nodes[0],
+        { ...SAMPLE_WORKFLOW.nodes[1], state: { mode: "key", key: "email" } },
+        { id: "mark", uses: { app: "@w6w/data", action: "set" }, with: { onboarded: true } },
+        SAMPLE_WORKFLOW.nodes[2],
+      ],
+      edges: [
+        { from: "trigger", to: "send" },
+        { from: "send", to: "mark" },
+        { from: "mark", to: "notify" },
+      ],
+    },
+  },
+};
+
 /** A legacy For each (steps wired after it, no `body`): converted on load to a loop body, so
  *  the card shows Each item / Done handles, the body step is tinted and badged, and the
  *  "converted from an older definition" notice shows. */
