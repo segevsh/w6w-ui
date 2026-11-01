@@ -23,6 +23,7 @@ import { edgeLane } from "./flow-connect.ts";
 import {
   CONTROL_APP,
   EACH_SOURCE_HANDLE,
+  FOREACH_EACH_ROUTE,
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
@@ -408,6 +409,9 @@ export function effectiveEdges(wf: FlowWorkflow): FlowEdge[] {
 
 const isSuccess = (e: FlowEdge) => (e.when ?? "success") === "success";
 
+/** A saved For each → `body[0]` link ({@link FOREACH_EACH_ROUTE}); the canvas draws it from `with.body`. */
+export const isEachLink = (e: FlowEdge): boolean => e.route === FOREACH_EACH_ROUTE && isSuccess(e);
+
 /**
  * What each foreach's loop is, in a stored definition — the ONE place that knows
  * the legacy-chain rule (D-A3). A foreach carrying a `body` key is judged on it;
@@ -460,9 +464,11 @@ export function definitionLoops(wf: FlowWorkflow): Record<string, LoopResult> {
       if (own && [...own].some((o) => o !== fid)) return bad("body_claimed_twice", id);
     }
     // Body edges: success-lane edges with BOTH ends in this body, never into body[0].
-    // Any other edge touching a body step is still refused.
+    // The For each's own Each item link to body[0] restates the list. Any other edge
+    // touching a body step is still refused.
     const bodyEdges: FlowEdge[] = [];
     for (const e of declared) {
+      if (isEachLink(e) && e.from === fid && e.to === ids[0]) continue;
       const touches = inBody.has(e.from) || inBody.has(e.to);
       if (!touches) continue;
       const internal = inBody.has(e.from) && inBody.has(e.to) && isSuccess(e) && e.to !== ids[0];
@@ -475,7 +481,8 @@ export function definitionLoops(wf: FlowWorkflow): Record<string, LoopResult> {
   }
 
   function legacyBody(fid: string): LoopResult {
-    const succ = edges.filter((e) => e.from === fid && isSuccess(e));
+    // A routed edge names its port (Done), so only the unrouted shape can be a legacy chain.
+    const succ = edges.filter((e) => e.from === fid && isSuccess(e) && e.route === undefined);
     if (succ.length === 0) return { body: [], source: "body" };
     const bad = (stepId: string): LoopResult => ({
       invalid: { reason: "legacy_not_linear", stepId },

@@ -54,7 +54,12 @@ test("round trip (a) body-less For each, no success successor", () => {
   same(wfOf([step("s", {}, 0), fe("f", { items: ["a"], x: 1 }, 1)], [{ from: "s", to: "f" }]));
 });
 test("round trip (b) 1-step body", () => {
-  same(wfOf([fe("f", { items: ["a"], body: ["b1"], z: 1 }), step("b1", {}, 1)], []));
+  same(
+    wfOf(
+      [fe("f", { items: ["a"], body: ["b1"], z: 1 }), step("b1", {}, 1)],
+      [{ from: "f", to: "b1", route: "each" }],
+    ),
+  );
 });
 test("round trip (c) 3-step body", () => {
   same(
@@ -65,7 +70,7 @@ test("round trip (c) 3-step body", () => {
         step("b2", {}, 2),
         step("b3", {}, 3),
       ],
-      [],
+      [{ from: "f", to: "b1", route: "each" }],
     ),
   );
 });
@@ -80,7 +85,7 @@ test("If conditions remain loop members after save and reload", () => {
       }),
       step("op"),
     ],
-    [],
+    [{ from: "f", to: "gate", route: "each" }],
   );
   same(wf);
   const graph = workflowToFlow(roundTrip(wf));
@@ -90,7 +95,10 @@ test("round trip (d) body + Done-side node", () => {
   same(
     wfOf(
       [fe("f", { items: ["a"], body: ["b1"], z: 1 }), step("b1", {}, 1), step("d", {}, 2)],
-      [{ from: "f", to: "d" }],
+      [
+        { from: "f", to: "d", route: "done" },
+        { from: "f", to: "b1", route: "each" },
+      ],
     ),
   );
 });
@@ -98,33 +106,43 @@ test("round trip (e) body + error edge out of the For each", () => {
   same(
     wfOf(
       [fe("f", { items: ["a"], body: ["b1"], z: 1 }), step("b1", {}, 1), step("h", {}, 2)],
-      [{ from: "f", to: "h", when: "error" }],
+      [
+        { from: "f", to: "h", when: "error" },
+        { from: "f", to: "b1", route: "each" },
+      ],
     ),
   );
 });
 test("round trip (f) body: [] + Done-side node", () => {
   same(
-    wfOf([fe("f", { items: ["a"], body: [], z: 1 }), step("d", {}, 1)], [{ from: "f", to: "d" }]),
+    wfOf(
+      [fe("f", { items: ["a"], body: [], z: 1 }), step("d", {}, 1)],
+      [{ from: "f", to: "d", route: "done" }],
+    ),
   );
 });
 test("round trip (g) an invalid body is kept verbatim", () => {
   same(
     wfOf(
       [fe("f", { items: ["a"], body: ["ghost"], z: 1 }), step("d", {}, 1)],
-      [{ from: "f", to: "d" }],
+      [{ from: "f", to: "d", route: "done" }],
     ),
   );
 });
-test("round trip (h) a legacy_not_linear shape is kept (fan-out)", () => {
-  same(
-    wfOf(
-      [fe("f", { items: ["a"], z: 1 }), step("x", {}, 1), step("y", {}, 2)],
-      [
-        { from: "f", to: "x" },
-        { from: "f", to: "y" },
-      ],
-    ),
+test("round trip (h) a legacy_not_linear shape is kept (fan-out), its edges read as Done", () => {
+  const wf = wfOf(
+    [fe("f", { items: ["a"], z: 1 }), step("x", {}, 1), step("y", {}, 2)],
+    [
+      { from: "f", to: "x" },
+      { from: "f", to: "y" },
+    ],
   );
+  const out = roundTrip(wf);
+  assert.deepEqual(out.nodes, wf.nodes);
+  assert.deepEqual(out.edges, [
+    { from: "f", to: "x", route: "done" },
+    { from: "f", to: "y", route: "done" },
+  ]);
 });
 
 // ── Body derivation + edge sink ────────────────────────────────────────────
@@ -173,7 +191,7 @@ test("converging chains emit disjoint bodies; edges[] has no each edge and none 
   const out = flowToWorkflow(wfOf(steps, []), canvas(steps, edges), edges);
   assert.deepEqual(out.nodes[0].with?.body, ["a", "m", "z"]);
   assert.equal("body" in (out.nodes[1].with ?? {}), false);
-  assert.deepEqual(out.edges, []);
+  assert.deepEqual(out.edges, [{ from: "f1", to: "a", route: "each" }]);
 });
 
 test("paramsToJson write-back (with lacking body) still emits the derived body", () => {
@@ -209,6 +227,66 @@ test("a NEW foreach with only a Done edge emits body: [] and reloads on Done", (
   const g = workflowToFlow(out);
   assert.equal(eachEdges(g).length, 0);
   assert.equal(g.nodes.find((n) => n.id === "n")?.data.legacyLoop, undefined);
+});
+
+// ── The Done port ──────────────────────────────────────────────────────────
+// The user's shape (wf_EwC2wlcFYPaKKsPO): For each [gate → stop], then an un-routed edge to a
+// step outside the body, saved before the Done port had an id.
+const doneWorld = (doneEdge: FlowEdge = { from: "f", to: "after" }) =>
+  wfOf(
+    [
+      fe("f", { items: ["a"], body: ["gate", "stop"] }),
+      step("gate", { uses: { app: "@w6w/control", action: "if" }, with: { condition: true } }),
+      step("stop", { uses: { app: "@w6w/stop", action: "stop" }, with: { condition: true } }),
+      step("after"),
+    ],
+    [doneEdge],
+  );
+
+test("a legacy un-routed edge from a For each to a step outside its body is read as Done", () => {
+  const g = workflowToFlow(doneWorld());
+  const done = g.edges.find((e) => e.source === "f" && e.target === "after");
+  assert.equal(done?.sourceHandle, "route:done", "drawn on the Done port, not the first handle");
+  assert.equal(done?.data?.when, "success");
+  assert.equal(done?.data?.route, "done");
+  assert.deepEqual(loopMembership(g.nodes, g.edges), { gate: "f", stop: "f" });
+  const out = flowToWorkflow(doneWorld(), g.nodes, g.edges);
+  assert.deepEqual(out.nodes[0].with?.body, ["gate", "stop"]);
+  assert.deepEqual(out.edges, [
+    { from: "f", to: "after", route: "done" },
+    { from: "f", to: "gate", route: "each" },
+  ]);
+  // Saved once, the routed shape round trips unchanged.
+  same(out);
+});
+
+test("dragging from the Done port mints a Done edge that saves with its route", () => {
+  const wf = doneWorld();
+  wf.edges = [];
+  const g = workflowToFlow(wf);
+  // The Done handle's id is `route:done`; React Flow reports it as the drag's route.
+  for (const route of ["done", undefined]) {
+    const next = applyConnect("f", "after", g.nodes, g.edges, "success", undefined, route);
+    assert.ok(next, `route ${route}`);
+    const e = next.find((x) => x.source === "f" && x.target === "after");
+    assert.equal(e?.sourceHandle, "route:done");
+    assert.deepEqual(e?.data, { when: "success", route: "done" });
+    assert.equal(loopMembership(g.nodes, next).after, undefined, "Done never joins the body");
+    const out = flowToWorkflow(wf, g.nodes, next);
+    assert.deepEqual(out.nodes[0].with?.body, ["gate", "stop"]);
+    assert.deepEqual(out.edges, [
+      { from: "f", to: "after", route: "done" },
+      { from: "f", to: "gate", route: "each" },
+    ]);
+  }
+  // A For each has no other route.
+  assert.equal(applyConnect("f", "after", g.nodes, g.edges, "success", undefined, "x"), null);
+});
+
+test("an Each item link that does not name body[0] is refused like any body edge", () => {
+  const wf = doneWorld({ from: "f", to: "stop", route: "each" });
+  const r = definitionLoops(wf).f;
+  assert.ok("invalid" in r && r.invalid.reason === "body_step_has_edges");
 });
 
 // ── Load + legacy (F0) ─────────────────────────────────────────────────────
@@ -255,6 +333,7 @@ test("F0 legacy loads as an each-lane edge and re-emits the fixed shape, express
   assert.deepEqual(out.edges, [
     { from: "create_event_1", to: "eventbrite_to_cohost_1" },
     { from: "eventbrite_to_cohost_1", to: "for_each_1" },
+    { from: "for_each_1", to: "update_event_ticket_1", route: "each" },
   ]);
 });
 
@@ -455,6 +534,7 @@ const branched = () =>
       step("run"),
     ],
     [
+      { from: "f", to: "gate", route: "each" },
       { from: "gate", to: "stop" },
       { from: "gate", to: "run", route: "false" },
     ],
@@ -473,14 +553,18 @@ test("branched body round trips and emits body edges", () => {
   const wf = branched();
   assert.equal(JSON.stringify(roundTrip(wf)), JSON.stringify(wf));
   assert.deepEqual(roundTrip(wf).edges, [
+    { from: "f", to: "gate", route: "each" },
     { from: "gate", to: "stop" },
     { from: "gate", to: "run", route: "false" },
   ]);
 });
 
 test("a plain chain still serializes with no edges", () => {
-  const wf = wfOf([fe("f", { items: ["a"], body: ["a1", "a2"] }), step("a1"), step("a2")], []);
-  assert.deepEqual(roundTrip(wf).edges, []);
+  const wf = wfOf(
+    [fe("f", { items: ["a"], body: ["a1", "a2"] }), step("a1"), step("a2")],
+    [{ from: "f", to: "a1", route: "each" }],
+  );
+  assert.deepEqual(roundTrip(wf).edges, [{ from: "f", to: "a1", route: "each" }]);
   same(wf);
 });
 
@@ -522,6 +606,7 @@ test("If False port inside a body is accepted (the screenshot case)", () => {
     "run",
   ]);
   assert.deepEqual(out.edges, [
+    { from: "f", to: "gate", route: "each" },
     { from: "gate", to: "stop" },
     { from: "gate", to: "run", route: "false" },
   ]);
@@ -559,6 +644,7 @@ test("a Router in a body with two routes to two steps is accepted", () => {
   assert.ok(b);
   const out = flowToWorkflow(wfOf([]), g.nodes, b);
   assert.deepEqual(out.edges, [
+    { from: "f", to: "r", route: "each" },
     { from: "r", to: "p", route: "x" },
     { from: "r", to: "q", route: "y" },
   ]);

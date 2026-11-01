@@ -16,7 +16,7 @@
  * already has the real `RunState`/`StepExecution` is structurally compatible
  * for free.
  */
-import type { CanvasLane } from "./flow-types.ts";
+import { type CanvasLane, FOREACH_DONE_ROUTE } from "./flow-types.ts";
 
 /** Mirrors `RunStatus` in `@w6w/workflow-types`. */
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
@@ -173,16 +173,35 @@ export function edgeRunState(
   from: string,
   when: CanvasLane | undefined,
   route?: string,
+  to?: string,
 ): EdgeRunState | undefined {
   if (!runState) return undefined;
+  const state = edgeStateFromSource(runState, from, when, route);
+  // An edge into a step that was skipped was not taken, whatever its source did (a For each
+  // whose body hit Stop workflow still succeeded, but nothing on Done ran).
+  if (state === "taken" && to !== undefined && execOf(runState, to)?.status === "skipped") {
+    return "skipped";
+  }
+  return state;
+}
+
+function edgeStateFromSource(
+  runState: RunState,
+  from: string,
+  when: CanvasLane | undefined,
+  route?: string,
+): EdgeRunState | undefined {
   const exec = execOf(runState, from);
   if (!exec) return undefined;
   // Each lane: a body edge's fate is not decidable from the parent's record (body
   // ids are never `RunState.nodes` keys) — only a skipped parent skips it.
   if (when === "each") return exec.status === "skipped" ? "skipped" : undefined;
   const lane = when ?? "success";
-  if (route !== undefined && exec.status === "succeeded") {
-    const output = exec.output;
+  const output = exec.output;
+  // A For each's Done route is its plain success exit (a Router's routes carry `route`).
+  const done =
+    route === FOREACH_DONE_ROUTE && !(output && typeof output === "object" && "route" in output);
+  if (route !== undefined && !done && exec.status === "succeeded") {
     // An If's routed edge (its False port, or an explicit "true") follows `matched`.
     if (output && typeof output === "object" && "matched" in output) {
       return (route === "false") !== (output.matched === true) ? "taken" : "skipped";
