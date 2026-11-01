@@ -127,7 +127,7 @@ beside the [workflow canvas](/reference-packages/components/flow-editor/).
 
 | Prop | Type | What it does |
 | --- | --- | --- |
-| `steps` | `{ id, label?, status, startedAt?, finishedAt?, input?, output?, meta?, error? }[]` | Required. In run order. `status` is a node status (`pending`, `running`, `succeeded`, `failed` or `skipped`). `meta` (`{ app, version, action, connectionId }`) adds a Metadata block after Output; it is hidden when `meta` is absent. |
+| `steps` | `{ id, label?, status, skipReason?, startedAt?, finishedAt?, input?, output?, meta?, error? }[]` | Required. In run order. `status` is a node status (`pending`, `running`, `succeeded`, `failed` or `skipped`). A skipped row's `skipReason` adds "condition false", "run stopped" or "disabled" beside its pill; a `not_on_path` row moves to a collapsed "N steps on other paths, not part of this run" line under the list. `meta` (`{ app, version, action, connectionId }`) adds a Metadata block after Output; it is hidden when `meta` is absent. |
 | `runError` | `{ message, code?, phase?, retryable? }` | Why the run itself failed, shown above the nodes. |
 | `stepErrors` | `{ stepId, label?, error }[]` | Failures the run recorded and continued past (a node with `onError: "continue-record"`). |
 | `emptyLabel` | `ReactNode` | Shown when `steps` is empty. |

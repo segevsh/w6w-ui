@@ -167,6 +167,7 @@ export type { RetryPolicyValue, RetryTarget } from "./RetryPolicyFields.tsx";
 export { StepStatusPill } from "./components/StepStatusPill.tsx";
 export type {
   ExecutionStatus,
+  SkipReason,
   StepStatus,
   StepStatusPillProps,
 } from "./components/StepStatusPill.tsx";

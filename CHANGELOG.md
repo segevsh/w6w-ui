@@ -9,6 +9,10 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- A run's skipped steps say why: `ExecutionLogStep.skipReason` (`SkipReason`) shows "condition
+  false", "run stopped" or "disabled" beside the Skipped pill. A `not_on_path` step (on another
+  path, never part of the run) leaves the run log for a collapsed "N steps on other paths" footer
+  and gets no run paint on the canvas, nor do its edges.
 - Run script reads data as code: a `{{ }}` in its code is converted to `state.nodes.<id>.output…`,
   `vars.…` or `consts.…` (Python indexes them) when the step opens, behind a quiet note with
   **Undo**; step chips and ƒx under the code insert those reads; the hint is one line plus a

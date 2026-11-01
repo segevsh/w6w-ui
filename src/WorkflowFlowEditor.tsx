@@ -670,13 +670,16 @@ function Inner({
   // else, including a plain drag or edit that doesn't touch `runState`.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
   useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) => {
-        const stepStatus = stepVisualState(runState, n.id);
+    setNodes((nds) => {
+      // A loop body step has no record of its own; one whose For each is on another path stays
+      // unpainted with it (computed here, not read off `data.loopOf`, which may not be stamped yet).
+      const loopOf = new Map(stampLoopOf(nds, edges).map((n) => [n.id, n.data.loopOf]));
+      return nds.map((n) => {
+        const stepStatus = stepVisualState(runState, n.id, enclosingLoops(n.id, loopOf));
         if (n.data.stepStatus === stepStatus && n.data.runStatus === runState?.status) return n;
         return { ...n, data: { ...n.data, stepStatus, runStatus: runState?.status } };
-      }),
-    );
+      });
+    });
     setEdges((eds) =>
       eds.map((e) => {
         const lane = edgeLane(e);

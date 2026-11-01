@@ -294,7 +294,9 @@ The canvas doesn't fetch runs. Poll the run yourself (`GET /runs/:id`) and pass 
 
 Run statuses are `queued`, `running`, `succeeded`, `failed` and `canceled`. Node statuses are
 `pending`, `running`, `succeeded`, `failed` and `skipped`. A node missing from the run's `steps`
-map hasn't been reached. `runState` is never written back into the workflow.
+map hasn't been reached. A `skipped` node with `skipReason: "not_on_path"` was on another path
+and never part of the run: it, its loop body and its edges get no run paint. `runState` is never
+written back into the workflow.
 
 ## Helpers
 

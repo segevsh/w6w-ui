@@ -11,6 +11,14 @@ import type { ReactNode } from "react";
 export type StepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 
 /**
+ * Why a `skipped` step did not run — the engine's `NodeExecution.skipReason`, again a thin
+ * LOCAL literal. `not_on_path`: the step is not downstream of the fired trigger (or outside a
+ * run-from-node scope), so it was never part of the run; the other three are real skips. A
+ * record from before the engine stamped reasons has none.
+ */
+export type SkipReason = "not_on_path" | "condition" | "stopped" | "disabled";
+
+/**
  * The five states a whole EXECUTION (an invocation, an endpoint call, a
  * workflow run) can be in — the run-level sibling of `StepStatus`, and again a
  * thin LOCAL literal rather than an import of any spec/wire type. The two

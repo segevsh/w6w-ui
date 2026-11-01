@@ -5,7 +5,7 @@ import { conditionOperatorLabel } from "../condition-editor.ts";
 import type { StepMeta } from "../provider.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { StepStatusPill } from "./StepStatusPill.tsx";
-import type { StepStatus } from "./StepStatusPill.tsx";
+import type { SkipReason, StepStatus } from "./StepStatusPill.tsx";
 
 /**
  * A step's or run's failure, already normalised by the HOST from the workflow
@@ -51,6 +51,12 @@ export interface ExecutionLogStep {
   /** Human-readable step name. Falls back to `id` when omitted. */
   label?: string;
   status: StepStatus;
+  /**
+   * Why a `skipped` step did not run (`StepExecution.skipReason`). `not_on_path` rows leave the
+   * list for the "other paths" footer; the rest show a short reason beside the Skipped pill.
+   * Absent (a run recorded before reasons existed) ⇒ a plain Skipped row, as before.
+   */
+  skipReason?: SkipReason;
   /** ISO-8601 timestamp the step started, once it has. */
   startedAt?: string;
   /** ISO-8601 timestamp the step finished, once it has. */
@@ -160,7 +166,13 @@ export function ExecutionLogPanel({
       </div>
     ) : null;
 
-  if (steps.length === 0) {
+  // A step on another path (not downstream of the fired trigger) was never part of this run:
+  // it is not a skip, so it leaves the list for one collapsed footer line.
+  const inRun = steps.filter((s) => !isOffPath(s));
+  const offPath = steps.filter(isOffPath);
+  const footer = offPath.length > 0 ? <ExecutionLogOffPath steps={offPath} /> : null;
+
+  if (inRun.length === 0) {
     return (
       <>
         {head}
@@ -168,6 +180,7 @@ export function ExecutionLogPanel({
         <div className="w6w-execution-log-empty">
           <p className="w6w-muted w6w-small">{emptyLabel ?? "No nodes have run yet."}</p>
         </div>
+        {footer}
       </>
     );
   }
@@ -177,11 +190,39 @@ export function ExecutionLogPanel({
       {head}
       {errors}
       <ol className="w6w-execution-log">
-        {steps.map((step) => (
+        {inRun.map((step) => (
           <ExecutionLogRow key={step.id} step={step} />
         ))}
       </ol>
+      {footer}
     </>
+  );
+}
+
+const isOffPath = (step: ExecutionLogStep) =>
+  step.status === "skipped" && step.skipReason === "not_on_path";
+
+/** The short reason shown beside a real skip's pill. */
+const SKIP_REASON_LABELS: Record<Exclude<SkipReason, "not_on_path">, string> = {
+  condition: "condition false",
+  stopped: "run stopped",
+  disabled: "disabled",
+};
+
+/** "N steps on other paths, not part of this run" — collapsed; expands to their names. */
+function ExecutionLogOffPath({ steps }: { steps: ExecutionLogStep[] }) {
+  const n = steps.length;
+  return (
+    <details className="w6w-execution-log-off-path" data-testid="execution-log-off-path">
+      <summary className="w6w-muted w6w-small">
+        {`${n} ${n === 1 ? "step" : "steps"} on other paths, not part of this run`}
+      </summary>
+      <ul className="w6w-muted w6w-small">
+        {steps.map((s) => (
+          <li key={s.id}>{s.label ?? s.id}</li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -210,6 +251,11 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
     <div className="w6w-execution-log-row-header">
       <StepStatusPill state={step.status} />
       <span className="w6w-execution-log-row-label">{step.label ?? step.id}</span>
+      {step.status === "skipped" && step.skipReason && step.skipReason !== "not_on_path" && (
+        <span className="w6w-execution-log-skip-reason" data-testid="execution-log-skip-reason">
+          {SKIP_REASON_LABELS[step.skipReason]}
+        </span>
+      )}
       <StepTiming startedAt={step.startedAt} finishedAt={step.finishedAt} />
     </div>
   );
