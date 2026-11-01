@@ -17,6 +17,7 @@ import { workflowToFlow } from "../flow-utils.ts";
 import type { StepMeta, StepTest } from "../provider.tsx";
 import {
   FOREACH_TEST_SAMPLE_MAX,
+  declaredSamples,
   fetchSeedSources,
   foreachTestFixture,
   foreachTestSample,
@@ -29,6 +30,7 @@ import {
   stepBuilderLoop,
   stepBuilderUpstreamSteps,
   stepMetaSampleValues,
+  upstreamSampleValueSources,
   upstreamSampleValues,
   upstreamStateSources,
 } from "../step-preview-state.ts";
@@ -218,7 +220,6 @@ test("upstreamStateSources — an app action's declared output projects as path 
   const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
     actionDef: (app, action) =>
       app === EVENTBRITE && action === "get-event" ? getEventDef : undefined,
-    testOutputs: { ev: { ignored: true } },
   });
   assert.deepEqual(steps, [
     {
@@ -240,7 +241,7 @@ test("upstreamStateSources — no declared shape: the last test run's fields are
     actionDef: () => ({}),
     testOutputs: { ev: { id: "1", name: { text: "Gala" } } },
   });
-  assert.equal(steps[0].outputsFrom, "test");
+  assert.equal(steps[0].outputsFrom, "fresh");
   assert.deepEqual(
     steps[0].outputs?.map((o) => o.key),
     ["id", "name", "name.text"],
@@ -271,7 +272,7 @@ test("upstreamStateSources — a built-in node with no static output falls back 
     testOutputs: { code: { total: 3 } },
   });
   assert.deepEqual(withTest.steps[0].outputs, [{ key: "total", path: true }]);
-  assert.equal(withTest.steps[0].outputsFrom, "test");
+  assert.equal(withTest.steps[0].outputsFrom, "fresh");
   const without = upstreamStateSources("next", nodes, [edge("code", "next")], {
     actionDef: () => ({}),
   });
@@ -300,7 +301,7 @@ test("P1 — an external app ancestor with a test output carries hasMeta: true",
     actionDef: () => ({}),
     testOutputs: { ev: { id: "1" } },
   });
-  assert.equal(steps[0].outputsFrom, "test");
+  assert.equal(steps[0].outputsFrom, "fresh");
   assert.equal(steps[0].hasMeta, true);
 });
 
@@ -819,5 +820,191 @@ test("S6 — stepBuilderLoop follows the builder's own-loop decision", () => {
       shapes,
     )?.foreachId,
     "for_each_1",
+  );
+});
+
+// ── declared output shapes: merge, items, app trigger, sample tiers ──────────
+
+const mergeDef = { output: [{ key: "b" }, { key: "c" }] };
+
+test("shapes — real {a,b} + declared {b,c}: a, b, c offered, c alone declaredOnly", () => {
+  const nodes = [node("ev", EVENTBRITE, "x"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("ev", "next")], {
+    actionDef: () => mergeDef,
+    testOutputs: { ev: { a: 1, b: 2 } },
+  });
+  assert.equal(steps[0].outputsFrom, "fresh");
+  assert.deepEqual(steps[0].outputs, [
+    { key: "a", path: true },
+    { key: "b", path: true },
+    { key: "c", path: true, declaredOnly: true },
+  ]);
+});
+
+test("shapes — fresh beats persisted; persisted alone is the base", () => {
+  const nodes = [node("ev", EVENTBRITE, "x"), node("next")];
+  const e = [edge("ev", "next")];
+  const both = upstreamStateSources("next", nodes, e, {
+    actionDef: () => ({}),
+    testOutputs: { ev: { f: 1 } },
+    persistedOutputs: { ev: { p: 1 } },
+  }).steps[0];
+  assert.equal(both.outputsFrom, "fresh");
+  assert.deepEqual(
+    both.outputs?.map((o) => o.key),
+    ["f"],
+  );
+  const only = upstreamStateSources("next", nodes, e, {
+    actionDef: () => ({}),
+    persistedOutputs: { ev: { p: 1 } },
+  }).steps[0];
+  assert.equal(only.outputsFrom, "persisted");
+  assert.equal(only.needsTest, undefined);
+  // built-in node: persisted is read too
+  const internal = upstreamStateSources(
+    "next",
+    [node("code"), node("next")],
+    [edge("code", "next")],
+    {
+      persistedOutputs: { code: { total: 3 } },
+    },
+  ).steps[0];
+  assert.equal(internal.outputsFrom, "persisted");
+});
+
+const webhooksDef = {
+  output: [
+    {
+      key: "webhooks",
+      type: "array",
+      items: [{ key: "id" }, { key: "endpoint_url" }, { key: "actions" }],
+    },
+  ],
+};
+
+test("shapes — items: <key>.0.<item> offered in the picker projection", () => {
+  const nodes = [node("lw", EVENTBRITE, "list-webhooks"), node("next")];
+  const { steps } = upstreamStateSources("next", nodes, [edge("lw", "next")], {
+    actionDef: () => webhooksDef,
+  });
+  assert.deepEqual(
+    steps[0].outputs?.map((o) => o.key),
+    ["webhooks", "webhooks.0.id", "webhooks.0.endpoint_url", "webhooks.0.actions"],
+  );
+});
+
+function loopGraph() {
+  const g = f0({ items: "{{ nodes.eventbrite_to_cohost_1.output.webhooks }}" });
+  return { wf: g.nodes, edges: g.edges };
+}
+const LW = "eventbrite_to_cohost_1";
+const BODY = "update_event_ticket_1";
+
+test("shapes — a never-run For each over a declared array gets those item keys", () => {
+  const { wf, edges } = loopGraph();
+  const out = upstreamStateSources(BODY, wf, edges, {
+    actionDef: (app) => (app === STUB ? webhooksDef : undefined),
+  });
+  assert.deepEqual(
+    out.loop?.itemOutputs?.map((o) => o.key),
+    ["id", "endpoint_url", "actions"],
+  );
+  assert.equal("itemSample" in (out.loop ?? {}), false, "no fabricated sample item");
+});
+
+test("shapes — a declared sample's first element supplies the sample item", () => {
+  const { wf, edges } = loopGraph();
+  const out = upstreamStateSources(BODY, wf, edges, {
+    actionDef: (app) =>
+      app === STUB ? { ...webhooksDef, sample: { webhooks: [{ id: "w1" }] } } : undefined,
+  });
+  assert.deepEqual(out.loop?.itemSample, { id: "w1" });
+});
+
+test("shapes — loop item keys fall back to the PERSISTED upstream output", () => {
+  const { wf, edges } = loopGraph();
+  const out = upstreamStateSources(BODY, wf, edges, {
+    actionDef: () => undefined,
+    persistedOutputs: { [LW]: { webhooks: [{ zed: 1 }] } },
+  });
+  assert.deepEqual(out.loop?.itemSample, { zed: 1 });
+  assert.deepEqual(
+    out.loop?.itemOutputs?.map((o) => o.key),
+    ["zed"],
+  );
+});
+
+const triggerNode = (id: string) => {
+  const n = node(id, EVENTBRITE, "order.placed");
+  n.data.step.uses.trigger = true;
+  return n;
+};
+
+test("shapes — app trigger ancestor: hasTrigger + trigger.event fields, none while unloaded", () => {
+  const nodes = [triggerNode("t"), node("next")];
+  const e = [edge("t", "next")];
+  const loaded = upstreamStateSources("next", nodes, e, {
+    triggerDef: () => ({
+      output: [{ key: "order_id" }, { key: "attendees", type: "array", items: [{ key: "email" }] }],
+    }),
+  });
+  assert.equal(loaded.hasTrigger, true);
+  assert.equal(loaded.eventOutputsFrom, "declared");
+  assert.deepEqual(
+    loaded.eventOutputs?.map((o) => o.key),
+    ["order_id", "attendees", "attendees.0.email"],
+  );
+  assert.equal(
+    loaded.steps.find((s) => s.id === "t")?.outputs,
+    undefined,
+    "no nodes.<id>.output alias",
+  );
+  const unloaded = upstreamStateSources("next", nodes, e, { triggerDef: () => undefined });
+  assert.equal(unloaded.hasTrigger, true);
+  assert.equal(unloaded.eventOutputs, undefined);
+  const sampled = upstreamStateSources("next", nodes, e, {
+    triggerDef: () => ({ sample: { order_id: "1" } }),
+  });
+  assert.equal(sampled.eventOutputsFrom, "sample");
+});
+
+test("shapes — values: fresh > persisted > sample per ref, output-only gives none, sources say which", () => {
+  const steps = [
+    { id: "s", outputs: [{ key: "a", path: true as const }] },
+    { id: "o", outputs: [{ key: "k", path: true as const }] },
+  ];
+  const tiers = {
+    samples: { s: { a: "sample-a", b: "sample-b", c: "sample-c" } },
+    persisted: { s: { a: "persisted-a", b: "persisted-b" } },
+  };
+  const fresh = { s: { a: "fresh-a" } };
+  const v = upstreamSampleValues(steps, fresh, {}, undefined, tiers);
+  const src = upstreamSampleValueSources(steps, fresh, {}, undefined, tiers);
+  assert.equal(v["nodes.s.output.a"], "fresh-a");
+  assert.equal(v["nodes.s.output.b"], "persisted-b");
+  assert.equal(v["nodes.s.output.c"], "sample-c");
+  assert.deepEqual(
+    [src["nodes.s.output.a"], src["nodes.s.output.b"], src["nodes.s.output.c"]],
+    ["fresh", "persisted", "sample"],
+  );
+  assert.equal(
+    Object.keys(v).some((k) => k.includes(".o.")),
+    false,
+    "output-only: no value",
+  );
+});
+
+test("shapes — declaredSamples reads action samples and the trigger's event sample", () => {
+  const out = declaredSamples([triggerNode("t"), node("ev", EVENTBRITE, "x"), node("code")], {
+    actionDef: () => ({ sample: { id: 1 } }),
+    triggerDef: () => ({ sample: { order_id: "9" } }),
+  });
+  assert.deepEqual(out, { samples: { ev: { id: 1 } }, event: { order_id: "9" } });
+  const tiers = { samples: out.samples, event: out.event };
+  const v = upstreamSampleValues([], {}, {}, undefined, tiers);
+  assert.equal(v["trigger.event.order_id"], "9");
+  assert.equal(
+    upstreamSampleValueSources([], {}, {}, undefined, tiers)["trigger.event.order_id"],
+    "sample",
   );
 });

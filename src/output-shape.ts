@@ -1,13 +1,11 @@
 /**
  * An upstream step's output SHAPE — the field paths a later step can pick —
- * from the three places one can come from, in precedence order:
- *
- * 1. **Declared** — the app action's `output` (`core/rfcs/action.md`
- *    `OutputField[]`), so a downstream step can reference `get-event`'s
- *    `name.text` before anything has run.
- * 2. **Sample** — the action's `sample` value, when it declares no `output`.
- * 3. **Test run** — the step's last saved test output, when the action
- *    declares neither. With none of the three, the author has to run a test.
+ * from the places one can come from. A real shape (a fresh test output, else
+ * the persisted one) is the BASE and keeps every key; the app's declared
+ * `output` (`core/rfcs/action.md` `OutputField[]`) annotates it and adds its
+ * declared-only keys (muted). With no real shape the declared `output` drives
+ * the keys alone, then keys inferred from the action's `sample`. With none of
+ * these, the author has to run a test.
  *
  * Every field is a dot-separated PATH (`start.utc`), the spec's own notation
  * for nesting (`OutputField.key`: "Dot notation for nested paths"). That is
@@ -25,10 +23,18 @@ export interface OutputFieldRef {
   label?: string;
   /** `true` — `key` is a dot path whose segments are checked one by one. */
   path: true;
+  /**
+   * `true` when a real (fresh/persisted) shape exists and this key came ONLY from the app's
+   * declaration — the picker adds it muted, "declared by the app".
+   */
+  declaredOnly?: true;
 }
 
-/** Where a step's offered fields came from. */
-export type OutputShapeSource = "declared" | "sample" | "test";
+/**
+ * Where a step's offered fields came from: a fresh test output, the persisted test shape,
+ * the app's declared `output`, or keys inferred from the app's `sample`.
+ */
+export type OutputShapeSource = "fresh" | "persisted" | "declared" | "sample";
 
 /** How deep inference walks a sample/test value. Deeper paths stay reachable via the parent. */
 const MAX_DEPTH = 3;
@@ -47,12 +53,41 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 export function declaredOutputFields(output: unknown): OutputFieldRef[] | undefined {
   if (!Array.isArray(output)) return undefined;
   const fields: OutputFieldRef[] = [];
+  const seen = new Set<string>();
+  const add = (f: OutputFieldRef) => {
+    if (seen.has(f.key)) return;
+    seen.add(f.key);
+    fields.push(f);
+  };
   for (const f of output) {
     if (!isPlainObject(f) || typeof f.key !== "string" || f.key === "") continue;
     const label = typeof f.label === "string" && f.label !== "" ? f.label : undefined;
-    fields.push(label ? { key: f.key, label, path: true } : { key: f.key, path: true });
+    add({ key: f.key, ...(label ? { label } : {}), path: true });
+    // `items` (core/rfcs/action.md): one level of list-element fields, offered as the
+    // element-index path `<key>.0.<itemKey>` the engine resolves (and the editor already
+    // builds for an after-loop For each).
+    if (f.type === "array" && Array.isArray(f.items)) {
+      for (const it of f.items) {
+        if (!isPlainObject(it) || typeof it.key !== "string" || it.key === "") continue;
+        const il = typeof it.label === "string" && it.label !== "" ? it.label : undefined;
+        add({ key: `${f.key}.0.${it.key}`, ...(il ? { label: il } : {}), path: true });
+      }
+    }
   }
   return fields.length > 0 ? fields : undefined;
+}
+
+/**
+ * The item keys a declared array field's `items` lists (`undefined` when the key is not a
+ * declared array field with items) — what a never-run For each over that array iterates.
+ */
+export function declaredItemFields(output: unknown, key: string): OutputFieldRef[] | undefined {
+  if (!Array.isArray(output)) return undefined;
+  const f = output.find((o) => isPlainObject(o) && o.key === key);
+  if (!isPlainObject(f) || !Array.isArray(f.items)) return undefined;
+  return declaredOutputFields([{ key, type: "array", items: f.items }])
+    ?.filter((x) => x.key !== key)
+    .map((x) => ({ ...x, key: x.key.slice(key.length + 3) }));
 }
 
 /**
@@ -93,19 +128,35 @@ export interface ActionShapeDef {
 }
 
 /**
- * Resolve a step's offered fields by the precedence above. `action` is the
- * app action definition (`undefined` while its app's actions are loading, or
- * for a node that has none); `testOutput` is the step's last saved test output.
+ * Resolve a step's offered fields. KEYS MERGE and never hide:
+ * - with a real shape (the fresh test output, else the persisted one) every real key is
+ *   offered; the app's declared `output` annotates matching keys (label) and its
+ *   declared-only keys are appended with `declaredOnly: true`;
+ * - with no real shape, the declared `output` drives the keys alone (`declared`), else
+ *   the keys inferred from `sample` (`sample`).
+ * `action` is the app action/trigger definition (`undefined` while its app is loading);
+ * `fresh` / `persisted` are SEPARATE inputs so the tier stays visible.
  */
 export function resolveOutputShape(
   action: ActionShapeDef | undefined,
-  testOutput: unknown,
+  fresh: unknown,
+  persisted?: unknown,
 ): { fields: OutputFieldRef[]; from: OutputShapeSource } | undefined {
   const declared = declaredOutputFields(action?.output);
+  const freshFields = inferOutputFields(fresh);
+  const realFields = freshFields ?? inferOutputFields(persisted);
+  if (realFields) {
+    const byKey = new Map((declared ?? []).map((d) => [d.key, d]));
+    const have = new Set(realFields.map((f) => f.key));
+    const merged: OutputFieldRef[] = realFields.map((f) => {
+      const d = byKey.get(f.key);
+      return d?.label ? { ...f, label: d.label } : f;
+    });
+    for (const d of declared ?? []) if (!have.has(d.key)) merged.push({ ...d, declaredOnly: true });
+    return { fields: merged, from: freshFields ? "fresh" : "persisted" };
+  }
   if (declared) return { fields: declared, from: "declared" };
   const fromSample = inferOutputFields(action?.sample);
   if (fromSample) return { fields: fromSample, from: "sample" };
-  const fromTest = inferOutputFields(testOutput);
-  if (fromTest) return { fields: fromTest, from: "test" };
   return undefined;
 }
