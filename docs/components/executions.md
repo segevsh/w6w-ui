@@ -81,6 +81,8 @@ A paged list of runs, in the order you give.
 | `loading` | `boolean` | Shows the loading state while there are no items yet. |
 | `emptyLabel` | `ReactNode` | Shown when `items` is empty. |
 | `hasPrev`, `hasNext`, `onPrev`, `onNext` | | The pager. It renders once you pass `onPrev` or `onNext`. |
+| `onRerun` | `(id) => void` | Adds a **Re-run** button beside every row. |
+| `rerunningId` | `string \| null` | The row whose re-run is in flight. While set, every row's **Re-run** is disabled. |
 
 ## `ExecutionFilters`
 
@@ -116,6 +118,9 @@ One run: its status, timing, input, output, error and, for a workflow, the node 
 | `errorMessage` | `ReactNode` | An alert, such as "Couldn't load this run". |
 | `onClose` | `() => void` | Adds a close control. |
 | `onOpenInEditor` | `() => void` | Adds an **Open in visual editor** button. Pass it for workflow runs only. |
+| `onBack` | `() => void` | Adds a **← Back** control above the run, for showing the detail in place of the list it came from. It shows even when the run failed to load. |
+| `onRerun` | `() => void` | Adds a **Re-run** button. |
+| `rerunning` | `boolean` | Disables **Re-run** and labels it **Re-running…**. |
 
 Leave `input` or `output` `undefined` to hide that section. Pass `null` to show a `null` value.
 `steps` follows the same rule.

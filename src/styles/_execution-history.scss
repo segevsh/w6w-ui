@@ -35,7 +35,22 @@
 }
 
 .w6w-execution-list-rows > li {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
   min-width: 0;
+}
+
+/* The row stays the full-width click target; a Re-run control, when the host
+   offers one, sits beside it rather than inside it (a button cannot nest in
+   the row's own `<button>`). */
+.w6w-execution-list-rows > li > .w6w-list-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.w6w-execution-list-rerun {
+  flex-shrink: 0;
 }
 
 /* Both non-list branches (the loading and the empty `<p>`) hang straight off
@@ -193,6 +208,12 @@
   min-width: 0;
 }
 
+/* The Back control sits alone on its own line, flush left, so the detail
+   reads as a page the list was swapped for. */
+.w6w-execution-detail-back {
+  display: flex;
+}
+
 /* Title block left, controls right; the actions keep their width, the name
    wraps or ellipses into whatever is left. */
 .w6w-execution-detail-head {
@@ -228,6 +249,13 @@
   align-items: center;
   gap: var(--w6w-sp-2);
   flex-shrink: 0;
+}
+
+/* Glyph + label on one baseline (`.w6w-btn` itself is not a flex box). */
+.w6w-execution-detail-rerun {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
 }
 
 .w6w-execution-detail-id-line {
