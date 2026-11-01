@@ -1918,6 +1918,8 @@ function Inner({
       ...(exprOptions ?? {}),
       steps: upstreamState.steps,
       hasTrigger: upstreamState.hasTrigger,
+      eventOutputs: upstreamState.eventOutputs,
+      eventOutputsFrom: upstreamState.eventOutputsFrom,
       loop: upstreamState.loop,
       nodeConfigs: nodeConfigs,
       nodeConfig,
@@ -3709,6 +3711,36 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
+/**
+ * The state the Test tab PREVIEWS its resolved params against: the seeded `testStartState`
+ * (what the test will actually send) with, for each upstream `nodes.<id>.output` and the
+ * `trigger.event` that the seeds do not carry, the value the editor already previews in the ƒx
+ * Result (`sampleValues`: a persisted test's kept value or the app's declared `sample`). A seeded
+ * output always wins. Only the PREVIEW reads this; the invoke is still sent `testStartState`.
+ */
+export function previewStartState(
+  state: StepStartState | undefined,
+  sampleValues: Record<string, unknown> | undefined,
+): StepStartState | undefined {
+  if (!sampleValues) return state;
+  const steps: NonNullable<StepStartState["steps"]> = { ...(state?.steps ?? {}) };
+  let added = false;
+  for (const [ref, value] of Object.entries(sampleValues)) {
+    const m = /^nodes\.([^.]+)\.output$/.exec(ref);
+    if (!m || steps[m[1]]?.output !== undefined) continue;
+    steps[m[1]] = { ...(steps[m[1]] ?? {}), output: value };
+    added = true;
+  }
+  const event = sampleValues["trigger.event"];
+  const addEvent = event !== undefined && state?.trigger?.event === undefined;
+  if (!added && !addEvent) return state;
+  return {
+    ...(state ?? {}),
+    ...(added ? { steps } : {}),
+    ...(addEvent ? { trigger: { ...(state?.trigger ?? {}), event } } : {}),
+  };
+}
+
 export function StepEditModal(props: StepEditModalProps) {
   // One editor for every node. An app trigger node rides the action editor:
   // Setup (app, account, trigger) · Configure (its params) · Test.
@@ -3909,6 +3941,7 @@ function ActionStepEditModal({
   // resolve to what that step last produced instead of to "".
   const loopSeed = useLoopSeed(testable && !isTrigger ? loop : undefined);
   const testStartState = startStateFromSeeds(seedSources, loopSeedValue(loopSeed));
+  const previewState = previewStartState(testStartState, useExpressionOptions().sampleValues);
 
   // The incoming state this step was last tested or run with comes back (T4.1.3
   // on this surface's own noun): the fixture's `input` slot is where both
@@ -4306,7 +4339,7 @@ function ActionStepEditModal({
                       <ResolvedParams
                         params={params}
                         values={testValues}
-                        testStartState={testStartState}
+                        testStartState={previewState}
                         view={testView}
                         literalKeys={step.uses.app === SCRIPT_APP ? SCRIPT_LITERAL_KEYS : undefined}
                       />
