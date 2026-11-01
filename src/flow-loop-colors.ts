@@ -1,6 +1,7 @@
 /**
  * Loop colours: every For each on a canvas gets its own tone, shared by its Each item
- * port, its body edges and the dots on its body steps. The palette lives in
+ * port, its body edges and the dots on its body steps (never the body steps' own
+ * background — a step inside a loop looks like any other). The palette lives in
  * `_tokens.scss` as `--w6w-loop-1` … `--w6w-loop-{LOOP_TONES}` (light + dark), and
  * deliberately holds no red, black or green, so a loop never reads as an error port
  * or a success/taken edge.
@@ -10,6 +11,7 @@
  * one (until there are more loops than tones).
  */
 import type { Edge } from "@xyflow/react";
+import type { CSSProperties } from "react";
 import { isForeachStep } from "./flow-loop.ts";
 import { EACH_SOURCE_HANDLE } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
@@ -82,6 +84,21 @@ export function paintLoopEdges(
     if (tone === undefined) return e;
     return { ...e, style: { ...e.style, "--w6w-loop-color": loopToneVar(tone) } as Edge["style"] };
   });
+}
+
+/**
+ * The colour custom property a card's root carries: a For each's own tone, read by its
+ * Each item port. A loop-body step gets none — it looks exactly like a step outside a
+ * loop; its dots are what mark it.
+ */
+export function loopCardStyle(
+  id: string,
+  tones: ReadonlyMap<string, number>,
+): CSSProperties | undefined {
+  const own = tones.get(id);
+  return own === undefined
+    ? undefined
+    : ({ "--w6w-loop-color": loopToneVar(own) } as CSSProperties);
 }
 
 /** What the canvas paints loops from: each For each's tone, and each step's own loop. */

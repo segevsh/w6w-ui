@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import type { Edge } from "@xyflow/react";
 import {
   LOOP_TONES,
   assignLoopTones,
   enclosingLoops,
+  loopCardStyle,
   loopPaint,
   loopPaintKey,
   paintLoopEdges,
@@ -71,4 +73,23 @@ test("loopPaint keys on membership and paints each-lane edges by their loop", ()
   assert.equal(color(out[1]), `var(--w6w-loop-${tone})`);
   assert.equal(out[2], edges[2]);
   assert.equal(paintLoopEdges(edges, new Map(), new Map()), edges);
+});
+
+// Loop-body steps are marked by their dots alone: no tint, no loop-coloured border.
+test("only a For each carries a loop colour; its body steps carry none", () => {
+  const tones = assignLoopTones(["f"]);
+  assert.deepEqual(loopCardStyle("f", tones), {
+    "--w6w-loop-color": `var(--w6w-loop-${tones.get("f")})`,
+  });
+  assert.equal(loopCardStyle("a", tones), undefined);
+});
+
+test("no stylesheet paints a loop-body step's card", () => {
+  for (const file of ["../styles/_flow.scss", "../styles.css"]) {
+    const css = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!css.includes("--w6w-loop-body-color"), `${file}: loop body colour`);
+    for (const [, body] of css.matchAll(/w6w-node-in-loop[^{]*\{([^}]*)\}/g)) {
+      assert.ok(!/background|border/.test(body), `${file}: in-loop card styled: ${body}`);
+    }
+  }
 });
