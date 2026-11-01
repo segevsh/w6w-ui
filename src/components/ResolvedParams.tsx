@@ -57,10 +57,10 @@ export function ResolvedParams({
   view = "props",
   literalKeys,
 }: ResolvedParamsProps) {
-  const { sampleValues, nodeConfig } = useExpressionOptions();
+  const { sampleValues, nodeConfig, nodeMeta } = useExpressionOptions();
   const scope = useMemo(
-    () => buildResolveScope(sampleValues, testStartState, nodeConfig),
-    [sampleValues, testStartState, nodeConfig],
+    () => buildResolveScope(sampleValues, testStartState, nodeConfig, nodeMeta),
+    [sampleValues, testStartState, nodeConfig, nodeMeta],
   );
   const flat = flattenParams(params);
   const effective = (key: string) =>

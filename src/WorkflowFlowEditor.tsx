@@ -204,6 +204,8 @@ import {
   loopItemText,
   nodeConfigSources,
   nodeConfigValues,
+  nodeMetaSampleValues,
+  nodeMetaValues,
   parseLoopSeed,
   resolveLoopItemsInState,
   startStateFromSeeds,
@@ -1825,6 +1827,12 @@ function Inner({
     () => nodeConfigValues(nodes, triggerRegistration.subs),
     [nodes, triggerRegistration.subs],
   );
+  // …and every node's static metadata (`nodes.<id>.meta.app|action|connectionId`, a webhook's
+  // subscription), readable without a run.
+  const nodeMeta = useMemo(
+    () => nodeMetaValues(nodes, triggerRegistration.subs),
+    [nodes, triggerRegistration.subs],
+  );
   const mergedExprOptions = useMemo<ExpressionOptions>(
     () => ({
       ...(exprOptions ?? {}),
@@ -1833,9 +1841,12 @@ function Inner({
       loop: upstreamState.loop,
       nodeConfigs: nodeConfigs,
       nodeConfig,
+      nodeMeta,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
+        // Static meta under a test's reported meta, which wins (and adds `version`).
+        ...nodeMetaSampleValues(nodeMeta),
         ...stepSampleValues,
       },
     }),
@@ -1846,6 +1857,7 @@ function Inner({
       stepSampleValues,
       nodeConfigs,
       nodeConfig,
+      nodeMeta,
     ],
   );
 
