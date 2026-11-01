@@ -58,6 +58,7 @@ import {
   useWorkflowProject,
 } from "./provider.tsx";
 import { loopSeedFromSource, startStateFromSeeds } from "./step-preview-state.ts";
+import { rememberableInput } from "./test-inputs.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -1826,6 +1827,11 @@ export const StepTestRun = forwardRef<
     // Persist the fixture + record the outcome when the host targets a workflow
     // step. Best-effort: a failed save must never mask the run's own result.
     if (persist) {
+      // The incoming state is remembered too (`node_test_inputs`), so the Test
+      // tab and the Run node modal reopen prefilled with it.
+      api
+        .saveTestInput?.(persist.workflowId, persist.stepId, rememberableInput(persist.input))
+        .catch((err) => console.error("test input save failed", err));
       try {
         const saved = await api.saveStepTest(persist.workflowId, persist.stepId, {
           input: persist.input,
