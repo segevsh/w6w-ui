@@ -431,13 +431,13 @@ test("A4: '+ New' on the Setup screen resolves AddConnectionModal's initialAppId
   await act(async () => root.unmount());
 });
 
-test("A5: an auto-satisfied app uses its built-in Default account", async () => {
+test("A5: an auto-satisfied app uses its Built-in account", async () => {
   const { api, calls } = makeTriggerApi({
     auths: [{ key: "t", type: "tenantAuth", available: true, autoSatisfied: true }],
   });
   const { container, root } = await mountTriggers(api, calls, { onDraftChange: () => {} });
   await openEventbrite(container);
-  assert.equal(container.querySelector('button[aria-label="Connection"]')?.textContent, "Default");
+  assert.equal(container.querySelector('button[aria-label="Connection"]')?.textContent, "Built-in");
   await pick(container, "Event Created");
   assert.deepEqual(calls.added, [
     {
