@@ -82,9 +82,8 @@ function collidingEdgeId(survivors: Edge[], id: string): string | null {
  * replacement can satisfy: a real, *distinct* pair (no self-loops), no duplicate
  * edge, the target accepts an entry port (blocks connecting *into* a trigger,
  * which declares `in: 0`), and the source has an exit port. Port **capacity** is
- * deliberately NOT checked here: a full single-slot port is freed by replacement
- * (see `applyConnect`), so dragging a new wire from an already-connected node
- * re-points it rather than being rejected. Used as the live `isValidConnection`.
+ * deliberately NOT checked here: an input accepts any number of edges, and the exit
+ * cap is refused in `applyConnect`. Used as the live `isValidConnection`.
  *
  * The duplicate-pair check is **lane-blind by design**, and that is a v1 *editor*
  * limit, not a model limit: the model permits a success edge and an error edge
@@ -114,7 +113,7 @@ export function canConnect(
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return false;
-  // Per-step ports (T2.3.1): a persisted `ports.in > 1` lets multiple edges land.
+  // Only presence matters: `in: 0` (a trigger) takes no edge; any `in >= 1` takes many.
   const srcPorts = nodePortsForStep(srcStep, lookup);
   const tgtPorts = nodePortsForStep(tgtStep, lookup);
   return srcPorts.out >= 1 && tgtPorts.in >= 1;
@@ -167,11 +166,8 @@ function planConnect(
   if (loopReason) {
     return { next: edges, conflict: null, refusal: { refused: "loop", reason: loopReason } };
   }
-  // Per-step ports (T2.3.1): capacity honors a persisted `ports.in`/`ports.out`,
-  // so a fan-in node with `ports.in > 1` keeps prior edges instead of dropping them.
   const srcPorts = nodePortsForStep(srcStep, lookup);
-  const tgtPorts = nodePortsForStep(tgtStep, lookup);
-  let next = edges;
+  const next = edges;
   // The source's exit port IN THIS LANE is full at a finite cap: REFUSE. Nothing is
   // evicted — `next` stays the input edge set. The other lane is untouched.
   const fromSrc = next.filter(
@@ -182,15 +178,8 @@ function planConnect(
   if (fromSrc.length >= cap) {
     return { next: edges, conflict: null, refusal: { refused: "out_cap", cap } };
   }
-  // Free the target's entry port likewise — lane-blind, see the docstring.
-  // A join inside one loop body keeps its other inbound edges (a body edge is never evicted).
-  const M = loopMembership(nodes, edges);
-  const isJoin = effLane === "each" && inBody && M[target] !== undefined && M[target] === M[source];
-  const toTgt = isJoin ? [] : next.filter((e) => e.target === target);
-  if (toTgt.length >= tgtPorts.in) {
-    const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
-    next = next.filter((e) => !drop.has(e.id));
-  }
+  // The target's entry port is never full: an input takes any number of inbound edges, so a
+  // connect only ever ADDS (`in: 0`, a trigger, is refused by canConnect).
   // Stamp the lane at creation: a freshly drawn wire is a success edge unless the
   // caller says otherwise, and flowToWorkflow reads `data.when` back off the edge
   // (it would see `undefined` otherwise). "success" is emitted as ABSENT on the
@@ -232,8 +221,8 @@ function planConnect(
  * Build the next edge set for a new `source → target` connection. **Additive at the
  * source**: a source under its `out` cap (or unbounded) keeps every existing edge and
  * gains one; at a finite cap the connection is **refused** (see {@link connectRefusal}),
- * never satisfied by evicting. The target's entry port is still single-slot-replacing:
- * the oldest inbound edge(s) are dropped to make room. Returns `null` when the
+ * never satisfied by evicting. The target's entry port accepts any number of
+ * inbound edges, so nothing is ever evicted there. Returns `null` when the
  * connection is disallowed by {@link canConnect}, refused at the out cap — **or when the minted id would
  * duplicate a surviving edge's id**, the same refusal {@link setEdgeWhen} performs
  * through the same {@link collidingEdgeId} test.
@@ -254,11 +243,8 @@ function planConnect(
  * `send → (error) → fallback` shape authorable at all. No `ports.out` bump is
  * needed, so every persisted definition and palette entry stays valid.
  *
- * The target's entry capacity stays **lane-blind**, and that asymmetry is the
- * point: a converging tail step receiving one success and one error edge is
- * governed by `ports.in` alone. Partitioning the target rule by lane too — the
- * plausible "symmetry" cleanup — would let a `ports.in: 1` node silently accept
- * two inbound edges.
+ * The target's entry has no capacity: any number of edges, from any number of
+ * sources (several triggers may feed one node), converge on it.
  */
 export function applyConnect(
   source: string | null | undefined,

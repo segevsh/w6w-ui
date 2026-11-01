@@ -22,9 +22,9 @@ export interface FlowStep {
   /**
    * Declared connection-port cardinality for this step (see core
    * `rfcs/node-types.md` · Ports & cardinality). Omitted fields fall through field-wise to the catalog action, the internal def, then `{ in: 1, out: "many" }`.
-   * A persisted value wins over the node's default — `in > 1` opts the step into
-   * accepting multiple inbound edges (e.g. a flow-control aggregator joining
-   * several upstream branches).
+   * A persisted value wins over the node's default. Only `in: 0` binds (no entry
+   * port); any `in >= 1` accepts any number of inbound edges (core node-types ·
+   * Alternate entries).
    */
   ports?: PortsDecl;
   with?: Record<string, unknown>;
@@ -500,8 +500,9 @@ export interface InternalNodeDef {
    */
   hidden?: boolean;
   /**
-   * Connection ports: how many inbound (entry) and outbound (exit) connections
-   * this node accepts. A port is the ability to receive/emit a connection —
+   * Connection ports: whether this node has an entry (`in >= 1` takes any number
+   * of inbound edges; `in: 0` takes none) and how many outbound (exit) connections
+   * it allows. A port is the ability to receive/emit a connection —
    * rendered as a React Flow Handle. Defaults to one of each (`{ in: 1, out: 1 }`)
    * when omitted; a trigger overrides to `{ in: 0, out: 1 }` (nothing flows into
    * the entry node). Fixed for now — not user-editable.
@@ -1188,8 +1189,8 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     icon: ICON_AGGREGATE,
     hidden: true,
     // Fan-in join: accepts several inbound branches and emits one combined
-    // output. `in > 1` opts the node into multiple inbound edges (see core
-    // rfcs/node-types.md · Ports & cardinality); `out: 1` is a single exit.
+    // output. `in > 1` renders the multi-input handle (every entry already takes
+    // many edges — core rfcs/node-types.md · Alternate entries); `out: 1` is a single exit.
     ports: { in: 10, out: 1 },
     params: [
       {

@@ -807,8 +807,8 @@ function Inner({
       // The lane rides on the handle the wire was dragged from (T1.1.1) — the
       // one canonicalisation point, so a handle-to-handle drag and the
       // drag-to-empty-canvas gesture in `onConnectEnd` cannot disagree on what
-      // counts as the error port. applyConnect replaces a full single-slot port
-      // rather than ignoring the drop.
+      // counts as the error port. applyConnect only ever adds an edge: an input
+      // takes any number, an exit at its finite cap refuses.
       const next = applyConnect(
         params.source,
         params.target,
@@ -1173,7 +1173,7 @@ function Inner({
 
       // Auto-wire the edge back to the handle the drag started from. Dragging a
       // source handle points the edge at the new node; a target handle reverses it.
-      // Gated + replacing per the port rules (applyConnect) against the new node.
+      // Gated per the port rules (applyConnect) against the new node; it only adds.
       let nextEdges = edges;
       // A loop-breaking auto-wire is never silent (D-B2): the step is added
       // unconnected only together with the typed notice, anchored to the source node.

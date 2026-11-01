@@ -9,6 +9,9 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- A node's input takes any number of incoming edges: wiring a second trigger (or a second path)
+  into a node that already has one adds the edge instead of replacing the existing one. Only an
+  exact duplicate, or an edge into a trigger, is refused.
 - A run's skipped steps say why: `ExecutionLogStep.skipReason` (`SkipReason`) shows "condition
   false", "run stopped" or "disabled" beside the Skipped pill. A `not_on_path` step (on another
   path, never part of the run) leaves the run log for a collapsed "N steps on other paths" footer
