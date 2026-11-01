@@ -24,6 +24,9 @@ export {
   shapeToSkeleton,
 } from "./node-samples.ts";
 export type { NodeSample, NodeShape } from "./node-samples.ts";
+export { findTestInput, rememberableInput } from "./test-inputs.ts";
+export type { NodeTestInput } from "./test-inputs.ts";
+export { LastUsedNote, useRememberedTestInput } from "./use-test-input.tsx";
 
 export { createW6WApi, ApiError } from "./createW6WApi.ts";
 export type { CreateW6WApiOptions } from "./createW6WApi.ts";
