@@ -92,6 +92,7 @@
     "test:action-test-form": "bash test/action-test-form/run.sh",
     "test:host-isolation": "bash test/host-isolation/run.sh",
     "test:copyable": "bash test/copyable/run.sh",
+    "test:code-editor-fill": "bash test/code-editor-fill/run.sh",
     "test:pack-smoke": "bash test/pack-smoke/run.sh",
     "storybook": "storybook dev -p 6006 --no-open",
     "build-storybook": "storybook build",
