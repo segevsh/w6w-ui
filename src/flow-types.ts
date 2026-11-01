@@ -1068,7 +1068,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Variables",
         required: true,
         default: [],
-        hint: "Typed key/value variables for downstream steps to reference.",
+        hint: "Set values for downstream steps using individual fields or a JSON object.",
       },
     ],
   },

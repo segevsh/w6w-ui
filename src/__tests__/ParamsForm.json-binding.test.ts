@@ -570,3 +570,92 @@ test("Q2 - no quick-bind row without `whole`, without upstream steps, or read-on
   assert.equal(quickBind().length, 0, "read-only");
   await unmount(r.root);
 });
+
+const VARS_PARAM: ActionParam = { key: "vars", label: "Variables", type: "vars", default: [] };
+const varsMode = (mode: "fields" | "JSON") =>
+  doc().querySelector(`button[aria-label="Edit Variables as ${mode}"]`) as HTMLButtonElement;
+
+test("key/value fields switch to a JSON object and back without changing row types or expressions", async () => {
+  const initial = [
+    { key: "name", type: "string", value: "Ada" },
+    { key: "count", type: "number", value: "{{ nodes.a.output.count }}" },
+    { key: "enabled", type: "boolean", value: false },
+    { key: "nested", type: "json", value: { list: [1, null, true] } },
+  ];
+  const { container, root, box } = await render([VARS_PARAM], { vars: initial });
+  await click(varsMode("JSON"));
+  assert.deepEqual(JSON.parse(draftOf(container, "vars")), {
+    name: "Ada",
+    count: "{{ nodes.a.output.count }}",
+    enabled: false,
+    nested: { list: [1, null, true] },
+  });
+  assert.equal(box.calls, 0, "viewing JSON does not rewrite saved rows");
+  await typeDraft(
+    container,
+    "vars",
+    '{"name":"Grace","count":"{{ nodes.a.output.count }}","enabled":false,"nested":{"list":[1,null,true]},"extra":5}',
+  );
+  assert.equal((box.current.vars as Record<string, unknown>).name, "Grace");
+  await click(varsMode("fields"));
+  assert.deepEqual(box.current.vars, [
+    { ...initial[0], value: "Grace" },
+    ...initial.slice(1),
+    { key: "extra", type: "number", value: 5 },
+  ]);
+  assert.equal(container.querySelectorAll(".w6w-datavar-row").length, 5);
+  await unmount(root);
+});
+
+test("every key/value param supports JSON and whole-output fx bindings", async () => {
+  const { container, root, box } = await render([
+    VARS_PARAM,
+    { ...VARS_PARAM, key: "values", label: "Values" },
+  ]);
+  assert.ok(doc().querySelector('[aria-label="Edit Values as JSON"]'));
+  await click(varsMode("JSON"));
+  await click(doc().querySelector('[aria-label="Use an expression for Variables"]') ?? undefined);
+  await pick(rowNamed("Entire output of Step A"));
+  assert.equal(box.current.vars, "{{ nodes.a.output }}");
+  assert.equal(chipRef(container), "nodes.a.output");
+  assert.equal(varsMode("fields").disabled, true, "a dynamic object cannot become static rows");
+  await unmount(root);
+  const reloaded = await render([VARS_PARAM], { vars: "{{ nodes.a.output }}" });
+  assert.equal(chipRef(reloaded.container), "nodes.a.output");
+  assert.equal(reloaded.box.calls, 0);
+  await unmount(reloaded.root);
+});
+
+test("key/value JSON keeps invalid drafts and prevents switching away until repaired", async () => {
+  const { container, root, box } = await render([VARS_PARAM], { vars: { count: 2 } });
+  await typeDraft(container, "vars", '{"count":');
+  assert.equal(draftOf(container, "vars"), '{"count":');
+  assert.equal(varsMode("fields").disabled, true);
+  assert.deepEqual(box.current.vars, { count: 2 });
+  await typeDraft(container, "vars", "42");
+  assert.match(container.textContent ?? "", /Use a JSON object/);
+  assert.equal(varsMode("fields").disabled, true);
+  assert.deepEqual(box.current.vars, { count: 2 });
+  await typeDraft(container, "vars", '{"count":3}');
+  assert.equal(varsMode("fields").disabled, false);
+  await click(varsMode("fields"));
+  assert.deepEqual(box.current.vars, [{ key: "count", type: "number", value: 3 }]);
+  await unmount(root);
+});
+
+test("JSON view preserves duplicate and incomplete rows, and is usable read-only", async () => {
+  const rows = [
+    { key: "same", type: "string", value: "one" },
+    { key: "same", type: "string", value: "two" },
+    { key: "", type: "number", value: 4 },
+  ];
+  const { container, root, box } = await render([VARS_PARAM], { vars: rows }, { readOnly: true });
+  await click(varsMode("JSON"));
+  assert.deepEqual(JSON.parse(draftOf(container, "vars")), rows);
+  assert.equal(container.querySelector(".cm-content")?.getAttribute("contenteditable"), "false");
+  assert.equal(fxButtons().length, 0);
+  await click(varsMode("fields"));
+  assert.equal(container.querySelectorAll(".w6w-datavar-row").length, 3);
+  assert.equal(box.calls, 0);
+  await unmount(root);
+});

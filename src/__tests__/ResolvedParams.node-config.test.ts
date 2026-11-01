@@ -148,3 +148,23 @@ test("the Test tab previews a static meta ref as its value", () => {
   assert.ok(html.includes("conn_T2N725mP2bxfyaoJ"), html);
   assert.ok(!html.includes("w6w-param-unresolved"), html);
 });
+
+test("JSON key/value objects and whole-object bindings are visible in the Test preview", () => {
+  for (const vars of [
+    { url: "{{ nodes.webhook_1.meta.config.url }}" },
+    "{{ nodes.source.output }}",
+  ]) {
+    const html = renderToStaticMarkup(
+      React.createElement(ExpressionOptionsProvider, {
+        value: { nodeConfig: CONFIG },
+        children: React.createElement(ResolvedParams, {
+          params: PARAMS,
+          values: { vars },
+          testStartState: { steps: { source: { output: { url: URL } } } },
+        }),
+      }),
+    );
+    assert.ok(html.includes(URL), html);
+    assert.ok(!html.includes("None configured"), html);
+  }
+});

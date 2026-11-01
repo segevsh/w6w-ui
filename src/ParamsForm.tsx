@@ -1,5 +1,14 @@
 import { effectiveParam, matchesParamCondition } from "@w6w/expr";
-import { type ReactNode, createContext, useContext, useEffect, useId, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { CodeEditor, type ScriptLanguage } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { Combobox } from "./components/Combobox.tsx";
@@ -1313,11 +1322,15 @@ function JsonParamField({
   value,
   onChange,
   readOnly,
+  headerActions,
+  onValidityChange,
 }: {
   param: ActionParam;
   value: unknown;
   onChange: (key: string, value: unknown) => void;
   readOnly?: boolean;
+  headerActions?: ReactNode;
+  onValidityChange?: (valid: boolean) => void;
 }) {
   // "Bound" is DERIVED from the stored value on every render — never a local
   // flag — so control and value cannot disagree (same stance as `FxField`'s `fx`).
@@ -1361,11 +1374,13 @@ function JsonParamField({
   };
   const onValid = (parsed: unknown) => {
     setInvalid(false);
+    onValidityChange?.(true);
     onChange(param.key, parsed);
   };
   // Empty is not invalid: it clears the value (required-ness is enforced on
   // submit, not by this field). Only non-empty unparseable text is "Invalid JSON".
   const onValidity = ({ valid, error }: { valid: boolean; error?: string }) => {
+    onValidityChange?.(valid || error === "Empty");
     if (!valid && error === "Empty") {
       setInvalid(false);
       onChange(param.key, undefined);
@@ -1403,6 +1418,7 @@ function JsonParamField({
           {label}
           {param.required ? " *" : ""}
         </span>
+        {headerActions}
         {!bound && (
           <button
             type="button"
@@ -1885,6 +1901,52 @@ export interface DataVar {
 }
 
 const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
+const EMPTY_DATA_VARS: DataVar[] = [];
+
+/** Rows for a literal object or the existing typed-row format; bindings stay in JSON mode. */
+export function dataVarRows(value: unknown, previous: DataVar[] = []): DataVar[] | null {
+  if (Array.isArray(value)) {
+    return value.every((v) => v && typeof v === "object" && typeof v.key === "string")
+      ? (value as DataVar[])
+      : null;
+  }
+  if (
+    !value ||
+    typeof value !== "object" ||
+    holdsExpression(value) ||
+    wholeValueRef(value) ||
+    "$expr" in value
+  ) {
+    return null;
+  }
+  return Object.entries(value).map(([key, item]) => {
+    const old = previous.find((row) => row.key === key);
+    const type = typeof item;
+    return {
+      key,
+      type:
+        old && JSON.stringify(old.value) === JSON.stringify(item)
+          ? old.type
+          : type === "string" || type === "number" || type === "boolean"
+            ? type
+            : "json",
+      value: item,
+    };
+  });
+}
+
+/** Keep incomplete/duplicate-key rows as an array so opening JSON never drops an entry. */
+function dataVarsJson(value: unknown): unknown {
+  const rows = Array.isArray(value) ? dataVarRows(value) : null;
+  if (
+    !rows ||
+    rows.some((row) => !row.key) ||
+    new Set(rows.map((row) => row.key)).size !== rows.length
+  ) {
+    return value;
+  }
+  return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+}
 
 /** Coerce a text input into the variable's declared type (best-effort). */
 function coerceVarValue(type: DataVar["type"], raw: string): unknown {
@@ -1912,8 +1974,7 @@ function varValueToText(v: unknown): string {
 }
 
 /**
- * A `vars`-typed param: a dynamic table of typed key/value variables. The value
- * is an array of `{ key, type, value }`, collected into the step's `with`.
+ * A `vars`-typed param offers both typed rows and a JSON object/binding.
  */
 function VarsField({
   param,
@@ -1926,20 +1987,103 @@ function VarsField({
   onChange: (key: string, value: unknown) => void;
   readOnly?: boolean;
 }) {
-  const vars: DataVar[] = Array.isArray(value)
-    ? (value as DataVar[])
-    : Array.isArray(param.default)
-      ? (param.default as DataVar[])
-      : [];
+  const seed = value ?? param.default ?? EMPTY_DATA_VARS;
+  const jsonValue = useMemo(() => dataVarsJson(seed), [seed]);
+  const [mode, setMode] = useState<"fields" | "json">(() =>
+    Array.isArray(seed) ? "fields" : "json",
+  );
+  const previousRows = useRef<DataVar[]>([]);
+  const [invalidJson, setInvalidJson] = useState(false);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const rows = dataVarRows(seed, previousRows.current);
+  const vars = rows ?? [];
+  const jsonMode = mode === "json" || rows === null;
+  const label = param.label ?? param.key;
+  const toggle = (
+    <div className="w6w-view-toggle w6w-datavar-modes">
+      <button
+        type="button"
+        className={`w6w-btn w6w-btn-sm w6w-btn-ghost${!jsonMode ? " active" : ""}`}
+        aria-label={`Edit ${label} as fields`}
+        aria-pressed={!jsonMode}
+        disabled={invalidJson || !!jsonError || rows === null}
+        title={
+          rows === null
+            ? "Use a literal JSON object to edit individual fields"
+            : "Edit individual fields"
+        }
+        onClick={() => {
+          if (!readOnly && !Array.isArray(seed)) onChange(param.key, vars);
+          setMode("fields");
+        }}
+      >
+        Fields
+      </button>
+      <button
+        type="button"
+        className={`w6w-btn w6w-btn-sm w6w-btn-ghost${jsonMode ? " active" : ""}`}
+        aria-label={`Edit ${label} as JSON`}
+        aria-pressed={jsonMode}
+        onClick={() => {
+          previousRows.current = vars;
+          setMode("json");
+        }}
+      >
+        JSON
+      </button>
+    </div>
+  );
+  if (jsonMode) {
+    return (
+      <div className="w6w-datavar-json">
+        <JsonParamField
+          param={{
+            ...param,
+            type: "json",
+            whole: true,
+            default: {},
+            hint: "Enter a JSON object or use ƒx to bind one. Switch to Fields to edit individual values.",
+          }}
+          value={jsonValue}
+          readOnly={readOnly}
+          headerActions={toggle}
+          onValidityChange={(valid) => setInvalidJson(!valid)}
+          onChange={(key, next) => {
+            if (
+              next !== undefined &&
+              dataVarRows(next) === null &&
+              !wholeValueRef(next) &&
+              !holdsExpression(next) &&
+              !(next && typeof next === "object" && "$expr" in next)
+            ) {
+              setJsonError("Use a JSON object, a typed key/value array, or an object binding.");
+              return;
+            }
+            setJsonError(null);
+            setInvalidJson(false);
+            onChange(key, next);
+          }}
+        />
+        {jsonError && (
+          <span className="w6w-hint w6w-datavar-error" aria-live="polite">
+            {jsonError}
+          </span>
+        )}
+      </div>
+    );
+  }
   const commit = (next: DataVar[]) => onChange(param.key, next);
   const patch = (i: number, p: Partial<DataVar>) =>
     commit(vars.map((v, idx) => (idx === i ? { ...v, ...p } : v)));
 
   return (
     <div className="w6w-field">
-      <span>
-        {param.label ?? param.key}
-        {param.required ? " *" : ""}
+      <span className="w6w-field-labelrow">
+        <span>
+          {label}
+          {param.required ? " *" : ""}
+        </span>
+        {toggle}
       </span>
       <div className="w6w-stack">
         {vars.length === 0 && (
