@@ -130,7 +130,7 @@ test("a step row's ▸ caret expands its fields and inserts nothing", async () =
     },
   });
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  const group = groupFor(container, "Workflow state");
+  const group = groupFor(container, "Previous steps");
   const caret = group?.querySelector('[data-testid="expr-caret-fields"]') as HTMLElement;
   assert.equal(caret.textContent, "▸");
   assert.equal(
@@ -166,7 +166,7 @@ test("a declared nested path field inserts steps.<id>.output.<path>", async () =
     },
   });
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  const group = groupFor(container, "Workflow state");
+  const group = groupFor(container, "Previous steps");
   await click(group?.querySelector('[data-testid="expr-toggle-fields"]') as Element);
   const subs = group?.querySelectorAll(".w6w-exprmodal-subsources .w6w-exprmodal-source") ?? [];
   assert.equal(subs.length, 1, "the unreachable path is dropped, the nested one kept");
@@ -217,7 +217,7 @@ test("a field row shows only its own name, indents under its parent and keeps th
       ],
     },
   });
-  const group = groupFor(container, "Workflow state");
+  const group = groupFor(container, "Previous steps");
   await click(group?.querySelector('[data-testid="expr-caret-fields"]') as Element);
   const rows = Array.from(
     group?.querySelectorAll(".w6w-exprmodal-subsources .w6w-exprmodal-source") ?? [],
@@ -252,7 +252,7 @@ test("fields from a test run say so when expanded", async () => {
       steps: [{ id: "ev", outputs: [{ key: "id", path: true }], outputsFrom: "fresh" }],
     },
   });
-  const group = groupFor(container, "Workflow state");
+  const group = groupFor(container, "Previous steps");
   await click(group?.querySelector('[data-testid="expr-toggle-fields"]') as Element);
   const note = group?.querySelector('[data-testid="expr-fields-from-test"]');
   assert.equal(note?.textContent, "Fields from the last test run");
@@ -262,7 +262,7 @@ test("a step with no known shape tells the author to run a test, and still offer
   const { container } = await mountModal({
     options: { steps: [{ id: "ev", needsTest: true }] },
   });
-  const group = groupFor(container, "Workflow state");
+  const group = groupFor(container, "Previous steps");
   const hint = group?.querySelector('[data-testid="expr-needs-test"]');
   assert.equal(hint?.textContent, "Run a test of this step to see its fields");
   assert.equal(container.querySelectorAll('[data-testid="expr-toggle-fields"]').length, 0);
@@ -279,7 +279,7 @@ test("a step with no known shape tells the author to run a test, and still offer
 // ── declared output shapes: merge, hints, trigger.event, value sources ──────
 
 const expandFields = async (container: HTMLElement) => {
-  const group = groupFor(container, "Workflow state") as HTMLElement;
+  const group = groupFor(container, "Previous steps") as HTMLElement;
   await click(group.querySelector('[data-testid="expr-toggle-fields"]') as Element);
   return group;
 };
@@ -344,7 +344,7 @@ test("trigger.event lists the app trigger's declared fields; each saves trigger.
       eventOutputsFrom: "declared",
     },
   });
-  const group = groupFor(container, "Workflow state") as HTMLElement;
+  const group = groupFor(container, "Previous steps") as HTMLElement;
   await click(group.querySelector('[data-testid="expr-caret-event"]') as Element);
   const box = group.querySelector('[data-testid="expr-event-fields"]') as HTMLElement;
   assert.equal(

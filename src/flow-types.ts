@@ -48,6 +48,8 @@ export interface FlowStep {
    * runs them one after another.
    */
   fanOut?: "sequential" | "parallel";
+  /** Write to state (`Node.state`, core/rfcs/workflow.md). Absent = the default: Off, or Merge at root for `@w6w/data` set. */
+  state?: StateWriteConfig;
   /**
    * Authoring-time canvas coordinate for this step, in this editor's own
    * coordinate space (core `rfcs/workflow.md` · "Amendment — 2026-07-29:
@@ -222,6 +224,8 @@ export interface FlowWorkflow {
   displayName?: string;
   description?: string;
   variables?: Array<{ key: string; type?: string; required?: boolean; default?: unknown }>;
+  /** Starting data (`Workflow.initialState`): a literal JSON object that seeds the run's state tree. */
+  initialState?: Record<string, unknown>;
   nodes: FlowStep[];
   connections?: Record<string, { app: string; connection: string | null }>;
   edges?: FlowEdge[];
@@ -286,6 +290,7 @@ export interface FlowWorkflow {
 export type FlowWorkflowInput = Omit<FlowWorkflow, "nodes"> &
   ({ nodes: FlowStep[] } | { steps: FlowStep[] });
 
+import type { StateWriteConfig } from "@w6w/expr";
 import type { ActionParam } from "./types.ts";
 
 // ── Internal pseudo-app nodes (see core rfcs/node-types.md) ─────────────────
