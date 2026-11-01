@@ -318,7 +318,7 @@ test("T-2 — a composite row (step with fields) keeps click = insert, no save",
 
 // ── Metadata › config — each node's settings ────────────────────────────────
 
-test("Metadata › config: no Node settings group; config is collapsed inside Metadata, expands to its keys, inserts nodes.<id>.meta.config.<key>; a non-upstream node still gets a row", async () => {
+test("Metadata › config: no Node settings group; config is collapsed inside Metadata, expands to its keys, inserts nodes.<id>.meta.config.<key>; a non-upstream node sits only in the Metadata section", async () => {
   const { container } = await mountModal({
     options: {
       steps: [{ id: "data_1" }],
@@ -332,27 +332,31 @@ test("Metadata › config: no Node settings group; config is collapsed inside Me
   assert.equal(groupFor(container, "Node settings"), null);
   const group = groupFor(container, "Workflow state") as HTMLElement;
   assert.ok(group);
+  assert.ok(!group.textContent?.includes("webhook_1"), "the unconnected webhook is not state");
+  assert.equal(group.querySelectorAll('[data-testid="expr-meta-toggle"]').length, 1);
+
+  const meta = groupFor(container, "Metadata") as HTMLElement;
   assert.deepEqual(
-    Array.from(group.querySelectorAll('[data-testid="expr-config-node"]')).map(
-      (e) => e.textContent,
-    ),
-    ["webhook_1"],
-    "the unconnected webhook still gets a row",
+    Array.from(
+      meta.querySelectorAll('[data-testid="expr-metadata-node"] .w6w-exprmodal-source-label'),
+    ).map((e) => e.textContent),
+    ["data_1", "webhook_1"],
+    "…but it is in Metadata",
   );
-
-  // Collapsed: one Metadata toggle per node with settings, nothing inside shown.
-  const metas = Array.from(group.querySelectorAll('[data-testid="expr-meta-toggle"]'));
-  assert.equal(metas.length, 2);
-  assert.equal(group.querySelectorAll('[data-testid="expr-config-toggle"]').length, 0);
-
-  await click(metas[1]);
-  const cfgToggle = group.querySelector('[data-testid="expr-config-toggle"]') as HTMLElement;
+  await click(meta.querySelector('[data-testid="expr-section-toggle"]') as Element);
+  // Collapsed: nothing inside a node shown until its own caret opens.
+  assert.equal(meta.querySelectorAll('[data-testid="expr-config-toggle"]').length, 0);
+  const nodeToggles = Array.from(
+    meta.querySelectorAll('[data-testid="expr-metadata-node-toggle"]'),
+  );
+  await click(nodeToggles[1]);
+  const cfgToggle = meta.querySelector('[data-testid="expr-config-toggle"]') as HTMLElement;
   assert.ok(cfgToggle, "Metadata opens onto a config entry");
   assert.equal(cfgToggle.getAttribute("aria-expanded"), "false");
-  assert.equal(group.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
+  assert.equal(meta.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
 
   await click(cfgToggle);
-  const fields = group.querySelector('[data-testid="expr-config-fields"]') as HTMLElement;
+  const fields = meta.querySelector('[data-testid="expr-config-fields"]') as HTMLElement;
   assert.ok(fields, "expanded — the webhook's keys render");
   assert.deepEqual(
     Array.from(fields.querySelectorAll(".w6w-exprmodal-source-label")).map((l) => l.textContent),
@@ -363,10 +367,10 @@ test("Metadata › config: no Node settings group; config is collapsed inside Me
   assert.equal(chip.getAttribute("data-ref"), "nodes.webhook_1.meta.config.url");
 
   await click(cfgToggle);
-  assert.equal(group.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
+  assert.equal(meta.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
 });
 
-test("Metadata leaves from static meta: a webhook offers its subscription id and URL but no connection id; a non-upstream app node offers its connection id", async () => {
+test("Metadata leaves from static meta: a webhook offers its subscription id and URL but no connection id; a non-upstream app node offers its connection id in the Metadata section", async () => {
   const { container } = await mountModal({
     options: {
       steps: [{ id: "eb_webhook" }],
@@ -388,12 +392,6 @@ test("Metadata leaves from static meta: a webhook offers its subscription id and
     },
   });
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  const group = groupFor(container, "Workflow state") as HTMLElement;
-  const metas = Array.from(group.querySelectorAll('[data-testid="expr-meta-toggle"]'));
-  assert.equal(metas.length, 2, "the webhook (no config) still gets Metadata");
-  await click(metas[0]);
-  await click(metas[1]);
-  const lists = Array.from(group.querySelectorAll('[data-testid="expr-meta-fields"]'));
   const labels = (el: Element) =>
     Array.from(
       el.querySelectorAll(
@@ -402,10 +400,27 @@ test("Metadata leaves from static meta: a webhook offers its subscription id and
     )
       .map((l) => l.textContent)
       .filter((t) => t !== "config ›");
-  assert.deepEqual(labels(lists[0]), ["Subscription ID", "Webhook URL"]);
-  assert.deepEqual(labels(lists[1]), ["App", "App version", "Action", "Connection ID"]);
+  const group = groupFor(container, "Workflow state") as HTMLElement;
+  const metas = Array.from(group.querySelectorAll('[data-testid="expr-meta-toggle"]'));
+  assert.equal(
+    metas.length,
+    1,
+    "the webhook (no config) still gets Metadata; find_webhook is off-path",
+  );
+  await click(metas[0]);
+  const list = group.querySelector('[data-testid="expr-meta-fields"]') as Element;
+  assert.deepEqual(labels(list), ["Subscription ID", "Webhook URL"]);
 
-  const conn = Array.from(lists[1].querySelectorAll(".w6w-exprmodal-source")).find((b) =>
+  const meta = groupFor(container, "Metadata") as HTMLElement;
+  await click(meta.querySelector('[data-testid="expr-section-toggle"]') as Element);
+  const find = Array.from(meta.querySelectorAll('[data-testid="expr-metadata-node"]')).find((r) =>
+    r.textContent?.includes("find_webhook"),
+  ) as Element;
+  await click(find.querySelector('[data-testid="expr-metadata-node-toggle"]') as Element);
+  const findList = meta.querySelector('[data-testid="expr-metadata-fields"]') as Element;
+  assert.deepEqual(labels(findList), ["App", "App version", "Action", "Connection ID"]);
+
+  const conn = Array.from(findList.querySelectorAll(".w6w-exprmodal-source")).find((b) =>
     b.textContent?.includes("Connection ID"),
   ) as Element;
   await click(copyOf(conn));
