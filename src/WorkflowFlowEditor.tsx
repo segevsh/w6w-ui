@@ -63,6 +63,11 @@ import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
 import { pickWebhookSubscription } from "./WebhookListenPanel.tsx";
+import {
+  WorkflowConnectionSources,
+  WorkflowConnectionsContext,
+  useWorkflowConnections,
+} from "./WorkflowConnections.tsx";
 import type { FlowCanvas } from "./canvas-types.ts";
 import {
   assignMembership,
@@ -236,6 +241,13 @@ import type {
 } from "./types.ts";
 import { portsLookupFromDefs, useAppActionDefs } from "./use-app-action-defs.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
+import {
+  type FlowConnections,
+  centralizeConnections,
+  connectionIdFor,
+  selectNodeConnection,
+  withConnectionRef,
+} from "./workflow-connections.ts";
 
 /**
  * What the "Run on" control does, shown on the lane panel (T1.1.1).
@@ -559,7 +571,24 @@ function Inner({
   // edits (drag, connect, delete) go through the useNodesState / useEdgesState
   // handles so React Flow's own state stays authoritative during interaction.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-derive layout only on workflow identity change
-  const initial = useMemo(() => workflowToFlow(value), [value.id]);
+  const initialWorkflow = useMemo(() => centralizeConnections(value), [value.id]);
+  const initial = useMemo(() => workflowToFlow(initialWorkflow), [initialWorkflow]);
+  const [connections, setConnectionsState] = useState<FlowConnections>(
+    initialWorkflow.connections ?? {},
+  );
+  const connectionsRef = useRef(connections);
+  const setConnections = useCallback((next: FlowConnections) => {
+    connectionsRef.current = next;
+    setConnectionsState(next);
+  }, []);
+  const prepareStep = useCallback(
+    (step: FlowStep) => {
+      const next = centralizeConnections({ nodes: [step], connections: connectionsRef.current });
+      if (next.connections !== connectionsRef.current) setConnections(next.connections);
+      return next.nodes[0];
+    },
+    [setConnections],
+  );
   // The camera to open at, read at mount for the same reason `initial` is: React
   // Flow consumes `defaultViewport` in a mount-only effect (ZoomPane's `XYPanZoom`
   // init), so a fresh object per render would be inert but misleading — and this
@@ -642,7 +671,8 @@ function Inner({
     setSelectedId(null);
     setEditingId(null);
     setCanvas(initialCanvas);
-  }, [initial, initialCanvas, setNodes, setEdges]);
+    setConnections(initialWorkflow.connections ?? {});
+  }, [initial, initialCanvas, initialWorkflow, setNodes, setEdges, setConnections]);
 
   // These two stamps are declared AFTER the workflow-swap reset above on purpose: effects run in
   // declaration order, so the reset (which reseeds nodes from `initial`, with neither stamp) would
@@ -716,7 +746,12 @@ function Inner({
 
   const emitChange = useCallback(
     (nextNodes: StepNode[], nextEdges: Edge[], canvasOverride?: FlowCanvas) => {
-      onChange(withCanvas(flowToWorkflow(value, nextNodes, nextEdges), canvasOverride ?? canvas));
+      onChange(
+        withCanvas(
+          flowToWorkflow({ ...value, connections: connectionsRef.current }, nextNodes, nextEdges),
+          canvasOverride ?? canvas,
+        ),
+      );
     },
     [value, onChange, canvas, withCanvas],
   );
@@ -1110,11 +1145,11 @@ function Inner({
         nodes.map((n) => n.id),
         slugifyLabel(internalNodeLabel(built.uses.app, built.uses.action)),
       );
-      const step: FlowStep = {
+      const step: FlowStep = prepareStep({
         id,
         uses: built.uses,
         ...(built.with && Object.keys(built.with).length > 0 ? { with: built.with } : {}),
-      };
+      });
       const newNode: StepNode = {
         id,
         type: isInternal ? "control" : "step",
@@ -1201,12 +1236,41 @@ function Inner({
       emitChange(nextNodes, nextEdges);
       return id;
     },
-    [nodes, edges, setNodes, setEdges, emitChange, readOnly, pendingConnect, portsLookup],
+    [
+      nodes,
+      edges,
+      setNodes,
+      setEdges,
+      emitChange,
+      readOnly,
+      pendingConnect,
+      portsLookup,
+      prepareStep,
+    ],
   );
 
   // Apply an edit to a step, rewiring edges if its id changed.
   const updateStep = useCallback(
-    (prevId: string, next: FlowStep) => {
+    (prevId: string, draft: FlowStep) => {
+      let next = draft;
+      const previous = nodes.find((n) => n.id === prevId)?.data.step;
+      // The progressive add form still emits inline account IDs. Reuse its private
+      // binding on later field edits, and detach once if it was sharing a binding.
+      if (
+        draft.uses.connection &&
+        !draft.uses.connectionRef &&
+        previous?.uses.connectionRef &&
+        previous.uses.app === draft.uses.app
+      ) {
+        const selected = selectNodeConnection(
+          withConnectionRef(draft, previous.uses.connectionRef),
+          draft.uses.connection,
+          nodes.map((n) => n.data.step),
+          connectionsRef.current,
+        );
+        setConnections(selected.connections);
+        next = selected.step;
+      } else next = prepareStep(draft);
       const idChanged = next.id !== prevId;
       if (idChanged && nodes.some((n) => n.id === next.id)) return; // reject dup id
       const nextNodes = nodes.map((n) =>
@@ -1244,7 +1308,18 @@ function Inner({
       if (nextEdges.length !== edges.length) setEdges(nextEdges);
       emitChange(nextNodes, nextEdges);
     },
-    [nodes, edges, canvas, setNodes, setEdges, selectedId, editingId, emitChange],
+    [
+      nodes,
+      edges,
+      canvas,
+      setNodes,
+      setEdges,
+      selectedId,
+      editingId,
+      emitChange,
+      prepareStep,
+      setConnections,
+    ],
   );
 
   // ── Notes & sections ────────────────────────────────────────────────────────
@@ -1543,7 +1618,7 @@ function Inner({
       setRunResult({ stepId: id, status: "running" });
       try {
         const result = await api.invokeAction(step.uses.app, step.uses.action, payload, {
-          ...(step.uses.connection ? { connectionId: step.uses.connection } : {}),
+          connectionId: connectionIdFor(step, connectionsRef.current),
           // Scope document expressions to the workflow's selected project (T2.1.2).
           project,
           // Omitted when nothing upstream has a saved output, so a run with no
@@ -1849,7 +1924,7 @@ function Inner({
     ],
   );
 
-  return (
+  const editor = (
     <StepControlsCtx.Provider value={controls}>
       <PortsLookupCtx.Provider value={portsLookup}>
         <FanOutCountsCtx.Provider value={fanOutCounts}>
@@ -2367,6 +2442,13 @@ function Inner({
         </FanOutCountsCtx.Provider>
       </PortsLookupCtx.Provider>
     </StepControlsCtx.Provider>
+  );
+  return (
+    <WorkflowConnectionsContext.Provider
+      value={{ nodes: nodes.map((n) => n.data.step), connections, setConnections, readOnly }}
+    >
+      {editor}
+    </WorkflowConnectionsContext.Provider>
   );
 }
 
@@ -3226,7 +3308,10 @@ function useTriggerRegistration(value: FlowWorkflow): TriggerRegistrationValue {
   ];
   const hasTrigger = triggers.length > 0;
   const triggerSig = triggers
-    .map((n) => `${n.id}:${n.uses.app}:${n.uses.action}:${n.uses.connection ?? ""}`)
+    .map(
+      (n) =>
+        `${n.id}:${n.uses.app}:${n.uses.action}:${connectionIdFor(n, value.connections) ?? ""}`,
+    )
     .join("|");
   const [subs, setSubs] = useState<readonly SubscriptionSummary[]>([]);
   const byNode = useMemo(() => subscriptionsByNode(subs), [subs]);
@@ -3663,19 +3748,21 @@ function ActionStepEditModal({
   const api = useW6WApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
+  const connectionScope = useWorkflowConnections();
+  const connectionId = connectionIdFor(step, connectionScope?.connections);
+  const effectiveStep = { ...step, uses: { ...step.uses, connection: connectionId } };
   // Checked against the LOCAL step so choosing another connection unblocks at once.
-  const blocked = isConnectionBlocked(step, stepProblems);
+  const unresolvedConnection = step.uses.connectionRef !== undefined && !connectionId;
+  const blocked = unresolvedConnection || isConnectionBlocked(effectiveStep, stepProblems);
   const connectionProblem = stepProblems?.find(
     (p): p is Extract<StepProblem, { code: "unknown_connection" }> =>
-      p.code === "unknown_connection" && p.connection === step.uses.connection,
+      p.code === "unknown_connection" && p.connection === connectionId,
   );
   const fixable = (stepProblems ?? []).filter((p) => "fix" in p);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
   // tab showing form (props) / full-step JSON (code) / params JSON
   // (params-code) / node settings (config).
-  const [tab, setTab] = useState<"setup" | "configure" | "test">(
-    isConnectionBlocked(initialStep, stepProblems) ? "setup" : "configure",
-  );
+  const [tab, setTab] = useState<"setup" | "configure" | "test">(blocked ? "setup" : "configure");
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
   );
@@ -4023,9 +4110,23 @@ function ActionStepEditModal({
               onChangeAction={(action) =>
                 commit({ ...step, uses: { ...step.uses, action }, with: {} })
               }
-              onChangeConnection={(connection) =>
-                commit({ ...step, uses: { ...step.uses, connection } })
-              }
+              onChangeConnection={(connection) => {
+                // Standalone step editors have no workflow map to write to.
+                if (!connectionScope) {
+                  const { connectionRef: _ref, ...uses } = step.uses;
+                  commit({ ...step, uses: { ...uses, connection } });
+                  return;
+                }
+                const selected = selectNodeConnection(
+                  step,
+                  connection,
+                  connectionScope?.nodes ?? [step],
+                  connectionScope?.connections ?? {},
+                );
+                connectionScope?.setConnections(selected.connections);
+                commit(selected.step);
+              }}
+              onChangeConnectionRef={(ref) => commit(withConnectionRef(step, ref))}
               onConnectionCreated={refetchConns}
               onChangeApp={(appId) =>
                 // D-1: a genuinely different app clears `uses.action`/`with` and
@@ -4104,9 +4205,7 @@ function ActionStepEditModal({
                           : {
                               appId: step.uses.app,
                               actionKey: step.uses.action,
-                              connectionId: blocked
-                                ? undefined
-                                : (step.uses.connection ?? undefined),
+                              connectionId: blocked ? undefined : connectionId,
                               appName: app?.displayName,
                             }
                       }
@@ -4228,7 +4327,7 @@ function ActionStepEditModal({
                       ref={testRunRef}
                       app={step.uses.app}
                       action={step.uses.action}
-                      connectionId={step.uses.connection ?? undefined}
+                      connectionId={connectionId}
                       values={testValues}
                       state={testStartState}
                       canRun={canTest}
@@ -4598,6 +4697,7 @@ function SetupTab({
   readOnly,
   onChangeAction,
   onChangeConnection,
+  onChangeConnectionRef,
   onChangeApp,
   onConnectionCreated,
 }: {
@@ -4613,6 +4713,7 @@ function SetupTab({
   readOnly?: boolean;
   onChangeAction: (action: string) => void;
   onChangeConnection: (connection: string | undefined) => void;
+  onChangeConnectionRef: (ref: string) => void;
   /** Fires with whatever app is picked, same or different — the caller owns
    *  the same-app-is-a-no-op / different-app-clears-action-and-with decision
    *  (it already owns the equivalent decision for `onChangeAction`). */
@@ -4630,10 +4731,37 @@ function SetupTab({
   const [showConnModal, setShowConnModal] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
-  const connName = connectionButtonLabel(step.uses.connection, conns, connsFailed);
+  const scope = useWorkflowConnections();
+  const connectionId = connectionIdFor(step, scope?.connections);
+  const connName = connectionButtonLabel(connectionId, conns, connsFailed);
+  const sharedNodes =
+    scope?.nodes.filter(
+      (n) =>
+        n.id !== step.id &&
+        step.uses.connectionRef &&
+        n.uses.connectionRef === step.uses.connectionRef,
+    ) ?? [];
+  const [editingShared, setEditingShared] = useState(false);
+
+  const chooseAccount = (connectionId: string) => {
+    if (readOnly) return;
+    if (editingShared && scope && step.uses.connectionRef) {
+      scope.setConnections({
+        ...scope.connections,
+        [step.uses.connectionRef]: { app: step.uses.app, connection: connectionId },
+      });
+      onChangeConnectionRef(step.uses.connectionRef);
+    } else onChangeConnection(connectionId);
+    setMode(null);
+  };
 
   return (
     <div className="w6w-stack">
+      {step.uses.connectionRef && !connectionId && (
+        <p role="alert" className="w6w-field-error">
+          The shared connection is missing or unbound. Choose an account or another node.
+        </p>
+      )}
       <div className="w6w-field">
         <span>App</span>
         {/* One field, two buttons — `[App] <-- spacer --> [Connection]`
@@ -4671,9 +4799,14 @@ function SetupTab({
               aria-label="Connection"
               aria-expanded={mode === "conn"}
               disabled={readOnly}
-              onClick={() => setMode((m) => (m === "conn" ? null : "conn"))}
+              onClick={() => {
+                setEditingShared(false);
+                setMode((m) => (m === "conn" ? null : "conn"));
+              }}
             >
-              <span className="w6w-conn-label-name">{connName}</span>
+              <span className="w6w-conn-label-name">
+                {sharedNodes.length > 0 ? `Shared · ${connName}` : connName}
+              </span>
             </button>
           )}
         </div>
@@ -4697,15 +4830,49 @@ function SetupTab({
         {mode === "conn" && (
           <Flyout anchorRef={rowRef} onClose={() => setMode(null)}>
             <div className="w6w-stack">
+              {editingShared ? (
+                <span className="w6w-small">
+                  Change account for {sharedNodes.length + 1} nodes:{" "}
+                  {[step.id, ...sharedNodes.map((n) => n.id)].join(", ")}
+                </span>
+              ) : (
+                <>
+                  {sharedNodes.length > 0 && (
+                    <div className="w6w-stack">
+                      <span className="w6w-muted w6w-small">
+                        Shared with {sharedNodes.map((n) => n.id).join(", ")}. Choosing an account
+                        below changes only this node.
+                      </span>
+                      <button
+                        type="button"
+                        className="w6w-btn w6w-btn-ghost"
+                        disabled={readOnly}
+                        onClick={() => setEditingShared(true)}
+                      >
+                        Change shared connection…
+                      </button>
+                    </div>
+                  )}
+                  <WorkflowConnectionSources
+                    step={step}
+                    conns={conns}
+                    onSelect={(ref) => {
+                      onChangeConnectionRef(ref);
+                      setMode(null);
+                    }}
+                  />
+                  <span className="w6w-muted w6w-small">Use an account for this node</span>
+                </>
+              )}
               <div className="w6w-stepbuilder-list">
                 {(conns ?? []).map((c) => (
                   <button
                     key={c.id}
                     type="button"
+                    disabled={readOnly}
                     className="w6w-stepbuilder-item"
                     onClick={() => {
-                      onChangeConnection(c.id);
-                      setMode(null);
+                      chooseAccount(c.id);
                     }}
                   >
                     <span className="w6w-stepbuilder-item-main">
@@ -4737,7 +4904,7 @@ function SetupTab({
           onClose={() => setShowConnModal(false)}
           onCreated={({ connectionId }) => {
             setShowConnModal(false);
-            onChangeConnection(connectionId);
+            chooseAccount(connectionId);
             onConnectionCreated();
             setMode(null);
           }}

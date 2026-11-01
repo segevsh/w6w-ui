@@ -1038,8 +1038,9 @@ test("round-trip keeps an app trigger node's uses.trigger, connection and with",
   assert.deepEqual(t1?.uses, {
     app: "eventbrite",
     action: "event-updated",
-    connection: "conn_1",
+    connectionRef: "T1",
     trigger: true,
   });
+  assert.deepEqual(back.connections, { T1: { app: "eventbrite", connection: "conn_1" } });
   assert.deepEqual(t1?.with, { organization: "org_1" });
 });

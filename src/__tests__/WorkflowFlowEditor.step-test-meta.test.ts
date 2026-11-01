@@ -323,7 +323,7 @@ test("W1 — performRunStep's invoke identity comes from the step, never from st
   assert.equal(inv[0].arguments[0].getText(sf), "step.uses.app");
   assert.equal(inv[0].arguments[1].getText(sf), "step.uses.action");
   const opts = inv[0].arguments[3].getText(sf);
-  assert.equal(opts.includes("connectionId: step.uses.connection"), true);
+  assert.equal(opts.includes("connectionId: connectionIdFor(step, connectionsRef.current)"), true);
   assert.equal(
     /state\??\.steps|\.meta\b/.test(inv[0].arguments.map((a) => a.getText(sf)).join("\n")),
     false,

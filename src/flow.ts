@@ -78,3 +78,6 @@ export {
   withCanvasGeometry,
 } from "./canvas-utils.ts";
 export type { LiveGeometry } from "./canvas-utils.ts";
+
+export { centralizeConnections, connectionIdFor } from "./workflow-connections.ts";
+export type { FlowConnections } from "./workflow-connections.ts";

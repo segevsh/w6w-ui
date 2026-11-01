@@ -44,15 +44,24 @@ function findCalls(root: ts.Node, name: string): ts.CallExpression[] {
 
 const inner = findFunction("Inner");
 
-test("U1 — `initial` still derives from workflowToFlow(value) alone, deps [value.id] (Trap 1 untouched)", () => {
+test("U1 — `initial` derives from the canonical workflow, memoized by workflow identity", () => {
   const initialCalls = findCalls(inner, "workflowToFlow");
   assert.equal(initialCalls.length, 1, "workflowToFlow must be called exactly once in Inner");
   assert.equal(
     initialCalls[0].arguments.length,
     1,
-    "workflowToFlow must be called with exactly ONE argument (value) — never runState",
+    "workflowToFlow must be called with exactly ONE argument (initialWorkflow) — never runState",
   );
-  assert.equal(initialCalls[0].arguments[0].getText(sf), "value");
+  assert.equal(initialCalls[0].arguments[0].getText(sf), "initialWorkflow");
+  const normalized = findCalls(inner, "useMemo").find((c) =>
+    c.arguments[0]?.getText(sf).includes("centralizeConnections(value)"),
+  );
+  assert.ok(normalized);
+  assert.equal(normalized.arguments[1]?.getText(sf), "[value.id]");
+  const layout = findCalls(inner, "useMemo").find((c) =>
+    c.arguments[0]?.getText(sf).includes("workflowToFlow(initialWorkflow)"),
+  );
+  assert.equal(layout?.arguments[1]?.getText(sf), "[initialWorkflow]");
 });
 
 test("U2 — a useEffect depends on runState and patches BOTH setNodes and setEdges (the live repaint)", () => {

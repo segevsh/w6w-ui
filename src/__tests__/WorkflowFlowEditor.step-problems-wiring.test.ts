@@ -40,7 +40,7 @@ test("W1 — workflowToFlow stays one-arg (stepProblems never goes through it)",
   const calls = findCalls(inner, "workflowToFlow");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].arguments.length, 1);
-  assert.equal(calls[0].arguments[0].getText(sf), "value");
+  assert.equal(calls[0].arguments[0].getText(sf), "initialWorkflow");
 });
 
 test("W2 — one useEffect keyed on stepProblems calls setNodes(applyStepProblems(...))", () => {
