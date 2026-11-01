@@ -96,7 +96,9 @@ function fakeApi(overrides: Record<string, unknown> = {}) {
     listAppsByIds: async () => [],
     getAppAuth: async () => [{ key: "oauth", type: "oauth2", available: true }],
     listConnections: async () => [],
-    listConnectionsForApp: async () => [{ id: "conn_1", displayName: "Main" }],
+    listConnectionsForApp: async (appId: string) => [
+      { id: "conn_1", appId, displayName: "Main", authKey: "oauth", state: "connected" },
+    ],
     listFunctions: async () => [],
     listWorkflows: async () => [],
     getAppActions: async () => {
