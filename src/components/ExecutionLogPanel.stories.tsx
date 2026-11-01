@@ -174,3 +174,29 @@ export const ForEachIterationFailed: Story = {
     ],
   },
 };
+
+/** A step's State block: its state writes in order (one from a For each item), a warning, and the state after it. */
+export const StateWrites: Story = {
+  args: {
+    steps: [
+      {
+        id: "s1",
+        label: "Save order",
+        status: "succeeded",
+        startedAt: "2026-11-01T10:00:00.000Z",
+        finishedAt: "2026-11-01T10:00:00.420Z",
+        output: { id: "ord_42", total: 99.5, lines: 2 },
+        stateWrites: [
+          { path: ["order", "id"], old: "ord_41", new: "ord_42" },
+          { path: ["order", "total"], new: 99.5 },
+          { path: ["items"], item: 1, old: [{ sku: "A" }], new: [{ sku: "A" }, { sku: "B" }] },
+          { path: ["order", "note"], warning: "missing_source" },
+        ],
+        stateAfter: {
+          order: { id: "ord_42", total: 99.5 },
+          items: [{ sku: "A" }, { sku: "B" }],
+        },
+      },
+    ],
+  },
+};
