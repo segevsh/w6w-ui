@@ -3998,12 +3998,8 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-muted);
 }
 
-/* A loop-body step: tinted in its loop's colour, with one dot per enclosing For each
-   just above its top-right corner (named on hover). */
-.w6w-flow .w6w-node-in-loop [data-run-status] {
-  background: color-mix(in srgb, var(--w6w-loop-body-color, var(--w6w-accent)) 10%, var(--w6w-panel)) !important;
-}
-
+/* A loop-body step looks like any other step; one dot per enclosing For each, just
+   above its top-right corner (named on hover), is all that marks it. */
 .w6w-flow .w6w-loop-dots {
   position: absolute;
   top: -11px; /* lint-tokens-allow: dot sits just above the card edge */

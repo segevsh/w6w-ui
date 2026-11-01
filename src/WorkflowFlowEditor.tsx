@@ -108,6 +108,7 @@ import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
 import {
   type LoopPaint,
   enclosingLoops,
+  loopCardStyle,
   loopPaint,
   loopPaintKey,
   loopToneVar,
@@ -2944,19 +2945,9 @@ function LoopDots({ id }: { id: string }) {
   );
 }
 
-/**
- * The colour custom properties a card's root carries: its own tone for a For each's
- * Each item port, and its innermost loop's tone for a body step's tint.
- */
-function useLoopStyle(id: string, loopOf: string | undefined): CSSProperties | undefined {
-  const { tones } = useContext(LoopPaintCtx);
-  const own = tones.get(id);
-  const body = loopOf ? tones.get(loopOf) : undefined;
-  if (own === undefined && body === undefined) return undefined;
-  return {
-    ...(own === undefined ? {} : { "--w6w-loop-color": loopToneVar(own) }),
-    ...(body === undefined ? {} : { "--w6w-loop-body-color": loopToneVar(body) }),
-  } as CSSProperties;
+/** A card's loop colour: only a For each carries one, for its Each item port. */
+function useLoopStyle(id: string): CSSProperties | undefined {
+  return loopCardStyle(id, useContext(LoopPaintCtx).tones);
 }
 
 function PortHandle({
@@ -3333,7 +3324,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // is stamped by `Inner`'s live-run repaint effect, never by `workflowToFlow`.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
-  const loopStyle = useLoopStyle(id, data.loopOf);
+  const loopStyle = useLoopStyle(id);
   return (
     <div
       className={
@@ -3461,7 +3452,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
-  const loopStyle = useLoopStyle(id, data.loopOf);
+  const loopStyle = useLoopStyle(id);
   return (
     <div
       className={
