@@ -115,7 +115,7 @@ test("A1 — order, workflow context: Workflow state occupies the first slot, th
   const labels = Array.from(container.querySelectorAll(".w6w-exprmodal-group-label")).map(
     (el) => el.textContent,
   );
-  assert.deepEqual(labels, ["Workflow state", "Variables", "Documents", "Secrets"]);
+  assert.deepEqual(labels, ["Previous steps", "Variables", "Documents", "Secrets"]);
 });
 
 test("A1 — order, Function context: Inputs occupies the first slot, then Variables, Documents, Secrets", async () => {
@@ -207,7 +207,7 @@ test("A3 — collapse, step: the SAME mechanism reaches the steps loop independe
     },
   });
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  const group = groupFor(container, "Workflow state");
+  const group = groupFor(container, "Previous steps");
   assert.ok(group);
 
   assert.equal(
@@ -252,7 +252,7 @@ test("A3 — no toggle without children: a document with no fields and a step wi
   assert.ok(docBtn);
   await click(copyOf(docBtn));
 
-  const stateGroup = groupFor(container, "Workflow state");
+  const stateGroup = groupFor(container, "Previous steps");
   const stepBtn = stateGroup?.querySelector(".w6w-exprmodal-source") as HTMLButtonElement;
   assert.ok(stepBtn);
   await click(copyOf(stepBtn));
@@ -304,7 +304,7 @@ test("T-2 — a composite row (step with fields) keeps click = insert, no save",
     options: { steps: [{ id: "st1", outputs: [{ key: "o1" }] }] },
   });
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
-  const whole = groupFor(container, "Workflow state")?.querySelector(
+  const whole = groupFor(container, "Previous steps")?.querySelector(
     ".w6w-exprmodal-source",
   ) as Element;
   await click(whole);
@@ -330,7 +330,7 @@ test("Metadata › config: no Node settings group; config is collapsed inside Me
   });
   const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
   assert.equal(groupFor(container, "Node settings"), null);
-  const group = groupFor(container, "Workflow state") as HTMLElement;
+  const group = groupFor(container, "Previous steps") as HTMLElement;
   assert.ok(group);
   assert.ok(!group.textContent?.includes("webhook_1"), "the unconnected webhook is not state");
   assert.equal(
@@ -405,7 +405,7 @@ test("Metadata leaves from static meta: a webhook offers its subscription id and
     )
       .map((l) => l.textContent)
       .filter((t) => t !== "config ›");
-  const group = groupFor(container, "Workflow state") as HTMLElement;
+  const group = groupFor(container, "Previous steps") as HTMLElement;
   assert.equal(group.querySelectorAll('[data-testid="expr-meta-toggle"]').length, 0);
 
   const meta = groupFor(container, "Metadata") as HTMLElement;

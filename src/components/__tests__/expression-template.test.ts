@@ -243,6 +243,7 @@ test("CA-3 — the root set is DERIVED (Record<keyof LocalRunScope, true>), not 
       "nodes",
       "output",
       "secrets",
+      "state",
       "steps",
       "trigger",
       "var",

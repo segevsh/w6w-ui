@@ -291,6 +291,7 @@ export interface FlowWorkflow {
 export type FlowWorkflowInput = Omit<FlowWorkflow, "nodes"> &
   ({ nodes: FlowStep[] } | { steps: FlowStep[] });
 
+import type { StateWriteConfig } from "@w6w/expr";
 import type { ActionParam } from "./types.ts";
 
 // ── Internal pseudo-app nodes (see core rfcs/node-types.md) ─────────────────

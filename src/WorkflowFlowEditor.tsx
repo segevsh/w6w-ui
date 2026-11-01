@@ -225,6 +225,7 @@ import {
 // pixels: a live-run repaint effect (in `Inner`) feeds the results into
 // `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
 import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./run-visuals.ts";
+import { computeStateShape } from "./state-shape.ts";
 import {
   type SeedSource,
   type StepShapeContext,
@@ -1905,6 +1906,30 @@ function Inner({
     const st = upstreamStateSources(editingId, nodes, edges, stepShapes, draftStepId);
     return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
   }, [editingId, draftStepId, nodes, edges, stepShapes]);
+  // The merged workflow STATE the edited step reads (starting data, variables, upstream
+  // writers in run order) — the picker's "State" section and its `state.<path>` previews.
+  const stateShape = useMemo(
+    () =>
+      computeStateShape({
+        anchorId: editingId ?? draftStepId,
+        nodes,
+        edges,
+        initialState: value.initialState,
+        variables: value.variables,
+        shapes: stepShapes,
+        previewOutputs: { ...previewTiers.persisted, ...previewTiers.fresh },
+      }),
+    [
+      editingId,
+      draftStepId,
+      nodes,
+      edges,
+      value.initialState,
+      value.variables,
+      stepShapes,
+      previewTiers,
+    ],
+  );
   // A stable identity for *which* steps are upstream. The memo above rebuilds on
   // every node drag and every field edit; this string changes only when the SET
   // does, so the fetch below doesn't re-run on each keystroke.
@@ -2047,6 +2072,7 @@ function Inner({
       eventOutputs: upstreamState.eventOutputs,
       eventOutputsFrom: upstreamState.eventOutputsFrom,
       loop: upstreamState.loop,
+      stateShape: { fields: stateShape.fields },
       nodeConfigs: nodeConfigs,
       nodeConfig,
       nodeMeta,
@@ -2057,12 +2083,14 @@ function Inner({
         // Static meta under a test's reported meta, which wins.
         ...nodeMetaSampleValues(nodeMeta),
         ...stepSampleValues,
+        ...stateShape.sampleValues,
       },
     }),
     [
       exprOptions,
       inheritedExprOptions.sampleValues,
       upstreamState,
+      stateShape,
       stepSampleValues,
       stepValueSources,
       nodeConfigs,

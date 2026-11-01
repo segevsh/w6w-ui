@@ -61,7 +61,7 @@ export interface ExpressionEditorModalProps {
   onClose: () => void;
   /**
    * `"json-binding"`: the value of a whole `json`/`group` param, composed as JSON. The rail
-   * shows Workflow state (each step's "Entire output", its fields and, for an app step, its
+   * shows Previous steps (each step's "Entire output", its fields and, for an app step, its
    * Metadata), Inputs and Variables — no Secrets or Documents. A click on a source into an empty
    * draft (or one holding only a reference) binds it: `onSaveJson("{{ ref }}")` and close. Into a
    * draft being composed it ADDS the reference (`addRefToDraft`, `json-compose.ts`): at the caret
@@ -181,7 +181,7 @@ export function ExpressionEditorModal({
     });
   };
   // The rail's sections are an accordion: at most one open at a time. "auto" until the author
-  // picks one — then the default (Workflow state, else the first section present) applies.
+  // picks one — then the default (Previous steps, else the first section present) applies.
   const [openPick, setOpenPick] = useState<RailSectionKey | null | "auto">("auto");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paint on `paintGen`, not on every `parts` change; edits otherwise flow through the DOM.
@@ -294,15 +294,19 @@ export function ExpressionEditorModal({
     metaLeavesOf(id).map(([key, label]) =>
       source(label, { kind: "var", ref: `nodes.${id}.meta.${key}` }, "w6w-expr-chip-var", "·"),
     );
-  // Workflow state is only what this node can read at run time — its upstream `steps`, its
+  // Previous steps is only what this node can read at run time — its upstream `steps`, its
   // trigger's event, its loop's item. Every node's static meta, other paths included, sits in
   // the separate Metadata section, keyed in node order (`nodeMeta`, then upstream app steps the
   // host gave no static meta for, then config-only nodes) — the one place a node's meta is offered.
   const metaIds = [...new Set([...Object.keys(nodeMeta), ...upstreamAppIds, ...configKeys.keys()])];
   const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
   const hasState = hasWorkflowState || !!loop;
+  // The merged workflow STATE (`state.<path>`, `state-shape.ts`): its own section, present only
+  // when something is in it, so every other section keeps its place.
+  const stateFields = (options.stateShape?.fields ?? []).filter((f) => isRefSafePath(f.key));
   const sections: RailSectionKey[] = [
     ...(hasState ? (["state"] as const) : []),
+    ...(stateFields.length > 0 ? (["runstate"] as const) : []),
     ...(metaIds.length > 0 ? (["meta"] as const) : []),
     ...(options.inputs !== undefined ? (["inputs"] as const) : []),
     "vars",
@@ -386,7 +390,7 @@ export function ExpressionEditorModal({
   }, [usedRefs, samples, options.valueSources]);
 
   // `sigil: null` drops the glyph — a step row with fields renders its own
-  // disclosure caret in that spot instead (see the Workflow state loop).
+  // disclosure caret in that spot instead (see the Previous steps loop).
   //
   // A LEAF row's click saves that single ref as if it were the only thing in
   // the editor and Save were pressed; a COMPOSITE row (it has a disclosure for
@@ -401,7 +405,7 @@ export function ExpressionEditorModal({
     ariaLabel?: string,
     // `name` replaces `label` in the tooltip (a tree row shows a short label but
     // names its full ref on hover); `depth` indents a tree row.
-    tree?: { name: string; depth: number; declaredOnly?: boolean },
+    tree?: { name: string; depth: number; declaredOnly?: boolean; somePaths?: boolean },
   ) => (
     <div
       key={`${part.kind}:${part.ref ?? label}`}
@@ -437,6 +441,16 @@ export function ExpressionEditorModal({
             style={{ marginLeft: 6 }}
           >
             declared by the app
+          </span>
+        )}
+        {tree?.somePaths && (
+          <span
+            className="w6w-muted w6w-small"
+            data-testid="expr-state-some-paths"
+            title="Set on some paths into this step, not all"
+            style={{ marginLeft: 6 }}
+          >
+            some paths
           </span>
         )}
       </button>
@@ -633,17 +647,17 @@ export function ExpressionEditorModal({
           {/* First slot — context-specific, mutually exclusive in the real
               wiring (a Function supplies `inputs` and never `steps`; the flow
               editor supplies `steps`/`hasTrigger` and never `inputs`). Render
-              Workflow state first should a host ever supply both. */}
+              Previous steps first should a host ever supply both. */}
           {jsonBinding && !hasState && (
             <span className="w6w-expr-menu-empty">No upstream steps</span>
           )}
           {hasState && (
-            <RailSection label="Workflow state" {...sectionProps("state")}>
+            <RailSection label="Previous steps" {...sectionProps("state")}>
               {loop && (
                 <div className="w6w-exprmodal-subgroup" data-testid="expr-loop-group">
                   <span className="w6w-exprmodal-shape-note">Loop</span>
                   {/* The item's keys nest under "Current item", collapsed behind the
-                      same "N fields ›" toggle a Workflow state step uses. */}
+                      same "N fields ›" toggle a Previous steps step uses. */}
                   {loopFields.length > 0 ? (
                     <div className="w6w-exprmodal-source-row">
                       {currentItemBtn}
@@ -828,6 +842,27 @@ export function ExpressionEditorModal({
                   </Fragment>
                 );
               })}
+            </RailSection>
+          )}
+          {stateFields.length > 0 && (
+            <RailSection label="State" testId="expr-state-group" {...sectionProps("runstate")}>
+              {/* The workflow state this step reads: starting data, variables and what upstream
+                  steps write. A field only some entry paths set says so. */}
+              {source("state", { kind: "var", ref: "state" }, "w6w-expr-chip-var", "◇", true)}
+              <div className="w6w-exprmodal-subsources" data-testid="expr-state-fields">
+                {outputFieldTree(stateFields).map(({ field, depth, name }) => {
+                  const ref = `state.${field.key}`;
+                  return source(
+                    name,
+                    { kind: "var", ref },
+                    "w6w-exprmodal-field",
+                    null,
+                    false,
+                    undefined,
+                    { name: varLabel(ref), depth, somePaths: field.paths === "some" },
+                  );
+                })}
+              </div>
             </RailSection>
           )}
           {metaIds.length > 0 && (
@@ -1258,7 +1293,15 @@ export function ExpressionEditorModal({
  * unnoticed, leaving authors no visible way to reach `get_event_1.name`.
  */
 /** The rail's accordion sections, in render order. */
-type RailSectionKey = "state" | "meta" | "inputs" | "vars" | "consts" | "docs" | "secrets";
+type RailSectionKey =
+  | "state"
+  | "runstate"
+  | "meta"
+  | "inputs"
+  | "vars"
+  | "consts"
+  | "docs"
+  | "secrets";
 
 /**
  * One collapsible rail section. The header (and its `action`, e.g. "+ Add") always shows; the

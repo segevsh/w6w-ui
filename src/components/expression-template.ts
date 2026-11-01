@@ -93,6 +93,8 @@ interface LocalRunScope {
   /** Project vars. `vars` is its permanent alias (engine `evalRoot`). */
   var: unknown;
   vars: unknown;
+  /** The run's workflow state tree — the same object as `var`/`vars` (R17: a root of its own). */
+  state?: unknown;
   steps: unknown;
   nodes?: unknown;
   trigger: unknown;
@@ -114,6 +116,7 @@ interface LocalRunScope {
 const RUN_SCOPE_ROOTS: Record<keyof LocalRunScope, true> = {
   var: true,
   vars: true,
+  state: true,
   steps: true,
   nodes: true,
   trigger: true,
@@ -130,6 +133,25 @@ export const RUN_SCOPE_ROOT_NAMES: readonly string[] = Object.freeze(Object.keys
 
 const isRunScopeRoot = (segment: string): boolean =>
   Object.prototype.hasOwnProperty.call(RUN_SCOPE_ROOTS, segment);
+
+/** The three spellings of the one workflow-state tree (`state` = `var` = `vars`). */
+const STATE_ROOTS = ["state", "var", "vars"] as const;
+
+/**
+ * THE alias rule for the state tree: `state`, `var` and `vars` are one object. For a ref whose
+ * root is one of them (followed by `.` or end of string) this gives the lookup spellings in order:
+ * the ref exactly as written, then `state.<rest>`, `var.<rest>`, `vars.<rest>` (deduplicated).
+ * Any other root gives only the ref itself (`steps`/`nodes` are NOT aliased here).
+ */
+export function stateAliasSpellings(ref: string): string[] {
+  for (const root of STATE_ROOTS) {
+    if (ref === root || ref.startsWith(`${root}.`)) {
+      const rest = ref.slice(root.length);
+      return [...new Set([ref, ...STATE_ROOTS.map((r) => r + rest)])];
+    }
+  }
+  return [ref];
+}
 
 /** The first `.`-delimited segment of a ref, e.g. `"steps"` for `"steps.a.output"`. */
 function firstSegment(ref: string): string {
@@ -270,8 +292,8 @@ export function renderResult(parts: ExprPart[], samples: Record<string, string>)
         break;
       case "var":
       case "render": {
-        const ref = p.ref ?? "";
-        out += ref in samples ? samples[ref] : "";
+        const hit = stateAliasSpellings(p.ref ?? "").find((s) => s in samples);
+        out += hit === undefined ? "" : samples[hit];
         break;
       }
       case "secret":
