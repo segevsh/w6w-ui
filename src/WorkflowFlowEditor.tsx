@@ -29,7 +29,6 @@ import { Handle } from "@xyflow/react";
 import {
   type CSSProperties,
   type ReactNode,
-  type RefObject,
   createContext,
   useCallback,
   useContext,
@@ -38,8 +37,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
-import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { CanvasLayer } from "./CanvasLayer.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
@@ -64,7 +61,7 @@ import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
 import { pickWebhookSubscription } from "./WebhookListenPanel.tsx";
 import {
-  WorkflowConnectionSources,
+  WorkflowConnectionPicker,
   WorkflowConnectionsContext,
   useWorkflowConnections,
 } from "./WorkflowConnections.tsx";
@@ -77,6 +74,7 @@ import {
   renameSectionMember,
   sectionsContaining,
 } from "./canvas-utils.ts";
+import { AnchoredFlyout } from "./components/AnchoredFlyout.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
@@ -240,7 +238,6 @@ import {
   type StepProblem,
   type StepProblems,
   applyStepProblems,
-  connectionButtonLabel,
   isConnectionBlocked,
   stepProblemTooltip,
 } from "./step-problems.ts";
@@ -264,6 +261,7 @@ import {
   type FlowConnections,
   centralizeConnections,
   connectionIdFor,
+  defaultConnectionFor,
   selectNodeConnection,
   withConnectionRef,
 } from "./workflow-connections.ts";
@@ -4083,6 +4081,14 @@ function ActionStepEditModal({
     };
   }, [api, step.uses.app, step.uses.action, isInternal, isAppTrigger]);
 
+  const appSelectionRequest = useRef(0);
+  useEffect(
+    () => () => {
+      appSelectionRequest.current++;
+    },
+    [],
+  );
+
   const refetchConns = useCallback(() => {
     if (isInternal || !step.uses.app) return;
     api
@@ -4097,6 +4103,8 @@ function ActionStepEditModal({
   useEffect(() => {
     if (isInternal || !step.uses.app) return;
     let canceled = false;
+    setConns(null);
+    setConnsFailed(false);
     api
       .listConnectionsForApp(step.uses.app)
       .then((c) => {
@@ -4390,26 +4398,35 @@ function ActionStepEditModal({
               }}
               onChangeConnectionRef={(ref) => commit(withConnectionRef(step, ref))}
               onConnectionCreated={refetchConns}
-              onChangeApp={(appId) =>
-                // D-1: a genuinely different app clears `uses.action`/`with` and
-                // drops the connection; reselecting the SAME app is a no-op —
-                // still committed (so the field always collapses cleanly), but
-                // with `step` itself, unchanged.
-                commit(
-                  appId === step.uses.app
-                    ? step
-                    : {
-                        ...step,
-                        uses: {
-                          app: appId,
-                          action: "",
-                          connection: undefined,
-                          ...(isAppTrigger ? { trigger: true as const } : {}),
-                        },
-                        with: {},
-                      },
-                )
-              }
+              onChangeApp={(appId) => {
+                const request = ++appSelectionRequest.current;
+                if (appId === step.uses.app) {
+                  commit(step);
+                  return;
+                }
+                // Commit the new app and its default account together, so one undo restores both.
+                const next: FlowStep = {
+                  ...step,
+                  uses: {
+                    app: appId,
+                    action: "",
+                    ...(isAppTrigger ? { trigger: true as const } : {}),
+                  },
+                  with: {},
+                };
+                void (isInternalApp(appId) ? Promise.resolve([]) : api.listConnectionsForApp(appId))
+                  .catch(() => [])
+                  .then((choices) => {
+                    if (request !== appSelectionRequest.current) return;
+                    const selected = defaultConnectionFor(
+                      next,
+                      choices,
+                      connectionScope?.nodes ?? [],
+                      connectionScope?.connections ?? {},
+                    );
+                    commit({ ...next, uses: { ...next.uses, ...selected } });
+                  });
+              }}
             />
           )}
 
@@ -4866,92 +4883,13 @@ function WebhookUrlPanel({
 }
 
 /**
- * A small popover anchored to a trigger element, portaled to the trigger's
- * own `<dialog>` (never `document.body`) — a `showModal()` dialog and its
- * contents live in the browser's native top layer, so a portal straight to
- * `document.body` would render BEHIND the modal, not over it (2026-08-30:
- * "it needs to be a flyout over the modal, not squeezed inside it"). Plain
- * CSS-positioned `<div>`, not a nested `<dialog>` — the ask was explicit
- * ("don't use native dialog, create css dialog").
- *
- * Closes on Escape or a click outside both itself and the anchor. It does
- * NOT close on a click ON the anchor — that stays the trigger's own toggle
- * (click to open, click again to close), so the anchor button remains a
- * working close affordance the whole time the flyout is open, unlike an
- * inline "replace the button with the picker" approach where there is
- * nothing left to click to back out.
- */
-function Flyout({
-  anchorRef,
-  onClose,
-  children,
-}: {
-  // Anchored to the ROW (both App and Connection buttons together), not the
-  // individual trigger button — two reasons, both from the same feedback
-  // pass (2026-08-30): a flyout anchored to whichever button sits at the
-  // row's right edge (Connection) could overflow past the modal's own right
-  // border ("fix anchor"), and the app picker specifically was asked to
-  // "take up the entire horizontal width of the content... extend to the
-  // end of the prod button". Anchoring both to the row's own bounding box
-  // solves both at once: the flyout's width always matches content already
-  // known to fit inside the modal, and it never hangs off either edge.
-  anchorRef: RefObject<HTMLElement | null>;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const popRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const el = anchorRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setPos({ top: r.bottom + 6, left: r.left, width: r.width });
-    setContainer(el.closest("dialog") ?? document.body);
-  }, [anchorRef]);
-
-  useEffect(() => {
-    function onDocPointerDown(e: MouseEvent) {
-      const target = e.target as Node;
-      if (popRef.current?.contains(target)) return;
-      // A click ON the anchor is the trigger's own toggle — never close here
-      // AND reopen there in the same gesture.
-      if (anchorRef.current?.contains(target)) return;
-      onClose();
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("mousedown", onDocPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onClose, anchorRef]);
-
-  if (!pos || !container) return null;
-  return createPortal(
-    <div
-      ref={popRef}
-      className="w6w-flyout"
-      style={{ top: pos.top, left: pos.left, width: pos.width }}
-    >
-      {children}
-    </div>,
-    container,
-  );
-}
-
-/**
  * The Setup tab — an App button and a Connection button, spaced apart, then
  * the step's action (a dropdown for app steps). Two independent pickers
  * (2026-08-30, superseding D-1's single combined field — see intake for the
  * exact spec): App opens a searchable app picker; Connection opens a plain
  * list of connections FOR THE CURRENT APP plus "+ New connection" — no
  * search, per the ask ("just list the connections for the same app"). Both
- * render as an anchored `Flyout`, not inline content that pushes the rest
+ * render as an anchored flyout, not inline content that pushes the rest
  * of the tab down.
  */
 function SetupTab({
@@ -4996,38 +4934,15 @@ function SetupTab({
   // and searches its own catalog; the connection picker below just maps
   // `conns` (already app-scoped by the caller) — neither needs its own fetch.
   const [mode, setMode] = useState<"app" | "conn" | null>(null);
-  const [showConnModal, setShowConnModal] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
-
   const scope = useWorkflowConnections();
   const connectionId = connectionIdFor(step, scope?.connections);
-  const connName = connectionButtonLabel(connectionId, conns, connsFailed);
-  const sharedNodes =
-    scope?.nodes.filter(
-      (n) =>
-        n.id !== step.id &&
-        step.uses.connectionRef &&
-        n.uses.connectionRef === step.uses.connectionRef,
-    ) ?? [];
-  const [editingShared, setEditingShared] = useState(false);
-
-  const chooseAccount = (connectionId: string) => {
-    if (readOnly) return;
-    if (editingShared && scope && step.uses.connectionRef) {
-      scope.setConnections({
-        ...scope.connections,
-        [step.uses.connectionRef]: { app: step.uses.app, connection: connectionId },
-      });
-      onChangeConnectionRef(step.uses.connectionRef);
-    } else onChangeConnection(connectionId);
-    setMode(null);
-  };
 
   return (
     <div className="w6w-stack">
       {step.uses.connectionRef && !connectionId && (
         <p role="alert" className="w6w-field-error">
-          The shared connection is missing or unbound. Choose an account or another node.
+          The shared connection is missing or unbound. Choose an account.
         </p>
       )}
       <div className="w6w-field">
@@ -5061,26 +4976,23 @@ function SetupTab({
             </span>
           </button>
           {!isInternal && (
-            <button
-              type="button"
-              className="w6w-app-conn-btn"
-              aria-label="Connection"
-              aria-expanded={mode === "conn"}
-              disabled={readOnly}
-              onClick={() => {
-                setEditingShared(false);
-                setMode((m) => (m === "conn" ? null : "conn"));
-              }}
-            >
-              <span className="w6w-conn-label-name">
-                {sharedNodes.length > 0 ? `Shared · ${connName}` : connName}
-              </span>
-            </button>
+            <WorkflowConnectionPicker
+              step={step}
+              conns={conns}
+              failed={connsFailed}
+              readOnly={readOnly}
+              open={mode === "conn"}
+              onOpenChange={(open) => setMode(open ? "conn" : null)}
+              anchorRef={rowRef}
+              onChangeConnection={onChangeConnection}
+              onChangeConnectionRef={onChangeConnectionRef}
+              onConnectionCreated={onConnectionCreated}
+            />
           )}
         </div>
 
         {mode === "app" && (
-          <Flyout anchorRef={rowRef} onClose={() => setMode(null)}>
+          <AnchoredFlyout anchorRef={rowRef} onClose={() => setMode(null)}>
             <AppPicker
               onSelectApp={(a) => {
                 const sameAppReselected = a.id === step.uses.app;
@@ -5093,91 +5005,9 @@ function SetupTab({
                 setMode(sameAppReselected ? "conn" : null);
               }}
             />
-          </Flyout>
-        )}
-        {mode === "conn" && (
-          <Flyout anchorRef={rowRef} onClose={() => setMode(null)}>
-            <div className="w6w-stack">
-              {editingShared ? (
-                <span className="w6w-small">
-                  Change account for {sharedNodes.length + 1} nodes:{" "}
-                  {[step.id, ...sharedNodes.map((n) => n.id)].join(", ")}
-                </span>
-              ) : (
-                <>
-                  {sharedNodes.length > 0 && (
-                    <div className="w6w-stack">
-                      <span className="w6w-muted w6w-small">
-                        Shared with {sharedNodes.map((n) => n.id).join(", ")}. Choosing an account
-                        below changes only this node.
-                      </span>
-                      <button
-                        type="button"
-                        className="w6w-btn w6w-btn-ghost"
-                        disabled={readOnly}
-                        onClick={() => setEditingShared(true)}
-                      >
-                        Change shared connection…
-                      </button>
-                    </div>
-                  )}
-                  <WorkflowConnectionSources
-                    step={step}
-                    conns={conns}
-                    onSelect={(ref) => {
-                      onChangeConnectionRef(ref);
-                      setMode(null);
-                    }}
-                  />
-                  <span className="w6w-muted w6w-small">Use an account for this node</span>
-                </>
-              )}
-              <div className="w6w-stepbuilder-list">
-                {(conns ?? []).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    disabled={readOnly}
-                    className="w6w-stepbuilder-item"
-                    onClick={() => {
-                      chooseAccount(c.id);
-                    }}
-                  >
-                    <span className="w6w-stepbuilder-item-main">
-                      <strong>{c.displayName || c.id}</strong>
-                      {c.state && <span className="w6w-muted w6w-small">{c.state}</span>}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="w6w-btn"
-                disabled={readOnly}
-                onClick={() => {
-                  setShowConnModal(true);
-                  setMode(null);
-                }}
-              >
-                + New connection
-              </button>
-            </div>
-          </Flyout>
+          </AnchoredFlyout>
         )}
       </div>
-
-      {!isInternal && showConnModal && (
-        <AddConnectionModal
-          initialAppId={step.uses.app}
-          onClose={() => setShowConnModal(false)}
-          onCreated={({ connectionId }) => {
-            setShowConnModal(false);
-            chooseAccount(connectionId);
-            onConnectionCreated();
-            setMode(null);
-          }}
-        />
-      )}
 
       {isInternal ? (
         <div className="w6w-field">

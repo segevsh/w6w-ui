@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
+import type { BuiltStep } from "../StepBuilderModal.tsx";
 
 const g = globalThis as unknown as Record<string, unknown>;
 const dom = new JSDOM("<!doctype html><html><body><div id=root></div></body></html>");
@@ -151,175 +152,87 @@ async function pickAction(container: Element) {
   });
 }
 
-/** No connection picker, i.e. the Action combobox is the only picker on screen. */
-function assertNoConnectionPicker(container: Element, message: string) {
-  assert.equal(container.querySelectorAll("select").length, 0, message);
-  assert.equal(container.querySelectorAll('.w6w-field input[role="combobox"]').length, 1, message);
+function connectionButton(container: Element) {
+  const button = container.querySelector('button[aria-label="Connection"]') as HTMLButtonElement;
+  assert.ok(button);
+  assert.equal(
+    button.closest(".w6w-app-conn-row")?.querySelector('button[aria-label="App"]') !== null,
+    true,
+  );
+  return button;
 }
 
-// Case A — auto-satisfied, no existing connections: picking the action
-// completes setup with no connection, and the passive copy (P3 + P3a) renders.
-test("case A: auto-satisfied with no connections — commits with no `connection`, passive copy renders", async () => {
+test("zero-credential app shows an editable Default account and commits it explicitly", async () => {
   const { container, root, onAddCalls } = await mount(
     async () => [{ ...T, autoSatisfied: true }],
     async () => [],
   );
-
+  assert.equal(connectionButton(container).textContent, "Default");
+  assert.doesNotMatch(
+    container.textContent ?? "",
+    /Connected automatically|Create connection|Use connection from a node/,
+  );
+  await act(async () => connectionButton(container).click());
+  assert.ok(document.querySelector('[data-connection-id="zerocred:sendgrid"]'));
+  assert.match(document.body.textContent ?? "", /New connection/);
+  await act(async () => connectionButton(container).click());
   await pickAction(container);
-
-  assert.equal(onAddCalls.length, 1, "picking the action fires onAdd exactly once");
-  assert.deepEqual((onAddCalls[0] as { uses: unknown }).uses, {
-    app: "sendgrid",
-    action: "send",
-  });
-
-  assertNoConnectionPicker(container, "only the Action combobox renders — no connection picker");
-
-  const text = container.textContent ?? "";
-  assert.ok(
-    text.includes("Connected automatically") && text.includes("this app needs no connection"),
-    "P3's passive copy must be present",
+  assert.deepEqual(
+    onAddCalls.map((s) => (s as BuiltStep).uses),
+    [{ app: "sendgrid", action: "send", connection: "zerocred:sendgrid" }],
   );
-  assert.ok(
-    !text.includes("scheduled or queued run"),
-    "a tenantAuth sign-in reaches a queued run too, so no queued-run caveat",
-  );
-  assert.ok(
-    Array.from(container.querySelectorAll("button")).some(
-      (b) => b.textContent === "Create connection",
-    ),
-    "the escape hatch to AddConnectionModal must be reachable",
-  );
-
-  await act(async () => {
-    root.unmount();
-  });
+  await act(async () => root.unmount());
 });
 
-// Case A2 — auto-satisfied through `jit` only: a queued run has no signed-in user's token, so
-// the passive copy carries P3a's queued-run caveat.
-test("case A2: auto-satisfied via jit — the queued-run caveat renders", async () => {
+test("JIT Default keeps the scheduled-run caveat", async () => {
   const { container, root } = await mount(
     async () => [{ key: "jit", type: "jit", available: true, autoSatisfied: true }],
     async () => [],
   );
-
-  const text = container.textContent ?? "";
-  assert.ok(text.includes("Connected automatically"), "P3's passive copy must be present");
-  assert.ok(
-    text.includes("scheduled or queued run") && text.includes("still needs a connection"),
-    "P3a's queued-run caveat must be present for a jit sign-in",
-  );
-
-  await act(async () => {
-    root.unmount();
-  });
+  assert.equal(connectionButton(container).textContent, "Default");
+  assert.match(container.textContent ?? "", /Scheduled or queued runs need a stored connection/);
+  await act(async () => root.unmount());
 });
 
-// Case B — no autoSatisfied, an existing connection: today's behaviour,
-// unchanged. Pins the read to the FIELD, not to the auth TYPE.
-test('case B: not auto-satisfied, has a connection — commits with `connection: "c1"` (unchanged)', async () => {
+test("ordinary app selects its available account", async () => {
   const { container, root, onAddCalls } = await mount(
-    async () => [{ ...T }],
+    async () => [T],
     async () => [{ id: "c1", appId: "sendgrid", authKey: "tenant", state: "connected" }],
   );
-
   await pickAction(container);
-
-  assert.equal(onAddCalls.length, 1, "picking the action fires onAdd exactly once");
-  assert.equal((onAddCalls[0] as { uses: { connection?: string } }).uses.connection, "c1");
-
-  await act(async () => {
-    root.unmount();
-  });
+  assert.equal((onAddCalls[0] as BuiltStep).uses.connection, "c1");
+  await act(async () => root.unmount());
 });
 
-// Case C — auto-satisfied WITH an existing connection: P2's suppressed
-// auto-select — the load effect must not silently pick the existing connection.
-test("case C: auto-satisfied with an existing connection — still commits with no `connection`", async () => {
-  const { container, root, onAddCalls } = await mount(
-    async () => [{ ...T, autoSatisfied: true }],
-    async () => [{ id: "c1", appId: "sendgrid", authKey: "tenant", state: "connected" }],
-  );
-
-  await pickAction(container);
-
-  assert.equal(onAddCalls.length, 1);
-  const uses = (onAddCalls[0] as { uses: Record<string, unknown> }).uses;
-  assert.ok(!("connection" in uses), "an existing connection must not be silently auto-selected");
-
-  await act(async () => {
-    root.unmount();
-  });
-});
-
-// Case D — an oauth2 method AND an auto-satisfied tenantAuth method: the
-// auto-satisfied state wins per `.some(...)` (P1, note 1) — no connection
-// picker, no `connection` key.
-test("case D: oauth2 + auto-satisfied tenantAuth — auto-satisfied wins", async () => {
+test("mixed auth defaults to Default and allows a stored OAuth account from the same menu", async () => {
   const { container, root, onAddCalls } = await mount(
     async () => [
-      { key: "oauth", type: "oauth2", available: true },
+      { key: "oauth", type: "oauth2" },
       { ...T, autoSatisfied: true },
     ],
-    async () => [],
+    async () => [{ id: "oauth1", appId: "sendgrid", authKey: "oauth", state: "connected" }],
   );
-
+  assert.equal(connectionButton(container).textContent, "Default");
+  await act(async () => connectionButton(container).click());
+  const choice = document.querySelector('[data-connection-id="oauth1"]') as HTMLButtonElement;
+  assert.ok(choice);
+  await act(async () => choice.click());
+  assert.equal(connectionButton(container).textContent, "oauth1");
   await pickAction(container);
-
-  assert.equal(onAddCalls.length, 1);
-  assertNoConnectionPicker(container, "only the Action combobox renders — no connection picker");
-  const uses = (onAddCalls[0] as { uses: Record<string, unknown> }).uses;
-  assert.ok(!("connection" in uses));
-
-  await act(async () => {
-    root.unmount();
-  });
+  assert.equal((onAddCalls[0] as BuiltStep).uses.connection, "oauth1");
+  await act(async () => root.unmount());
 });
 
-// Case E — not auto-satisfied, no connections: the app still needs a
-// connection before setup completes; picking the action alone must not fire onAdd.
-test("case E: not auto-satisfied, no connections — picking the action does not commit", async () => {
-  const { container, root, onAddCalls } = await mount(
-    async () => [{ ...T }],
-    async () => [],
-  );
-
-  await pickAction(container);
-
-  assert.equal(onAddCalls.length, 0, "the app still needs a connection first");
-
-  await act(async () => {
-    root.unmount();
+for (const auth of [T, { key: "pat", type: "apiKey", available: true, autoSatisfied: true }]) {
+  test(`${auth.type} requires a stored account without an authorized default`, async () => {
+    const { container, root, onAddCalls } = await mount(
+      async () => [auth],
+      async () => [],
+    );
+    await pickAction(container);
+    assert.equal(onAddCalls.length, 0);
+    assert.match(container.textContent ?? "", /This app needs a connection/);
+    assert.equal(connectionButton(container).textContent, "No connection");
+    await act(async () => root.unmount());
   });
-});
-
-// Case F (CLOSEOUT-FIX-2) — an `apiKey`-typed entry carrying a manifest-declared
-// `autoSatisfied: true` must NOT be treated as auto-satisfied: only
-// `tenantAuth`/`jit` may. `needsConnection` stays `true`, the "needs a
-// connection" empty state renders (the picker), and picking the action alone
-// must not commit without a connection.
-test("case F: apiKey with autoSatisfied: true is NOT auto-satisfied — needsConnection stays true", async () => {
-  const { container, root, onAddCalls } = await mount(
-    async () => [{ key: "pat", type: "apiKey", available: true, autoSatisfied: true }],
-    async () => [],
-  );
-
-  await pickAction(container);
-
-  assert.equal(onAddCalls.length, 0, "no connection exists, so setup must not commit");
-
-  const text = container.textContent ?? "";
-  assert.ok(
-    text.includes("This app needs a connection before its actions can run."),
-    "the connection-needed empty state must still render — apiKey is never auto-satisfied",
-  );
-  assert.ok(
-    !text.includes("Connected automatically"),
-    "the passive auto-satisfied copy must NOT render for a non-tenantAuth/jit type",
-  );
-
-  await act(async () => {
-    root.unmount();
-  });
-});
+}

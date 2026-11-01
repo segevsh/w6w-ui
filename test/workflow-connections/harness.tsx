@@ -31,6 +31,11 @@ const initial = {
   edges: [],
 };
 const app = { id: "eventbrite", displayName: "Eventbrite" };
+const cohost = { id: "cohost", displayName: "Cohost" };
+const cohostConns = [
+  { id: "cohost_account", appId: "cohost", authKey: "tenant", displayName: "Cohost account", state: "connected" },
+  { id: "zerocred:cohost", appId: "cohost", authKey: "zero-credential", displayName: "Default", state: "connected", builtIn: true },
+];
 const actions = [
   {
     key: "list",
@@ -55,10 +60,10 @@ const storedTests = {};
 window.__testRuns = [];
 const methods = {
   getAppActions: async () => actions,
-  listConnectionsForApp: async () => conns,
-  getAppAuth: async () => [{ key: "token", type: "bearer" }],
-  listApps: async () => [app],
-  getApp: async () => app,
+  listConnectionsForApp: async (id) => id === "cohost" ? cohostConns : conns,
+  getAppAuth: async (id) => id === "cohost" ? [{ key: "zero-credential", type: "custom", available: true }] : [{ key: "token", type: "bearer" }],
+  listApps: async () => [app, cohost],
+  getApp: async (id) => id === "cohost" ? cohost : app,
   invokeAction: async (app, action, params, options) => {
     window.__invoke = options;
     if (window.__holdTest) await new Promise((resolve) => { window.__releaseTest = resolve; });
@@ -106,7 +111,7 @@ function App() {
           readOnly={readOnly}
           onChange={(v) => setValue(v as any)}
           height="100%"
-          apps={[app] as any}
+          apps={[app, cohost] as any}
         />
       </div>
     </W6WUIProvider>

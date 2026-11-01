@@ -3,11 +3,16 @@ import { test } from "node:test";
 import type { FlowStep, FlowWorkflow } from "../flow-types.ts";
 import { flowToWorkflow, workflowToFlow } from "../flow-utils.ts";
 import {
+  type FlowConnections,
   centralizeConnections,
   connectionIdFor,
   connectionSourceNodes,
+  connectionUsers,
+  defaultConnectionFor,
+  replaceWorkflowConnection,
   selectNodeConnection,
   withConnectionRef,
+  withDefaultConnection,
 } from "../workflow-connections.ts";
 
 const legacy: FlowWorkflow = {
@@ -75,4 +80,101 @@ test("missing/foreign refs never fall back to an inline credential", () => {
   };
   assert.equal(connectionIdFor(bad, centralizeConnections(legacy).connections), undefined);
   assert.equal(connectionIdFor(bad, {}), undefined);
+});
+
+const choices = [
+  { id: "conn_a", appId: "eventbrite", authKey: "token", state: "connected" },
+  { id: "conn_b", appId: "eventbrite", authKey: "token", state: "connected" },
+];
+const draft = { id: "new", uses: { app: "eventbrite", action: "" } };
+
+test("new nodes inherit the last configured same-app node, including disconnected tracks", () => {
+  const wf = centralizeConnections(legacy);
+  assert.deepEqual(defaultConnectionFor(draft, choices, wf.nodes, wf.connections ?? {}), {
+    connectionRef: "create",
+  });
+  assert.deepEqual(defaultConnectionFor(draft, choices, wf.nodes, wf.connections ?? {}, "conn_a"), {
+    connection: "conn_a",
+  });
+  assert.deepEqual(
+    defaultConnectionFor(draft, choices.slice(0, 1), wf.nodes, wf.connections ?? {}),
+    {
+      connectionRef: "find",
+    },
+  );
+  assert.deepEqual(defaultConnectionFor(draft, choices, legacy.nodes, {}), {
+    connection: "conn_b",
+  });
+});
+
+test("zero-credential apps default to Default, but existing workflow accounts take priority", () => {
+  const defaults = withDefaultConnection(
+    "eventbrite",
+    [{ key: "zero-credential", type: "custom" }],
+    choices,
+  );
+  assert.equal(defaults.length, 3);
+  assert.deepEqual(defaultConnectionFor(draft, defaults, [], {}), {
+    connection: "zerocred:eventbrite",
+  });
+  assert.equal(defaultConnectionFor(draft, defaults, legacy.nodes, {}).connection, "conn_b");
+  assert.equal(withDefaultConnection("eventbrite", [], defaults), defaults);
+  assert.equal(
+    withDefaultConnection(
+      "eventbrite",
+      [{ key: "token", type: "apiKey", autoSatisfied: true }],
+      choices,
+    ),
+    choices,
+  );
+  assert.equal(
+    withDefaultConnection(
+      "eventbrite",
+      [{ key: "zero-credential", type: "custom", available: false }],
+      choices,
+    ),
+    choices,
+  );
+  assert.equal(
+    withDefaultConnection(
+      "eventbrite",
+      [{ key: "tenant", type: "tenantAuth", autoSatisfied: true }],
+      [],
+    ).at(0)?.builtIn,
+    true,
+  );
+  assert.deepEqual(defaultConnectionFor(draft, [{ ...choices[0], appId: "other" }], [], {}), {});
+});
+
+test("account usage and all-node replacement include separate refs without touching other apps", () => {
+  const wf = centralizeConnections({
+    ...legacy,
+    nodes: [
+      ...legacy.nodes,
+      { id: "again", uses: { app: "eventbrite", action: "get", connection: "conn_b" } },
+      { id: "foreign", uses: { app: "other", action: "run", connection: "conn_b" } },
+    ],
+  });
+  const connections: FlowConnections = {
+    ...wf.connections,
+    unused: { app: "eventbrite", connection: "conn_b" },
+  };
+  assert.deepEqual(
+    connectionUsers("eventbrite", "conn_b", wf.nodes, connections).map((n) => n.id),
+    ["create", "again"],
+  );
+  const replaced = replaceWorkflowConnection(
+    "eventbrite",
+    "conn_b",
+    "conn_a",
+    wf.nodes,
+    connections,
+  );
+  assert.equal(connectionIdFor(wf.nodes[1], replaced), "conn_a");
+  assert.equal(connectionIdFor(wf.nodes[4], replaced), "conn_a");
+  assert.equal(connectionIdFor(wf.nodes[5], replaced), "conn_b");
+  assert.equal(replaced.unused.connection, "conn_b");
+  assert.equal(connections.create.connection, "conn_b", "does not mutate the previous snapshot");
+  const individual = selectNodeConnection(wf.nodes[1], "conn_a", wf.nodes, connections);
+  assert.equal(connectionIdFor(wf.nodes[4], individual.connections), "conn_b");
 });

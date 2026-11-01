@@ -18,7 +18,7 @@ import { RouterEditor } from "./RouterEditor.tsx";
 import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
-import { WorkflowConnectionSources, useWorkflowConnections } from "./WorkflowConnections.tsx";
+import { WorkflowConnectionPicker, useWorkflowConnections } from "./WorkflowConnections.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
@@ -71,7 +71,11 @@ import type {
   WorkflowSummary,
 } from "./types.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
-import { connectionIdFor } from "./workflow-connections.ts";
+import {
+  connectionIdFor,
+  defaultConnectionFor,
+  withDefaultConnection,
+} from "./workflow-connections.ts";
 
 /** The step the builder emits — the editor assigns the final `id`. `NodeConfig`
  * carries the base settings (retry / onError / notes) set on the Config view. */
@@ -2502,6 +2506,8 @@ export function AppStepConfig({
   const [accountId, setAccountId] = useState<string>(initialConnection ?? "");
   const [connectionRef, setConnectionRef] = useState<string | undefined>();
   const connectionScope = useWorkflowConnections();
+  const connectionScopeRef = useRef(connectionScope);
+  connectionScopeRef.current = connectionScope;
   const connectionId = connectionRef
     ? (connectionIdFor(
         { id: stepId ?? "", uses: { app: appId, action: "", connectionRef } },
@@ -2514,10 +2520,8 @@ export function AppStepConfig({
   }, []);
   const [actionKey, setActionKey] = useState<string>(initialAction ?? "");
   const [withValues, setWithValues] = useState<Record<string, unknown>>(initialWith ?? {});
-  const [showConnModal, setShowConnModal] = useState(false);
-  // Once a connection is chosen it renders as a static label; "Change" flips
-  // back to the dropdown. No connection selected yet also forces the dropdown.
-  const [changingConn, setChangingConn] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [connectionPickerOpen, setConnectionPickerOpen] = useState(false);
   // Setup (app + connection + action) / Configure (params) / Test — same tabs as
   // the node editor, so add + edit are consistent.
   // When initial values are provided, skip Setup and open directly to Configure.
@@ -2542,38 +2546,34 @@ export function AppStepConfig({
     Promise.all([api.getAppAuth(appId), api.listConnectionsForApp(appId), pickables])
       .then(([au, co, ac]) => {
         if (canceled) return;
+        const choices = withDefaultConnection(appId, au, co);
         setAuths(au);
-        setConns(co);
+        setConns(choices);
         setActions(ac);
-        // P2: in the auto-satisfied state, never auto-select an existing
-        // connection — it would be silently written into every step the user
-        // builds. A connection picked deliberately through the "+ New" escape
-        // hatch still is (that flows through `refetchConns`/`onCreated`, not
-        // here). No availability re-filter needed: `autoSatisfied` is only
-        // ever set on a `tenantAuth`/`jit` entry, and `available` stays
-        // unconditionally `true` for every non-`oauth2` type (T3.1.1 P5).
-        const autoSat = (au ?? []).some((a) => a.autoSatisfied === true);
-        if (!autoSat && co.length > 0) setConnectionId(co[0].id);
+        const scope = connectionScopeRef.current;
+        const selected = defaultConnectionFor(
+          { id: stepId ?? "", uses: { app: appId, action: "" } },
+          choices,
+          scope?.nodes ?? [],
+          scope?.connections ?? {},
+          initialConnection,
+        );
+        if (selected.connectionRef) setConnectionRef(selected.connectionRef);
+        else setConnectionId(selected.connection ?? "");
       })
       .catch((e) => !canceled && setMetaError((e as Error).message));
     return () => {
       canceled = true;
     };
-  }, [api, appId, isTrigger, setConnectionId]);
+  }, [api, appId, isTrigger, setConnectionId, initialConnection, stepId]);
 
   const refetchConns = async () => {
     const co = await api.listConnectionsForApp(appId);
-    setConns(co);
-    if (co.length > 0) setConnectionId((prev) => prev || co[0].id);
+    setConns(withDefaultConnection(appId, auths ?? [], co));
   };
 
   const availableAuths = (auths ?? []).filter((a) => a.available !== false);
-  // Third connection state: the operator has flagged a `tenantAuth`/`jit`
-  // method as zero-credential for this tenant, so the server resolves a
-  // connection automatically at invoke time — the step is complete with none
-  // picked. `.some(...)` deliberately: an app declaring both an `oauth2`
-  // method and an auto-satisfied `tenantAuth` method is auto-satisfied, and
-  // the oauth2 route stays reachable through the "+ New" escape hatch (P3).
+  // Tenant-scoped auth can use the built-in account; stored accounts remain available.
   const autoSatisfied = availableAuths.some(
     (a) => a.autoSatisfied === true && (a.type === "tenantAuth" || a.type === "jit"),
   );
@@ -2636,25 +2636,14 @@ export function AppStepConfig({
   const canAdd = setupComplete;
 
   const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
-  // Show the dropdown only before a connection is picked or while changing it;
-  // otherwise the selected connection reads as a compact label.
-  const showConnPicker = changingConn || !connectionId;
 
   function buildStep(): BuiltStep {
     return {
       uses: {
         app: appId,
         action: selectedAction?.key ?? actionKey,
-        // A connection is emitted only when the user explicitly picked one —
-        // in the auto-satisfied state nothing is picked by default (P2), so
-        // nothing is emitted here, and the server resolves the connection
-        // live on every call. Never synthesise an id: it does not exist
-        // server-side.
-        ...(connectionRef
-          ? { connectionRef }
-          : (needsConnection || autoSatisfied) && connectionId
-            ? { connection: connectionId }
-            : {}),
+        // Workflow defaults are explicit references, including the server's built-in account.
+        ...(connectionRef ? { connectionRef } : connectionId ? { connection: connectionId } : {}),
         ...(isTrigger ? { trigger: true as const } : {}),
       },
       with: withValues,
@@ -2741,142 +2730,63 @@ export function AppStepConfig({
             {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
             {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
 
-            {/* App — click Change to go back to the app picker. */}
             <div className="w6w-field">
               <span>App</span>
-              <div className="w6w-conn-label">
-                {app && (
-                  <AppIcon
-                    src={app.iconSvg}
-                    srcDark={app.iconSvgDark}
-                    brandColor={app.brandColor}
-                    name={app.displayName}
-                    theme={theme}
-                    size={20}
-                  />
-                )}
-                <span className="w6w-conn-label-name">{app?.displayName ?? appId}</span>
-                {onChangeApp && (
-                  <button
-                    type="button"
-                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                    onClick={onChangeApp}
-                  >
-                    Change
-                  </button>
-                )}
+              <div className="w6w-app-conn-row" ref={rowRef}>
+                <button
+                  type="button"
+                  className="w6w-app-conn-btn"
+                  aria-label="App"
+                  onClick={onChangeApp}
+                  disabled={!onChangeApp}
+                >
+                  {app && (
+                    <AppIcon
+                      src={app.iconSvg}
+                      srcDark={app.iconSvgDark}
+                      brandColor={app.brandColor}
+                      name={app.displayName}
+                      theme={theme}
+                      size={20}
+                    />
+                  )}
+                  <span className="w6w-conn-label-name">{app?.displayName ?? appId}</span>
+                </button>
+                <WorkflowConnectionPicker
+                  step={{
+                    id: committedId ?? stepId ?? "",
+                    uses: {
+                      app: appId,
+                      action: actionKey,
+                      ...(connectionRef
+                        ? { connectionRef }
+                        : { connection: connectionId || undefined }),
+                    },
+                  }}
+                  conns={conns}
+                  failed={!!metaError}
+                  open={connectionPickerOpen}
+                  onOpenChange={setConnectionPickerOpen}
+                  anchorRef={rowRef}
+                  onChangeConnection={setConnectionId}
+                  onChangeConnectionRef={setConnectionRef}
+                  onConnectionCreated={() => {
+                    void refetchConns();
+                  }}
+                />
               </div>
+              {autoNeedsSignedInUser && selectedConn?.builtIn && (
+                <span className="w6w-hint">
+                  Scheduled or queued runs need a stored connection. Choose one from the connection
+                  menu.
+                </span>
+              )}
+              {auths !== null && needsConnection && !hasConnection && (
+                <span className="w6w-hint">
+                  This app needs a connection before its actions can run.
+                </span>
+              )}
             </div>
-
-            {/* Connection — the third, auto-satisfied state (P3): the section
-                still renders (it never disappears — a user may still want to
-                add their own third-party account), but the picker is replaced
-                by a passive line plus the escape hatch. */}
-            {auths !== null && autoSatisfied && (
-              <div className="w6w-field">
-                <span>Connection</span>
-                <div className="w6w-conn-label">
-                  <span className="w6w-conn-label-name">
-                    Connected automatically — this app needs no connection for your organization.
-                  </span>
-                  <button
-                    type="button"
-                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                    onClick={() => setShowConnModal(true)}
-                  >
-                    Create connection
-                  </button>
-                </div>
-                {/* P3a: a `jit` sign-in needs the signed-in user's own token, which a
-                    scheduled or queued run of this saved workflow does not have. */}
-                {autoNeedsSignedInUser && (
-                  <span className="w6w-hint">
-                    A scheduled or queued run of this workflow still needs a connection configured
-                    on this step — use "Create connection" if this step will run on a schedule.
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Connection — the two pre-existing states (needs one / has one). */}
-            {auths !== null &&
-              needsConnection &&
-              (!hasConnection ? (
-                <div className="w6w-result w6w-stepconfig-conn-empty">
-                  <div style={{ marginBottom: 8 }}>
-                    This app needs a connection before its actions can run.
-                  </div>
-                  <button type="button" className="w6w-btn" onClick={() => setShowConnModal(true)}>
-                    Create connection
-                  </button>
-                </div>
-              ) : showConnPicker ? (
-                <label className="w6w-field">
-                  <span>Connection</span>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <select
-                      value={connectionId}
-                      onChange={(e) => {
-                        setConnectionId(e.target.value);
-                        setChangingConn(false);
-                      }}
-                      style={{ flex: 1 }}
-                    >
-                      {(conns ?? []).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.displayName || c.id} {c.state ? `(${c.state})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost"
-                      onClick={() => setShowConnModal(true)}
-                    >
-                      + New
-                    </button>
-                  </div>
-                </label>
-              ) : (
-                <div className="w6w-field">
-                  <span>Connection</span>
-                  <div className="w6w-conn-label">
-                    <span className="w6w-conn-label-name">
-                      {connectionRef ? "Shared · " : ""}
-                      {selectedConn?.displayName || selectedConn?.id || connectionId}
-                      {selectedConn?.state ? ` (${selectedConn.state})` : ""}
-                    </span>
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                      onClick={() => setChangingConn(true)}
-                    >
-                      Change
-                    </button>
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                      onClick={() => setShowConnModal(true)}
-                    >
-                      + New
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-            {showConnPicker && (
-              <WorkflowConnectionSources
-                step={{
-                  id: committedId ?? stepId ?? "",
-                  uses: { app: appId, action: actionKey, connectionRef },
-                }}
-                conns={conns}
-                onSelect={(ref) => {
-                  setConnectionRef(ref);
-                  setChangingConn(false);
-                }}
-              />
-            )}
 
             {/* Action */}
             {actions !== null &&
@@ -2985,9 +2895,7 @@ export function AppStepConfig({
             <StepTestRun
               app={appId}
               action={selectedAction.key}
-              connectionId={
-                (needsConnection || autoSatisfied) && connectionId ? connectionId : undefined
-              }
+              connectionId={connectionId || undefined}
               values={withValues}
               canRun={
                 setupComplete && requiredParamsFilled(selectedAction.params ?? [], withValues)
@@ -3040,20 +2948,6 @@ export function AppStepConfig({
           </button>
         )}
       </div>
-
-      {showConnModal && (
-        <AddConnectionModal
-          theme={theme}
-          initialAppId={appId}
-          onClose={() => setShowConnModal(false)}
-          onCreated={async ({ connectionId: id }) => {
-            setShowConnModal(false);
-            setConnectionId(id);
-            setChangingConn(false);
-            await refetchConns();
-          }}
-        />
-      )}
     </div>
   );
 }

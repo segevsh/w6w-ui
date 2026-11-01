@@ -136,7 +136,8 @@ try {
   await open("create_webhook");
   await page.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("button", { name: "Connection", exact: true }).click();
-  await page.getByRole("button", { name: "find_webhook Segev account", exact: true }).click();
+  await page.locator('[data-connection-id="conn_a"]').click();
+  await page.getByRole("button", { name: "Only this node", exact: true }).click();
   await close();
   assert.equal(account(await definition(), "create_webhook"), "conn_a");
   await canvasKey("Control+z");
@@ -145,8 +146,8 @@ try {
   await open("find_webhook");
   await page.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("button", { name: "Connection", exact: true }).click();
-  await page.getByRole("button", { name: "Change shared connection…", exact: true }).click();
-  await page.getByRole("button", { name: "Eventbrite account connected", exact: true }).click();
+  await page.locator('[data-connection-id="conn_b"]').click();
+  await page.getByRole("button", { name: "All 2 nodes", exact: true }).click();
   // Undo while the modal remains open must refresh its form as well as the definition.
   await page.keyboard.press("Control+z");
   assert.equal(account(await definition(), "find_webhook"), "conn_a");

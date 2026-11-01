@@ -52,133 +52,133 @@ try {
     await page.keyboard.press("Escape");
     await page.locator("dialog").waitFor({ state: "hidden" });
   };
-  const selectSource = () =>
-    page.getByRole("button", {
-      name: "find_webhook Segev account",
-      exact: true,
-    }).click();
-  const selectAccount = () =>
-    page.getByRole("button", {
-      name: "Eventbrite account connected",
-      exact: true,
-    }).click();
+  const choose = (id) => page.locator(`[data-connection-id="${id}"]`).click();
+  const connectionButton = () => page.getByRole("button", { name: "Connection", exact: true });
   const definition = () => page.evaluate(() => window.__value);
   const node = (wf, id) => wf.nodes.find((n) => n.id === id);
+  const account = (wf, id) => {
+    const uses = node(wf, id).uses;
+    return uses.connectionRef ? wf.connections[uses.connectionRef].connection : uses.connection;
+  };
+  const startAdd = async (name) => {
+    await page.getByRole("button", { name: "+ Node", exact: true }).click();
+    await page.getByRole("button", { name: "Apps", exact: true }).click();
+    await page.locator(".w6w-stepbuilder-item").filter({ has: page.getByText(name, { exact: true }) }).click();
+    await connectionButton().waitFor({ state: "visible" });
+    await page.waitForFunction(() => !document.querySelector('button[aria-label="Connection"]')?.disabled);
+  };
+  const pickAction = async (count) => {
+    await page.getByPlaceholder("— pick an action —").click();
+    await page.getByRole("option", { name: "List webhooks (list)", exact: true }).click();
+    await page.waitForFunction((count) => window.__value.nodes.length === count, count);
+  };
 
   await open("create_webhook");
-  assert.equal(
-    await page.getByRole("button", { name: /other_app/ }).count(),
-    0,
-  );
-  await selectSource();
-  await page.waitForFunction(() => {
-    const nodes = window.__value.nodes;
-    return nodes.find((n) => n.id === "create_webhook").uses.connectionRef ===
-      nodes.find((n) => n.id === "find_webhook").uses.connectionRef;
-  });
+  assert.match(await page.locator('[data-connection-id="conn_b"]').innerText(), /In use in this workflow.*create_webhook, get_event/);
+  assert.equal(await page.getByText("Use connection from a node", { exact: true }).count(), 0);
+  await choose("conn_b");
+  assert.equal(await page.getByRole("button", { name: "Only this node" }).count(), 0, "same-account selection does not prompt");
+  await connectionButton().click();
+  const unchanged = await definition();
+  await choose("conn_a");
+  let confirm = page.getByRole("dialog", { name: "Change connection", exact: true });
+  assert.equal(await confirm.locator("li").allTextContents().then(a => a.join(",")), "create_webhook,get_event");
+  assert.equal(await confirm.locator("dialog").count(), 0);
+  assert.equal(await page.locator("dialog dialog").count(), 0, "confirmation is a sibling dialog");
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.deepEqual(await definition(), unchanged);
+  await connectionButton().click();
+  await choose("conn_a");
+  await page.getByRole("button", { name: "Only this node", exact: true }).click();
   let wf = await definition();
-  assert.ok(wf.connections);
-  assert.equal(wf.nodes.filter((n) => n.uses.connection).length, 0);
-  await close();
-  await open("get_event");
-  await selectSource();
+  assert.equal(account(wf, "create_webhook"), "conn_a");
+  assert.equal(account(wf, "get_event"), "conn_b");
+  assert.equal(node(wf, "create_webhook").uses.connectionRef, node(wf, "find_webhook").uses.connectionRef);
   await close();
 
-  // Selecting an account detaches only the selected node.
-  await open("create_webhook");
-  await selectAccount();
-  wf = await definition();
-  assert.notEqual(
-    node(wf, "create_webhook").uses.connectionRef,
-    node(wf, "find_webhook").uses.connectionRef,
-  );
-  assert.equal(
-    node(wf, "get_event").uses.connectionRef,
-    node(wf, "find_webhook").uses.connectionRef,
-  );
-  await close();
-
-  // An explicit shared edit updates every consumer and survives a remount.
   await open("find_webhook");
-  await page.getByRole("button", {
-    name: "Change shared connection…",
-    exact: true,
-  }).click();
-  await selectAccount();
+  await choose("conn_b");
+  await page.getByRole("button", { name: "All 2 nodes", exact: true }).click();
+  await close();
+  // All three now use conn_b, under two independent reference keys.
+  await open("get_event");
+  await choose("conn_a");
+  assert.deepEqual((await page.getByRole("dialog", { name: "Change connection", exact: true }).locator("li").allTextContents()).sort(), ["create_webhook", "find_webhook", "get_event"]);
+  await page.getByRole("button", { name: "All 3 nodes", exact: true }).click();
   wf = await definition();
-  assert.equal(
-    wf.connections[node(wf, "get_event").uses.connectionRef].connection,
-    "conn_b",
-  );
+  for (const id of ["create_webhook", "find_webhook", "get_event"]) assert.equal(account(wf, id), "conn_a");
+  assert.equal(account(wf, "other_app"), "conn_other");
+  assert.equal(wf.nodes.filter(n => n.uses.connection).length, 0);
   await close();
   await page.evaluate(() => window.__reload());
   await open("get_event");
-  assert.match(
-    await page.getByRole("button", { name: "Connection", exact: true })
-      .innerText(),
-    /Shared.*Eventbrite account/,
-  );
-  await page.getByRole("button", { name: "Connection", exact: true }).click();
+  assert.equal(await connectionButton().innerText(), "Segev account");
+  await connectionButton().click();
   await page.getByRole("button", { name: "Test", exact: true }).first().click();
   await page.getByRole("button", { name: "Test", exact: true }).last().click();
   await page.waitForFunction(() => window.__invoke);
-  assert.equal(
-    await page.evaluate(() => window.__invoke.connectionId),
-    "conn_b",
-  );
+  assert.equal(await page.evaluate(() => window.__invoke.connectionId), "conn_a");
   await close();
-  await page.getByRole("button", { name: "+ Node", exact: true }).click();
-  await page.getByRole("button", { name: "Apps", exact: true }).click();
-  await page.getByRole("button", { name: /Eventbrite/ }).click();
-  await page.getByRole("button", { name: "Change", exact: true }).last()
-    .click();
-  await page.getByRole("button", {
-    name: "find_webhook Eventbrite account",
-    exact: true,
-  }).click();
-  await page.getByPlaceholder("— pick an action —").click();
-  await page.getByRole("option", { name: "List webhooks (list)", exact: true })
-    .click();
-  await page.waitForFunction(() => window.__value.nodes.length === 5);
+  console.log("PASS: account annotations, cancel, only-this-node, all separate/shared bindings, reload, invocation");
+
+  await startAdd("Eventbrite");
+  assert.equal(await connectionButton().innerText(), "Segev account");
+  assert.equal(await page.locator(".w6w-app-conn-row button").count(), 2);
+  await connectionButton().click();
+  await choose("conn_b");
+  assert.equal(await page.getByRole("button", { name: "Only this node" }).count(), 0, "uncommitted draft never changes existing nodes");
+  assert.equal(account(await definition(), "get_event"), "conn_a");
+  await pickAction(5);
   wf = await definition();
   const addedId = wf.nodes.at(-1).id;
-  assert.equal(
-    node(wf, addedId).uses.connectionRef,
-    node(wf, "find_webhook").uses.connectionRef,
-  );
-  // A direct selection on the progressive add form detaches once, then parameter
-  // edits keep the same binding instead of allocating one per keystroke.
-  await page.getByRole("button", { name: "Change", exact: true }).last()
-    .click();
-  await page.locator("dialog select").selectOption("conn_a");
+  assert.equal(account(wf, addedId), "conn_b");
+  await connectionButton().click();
+  await choose("conn_a");
+  await connectionButton().click();
+  await choose("conn_b");
+  await page.getByRole("button", { name: "Only this node", exact: true }).click();
   await page.getByRole("button", { name: "Configure", exact: true }).click();
   const beforeParams = await definition();
   await page.getByLabel("Note", { exact: true }).fill("first");
   await page.getByLabel("Note", { exact: true }).fill("second");
   await page.getByLabel("Note", { exact: true }).blur();
-  await page.waitForFunction(
-    (id) =>
-      window.__value.nodes.find((n) => n.id === id)?.with?.note === "second",
-    addedId,
-  );
+  await page.waitForFunction((id) => window.__value.nodes.find(n => n.id === id)?.with?.note === "second", addedId);
   wf = await definition();
-  assert.equal(node(wf, addedId).with.note, "second");
-  assert.deepEqual(
-    Object.keys(wf.connections),
-    Object.keys(beforeParams.connections),
-  );
-  assert.equal(
-    wf.connections[node(wf, addedId).uses.connectionRef].connection,
-    "conn_a",
-  );
-  assert.equal(
-    wf.connections[node(wf, "find_webhook").uses.connectionRef].connection,
-    "conn_b",
-  );
+  assert.deepEqual(Object.keys(wf.connections), Object.keys(beforeParams.connections));
+  assert.equal(account(wf, addedId), "conn_b");
+  assert.equal(account(wf, "get_event"), "conn_a");
+  await close();
+  await startAdd("Eventbrite");
+  assert.equal(await connectionButton().innerText(), "Eventbrite account", "last added same-app node wins");
+  await close();
+  console.log("PASS: latest-node defaults, draft isolation, progressive add, stable references during parameter edits");
+
+  await page.evaluate(() => window.__setWorkflow({ manifestVersion: "2", id: "cohost_flow", name: "Cohost flow", nodes: [], edges: [] }));
+  await startAdd("Cohost");
+  assert.equal(await connectionButton().innerText(), "Default");
+  assert.equal(await page.getByText(/Connected automatically|Use connection from a node/).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Create connection", exact: true }).count(), 0);
+  await page.screenshot({ path: "/tmp/connection-picker-cohost.png" });
+  await pickAction(1);
+  let cohostId = (await definition()).nodes[0].id;
+  assert.equal(account(await definition(), cohostId), "zerocred:cohost");
+  await connectionButton().click();
+  await choose("cohost_account");
+  await close();
+  await startAdd("Cohost");
+  assert.equal(await connectionButton().innerText(), "Cohost account");
+  await pickAction(2);
+  await connectionButton().click();
+  assert.match(await page.locator('[data-connection-id="cohost_account"]').innerText(), /In use in this workflow/);
+  await choose("zerocred:cohost");
+  await page.screenshot({ path: "/tmp/connection-picker-confirm.png" });
+  await page.getByRole("button", { name: "All 2 nodes", exact: true }).click();
+  await page.waitForFunction(() => window.__value.nodes.every(n => window.__value.connections[n.uses.connectionRef].connection === "zerocred:cohost"));
+  await close();
+  await open((await definition()).nodes.at(-1).id);
+  assert.equal(await connectionButton().innerText(), "Default");
+  console.log("PASS: Cohost default, existing account inheritance, progressive shared switch, consistent add/edit UI");
   assert.deepEqual(errors, []);
-  console.log(
-    "PASS: sharing, node-only switch, shared edit, JSON persistence, reload and test invocation",
-  );
 } finally {
   await browser.close();
 }

@@ -141,7 +141,10 @@ function makeTriggerApi(
       return o.page ?? { apps: [eventbrite, slack], total: 7, nextCursor: "n1" };
     },
     getAppAuth: async () => o.auths ?? [{ key: "oauth", type: "oauth2", available: true }],
-    listConnectionsForApp: async () => o.conns ?? [{ id: "conn_1", displayName: "Main" }],
+    listConnectionsForApp: async (appId: string) =>
+      o.conns ?? [
+        { id: "conn_1", appId, displayName: "Main", authKey: "oauth", state: "connected" },
+      ],
     getAppTriggers: async () => [
       {
         key: "event-updated",
@@ -380,12 +383,12 @@ test("A3: the trigger flow has the action flow's steps — same Setup screen and
   const trigger = setupShape(container);
   assert.deepEqual(action, {
     subtabs: ["Setup", "Configure", "Test"],
-    fields: ["App", "Connection", "Action *"],
+    fields: ["App", "Action *"],
     footer: ["Cancel", "Next →"],
   });
   assert.deepEqual(trigger, {
     subtabs: action.subtabs,
-    fields: ["App", "Connection", "Trigger *"],
+    fields: ["App", "Trigger *"],
     footer: action.footer,
   });
   await act(async () => root.unmount());
@@ -418,7 +421,8 @@ test("A4: '+ New' on the Setup screen resolves AddConnectionModal's initialAppId
   const { container, root } = await mountTriggers(api, calls);
   await openEventbrite(container);
   const before = calls.byIds.length;
-  await click(byText(container, "+ New"));
+  await click(container.querySelector('button[aria-label="Connection"]') as HTMLButtonElement);
+  await click(byText(document.body, "+ New connection"));
   await flush();
   assert.ok(
     calls.byIds.slice(before).some((ids) => ids.length === 1 && ids[0] === "eventbrite"),
@@ -427,16 +431,24 @@ test("A4: '+ New' on the Setup screen resolves AddConnectionModal's initialAppId
   await act(async () => root.unmount());
 });
 
-test("A5: an auto-satisfied app needs no account and emits no connection key", async () => {
+test("A5: an auto-satisfied app uses its built-in Default account", async () => {
   const { api, calls } = makeTriggerApi({
     auths: [{ key: "t", type: "tenantAuth", available: true, autoSatisfied: true }],
   });
   const { container, root } = await mountTriggers(api, calls, { onDraftChange: () => {} });
   await openEventbrite(container);
-  assert.match(container.textContent ?? "", /Connected automatically/);
+  assert.equal(container.querySelector('button[aria-label="Connection"]')?.textContent, "Default");
   await pick(container, "Event Created");
   assert.deepEqual(calls.added, [
-    { uses: { app: "eventbrite", action: "event-created", trigger: true }, with: {} },
+    {
+      uses: {
+        app: "eventbrite",
+        action: "event-created",
+        trigger: true,
+        connection: "zerocred:eventbrite",
+      },
+      with: {},
+    },
   ]);
   await act(async () => root.unmount());
 });
@@ -479,7 +491,8 @@ test("A4: '+ New' -> Save connection -> created id becomes uses.connection", asy
   };
   const { container, root } = await mountTriggers(api, calls, { onDraftChange: () => {} });
   await openEventbrite(container);
-  await click(byText(container, "+ New"));
+  await click(container.querySelector('button[aria-label="Connection"]') as HTMLButtonElement);
+  await click(byText(document.body, "+ New connection"));
   await flush();
   await click(byText(container, "Save connection"));
   await flush();

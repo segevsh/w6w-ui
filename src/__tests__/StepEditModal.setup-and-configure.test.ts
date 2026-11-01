@@ -339,7 +339,7 @@ test("U5 — selecting a DIFFERENT app commits app/action/connection/with togeth
   };
   assert.equal(payload.uses.app, "slack");
   assert.equal(payload.uses.action, "");
-  assert.equal(payload.uses.connection, undefined);
+  assert.equal(payload.uses.connection, "conn_2");
   assert.deepStrictEqual(payload.with, {});
 
   // A different app is "start over": the field lands COLLAPSED (not the
@@ -477,7 +477,10 @@ test("U13 — clicking outside the flyout closes it without picking anything", a
 });
 
 test("U10 — the connection picker lists the current app's connections, no search box, and commits ONLY uses.connection", async () => {
-  const { container, root, changes } = await mountOnSetupTab(STEP);
+  const { container, root, changes } = await mountOnSetupTab({
+    ...STEP,
+    uses: { ...STEP.uses, connection: "conn_previous" },
+  });
   await act(async () => {
     connButton(container).click();
   });
