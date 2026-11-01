@@ -5,6 +5,7 @@ import { type CapturedWebhookRequest, WebhookListenPanel } from "./WebhookListen
 import { ResultViewer } from "./components/ResultViewer.tsx";
 import { useW6WApi, useWorkflowProject } from "./provider.tsx";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
+import { LastUsedNote, useRememberedTestInput } from "./use-test-input.tsx";
 
 type TestState =
   | { status: "running" }
@@ -95,10 +96,26 @@ export function TriggerFillForm({
   // changes every render.
   const persistWorkflowId = persist?.workflowId;
   const persistStepId = persist?.stepId;
+  // The remembered test input (`node_test_inputs`, written by every Run / Test
+  // of this trigger on any surface — this tab, the canvas Run node modal) wins
+  // over the fixture; a `{}` row was cleared, so the declared defaults stay.
+  const remembered = useRememberedTestInput(persistWorkflowId, persistStepId);
+  const [prefilled, setPrefilled] = useState(false);
   // Nothing to wait for when there is no fixture key (the add-step builder).
   const [seeded, setSeeded] = useState(!persistWorkflowId || !persistStepId);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seeds ONCE, when the remembered read settles — a later save must not re-seed
   useEffect(() => {
     if (!persistWorkflowId || !persistStepId) {
+      setSeeded(true);
+      return;
+    }
+    if (!remembered.loaded) return;
+    if (remembered.input !== undefined) {
+      const input = remembered.input;
+      if (Object.keys(input).length > 0) {
+        setValues((v) => ({ ...v, ...input }));
+        setPrefilled(true);
+      }
       setSeeded(true);
       return;
     }
@@ -125,7 +142,14 @@ export function TriggerFillForm({
     return () => {
       canceled = true;
     };
-  }, [api, persistWorkflowId, persistStepId]);
+  }, [api, persistWorkflowId, persistStepId, remembered.loaded]);
+  const [formKey, setFormKey] = useState(0);
+  const clearRemembered = () => {
+    remembered.clear();
+    setPrefilled(false);
+    setValues(seedValues(defs));
+    setFormKey((k) => k + 1);
+  };
 
   // A raw-JSON draft that is not a values map never reaches `values`. Testing
   // now WRITES the saved fixture the Run form pre-fills from, so running the
@@ -138,6 +162,8 @@ export function TriggerFillForm({
 
   const run = async (override?: Record<string, unknown>) => {
     const input = override ?? values;
+    // Remembered server-side before the invoke, whatever its outcome (secret literals dropped).
+    if (persist) remembered.save(input, params);
     setState({ status: "running" });
     let outcome: Exclude<TestState, { status: "running" }>;
     try {
@@ -225,7 +251,10 @@ export function TriggerFillForm({
           <p className="w6w-muted w6w-small">Loading saved values…</p>
         ) : (
           <>
+            {prefilled && <LastUsedNote onClear={clearRemembered} />}
             <PropertyEntryForm
+              // Remounted on Clear, so a raw-JSON draft is re-derived from the defaults too.
+              key={formKey}
               params={params}
               values={values}
               onChange={setValues}

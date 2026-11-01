@@ -269,6 +269,7 @@ import type {
 } from "./types.ts";
 import { portsLookupFromDefs, useAppActionDefs, useAppTriggerDefs } from "./use-app-action-defs.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
+import { LastUsedNote, useRememberedTestInput } from "./use-test-input.tsx";
 import {
   type FlowConnections,
   centralizeConnections,
@@ -3100,20 +3101,36 @@ function StepRunCollect({
   // state in its `input` (that is what the Test tab writes there too).
   // An `ExprValue` (`{type:"expr",…}`) round-trips untouched: `FxField` derives
   // expression mode from the value, so it comes back as a chip, not as text.
+  //
+  // The REMEMBERED test input (`node_test_inputs`, server-side, written by every
+  // Run / Test of this node) wins over the fixture: it is what was last typed on
+  // ANY surface, including this one. A row that is `{}` was cleared — the form
+  // stays on its declared defaults and the fixture is not consulted.
+  const remembered = useRememberedTestInput(workflowId, step.id);
   const [seeded, setSeeded] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seeds ONCE, when the remembered read settles — a later save must not re-seed
   useEffect(() => {
+    if (!remembered.loaded) return;
     let canceled = false;
+    const apply = (input: Record<string, unknown> | undefined, fromMemory: boolean) => {
+      if (input && Object.keys(input).length > 0) {
+        if (isTrigger) setValues((v) => ({ ...v, ...input }));
+        else setStateText(JSON.stringify(input, null, 2));
+        if (fromMemory) setPrefilled(true);
+      }
+      setSeeded(true);
+    };
+    if (remembered.input !== undefined) {
+      apply(remembered.input, true);
+      return;
+    }
     api
       .listStepTests(workflowId, step.id)
       .then((tests) => {
         if (canceled) return;
         const latest = tests.length ? tests[tests.length - 1] : null;
-        if (isTrigger) {
-          if (latest?.with) setValues((v) => ({ ...v, ...latest.with }));
-        } else if (latest?.input && Object.keys(latest.input).length > 0) {
-          setStateText(JSON.stringify(latest.input, null, 2));
-        }
-        setSeeded(true);
+        apply(isTrigger ? latest?.with : latest?.input, false);
       })
       // Never block or break the form: no fixture (or a failed list) just leaves
       // the declared defaults in place, silently.
@@ -3123,7 +3140,15 @@ function StepRunCollect({
     return () => {
       canceled = true;
     };
-  }, [api, workflowId, step.id, isTrigger]);
+  }, [api, workflowId, step.id, isTrigger, remembered.loaded]);
+  const [formKey, setFormKey] = useState(0);
+  const clearRemembered = () => {
+    remembered.clear();
+    setPrefilled(false);
+    if (isTrigger) setValues(seedValues(defs));
+    else setStateText("{}");
+    setFormKey((k) => k + 1);
+  };
 
   // A raw-JSON draft that is not a values map (unparseable, or an array/scalar/
   // `null`) never reaches `values` — the entry form holds it back and says so
@@ -3168,6 +3193,7 @@ function StepRunCollect({
               . Disabled nodes are skipped.
             </p>
           )}
+          {prefilled && params !== null && seeded && <LastUsedNote onClear={clearRemembered} />}
           {params === null || !seeded ? (
             <p className="w6w-muted w6w-small">
               {params === null ? "Loading parameters…" : "Loading saved values…"}
@@ -3175,6 +3201,8 @@ function StepRunCollect({
           ) : isTrigger ? (
             <>
               <PropertyEntryForm
+                // Remounted on Clear, so a raw-JSON draft is re-derived from the defaults too.
+                key={formKey}
                 params={params}
                 values={values}
                 onChange={setValues}
@@ -3223,9 +3251,13 @@ function StepRunCollect({
           disabled={!canRun}
           // A trigger IS the start state, so it seeds nothing from upstream —
           // its filled fields go out as params (`{ input }`) exactly as before.
-          onClick={() =>
-            onRun(isTrigger ? values : (state ?? {}), isTrigger ? undefined : startState)
-          }
+          onClick={() => {
+            // Remembered server-side BEFORE the run, so reopening this modal (or
+            // the Test tab, or the header Run) comes back prefilled whatever the
+            // run's outcome. Secret literals are dropped; bindings are kept.
+            remembered.save(isTrigger ? values : (state ?? {}), params ?? []);
+            onRun(isTrigger ? values : (state ?? {}), isTrigger ? undefined : startState);
+          }}
         >
           ▶ Run
         </button>
@@ -4229,8 +4261,27 @@ function ActionStepEditModal({
   // on this surface's own noun): the fixture's `input` slot is where both
   // surfaces write it. Applied only while the box is still untouched, so a slow
   // list can never overwrite what the operator is typing.
+  //
+  // The remembered test input (`node_test_inputs`, written by every Run / Test
+  // of this node on any surface) wins over the fixture; a `{}` row was cleared.
+  // A For each keeps its fixture-only seeding (its Test saves a sample instead).
+  const rememberedTest = useRememberedTestInput(
+    (testable && !isTrigger) || isForeach ? workflowId : undefined,
+    step.id,
+  );
+  const [testPrefilled, setTestPrefilled] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seeds ONCE, when the remembered read settles — a later save must not re-seed
   useEffect(() => {
     if ((!testable || isTrigger) && !isForeach) return;
+    if (!rememberedTest.loaded) return;
+    if (!isForeach && rememberedTest.input !== undefined) {
+      const input = rememberedTest.input;
+      if (Object.keys(input).length === 0) return;
+      const next = JSON.stringify(input, null, 2);
+      setTestState((cur) => (cur.trim() === "{}" ? next : cur));
+      setTestPrefilled(true);
+      return;
+    }
     let canceled = false;
     api
       .listStepTests(workflowId, step.id)
@@ -4247,7 +4298,7 @@ function ActionStepEditModal({
     return () => {
       canceled = true;
     };
-  }, [api, workflowId, step.id, testable, isTrigger, isForeach]);
+  }, [api, workflowId, step.id, testable, isTrigger, isForeach, rememberedTest.loaded]);
 
   // The incoming-state override, and the payload it produces. The step's STORED
   // configuration is what runs; the override is merged over it. A box that is
@@ -4639,6 +4690,15 @@ function ActionStepEditModal({
                       step — only the incoming state changes per run.
                     </p>
                     <LoopSeedField seed={loopSeed} readOnly={readOnly} />
+                    {testPrefilled && !readOnly && (
+                      <LastUsedNote
+                        onClear={() => {
+                          rememberedTest.clear();
+                          setTestPrefilled(false);
+                          setTestState("{}");
+                        }}
+                      />
+                    )}
                     <IncomingStateField
                       text={testState}
                       onChange={setTestState}
