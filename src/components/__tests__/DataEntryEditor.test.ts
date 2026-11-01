@@ -32,6 +32,11 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id);
 (dom.window as unknown as Record<string, unknown>).cancelAnimationFrame = (id: number) =>
   clearTimeout(id as unknown as NodeJS.Timeout);
 
+// jsdom does not implement the native dialog API used by the shared modal.
+dom.window.HTMLDialogElement.prototype.showModal = function () {
+  this.setAttribute("open", "");
+};
+
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
@@ -92,6 +97,8 @@ test("kv: value input fires onTextChange per edit; doc renders the JSON editor i
   const d = mount({ kind: "doc", text: "{}" });
   assert.equal(tid(d, "entry-value"), null, "doc has no kv input");
   assert.ok(d.querySelector(".w6w-json-editor"), "doc renders JsonEditor");
+  assert.ok(d.querySelector('dialog[open][aria-label="Edit document"] .w6w-json-editor'));
+  assert.equal(d.querySelectorAll("h3").length, 1, "the modal owns the heading");
 });
 
 test("new mode: key input fires onKeyChange; existing mode shows version and expiry", () => {
@@ -151,4 +158,53 @@ test("doc: editing the JSON editor fires onTextChange; entry-editor hook is pres
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '{"a":1}' } });
   });
   assert.deepEqual(calls.text, ['{"a":1}']);
+});
+
+test("doc modal gates Save as JSON becomes invalid and valid again", () => {
+  let saves = 0;
+  function Editor() {
+    const [text, setText] = React.useState("");
+    return React.createElement(DataEntryEditor, {
+      kind: "doc",
+      isNew: true,
+      newKey: "config",
+      text,
+      onTextChange: setText,
+      onKeyChange: () => {},
+      onSave: () => {
+        saves++;
+      },
+      onCancel: () => {},
+      onReload: () => {},
+    });
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() => root.render(React.createElement(Editor)));
+    assert.ok(container.querySelector('dialog[open][aria-label="New document"]'));
+    const save = tid(container, "entry-save") as HTMLButtonElement;
+    assert.equal(save.disabled, true, "blank JSON starts disabled");
+    const view = EditorView.findFromDOM(container.querySelector(".cm-content") as HTMLElement);
+    assert.ok(view);
+    for (const [text, valid] of [
+      ["{", false],
+      ['{"ok":true}', true],
+      ['{"ok":}', false],
+      ["null", false],
+      ["42", false],
+      ["[]", true],
+    ] as const) {
+      act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } }));
+      assert.equal(save.disabled, !valid, text);
+      if (!valid) click(save);
+    }
+    assert.equal(saves, 0, "invalid content cannot submit");
+    click(save);
+    assert.equal(saves, 1);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
 });

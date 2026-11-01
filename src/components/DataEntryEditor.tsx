@@ -1,5 +1,6 @@
 import { JsonEditor } from "../JsonEditor.tsx";
-import { VERSION_CONFLICT_COPY } from "../data-stores/data-store-view.ts";
+import { VERSION_CONFLICT_COPY, parseDocText } from "../data-stores/data-store-view.ts";
+import { Modal } from "./Modal.tsx";
 
 export interface DataEntryEditorProps {
   /** `kv` edits one input; `doc` edits JSON in a {@link JsonEditor}. */
@@ -33,8 +34,9 @@ export interface DataEntryEditorProps {
 }
 
 /**
- * A presentational editor card for one kv/doc entry: controlled text in, callbacks out. Drafts,
- * `ifVersion` and the save mutation live in the host; this only shows them.
+ * A document opens in a modal; a key/value entry stays inline. Drafts, `ifVersion` and the
+ * save mutation live in the host. Document validity is derived from the controlled text so
+ * initial values, edits and reloads all gate Save alike.
  */
 export function DataEntryEditor({
   kind,
@@ -53,11 +55,15 @@ export function DataEntryEditor({
   onCancel,
   onReload,
 }: DataEntryEditorProps) {
-  return (
-    <div className="w6w-card w6w-data-entry-editor" data-testid="entry-editor">
-      <h3>{isNew ? "New entry" : (entryKey ?? "")}</h3>
-      <p className="w6w-muted w6w-small">
-        {isNew ? (
+  const parsedDocument = kind === "doc" ? parseDocText(text) : undefined;
+  const invalidDocument = parsedDocument !== undefined && !parsedDocument.ok;
+  const valueError =
+    error || (parsedDocument && !parsedDocument.ok && text.trim() ? parsedDocument.message : null);
+  const body = (
+    <>
+      {isNew ? (
+        <label className="w6w-field">
+          <span>Key</span>
           <input
             data-testid="entry-new-key"
             value={newKey ?? ""}
@@ -65,16 +71,21 @@ export function DataEntryEditor({
             aria-label="Key"
             onChange={(e) => onKeyChange(e.target.value)}
           />
-        ) : (
-          <>
-            {version != null && <span>v{version}</span>}
-            {expiresAt && <span> · Expires {expiresAt}</span>}
-          </>
-        )}
-      </p>
+        </label>
+      ) : (
+        <p className="w6w-muted w6w-small">
+          {version != null && <span>v{version}</span>}
+          {expiresAt && <span> · Expires {expiresAt}</span>}
+        </p>
+      )}
 
       {kind === "doc" ? (
-        <JsonEditor value={text} onChange={onTextChange} />
+        <JsonEditor
+          value={text}
+          onChange={onTextChange}
+          minHeight="min(50vh, 400px)"
+          maxHeight="60vh"
+        />
       ) : (
         <input
           data-testid="entry-value"
@@ -84,9 +95,9 @@ export function DataEntryEditor({
         />
       )}
 
-      {error && (
-        <div className="w6w-error" data-testid="entry-value-error">
-          {error}
+      {valueError && (
+        <div className="w6w-field-error" role="alert" data-testid="entry-value-error">
+          {valueError}
         </div>
       )}
       {conflict && (
@@ -102,21 +113,46 @@ export function DataEntryEditor({
           </button>
         </div>
       )}
-
-      <div className="w6w-data-entry-editor-actions">
-        <button
-          className="w6w-btn"
-          type="button"
-          data-testid="entry-save"
-          disabled={Boolean(conflict) || Boolean(saving)}
-          onClick={onSave}
-        >
-          Save
-        </button>
-        <button className="w6w-btn w6w-btn-ghost" type="button" onClick={onCancel}>
-          Cancel
-        </button>
+    </>
+  );
+  const actions = (
+    <div className={kind === "doc" ? "w6w-modal-actions" : "w6w-data-entry-editor-actions"}>
+      <button
+        className="w6w-btn"
+        type="button"
+        data-testid="entry-save"
+        disabled={
+          Boolean(conflict) ||
+          Boolean(saving) ||
+          invalidDocument ||
+          (kind === "doc" && isNew && !newKey?.trim())
+        }
+        onClick={onSave}
+      >
+        Save
+      </button>
+      <button className="w6w-btn w6w-btn-ghost" type="button" onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  );
+  return kind === "doc" ? (
+    <Modal
+      title={isNew ? "New document" : "Edit document"}
+      subtitle={isNew ? undefined : entryKey}
+      size="wide"
+      onClose={onCancel}
+    >
+      <div className="w6w-modal-body" data-testid="entry-editor">
+        {body}
       </div>
+      {actions}
+    </Modal>
+  ) : (
+    <div className="w6w-card w6w-data-entry-editor" data-testid="entry-editor">
+      <h3>{isNew ? "New entry" : (entryKey ?? "")}</h3>
+      {body}
+      {actions}
     </div>
   );
 }
