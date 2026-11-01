@@ -33,25 +33,25 @@ test("finds markers in strings and code, never in comments", () => {
 });
 
 test("codeReadFor: step outputs, vars and consts, in JavaScript and Python", () => {
-  assert.equal(codeReadFor("nodes.a.output.costs.total"), "state.nodes.a.output.costs.total");
-  assert.equal(codeReadFor("steps.a.output"), "state.nodes.a.output");
-  assert.equal(codeReadFor("var.region"), "vars.region");
+  assert.equal(codeReadFor("nodes.a.output.costs.total"), "run.nodes.a.output.costs.total");
+  assert.equal(codeReadFor("steps.a.output"), "run.nodes.a.output");
+  assert.equal(codeReadFor("var.region"), "state.region");
   assert.equal(codeReadFor("const.tier"), "consts.tier");
-  assert.equal(codeReadFor("trigger.event.id"), "state.trigger.event.id");
-  assert.equal(codeReadFor("foreach.item"), "state.foreach.item");
+  assert.equal(codeReadFor("trigger.event.id"), "run.trigger.event.id");
+  assert.equal(codeReadFor("foreach.item"), "run.foreach.item");
   assert.equal(
     codeReadFor("nodes.a.output.items[0].first-name"),
-    'state.nodes.a.output.items[0]["first-name"]',
+    'run.nodes.a.output.items[0]["first-name"]',
   );
   assert.equal(
     codeReadFor("nodes.a.output.costs.total", "python"),
-    'state["nodes"]["a"]["output"]["costs"]["total"]',
+    'run["nodes"]["a"]["output"]["costs"]["total"]',
   );
-  assert.equal(codeReadFor("var.region", "python"), 'vars["region"]');
+  assert.equal(codeReadFor("var.region", "python"), 'state["region"]');
   assert.equal(codeReadFor("const.tier", "python"), 'consts["tier"]');
   assert.equal(
     codeReadFor("nodes.a.output.items[0]", "python"),
-    'state["nodes"]["a"]["output"]["items"][0]',
+    'run["nodes"]["a"]["output"]["items"][0]',
   );
 });
 
@@ -73,9 +73,9 @@ test("the user's script: each whole-string marker becomes a state read", () => {
   assert.equal(r.converted, 2);
   assert.equal(r.left, 0);
   assert.ok(
-    r.code.includes("const cost_total = state.nodes.get_event_ticket_1.output.costs.total;"),
+    r.code.includes("const cost_total = run.nodes.get_event_ticket_1.output.costs.total;"),
   );
-  assert.ok(r.code.includes("const cost_tax = state.nodes.get_event_ticket_1.output.costs.tax;"));
+  assert.ok(r.code.includes("const cost_tax = run.nodes.get_event_ticket_1.output.costs.tax;"));
   assert.deepEqual(findCodeBindings(r.code), [], "nothing left");
 });
 
@@ -86,7 +86,7 @@ test("JavaScript: bare, template-literal and longer-string markers", () => {
   assert.equal(r.converted, 5);
   assert.equal(
     r.code,
-    "const n = state.nodes.s.output.id; const a = `id ${1} ${vars.n}`; const b = 'n: ' + consts.c + '!'; const c = vars.x + '/' + vars.y;",
+    "const n = run.nodes.s.output.id; const a = `id ${1} ${state.n}`; const b = 'n: ' + consts.c + '!'; const c = state.x + '/' + state.y;",
   );
 });
 
@@ -99,7 +99,7 @@ test("Python: dict reads; str() inside a plain string; prefixed strings and secr
   assert.equal(r.left, 2);
   assert.equal(
     r.code,
-    'a = state["nodes"]["s"]["output"]["total"]\nb = \'x \' + str(vars["n"])\nc = f\'x {{ var.n }}\'\nd = \'{{ secrets.K }}\'\nreturn a',
+    'a = run["nodes"]["s"]["output"]["total"]\nb = \'x \' + str(state["n"])\nc = f\'x {{ var.n }}\'\nd = \'{{ secrets.K }}\'\nreturn a',
   );
 });
 
