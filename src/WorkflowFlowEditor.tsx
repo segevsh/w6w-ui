@@ -124,10 +124,12 @@ import {
 } from "./flow-node-flags.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
 import {
+  FOREACH_DONE_ROUTE,
   ROUTER_APP,
   ifPortLayout,
   isIfStep,
   routeFromHandle,
+  routeHandle,
   routerPortLayout,
   routesForStep,
 } from "./flow-types.ts";
@@ -672,6 +674,7 @@ function Inner({
           e.source,
           lane,
           typeof e.data?.route === "string" ? e.data.route : undefined,
+          e.target,
         );
         const visuals = edgeVisuals(lane, run);
         if (e.className === visuals.className && e.label === visuals.label) return e;
@@ -3506,7 +3509,14 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
                 )}
               </>
             ) : (
-              <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
+              // A For each's Done port is named: React Flow anchors a handle-less edge
+              // to the FIRST source handle, which here is Each item.
+              <PortHandle
+                type="source"
+                position={Position.Right}
+                multiple={ports.out > 1}
+                id={isForeach ? routeHandle(FOREACH_DONE_ROUTE) : undefined}
+              />
             )}
             {!isTrigger && !isRouter && !isIf && (
               <PortHandle

@@ -10,6 +10,7 @@ import {
   definitionLoops,
   eachLaneEdge,
   effectiveEdges,
+  isEachLink,
   isForeachStep,
   loopBodies,
   loopBodyDefinitionEdges,
@@ -17,6 +18,8 @@ import {
 } from "./flow-loop.ts";
 import {
   type CanvasLane,
+  FOREACH_DONE_ROUTE,
+  FOREACH_EACH_ROUTE,
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
@@ -387,6 +390,9 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
     }
     if (loop.source === "legacy") legacyFoes.add(fid);
   }
+  // A For each's saved Each item link is redrawn from its body above, never as a plain edge.
+  const foreachIds = new Set(defs.filter(isForeachStep).map((s) => s.id));
+  for (const e of edges) if (foreachIds.has(e.from) && isEachLink(e)) drop.add(e);
   if (drop.size > 0) edges = edges.filter((e) => !drop.has(e));
   const layer = computeLayers(defs, [
     ...edges,
@@ -415,11 +421,14 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
   // An If has no error port: its bottom handle is the False branch (ifPortLayout).
   // An error edge saved from that handle before it was False is read as False.
   const ifIds = new Set(defs.filter(isIfStep).map((s) => s.id));
+  // A For each's unrouted success edge (saved before its Done port had an id) is Done.
   const flowEdges: Edge[] = edges.map((saved) => {
     const e: FlowEdge =
       saved.when === "error" && saved.route === undefined && ifIds.has(saved.from)
         ? { from: saved.from, to: saved.to, route: IF_FALSE_ROUTE }
-        : saved;
+        : foreachIds.has(saved.from) && saved.route === undefined && saved.when !== "error"
+          ? { ...saved, route: FOREACH_DONE_ROUTE }
+          : saved;
     // Omitted ⇒ "success" (core rfcs/workflow.md · Edge.when amendment). The
     // lane rides on `data` so flowToWorkflow can read it straight back off the
     // React Flow edge; the className + label that tell an error edge apart on
@@ -607,19 +616,32 @@ export function flowToWorkflow(
   // touch a body step the engine will own (any such edge is a PlanError there).
   const bodyIds = new Set<string>();
   for (const chain of derived.values()) for (const id of chain) bodyIds.add(id);
+  const foreachIds = new Set(nodes.filter((n) => isForeachStep(n.data?.step)).map((n) => n.id));
   const plainEdges: FlowEdge[] = edges
     .filter((e) => edgeLane(e) !== "each" && !bodyIds.has(e.source) && !bodyIds.has(e.target))
-    .map(
-      (e): FlowEdge => ({
+    .map((e): FlowEdge => {
+      const route =
+        typeof e.data?.route === "string"
+          ? e.data.route
+          : foreachIds.has(e.source) && edgeLane(e) === "success"
+            ? FOREACH_DONE_ROUTE
+            : undefined;
+      return {
         from: e.source,
         to: e.target,
         ...(edgeLane(e) === "error" ? { when: "error" as const } : {}),
-        ...(typeof e.data?.route === "string" ? { route: e.data.route } : {}),
-      }),
-    );
+        ...(route === undefined ? {} : { route }),
+      };
+    });
+
+  // Each For each's Each item link names its port, so no reader takes it for Done.
+  const eachLinks: FlowEdge[] = [];
+  for (const [fid, chain] of derived) {
+    if (chain.length > 0) eachLinks.push({ from: fid, to: chain[0], route: FOREACH_EACH_ROUTE });
+  }
 
   // A branched body (anything but a plain chain) also emits its body-internal edges.
-  const nextEdges = [...plainEdges, ...loopBodyDefinitionEdges(nodes, edges)];
+  const nextEdges = [...plainEdges, ...eachLinks, ...loopBodyDefinitionEdges(nodes, edges)];
   return { ...original, nodes: nextSteps, edges: nextEdges };
 }
 

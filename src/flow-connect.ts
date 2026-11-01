@@ -17,6 +17,7 @@ import { type Edge, addEdge } from "@xyflow/react";
 import { type LoopRefusalReason, isForeachStep, loopMembership, loopRefusal } from "./flow-loop.ts";
 import {
   type CanvasLane,
+  FOREACH_DONE_ROUTE,
   IF_FALSE_ROUTE,
   type PortsLookup,
   ROUTER_APP,
@@ -134,14 +135,20 @@ function planConnect(
   edges: Edge[],
   when: CanvasLane,
   lookup?: PortsLookup,
-  route?: string,
+  drawnRoute?: string,
 ): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | LoopRefusal | null } | null {
+  // A For each's success connect is its Done port, routed so it never reads as Each item.
+  const fromForeach =
+    when === "success" && isForeachStep(nodes.find((n) => n.id === source)?.data.step);
+  const route = fromForeach && drawnRoute === undefined ? FOREACH_DONE_ROUTE : drawnRoute;
   if (!canConnect(source, target, nodes, edges, lookup, route) || !source || !target) return null;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return null;
   const srcIsIf = isIfStep(srcStep);
-  if (srcStep.uses.app === ROUTER_APP && when === "success") {
+  if (fromForeach) {
+    if (route !== FOREACH_DONE_ROUTE) return null;
+  } else if (srcStep.uses.app === ROUTER_APP && when === "success") {
     if (!routesForStep(srcStep).some((r) => r.id === route)) return null;
   } else if (srcIsIf && when === "success") {
     // An If's True port is unrouted; its False port is the one route it has.
@@ -171,7 +178,7 @@ function planConnect(
     (e) => e.source === source && edgeLane(e) === effLane && e.data?.route === route,
   );
   // A Router route holds one edge; an If's False port fans out like its True port.
-  const cap = route === undefined || srcIsIf ? srcPorts.out : 1;
+  const cap = route === undefined || srcIsIf || fromForeach ? srcPorts.out : 1;
   if (fromSrc.length >= cap) {
     return { next: edges, conflict: null, refusal: { refused: "out_cap", cap } };
   }
@@ -371,13 +378,17 @@ function planRelane(
   // No run state: an edge is only re-laned during live authoring — there is
   // no run in progress while an author re-lanes an edge (T1.1.1).
   const visuals = edgeVisuals(when, undefined);
+  // A For each's success edge leaves its Done port (routed); its error edge is unrouted.
+  const foreach = isForeachStep(srcStep);
+  const done = foreach && when === "success" ? FOREACH_DONE_ROUTE : undefined;
+  const { route: _route, ...unrouted } = (me.data ?? {}) as Record<string, unknown>;
   const relaned: Edge = {
     ...me,
-    id: flowEdgeId(me.source, me.target, when),
-    data: { ...me.data, when },
+    id: flowEdgeId(me.source, me.target, when, done),
+    data: foreach ? { ...unrouted, when, ...(done ? { route: done } : {}) } : { ...me.data, when },
     className: visuals.className,
     label: visuals.label,
-    sourceHandle: sourceHandleForLane(when),
+    sourceHandle: done ? routeHandle(done) : sourceHandleForLane(when),
   };
   // The same id-uniqueness test the creation path runs, against the survivors only.
   const conflict = collidingEdgeId(others, relaned.id);
