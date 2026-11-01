@@ -1,7 +1,7 @@
 import { effectiveParam } from "@w6w/expr";
 import { useMemo, useState } from "react";
 import { JsonEditor } from "../JsonEditor.tsx";
-import { type DataVar, flattenParams, isParamVisible } from "../ParamsForm.tsx";
+import { dataVarRows, flattenParams, isParamVisible } from "../ParamsForm.tsx";
 import type { StepStartState } from "../provider.tsx";
 import {
   type ResolveScope,
@@ -163,12 +163,9 @@ function buildResolvedJson(
     if (literalKeys?.includes(param.key)) {
       out[param.key] = values[param.key] !== undefined ? values[param.key] : param.default;
     } else if (param.type === "vars") {
-      const raw = Array.isArray(values[param.key])
-        ? (values[param.key] as DataVar[])
-        : Array.isArray(param.default)
-          ? (param.default as DataVar[])
-          : [];
-      out[param.key] = resolveVarsJson(raw, scope);
+      const raw = values[param.key] ?? param.default ?? [];
+      const vars = dataVarRows(raw);
+      out[param.key] = vars ? resolveVarsJson(vars, scope) : resolveParamJson(raw, scope);
     } else {
       out[param.key] = resolveParamJson(
         values[param.key] !== undefined ? values[param.key] : param.default,
@@ -200,11 +197,13 @@ function ResolvedVarsRow({
   value: unknown;
   scope: ResolveScope;
 }) {
-  const rows: DataVar[] = Array.isArray(value)
-    ? (value as DataVar[])
-    : Array.isArray(param.default)
-      ? (param.default as DataVar[])
-      : [];
+  const raw = value ?? param.default ?? [];
+  const rows = dataVarRows(raw);
+  if (rows === null) {
+    return (
+      <ResolvedParamRow label={param.label ?? param.key} segments={resolveParamValue(raw, scope)} />
+    );
+  }
   return (
     <div className="w6w-resolved-row">
       <span className="w6w-resolved-label">{param.label ?? param.key}</span>
