@@ -365,3 +365,50 @@ test("Metadata › config: no Node settings group; config is collapsed inside Me
   await click(cfgToggle);
   assert.equal(group.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
 });
+
+test("Metadata leaves from static meta: a webhook offers its subscription id and URL but no connection id; a non-upstream app node offers its connection id", async () => {
+  const { container } = await mountModal({
+    options: {
+      steps: [{ id: "eb_webhook" }],
+      nodeConfigs: [{ id: "find_webhook", keys: ["organizationId"] }],
+      nodeMeta: {
+        eb_webhook: {
+          app: "@w6w/webhook",
+          action: "webhook",
+          connectionId: null,
+          subscriptionId: "sub_1",
+          url: "https://h/triggers/webhooks/sub_1",
+        },
+        find_webhook: {
+          app: "io.w6w.eventbrite",
+          action: "list-webhooks",
+          connectionId: "conn_1",
+        },
+      },
+    },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const group = groupFor(container, "Workflow state") as HTMLElement;
+  const metas = Array.from(group.querySelectorAll('[data-testid="expr-meta-toggle"]'));
+  assert.equal(metas.length, 2, "the webhook (no config) still gets Metadata");
+  await click(metas[0]);
+  await click(metas[1]);
+  const lists = Array.from(group.querySelectorAll('[data-testid="expr-meta-fields"]'));
+  const labels = (el: Element) =>
+    Array.from(
+      el.querySelectorAll(
+        ":scope > * .w6w-exprmodal-source-label, :scope > .w6w-exprmodal-source .w6w-exprmodal-source-label",
+      ),
+    )
+      .map((l) => l.textContent)
+      .filter((t) => t !== "config ›");
+  assert.deepEqual(labels(lists[0]), ["Subscription ID", "Webhook URL"]);
+  assert.deepEqual(labels(lists[1]), ["App", "App version", "Action", "Connection ID"]);
+
+  const conn = Array.from(lists[1].querySelectorAll(".w6w-exprmodal-source")).find((b) =>
+    b.textContent?.includes("Connection ID"),
+  ) as Element;
+  await click(copyOf(conn));
+  const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
+  assert.equal(chip.getAttribute("data-ref"), "nodes.find_webhook.meta.connectionId");
+});

@@ -65,3 +65,48 @@ test("each node's config values: static `with` (no secret, no binding) + a webho
   assert.deepEqual(bare.webhook_1, { auth: "basic", methods: ["POST"] });
   assert.ok(!JSON.stringify(bare).includes("ciphertext"));
 });
+
+test("each node's static meta: app/action/connectionId from the definition + a webhook's subscription", async () => {
+  const { nodeMetaValues, nodeMetaSampleValues } = await import("../step-preview-state.ts");
+  const withConn = workflowToFlow({
+    nodes: [
+      { id: "webhook_1", uses: { app: WEBHOOK_APP, action: "webhook" } },
+      {
+        id: "list",
+        uses: { app: "io.w6w.eventbrite", action: "list-webhooks", connection: "conn_1" },
+      },
+    ],
+    edges: [],
+  } as unknown as FlowWorkflow);
+  const subs = [
+    {
+      id: "sub_hook",
+      appId: WEBHOOK_APP,
+      triggerKey: "webhook",
+      workflowId: "w",
+      connectionId: null,
+      webhookUrl: "https://h/triggers/webhooks/sub_hook",
+    },
+  ];
+  const meta = nodeMetaValues(withConn.nodes, subs);
+  assert.deepEqual(meta, {
+    // The generic webhook has no connection: `null`, never a borrowed one.
+    webhook_1: {
+      app: WEBHOOK_APP,
+      action: "webhook",
+      connectionId: null,
+      subscriptionId: "sub_hook",
+      url: "https://h/triggers/webhooks/sub_hook",
+    },
+    list: { app: "io.w6w.eventbrite", action: "list-webhooks", connectionId: "conn_1" },
+  });
+  const samples = nodeMetaSampleValues(meta);
+  assert.equal(samples["nodes.list.meta.connectionId"], "conn_1");
+  assert.equal(samples["steps.webhook_1.meta.subscriptionId"], "sub_hook");
+  // No subscription loaded: the definition's meta only.
+  assert.deepEqual(nodeMetaValues(withConn.nodes, []).webhook_1, {
+    app: WEBHOOK_APP,
+    action: "webhook",
+    connectionId: null,
+  });
+});

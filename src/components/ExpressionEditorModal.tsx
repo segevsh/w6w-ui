@@ -1,6 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { JsonEditor } from "../JsonEditor.tsx";
+import { isInternalApp } from "../flow-types.ts";
 import { buildResolveScope } from "../resolve-params.ts";
 import { resolveParamJson } from "../resolved-json.ts";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
@@ -270,6 +271,23 @@ export function ExpressionEditorModal({
       .map((n) => [n.id, n.keys.filter(isRefSafeKey)] as const)
       .filter(([, keys]) => keys.length > 0),
   );
+  // A node's Metadata leaves: the four app fields for an external app step (R-7), plus whichever
+  // other static meta its node carries (a webhook trigger's subscription id and URL) — never a
+  // key the node does not have, so a `@w6w/webhook` node offers no connection id.
+  const nodeMeta = options.nodeMeta ?? {};
+  const metaLeavesOf = (id: string, hasMeta: boolean) =>
+    META_LEAVES.filter(([key]) =>
+      APP_META_KEYS.has(key) ? hasMeta : Object.hasOwn(nodeMeta[id] ?? {}, key),
+    );
+  // A node that is not upstream has no `hasMeta`: an external app is read off its static meta.
+  const isExternalAppNode = (id: string) => {
+    const app = nodeMeta[id]?.app;
+    return typeof app === "string" && !isInternalApp(app);
+  };
+  const metaSources = (id: string, hasMeta: boolean) =>
+    metaLeavesOf(id, hasMeta).map(([key, label]) =>
+      source(label, { kind: "var", ref: `nodes.${id}.meta.${key}` }, "w6w-expr-chip-var", "·"),
+    );
   const stepIds = new Set(steps.map((st) => st.id));
   const configOnly = [...configKeys.keys()].filter((id) => !stepIds.has(id));
   const hasWorkflowState = steps.length > 0 || configOnly.length > 0 || !!options.hasTrigger;
@@ -569,8 +587,10 @@ export function ExpressionEditorModal({
                 )}
               {steps.map((st) => {
                 const cfg = configKeys.get(st.id) ?? [];
-                // Metadata shows for an external app step (R-7) or any node with config.
-                const showMeta = st.hasMeta === true || cfg.length > 0;
+                // Metadata shows for any node with a meta leaf (R-7, a webhook's subscription) or
+                // config.
+                const showMeta =
+                  metaLeavesOf(st.id, st.hasMeta === true).length > 0 || cfg.length > 0;
                 // Only keys that can become a ref the ENGINE resolves are
                 // offered. The guard lives here, at the one place a ref is
                 // built, so it holds for any host that supplies `steps` —
@@ -656,15 +676,7 @@ export function ExpressionEditorModal({
                                 "w6w-expr-chip-var",
                                 "·",
                               )}
-                              {st.hasMeta === true &&
-                                META_LEAVES.map(([key, label]) =>
-                                  source(
-                                    label,
-                                    { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
-                                    "w6w-expr-chip-var",
-                                    "·",
-                                  ),
-                                )}
+                              {metaSources(st.id, st.hasMeta === true)}
                               {configEntry(st.id, cfg)}
                             </div>
                           )}
@@ -728,9 +740,9 @@ export function ExpressionEditorModal({
                       </div>
                     )}
                     {/* External app steps (`st.hasMeta`, R-7): a fixed group of four
-                        LABELS — no value is ever shown, it exists only at run time —
-                        plus, for any node with settings, `config`. Independent of the
-                        fields caret and of `needsTest`. */}
+                        leaves, a webhook trigger's subscription leaves, plus, for any node
+                        with settings, `config`. Independent of the fields caret and of
+                        `needsTest`. */}
                     {showMeta && (
                       <>
                         {fields.length === 0 && (
@@ -740,15 +752,7 @@ export function ExpressionEditorModal({
                         )}
                         {expanded.has(`meta:${st.id}`) && (
                           <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
-                            {st.hasMeta === true &&
-                              META_LEAVES.map(([key, label]) =>
-                                source(
-                                  label,
-                                  { kind: "var", ref: `nodes.${st.id}.meta.${key}` },
-                                  "w6w-expr-chip-var",
-                                  "·",
-                                ),
-                              )}
+                            {metaSources(st.id, st.hasMeta === true)}
                             {configEntry(st.id, cfg)}
                           </div>
                         )}
@@ -769,6 +773,7 @@ export function ExpressionEditorModal({
                   </div>
                   {expanded.has(`meta:${id}`) && (
                     <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
+                      {metaSources(id, isExternalAppNode(id))}
                       {configEntry(id, configKeys.get(id) ?? [])}
                     </div>
                   )}
@@ -964,6 +969,7 @@ export function ExpressionEditorModal({
                             options.sampleValues,
                             sampleStepsState(options.sampleValues),
                             options.nodeConfig,
+                            options.nodeMeta,
                           ),
                         ),
                       ),
@@ -1210,7 +1216,11 @@ const META_LEAVES: [string, string][] = [
   ["version", "App version"],
   ["action", "Action"],
   ["connectionId", "Connection ID"],
+  ["subscriptionId", "Subscription ID"],
+  ["url", "Webhook URL"],
 ];
+/** The four leaves an external app step always offers (R-7); the rest only when known. */
+const APP_META_KEYS = new Set(["app", "version", "action", "connectionId"]);
 
 interface AddValueModalProps {
   kind: "var" | "secret";

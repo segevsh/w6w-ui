@@ -38,8 +38,9 @@ export type ResolvedSegment =
   | { status: "unresolved"; ref: string }
   /**
    * A `nodes.<id>.meta.config.<key>` (alias `nodes.<id>.config.<key>`) ref this client cannot
-   * know — a key no node configures here, or one the host fills only at run time. Neutral, not a
-   * failure: the engine resolves it on the run.
+   * know — a key no node configures here, or one the host fills only at run time — or a
+   * `nodes.<id>.meta.<key>` its static meta lacks (`version`). Neutral, not a failure: the engine
+   * resolves it on the run.
    */
   | { status: "at-run"; ref: string }
   | { status: "not-evaluated"; ref?: string }
@@ -97,6 +98,11 @@ export interface ResolveScope {
    * at `meta.config` and the `config` alias exactly as the engine's `withConfig` does.
    */
   config?: Record<string, Record<string, unknown>>;
+  /**
+   * Each node's static metadata ({@link ExpressionOptions.nodeMeta}), laid under the state's own
+   * `meta` (which wins key by key) exactly as the engine's `withConfig` does.
+   */
+  meta?: Record<string, Record<string, unknown>>;
 }
 
 const VAR_PREFIX = "var.";
@@ -131,6 +137,7 @@ export function buildResolveScope(
   sampleValues: Record<string, unknown> | undefined,
   testStartState: StepStartState | undefined,
   config?: Record<string, Record<string, unknown>>,
+  meta?: Record<string, Record<string, unknown>>,
 ): ResolveScope {
   const vars: Record<string, unknown> = {};
   const documents: Record<string, unknown> = {};
@@ -170,6 +177,7 @@ export function buildResolveScope(
     trigger: testStartState?.trigger ?? {},
     flat: sampleValues ?? {},
     ...(config ? { config } : {}),
+    ...(meta ? { meta } : {}),
   };
 }
 
@@ -198,19 +206,28 @@ function walkPath(
 
 /** `nodes.<id>.meta.config…` / `nodes.<id>.config…` (and the `steps.` spelling). */
 const CONFIG_REF = /^(?:nodes|steps)\.[^.]+\.(?:meta\.)?config(?:\.|$)/;
+/** `nodes.<id>.meta…` (and the `steps.` spelling), capturing the node id. */
+const META_REF = /^(?:nodes|steps)\.([^.]+)\.meta(?:\.|$)/;
 
 /**
- * A `nodes` map with each node's static config laid over its entry, at `meta.config` and at the
- * `config` alias — the engine's `withConfig` (`@w6w/workflow` `expr.ts`). A copy.
+ * A `nodes` map with each node's static meta and config laid over its entry — the static meta
+ * under the entry's own meta (which wins), the config at `meta.config` and at the `config` alias
+ * — the engine's `withConfig` (`@w6w/workflow` `expr.ts`). A copy.
  */
 function withConfig(
   nodes: ResolveScope["steps"],
   config: ResolveScope["config"],
+  meta?: ResolveScope["meta"],
 ): ResolveScope["steps"] {
-  if (!config) return nodes;
+  if (!config && !meta) return nodes;
   const out: Record<string, unknown> = { ...nodes };
-  for (const [id, c] of Object.entries(config)) {
-    out[id] = { ...nodes[id], meta: { ...nodes[id]?.meta, config: c }, config: c };
+  for (const id of new Set([...Object.keys(meta ?? {}), ...Object.keys(config ?? {})])) {
+    const c = config?.[id];
+    out[id] = {
+      ...nodes[id],
+      meta: { ...meta?.[id], ...nodes[id]?.meta, ...(c ? { config: c } : {}) },
+      ...(c ? { config: c } : {}),
+    };
   }
   return out as ResolveScope["steps"];
 }
@@ -232,8 +249,8 @@ function resolveRef(ref: string, scope: ResolveScope): ResolvedSegment {
   }
   // The engine's data root: `var`/`const` over the `vars`/`constants` fields, and
   // `nodes.<id>…`/`steps.<id>…` as two roots over one state object.
-  const { vars, constants, config, ...rest } = scope;
-  const nodes = withConfig(scope.nodes ?? scope.steps, config);
+  const { vars, constants, config, meta, ...rest } = scope;
+  const nodes = withConfig(scope.nodes ?? scope.steps, config, meta);
   const root: Record<string, unknown> = {
     ...rest,
     var: vars,
@@ -245,7 +262,11 @@ function resolveRef(ref: string, scope: ResolveScope): ResolvedSegment {
   if (walked.present) return { status: "resolved", ref, value: walked.value };
   // A node's config is read on every run whether or not the node runs, and the host adds keys
   // (a webhook's `url`) the client may not have: unknown here is "the run fills it", not a failure.
-  return CONFIG_REF.test(path) ? { status: "at-run", ref } : { status: "unresolved", ref };
+  if (CONFIG_REF.test(path)) return { status: "at-run", ref };
+  // …and a meta key a node's static meta lacks (`version`) is reported by its run.
+  const metaOf = META_REF.exec(path)?.[1];
+  if (metaOf !== undefined && meta?.[metaOf]) return { status: "at-run", ref };
+  return { status: "unresolved", ref };
 }
 
 /** Resolve one {@link ExprPart} of a multipart `ExprValue`. */

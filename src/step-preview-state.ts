@@ -683,13 +683,69 @@ export function nodeConfigValues(
   for (const n of nodes) {
     const step = n.data.step;
     const config = { ...((staticValue(step.with ?? {}) ?? {}) as Record<string, unknown>) };
-    if (step.uses.app === WEBHOOK_APP || step.uses.trigger === true) {
-      const sub =
-        subs.find((s) => s.nodeId === step.id) ??
-        (step.uses.app === WEBHOOK_APP ? subs.find((s) => s.appId === WEBHOOK_APP) : undefined);
-      if (sub?.webhookUrl) config.url = sub.webhookUrl;
-    }
+    const sub = subscriptionFor(step, subs);
+    if (sub?.webhookUrl) config.url = sub.webhookUrl;
     if (Object.keys(config).length > 0) out[step.id] = config;
+  }
+  return out;
+}
+
+/**
+ * A webhook trigger node's subscription, picked as the server's `hostNodeStatic` picks it: the
+ * one bound to the node, else for a `@w6w/webhook` node the workflow's newest webhook one.
+ */
+function subscriptionFor(
+  step: StepNode["data"]["step"],
+  subs: readonly SubscriptionSummary[],
+): SubscriptionSummary | undefined {
+  if (step.uses.app !== WEBHOOK_APP && step.uses.trigger !== true) return undefined;
+  return (
+    subs.find((s) => s.nodeId === step.id) ??
+    (step.uses.app === WEBHOOK_APP ? subs.find((s) => s.appId === WEBHOOK_APP) : undefined)
+  );
+}
+
+/**
+ * Each node's static metadata VALUES — the client's `nodeMetaOf`: `app`, `action` and
+ * `connectionId` (the node's own connection, else `null`) from the definition, plus a webhook
+ * trigger node's `subscriptionId` and `url` from its subscription ({@link subscriptionFor}).
+ * Readable at `nodes.<id>.meta.<key>` whether or not the node ran; `version` is reported only
+ * by a run, so it is never here. A node with no app is absent.
+ */
+export function nodeMetaValues(
+  nodes: StepNode[],
+  subs: readonly SubscriptionSummary[],
+): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const n of nodes) {
+    const step = n.data.step;
+    if (!step.uses.app) continue;
+    const meta: Record<string, unknown> = {
+      app: step.uses.app,
+      action: step.uses.action,
+      connectionId: step.uses.connection ?? null,
+    };
+    const sub = subscriptionFor(step, subs);
+    if (sub) meta.subscriptionId = sub.id;
+    if (sub?.webhookUrl) meta.url = sub.webhookUrl;
+    out[step.id] = meta;
+  }
+  return out;
+}
+
+/**
+ * {@link nodeMetaValues} as the flat `sampleValues` the Result preview reads, on the refs the
+ * picker inserts (`nodes.<id>.meta.<key>`, mirrored under `steps.`).
+ */
+export function nodeMetaSampleValues(
+  meta: Record<string, Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [id, m] of Object.entries(meta)) {
+    for (const [k, v] of Object.entries(m)) {
+      out[`nodes.${id}.meta.${k}`] = v;
+      out[`steps.${id}.meta.${k}`] = v;
+    }
   }
   return out;
 }
