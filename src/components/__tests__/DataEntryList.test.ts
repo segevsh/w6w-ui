@@ -118,3 +118,9 @@ test("no rows: loading text, else the empty text", () => {
   assert.match(mount({ loading: true }).textContent ?? "", /Loading/);
   assert.match(mount({ empty: "Nothing here" }).textContent ?? "", /Nothing here/);
 });
+
+test("an empty <p> from the caller is not nested in another <p> (invalid HTML, hydration error)", () => {
+  const c = mount({ empty: React.createElement("p", null, "Nothing here") });
+  assert.match(c.textContent ?? "", /Nothing here/);
+  assert.equal(c.querySelector("p p"), null);
+});

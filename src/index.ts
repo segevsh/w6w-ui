@@ -16,6 +16,15 @@ export type {
   W6WUIProviderProps,
 } from "./provider.tsx";
 
+export {
+  effectiveNodeOutput,
+  effectiveNodeOutputs,
+  indexNodeSamples,
+  previewNodeOutputs,
+  shapeToSkeleton,
+} from "./node-samples.ts";
+export type { NodeSample, NodeShape } from "./node-samples.ts";
+
 export { createW6WApi, ApiError } from "./createW6WApi.ts";
 export type { CreateW6WApiOptions } from "./createW6WApi.ts";
 

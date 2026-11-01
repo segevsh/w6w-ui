@@ -2,7 +2,7 @@
 //
 // T-0.1 — a trigger node renders as a half-pill. A structural gate pins the
 // mechanism's SHAPE inside the .tsx (the class + data attribute are driven by
-// `isTrigger`, on ControlNodeCard's card div only); that the shape actually
+// `isTrigger`, on ControlNodeCard's and StepNodeCard's card divs); that the shape actually
 // RENDERS is test/canvas-layer's job (real Chromium, computed border radius).
 // Mirrors the AST rig from WorkflowFlowEditor.error-port-wiring.test.ts.
 import assert from "node:assert/strict";
@@ -105,10 +105,11 @@ test('TS3 — the card div carries data-node-kind={isTrigger ? "trigger" : undef
   assertTriggerConditional(attrExpr(controlCard(), "data-node-kind"), "trigger", "data-node-kind");
 });
 
-test("TS4 — StepNodeCard (app steps) carries neither marker", () => {
-  const text = findFunction("StepNodeCard").getText(sf);
-  assert.doesNotMatch(text, /data-node-kind/);
-  assert.doesNotMatch(text, /w6w-node-trigger/);
+test("TS4 — StepNodeCard carries both markers only for an app trigger (uses.trigger)", () => {
+  const els = elementsWithAttr(findFunction("StepNodeCard"), "data-run-status");
+  assert.equal(els.length, 1, "exactly one data-run-status element in StepNodeCard");
+  assertTriggerConditional(attrExpr(els[0], "className"), "w6w-node-trigger", "className");
+  assertTriggerConditional(attrExpr(els[0], "data-node-kind"), "trigger", "data-node-kind");
 });
 
 test("TS5 — _flow.scss defines the half-pill rule under .w6w-flow", () => {

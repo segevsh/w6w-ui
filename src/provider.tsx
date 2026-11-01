@@ -11,6 +11,7 @@
  * this file's `W6WUIProviderProps.theme` doc and `docs/theming.md`.
  */
 import { type ReactNode, createContext, useContext } from "react";
+import type { NodeSample } from "./node-samples.ts";
 import { ProvidedThemeCtx } from "./theme.ts";
 import type {
   ActionDef,
@@ -480,6 +481,15 @@ export interface W6WApi {
    * `/workflows/:workflowId/steps/:stepId/tests`.
    */
   listStepTests(workflowId: string, stepId: string): Promise<StepTest[]>;
+
+  /**
+   * OPTIONAL. The workflow's persisted node samples — each node's last output shape (and value,
+   * when kept) from a step Test, a node run or a full run, written server-side on every one of
+   * them. The flow editor loads them once per workflow so upstream keys survive a reload
+   * (`node-samples.ts`); a host without it behaves exactly as before. GETs
+   * `/workflows/:workflowId/node-samples` → `{ nodeSamples }`.
+   */
+  loadNodeSamples?(workflowId: string): Promise<NodeSample[]>;
 
   /**
    * List the caller's registered Functions (core rfcs/function.md) — drives

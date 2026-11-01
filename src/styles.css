@@ -1678,22 +1678,6 @@ select optgroup {
   background: var(--w6w-panel);
 }
 
-/* The "N fields" toggle with the Metadata toggle stacked under it, so both
-   disclosures share one left edge on a step row. */
-.w6w-exprmodal-toggle-stack {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px; /* lint-tokens-allow: 3px sits between no two steps of the spacing scale; tight stack of the fields and Metadata toggles */
-}
-
-/* A step with no fields: its Metadata toggle sits at the leaf indentation of
-   `.w6w-exprmodal-subsources` (margin 9px + 1px border + sp-2 padding). */
-.w6w-exprmodal-meta-row {
-  margin-left: calc(10px + var(--w6w-sp-2)); /* lint-tokens-allow: 9px margin + 1px border of .w6w-exprmodal-subsources */
-}
-
 /* Same 20px-high chrome as `.w6w-exprmodal-render-btn` above — the sizing
    precedent for a dense rail control — but a separate class: this toggles
    the `.w6w-exprmodal-subsources` block below it, the render-btn inserts a
@@ -6358,6 +6342,19 @@ button.w6w-rel-open:focus-visible strong {
 .w6w-data-entries-toolbar input[type=search] {
   flex: 1;
   max-width: 20rem;
+  /* Same box as `.w6w-field` inputs — no host page styles a bare search input. */
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  font-family: inherit;
+}
+
+.w6w-data-entries-toolbar input[type=search]:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
 }
 
 /* The wide-table pane: the sheet scrolls INSIDE this box, so a 24-column
