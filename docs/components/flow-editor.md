@@ -295,11 +295,15 @@ app steps and triggers, not on control nodes such as If or For each. The five mo
 - **Merge at root**: the output's fields merge into the top of the tree (`{ mode: "root" }`).
 - **Under a key**: the whole output is stored at one key (`{ mode: "key", key }`). A dotted key
   such as `order.id` nests.
-- **Pick fields**: one row per field, from an output field (blank for the whole output) to a state
-  path (`{ mode: "pick", map: [{ from, to }] }`). The rows write in order, and the output field box
-  suggests the node's own output fields.
+- **Pick fields**: one row per field, read left to right as **From this step output** → **To state
+  key**, so each row copies `output.<path>` into `state.<key>`
+  (`{ mode: "pick", map: [{ from, to }] }`). Leave the left side blank for the whole output. The rows
+  write in order. The left box lists the node's own output fields (its declared output, its last
+  test or a saved sample) and still takes any path you type. Rows use the same inputs, trash button
+  and **+ Add** button as the Set data fields.
 - **Append**: adds the output, or one output field, to the end of a list at a state path
-  (`{ mode: "append", path, from? }`). Leave the field blank to append the whole output.
+  (`{ mode: "append", path, from? }`). It shows one **From this step output** → **Append to state
+  list** row. Leave the left side blank to append the whole output.
 
 A **Set data** node merges at the root when it has no `state`, so for it **Merge at root** is the
 absence of the key and **Off** is written as `{ mode: "off" }`. A value of `null` deletes its key

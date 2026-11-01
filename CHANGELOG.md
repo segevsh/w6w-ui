@@ -9,6 +9,11 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- **Write to state** says which side is which. **Pick fields** and **Append** rows carry the column
+  headers **From this step output** → **To state key** (or **Append to state list**), an arrow and a
+  hint (`Copies output.<path> into state.<key>`), and use the Set data row style: the same inputs,
+  a trash `DeleteButton` and **+ Add field**. The left box is a free-text `Combobox` listing the
+  step's output fields. **Under a key** is labelled **To state key**. The stored `state` is unchanged.
 - `ExpressionEditorModal` json-binding mode takes `startingState` for a workflow's starting state
   (`Workflow.initialState`, evaluated once at run start): no Previous steps, State or Secrets in the
   rail, Documents shown, an **Insert as Reference / Value** toggle (a value copies the source's
