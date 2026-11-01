@@ -998,9 +998,10 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         default: "javascript",
         options: [
           { value: "javascript", label: "JavaScript" },
+          { value: "typescript", label: "TypeScript" },
           { value: "python", label: "Python" },
         ],
-        hint: "Execution language for this step's code. Python runs CPython-on-WASM with no network.",
+        hint: "Execution language for this step's code. TypeScript types are erased before it runs, not checked. Python runs CPython-on-WASM with no network.",
       },
       {
         key: "code",
@@ -1009,7 +1010,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         required: true,
         scriptReads: true,
         default: "// Runs as a function body. Return the step's output.\nreturn input;",
-        hint: "Return the step's output. Read data from state, vars and consts; {{ }} isn't substituted in code.",
+        hint: "Return the step's output. Read data from state, vars and consts; {{ }} isn't substituted in code. digest(value) returns a stable SHA-256 hex (await it in JavaScript or TypeScript).",
       },
       {
         // Empty, the script's `input` is the run `state`, so most scripts never open this.
