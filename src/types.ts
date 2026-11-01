@@ -51,6 +51,10 @@ export interface TriggerSummary {
   minIntervalMs?: number;
   /** The trigger's declared parameters (the route returns the full declaration). */
   params?: readonly unknown[];
+  /** The event's declared fields (an `OutputField[]`) — keys for `trigger.event.<key>`. */
+  output?: unknown;
+  /** A representative event payload the app declares (never fabricated). */
+  sample?: unknown;
 }
 
 /** A Subscription (rfcs/trigger.md) as returned by the console subscription routes. */
