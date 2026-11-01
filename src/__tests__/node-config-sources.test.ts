@@ -110,3 +110,38 @@ test("each node's static meta: app/action/connectionId from the definition + a w
     connectionId: null,
   });
 });
+
+test("static meta.version is the version the canvas labels the node with; unknown stays at-run", async () => {
+  const { nodeMetaValues, nodeMetaSampleValues } = await import("../step-preview-state.ts");
+  const { buildResolveScope, resolveParamValue } = await import("../resolve-params.ts");
+  const flow = workflowToFlow({
+    nodes: [
+      { id: "find", uses: { app: "io.w6w.eventbrite", action: "find_webhook" } },
+      { id: "other", uses: { app: "io.w6w.unknown", action: "x" } },
+    ],
+    edges: [],
+  } as unknown as FlowWorkflow);
+  // The same `apps` summary the canvas renders `find - v0.4.3` from.
+  const apps = new Map([["io.w6w.eventbrite", { version: "0.4.3" }]]);
+  const meta = nodeMetaValues(flow.nodes, [], apps);
+  assert.equal(meta.find?.version, "0.4.3");
+  assert.ok(!Object.hasOwn(meta.other ?? {}, "version"));
+  assert.equal(nodeMetaSampleValues(meta)["nodes.find.meta.version"], "0.4.3");
+  const scope = buildResolveScope(undefined, undefined, undefined, meta);
+  const seg = (r: string, sc = scope) => resolveParamValue({ $: r }, sc)[0];
+  assert.deepEqual(seg("nodes.find.meta.version"), {
+    status: "resolved",
+    ref: "nodes.find.meta.version",
+    value: "0.4.3",
+  });
+  // The canvas has no version for this app: the preview falls back to "resolved at run".
+  assert.equal(seg("nodes.other.meta.version")?.status, "at-run");
+  // A run's reported meta overrides the static one.
+  const run = { steps: { find: { meta: { version: "0.4.4" } } } } as never;
+  const ran = buildResolveScope(undefined, run, undefined, meta);
+  assert.deepEqual(seg("nodes.find.meta.version", ran), {
+    status: "resolved",
+    ref: "nodes.find.meta.version",
+    value: "0.4.4",
+  });
+});

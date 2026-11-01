@@ -39,7 +39,7 @@ export type ResolvedSegment =
   /**
    * A `nodes.<id>.meta.config.<key>` (alias `nodes.<id>.config.<key>`) ref this client cannot
    * know — a key no node configures here, or one the host fills only at run time — or a
-   * `nodes.<id>.meta.<key>` its static meta lacks (`version`). Neutral, not a failure: the engine
+   * `nodes.<id>.meta.<key>` its static meta lacks (a `version` the canvas does not know). Neutral, not a failure: the engine
    * resolves it on the run.
    */
   | { status: "at-run"; ref: string }
@@ -263,7 +263,7 @@ function resolveRef(ref: string, scope: ResolveScope): ResolvedSegment {
   // A node's config is read on every run whether or not the node runs, and the host adds keys
   // (a webhook's `url`) the client may not have: unknown here is "the run fills it", not a failure.
   if (CONFIG_REF.test(path)) return { status: "at-run", ref };
-  // …and a meta key a node's static meta lacks (`version`) is reported by its run.
+  // …and a meta key a node's static meta lacks (an unknown `version`) is reported by its run.
   const metaOf = META_REF.exec(path)?.[1];
   if (metaOf !== undefined && meta?.[metaOf]) return { status: "at-run", ref };
   return { status: "unresolved", ref };

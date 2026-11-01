@@ -98,7 +98,7 @@ export interface ExpressionStepSource {
    * `true` for an EXTERNAL app-action step only (R-7): the picker then offers a fixed
    * Metadata group (`nodes.<id>.meta.app|version|action|connectionId`). **Omitted, not
    * `false`**, for triggers and every `@w6w/*` node. Carries no metadata VALUE: the static
-   * values come from {@link ExpressionOptions.nodeMeta}; `version` exists only at run time.
+   * values come from {@link ExpressionOptions.nodeMeta}.
    */
   hasMeta?: boolean;
 }
@@ -205,7 +205,8 @@ export interface ExpressionOptions {
   /**
    * Each node's static metadata VALUES, keyed by node id — what a run reads at
    * `nodes.<id>.meta.<key>` whether or not the node ran (`nodeMetaOf`): `app`, `action`,
-   * `connectionId`, and a webhook trigger's `subscriptionId` / `url`. Offered as Metadata leaves
+   * `connectionId`, the `version` the canvas labels it with, and a webhook trigger's
+   * `subscriptionId` / `url`. Offered as Metadata leaves
    * in the picker and resolved by the previews. Workflow context only.
    */
   nodeMeta?: Record<string, Record<string, unknown>>;
