@@ -41,8 +41,11 @@ test("the If card renders no error handle and no error styling on False", () => 
   const card = source.slice(start, source.indexOf("\nfunction ", start + 1));
   assert.ok(start > 0, "ControlNodeCard not found");
   assert.match(card, /isIf \? ifPortLayout\(\)/);
-  // The error port is gated off for an If …
-  assert.match(card, /!isTrigger && !isRouter && !isIf && \(\s*<PortHandle[\s\S]*?variant="error"/);
+  // The error port is gated off for an If (other node kinds may join the same gate) …
+  assert.match(
+    card,
+    /!isTrigger && !isRouter && !isIf &&[^(]*\(\s*<PortHandle[\s\S]*?variant="error"/,
+  );
   // … and the bottom (False) handle is an ordinary port, labelled beside itself.
   const bottom = card.slice(card.indexOf("{routerPorts.bottom && ("));
   const bottomHandle = bottom.slice(0, bottom.indexOf("/>"));
