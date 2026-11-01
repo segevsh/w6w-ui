@@ -5064,8 +5064,40 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   flex-wrap: wrap;
 }
 
-.w6w-execution-log-row-label {
+/* Label over "App · Action": takes the row's free width, so the timing stays right-aligned. */
+.w6w-execution-log-row-title {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
+  min-width: 0;
+  gap: var(--w6w-sp-0-5);
+}
+
+.w6w-execution-log-row-uses {
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Trigger" / "Node": a small outlined tag before the label; a trigger takes the accent. */
+.w6w-execution-log-kind {
+  flex: 0 0 auto;
+  padding: 0 var(--w6w-sp-1-5);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+  line-height: var(--w6w-lh-tight);
+}
+
+.w6w-execution-log-kind-trigger {
+  border-color: var(--w6w-accent);
+  color: var(--w6w-accent);
+}
+
+.w6w-execution-log-row-label {
   min-width: 0;
   font-weight: var(--w6w-fw-medium);
   overflow: hidden;
@@ -5508,6 +5540,45 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   background: color-mix(in srgb, var(--w6w-danger) 10%, transparent);
   color: var(--w6w-danger);
   font-size: var(--w6w-fs-sm);
+}
+
+/* "Re-run": marks an execution started by History's Re-run — on its list row
+   (after the title) and on its detail ("Re-run of <id>"). */
+.w6w-execution-rerun-tag {
+  display: inline-block;
+  margin-left: var(--w6w-sp-2);
+  padding: 0 var(--w6w-sp-1-5);
+  border: 1px solid var(--w6w-accent);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-accent);
+  font-size: var(--w6w-fs-xs);
+  line-height: var(--w6w-lh-tight);
+  vertical-align: middle;
+}
+
+.w6w-execution-detail-rerun-of {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1-5);
+  margin: 0;
+}
+
+.w6w-execution-detail-rerun-of .w6w-execution-rerun-tag {
+  margin-left: 0;
+}
+
+.w6w-execution-detail-rerun-of code {
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-sm);
+}
+
+.w6w-execution-detail-rerun-of-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--w6w-accent);
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 /*

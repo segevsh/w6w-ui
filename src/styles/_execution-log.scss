@@ -128,8 +128,40 @@
   flex-wrap: wrap;
 }
 
-.w6w-execution-log-row-label {
+/* Label over "App · Action": takes the row's free width, so the timing stays right-aligned. */
+.w6w-execution-log-row-title {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
+  min-width: 0;
+  gap: var(--w6w-sp-0-5);
+}
+
+.w6w-execution-log-row-uses {
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Trigger" / "Node": a small outlined tag before the label; a trigger takes the accent. */
+.w6w-execution-log-kind {
+  flex: 0 0 auto;
+  padding: 0 var(--w6w-sp-1-5);
+  border: 1px solid var(--w6w-border);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-muted);
+  font-size: var(--w6w-fs-xs);
+  line-height: var(--w6w-lh-tight);
+}
+
+.w6w-execution-log-kind-trigger {
+  border-color: var(--w6w-accent);
+  color: var(--w6w-accent);
+}
+
+.w6w-execution-log-row-label {
   min-width: 0;
   font-weight: var(--w6w-fw-medium);
   overflow: hidden;

@@ -43,6 +43,9 @@ export interface ExecutionDetailValue {
   /** A workflow run's steps. `undefined` = not a step-bearing run (no section);
    * `[]` = it ran and no step did (the panel's own empty state). */
   steps?: ExecutionLogStep[];
+  /** The execution this one is a re-run of — shown as "Re-run of <id>".
+   * `null`/omitted ⇒ an ordinary execution, no line. */
+  rerunOf?: string | null;
 }
 
 export interface ExecutionDetailProps {
@@ -72,6 +75,9 @@ export interface ExecutionDetailProps {
   /** `true` while the host's re-run is in flight — the button is disabled and
    * says so. */
   rerunning?: boolean;
+  /** Supplied ⇒ the "Re-run of <id>" id is a link that calls this with that
+   * id, to open the original. Omitted ⇒ plain text. */
+  onOpenExecution?: (id: string) => void;
 }
 
 const KIND_LABEL: Record<ExecutionKind, string> = {
@@ -107,6 +113,7 @@ export function ExecutionDetail({
   onBack,
   onRerun,
   rerunning = false,
+  onOpenExecution,
 }: ExecutionDetailProps) {
   return (
     <section className="w6w-execution-detail w6w-stack" data-testid="execution-detail">
@@ -138,6 +145,7 @@ export function ExecutionDetail({
           onOpenInEditor={onOpenInEditor}
           onRerun={onRerun}
           rerunning={rerunning}
+          onOpenExecution={onOpenExecution}
         />
       ) : loading ? (
         <p className="w6w-muted" data-testid="execution-detail-loading">
@@ -158,13 +166,16 @@ function Body({
   onOpenInEditor,
   onRerun,
   rerunning,
+  onOpenExecution,
 }: {
   execution: ExecutionDetailValue;
   onClose?: () => void;
   onOpenInEditor?: () => void;
   onRerun?: () => void;
   rerunning: boolean;
+  onOpenExecution?: (id: string) => void;
 }) {
+  const rerunOf = execution.rerunOf;
   return (
     <>
       <div className="w6w-execution-detail-head">
@@ -215,6 +226,25 @@ function Body({
           {execution.id}
         </code>
       </p>
+
+      {rerunOf && (
+        <p className="w6w-execution-detail-rerun-of" data-testid="execution-detail-rerun-of">
+          <span className="w6w-execution-rerun-tag">Re-run</span>
+          <span className="w6w-muted w6w-small">of</span>
+          {onOpenExecution ? (
+            <button
+              type="button"
+              className="w6w-execution-detail-rerun-of-link"
+              data-testid="execution-detail-rerun-of-link"
+              onClick={() => onOpenExecution(rerunOf)}
+            >
+              <code>{rerunOf}</code>
+            </button>
+          ) : (
+            <code>{rerunOf}</code>
+          )}
+        </p>
+      )}
 
       <dl className="w6w-execution-detail-timing">
         <TimingItem label="Started" value={formatExecutionTime(execution.startedAt)} />

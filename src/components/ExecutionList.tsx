@@ -25,6 +25,9 @@ export interface ExecutionListItem {
   /** Wall-clock duration once the run has finished; `null` while it is still
    * queued/running (rendered as `—`). */
   durationMs: number | null;
+  /** The execution this one is a re-run of — the row then carries a "Re-run"
+   * tag. `null`/omitted ⇒ an ordinary execution. */
+  rerunOf?: string | null;
 }
 
 export interface ExecutionListProps {
@@ -133,7 +136,20 @@ export function ExecutionList({
           <li key={item.id} data-testid="execution-row" data-execution-id={item.id}>
             <ListItem
               icon={<StepStatusPill state={item.status} />}
-              title={showCallable ? item.callableName : formatExecutionTime(item.startedAt)}
+              title={
+                <>
+                  {showCallable ? item.callableName : formatExecutionTime(item.startedAt)}
+                  {item.rerunOf && (
+                    <span
+                      className="w6w-execution-rerun-tag"
+                      data-testid="execution-row-rerun-tag"
+                      title={`Re-run of ${item.rerunOf}`}
+                    >
+                      Re-run
+                    </span>
+                  )}
+                </>
+              }
               subtitle={
                 showCallable
                   ? `${KIND_LABEL[item.kind]} · ${formatExecutionTime(item.startedAt)}`

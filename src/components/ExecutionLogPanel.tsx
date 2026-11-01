@@ -2,10 +2,34 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { CodeBlock } from "../CodeBlock.tsx";
 import { conditionOperatorLabel } from "../condition-editor.ts";
+import { internalNodeDef } from "../flow-types.ts";
 import type { StepMeta } from "../provider.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { StepStatusPill } from "./StepStatusPill.tsx";
 import type { SkipReason, StepStatus } from "./StepStatusPill.tsx";
+
+/** What a step is: the app and action it uses, and whether it is a trigger (`uses.trigger`). */
+export interface ExecutionLogNode {
+  app: string;
+  action: string;
+  trigger?: boolean;
+  appName?: string;
+  actionName?: string;
+}
+
+/** A node's kind and display names, a built-in `@w6w/*` node resolved from its own definition. */
+function describeNode(node: ExecutionLogNode): {
+  trigger: boolean;
+  appName: string;
+  actionName: string;
+} {
+  const builtin = internalNodeDef(node.app, node.action);
+  return {
+    trigger: node.trigger === true || builtin?.group === "trigger",
+    appName: node.appName ?? builtin?.displayName ?? node.app,
+    actionName: node.actionName ?? builtin?.label ?? node.action,
+  };
+}
 
 /**
  * A step's or run's failure, already normalised by the HOST from the workflow
@@ -70,6 +94,14 @@ export interface ExecutionLogStep {
    * Metadata block after Output. Absent or `null` ⇒ no block at all (R-12: no filler).
    */
   meta?: StepMeta | null;
+  /**
+   * What this step IS, from the workflow definition — shown on the row itself so a run reads as
+   * "Trigger · Cohost · Order Placed" rather than a bare node id. `appName`/`actionName` are the
+   * host's display names for a registered app; a built-in `@w6w/*` node is named here from its
+   * own definition, and anything unnamed falls back to the raw id. Absent ⇒ the row shows its
+   * label alone, as before.
+   */
+  node?: ExecutionLogNode;
   /**
    * Why the step failed (`StepExecution.error`, "present on failed"). Rendered
    * below the row's box and outside its lazy `<details>` body, so the reason
@@ -247,10 +279,28 @@ function ExecutionLogOffPath({ steps }: { steps: ExecutionLogStep[] }) {
  */
 function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
   const [open, setOpen] = useState(false);
+  const node = step.node ? describeNode(step.node) : null;
   const header = (
     <div className="w6w-execution-log-row-header">
       <StepStatusPill state={step.status} />
-      <span className="w6w-execution-log-row-label">{step.label ?? step.id}</span>
+      {node && (
+        <span
+          className={`w6w-execution-log-kind${node.trigger ? " w6w-execution-log-kind-trigger" : ""}`}
+          data-testid="execution-log-kind"
+        >
+          {node.trigger ? "Trigger" : "Node"}
+        </span>
+      )}
+      <span className="w6w-execution-log-row-title">
+        <span className="w6w-execution-log-row-label">{step.label ?? step.id}</span>
+        {node && (
+          <span className="w6w-execution-log-row-uses" data-testid="execution-log-uses">
+            {node.appName === node.actionName
+              ? node.appName
+              : `${node.appName} · ${node.actionName}`}
+          </span>
+        )}
+      </span>
       {step.status === "skipped" && step.skipReason && step.skipReason !== "not_on_path" && (
         <span className="w6w-execution-log-skip-reason" data-testid="execution-log-skip-reason">
           {SKIP_REASON_LABELS[step.skipReason]}

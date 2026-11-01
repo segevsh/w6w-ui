@@ -308,3 +308,42 @@
   color: var(--w6w-danger);
   font-size: var(--w6w-fs-sm);
 }
+
+/* "Re-run": marks an execution started by History's Re-run — on its list row
+   (after the title) and on its detail ("Re-run of <id>"). */
+.w6w-execution-rerun-tag {
+  display: inline-block;
+  margin-left: var(--w6w-sp-2);
+  padding: 0 var(--w6w-sp-1-5);
+  border: 1px solid var(--w6w-accent);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-accent);
+  font-size: var(--w6w-fs-xs);
+  line-height: var(--w6w-lh-tight);
+  vertical-align: middle;
+}
+
+.w6w-execution-detail-rerun-of {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1-5);
+  margin: 0;
+}
+
+.w6w-execution-detail-rerun-of .w6w-execution-rerun-tag {
+  margin-left: 0;
+}
+
+.w6w-execution-detail-rerun-of code {
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-sm);
+}
+
+.w6w-execution-detail-rerun-of-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--w6w-accent);
+  cursor: pointer;
+  text-decoration: underline;
+}

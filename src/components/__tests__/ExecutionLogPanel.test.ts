@@ -168,6 +168,47 @@ const RUN_LONGER: ExecutionLogStep = {
 };
 const RUN_SHORTER: ExecutionLogStep = { id: "a-step", label: "A step", status: "failed" };
 
+test("node — each row names its kind and its app · action; a built-in node is named from its own definition", async () => {
+  const steps: ExecutionLogStep[] = [
+    {
+      id: "order_placed_1",
+      status: "succeeded",
+      node: {
+        app: "vip.cohost.w6w",
+        action: "order-placed",
+        trigger: true,
+        appName: "Cohost",
+        actionName: "Order Placed",
+      },
+    },
+    { id: "render_body", status: "succeeded", node: { app: "@w6w/template", action: "render" } },
+    { id: "manual_trigger_1", status: "skipped", node: { app: "@w6w/trigger", action: "manual" } },
+    { id: "mail_send_1", status: "failed", node: { app: "io.w6w.sendgrid", action: "mail-send" } },
+    { id: "plain", status: "succeeded" },
+  ];
+  const { container, root } = await mountPanel({ steps });
+  try {
+    const rows = [...container.querySelectorAll(".w6w-execution-log-row")];
+    const kind = (r: Element) => r.querySelector('[data-testid="execution-log-kind"]')?.textContent;
+    const uses = (r: Element) => r.querySelector('[data-testid="execution-log-uses"]')?.textContent;
+    assert.deepEqual(rows.map(kind), ["Trigger", "Node", "Trigger", "Node", undefined]);
+    assert.deepEqual(rows.map(uses), [
+      "Cohost · Order Placed",
+      "Template · Render template",
+      // A built-in trigger is a trigger even with no `trigger` flag on its `uses`.
+      // …and a name its app and action share is said once.
+      "Manual trigger",
+      // No display names from the host ⇒ the raw ids, never an empty line.
+      "io.w6w.sendgrid · mail-send",
+      undefined,
+    ]);
+    assert.ok(rows[0]?.querySelector(".w6w-execution-log-kind-trigger"));
+    assert.equal(rows[1]?.querySelector(".w6w-execution-log-kind-trigger"), null);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 test("A2 — empty list renders without throwing, and shows an empty state, not a broken frame", async () => {
   const html = await renderPanel({ steps: [] });
   assert.match(html, /No nodes have run yet\./);

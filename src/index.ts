@@ -192,6 +192,7 @@ export { ExecutionLogPanel } from "./components/ExecutionLogPanel.tsx";
 export type {
   ExecutionLogError,
   ExecutionLogIteration,
+  ExecutionLogNode,
   ExecutionLogPanelProps,
   ExecutionLogRecordedError,
   ExecutionLogStep,
