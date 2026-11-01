@@ -333,7 +333,12 @@ test("Metadata › config: no Node settings group; config is collapsed inside Me
   const group = groupFor(container, "Workflow state") as HTMLElement;
   assert.ok(group);
   assert.ok(!group.textContent?.includes("webhook_1"), "the unconnected webhook is not state");
-  assert.equal(group.querySelectorAll('[data-testid="expr-meta-toggle"]').length, 1);
+  assert.equal(
+    group.querySelectorAll('[data-testid="expr-meta-toggle"]').length,
+    0,
+    "no chip in state",
+  );
+  assert.equal(group.querySelectorAll('[data-testid="expr-config-toggle"]').length, 0);
 
   const meta = groupFor(container, "Metadata") as HTMLElement;
   assert.deepEqual(
@@ -401,22 +406,27 @@ test("Metadata leaves from static meta: a webhook offers its subscription id and
       .map((l) => l.textContent)
       .filter((t) => t !== "config ›");
   const group = groupFor(container, "Workflow state") as HTMLElement;
-  const metas = Array.from(group.querySelectorAll('[data-testid="expr-meta-toggle"]'));
-  assert.equal(
-    metas.length,
-    1,
-    "the webhook (no config) still gets Metadata; find_webhook is off-path",
-  );
-  await click(metas[0]);
-  const list = group.querySelector('[data-testid="expr-meta-fields"]') as Element;
-  assert.deepEqual(labels(list), ["Subscription ID", "Webhook URL"]);
+  assert.equal(group.querySelectorAll('[data-testid="expr-meta-toggle"]').length, 0);
 
   const meta = groupFor(container, "Metadata") as HTMLElement;
   await click(meta.querySelector('[data-testid="expr-section-toggle"]') as Element);
-  const find = Array.from(meta.querySelectorAll('[data-testid="expr-metadata-node"]')).find((r) =>
-    r.textContent?.includes("find_webhook"),
-  ) as Element;
-  await click(find.querySelector('[data-testid="expr-metadata-node-toggle"]') as Element);
+  const nodeRow = (id: string) =>
+    Array.from(meta.querySelectorAll('[data-testid="expr-metadata-node"]')).find((r) =>
+      r.textContent?.includes(id),
+    ) as Element;
+  // The webhook (no config) still gets its Metadata, here and only here.
+  await click(
+    nodeRow("eb_webhook").querySelector('[data-testid="expr-metadata-node-toggle"]') as Element,
+  );
+  const list = meta.querySelector('[data-testid="expr-metadata-fields"]') as Element;
+  assert.deepEqual(labels(list), ["Subscription ID", "Webhook URL"]);
+  await click(
+    nodeRow("eb_webhook").querySelector('[data-testid="expr-metadata-node-toggle"]') as Element,
+  );
+
+  await click(
+    nodeRow("find_webhook").querySelector('[data-testid="expr-metadata-node-toggle"]') as Element,
+  );
   const findList = meta.querySelector('[data-testid="expr-metadata-fields"]') as Element;
   assert.deepEqual(labels(findList), ["App", "App version", "Action", "Connection ID"]);
 
