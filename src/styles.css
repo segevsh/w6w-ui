@@ -6500,6 +6500,41 @@ button.w6w-rel-open:focus-visible strong {
   border-color: var(--w6w-accent);
 }
 
+/* Entries open a viewer. Keep the list quiet and bounded, even for long keys or JSON. */
+.w6w-data-entry-list {
+  table-layout: fixed;
+}
+
+.w6w-data-entry-key,
+.w6w-data-entry-preview {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.w6w-data-entry-key {
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.w6w-data-entry-key:focus-visible {
+  outline: 2px solid var(--w6w-accent);
+  outline-offset: 2px;
+}
+
+.w6w-data-entry-delete {
+  margin-inline-end: auto;
+}
+
 /* The wide-table pane: the sheet scrolls INSIDE this box, so a 24-column
    table never widens its container and the page itself never overflows. */
 .w6w-data-grid-scroll {

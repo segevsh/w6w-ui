@@ -38,7 +38,6 @@ function mount(props: Record<string, unknown>) {
       React.createElement(DataEntryList, {
         rows: [],
         onOpen: noop,
-        onDelete: noop,
         onSearch: noop,
         onNew: noop,
         onLoadMore: noop,
@@ -68,24 +67,24 @@ const rows = [
   { key: "beta", version: 5, preview: "second" },
 ];
 
-test("rows render key, v<n>, preview; key opens and Delete deletes with that key", () => {
+test("rows show key and preview; clicking the key or row opens once, with no delete action", () => {
   const opened: string[] = [];
-  const deleted: string[] = [];
   const c = mount({
     rows,
     onOpen: (k: string) => opened.push(k),
-    onDelete: (k: string) => deleted.push(k),
   });
   const keys = c.querySelectorAll('[data-testid="entry-key"]');
   assert.equal(keys.length, 2);
-  assert.equal(c.querySelectorAll('[data-testid="entry-version"]')[1].textContent, "v5");
+  assert.deepEqual(
+    [...c.querySelectorAll("th")].map((el) => el.textContent),
+    ["Key", "Value"],
+  );
   assert.match(c.textContent ?? "", /second/);
   click(keys[1]);
   assert.deepEqual(opened, ["beta"], "open fires with key");
-  const dels = c.querySelectorAll('button[aria-label="Delete entry"]');
-  assert.equal(dels.length, 2);
-  click(dels[0]);
-  assert.deepEqual(deleted, ["alpha"], "delete fires with key");
+  click(c.querySelectorAll("tbody tr")[0].lastElementChild as Element);
+  assert.deepEqual(opened, ["beta", "alpha"]);
+  assert.equal(c.querySelectorAll('button[aria-label="Delete entry"]').length, 0);
 });
 
 test("search fires only on submit, with the text; no search per keystroke", () => {

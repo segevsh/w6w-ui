@@ -12,7 +12,6 @@ const meta: Meta<typeof DataEntryList> = {
       { key: "settings", version: 3, preview: '{"theme":"dark"}' },
     ],
     onOpen: noop,
-    onDelete: noop,
     onSearch: noop,
     onNew: noop,
     onLoadMore: noop,

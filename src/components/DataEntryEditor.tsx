@@ -1,17 +1,19 @@
+import { useEffect, useRef, useState } from "react";
 import { JsonEditor } from "../JsonEditor.tsx";
 import { VERSION_CONFLICT_COPY, parseDocText } from "../data-stores/data-store-view.ts";
+import { DeleteButton } from "./DeleteButton.tsx";
 import { Modal } from "./Modal.tsx";
 
 export interface DataEntryEditorProps {
   /** `kv` edits one input; `doc` edits JSON in a {@link JsonEditor}. */
   kind: "kv" | "doc";
-  /** True for a not-yet-created entry: shows the key input instead of the version line. */
+  /** True for a not-yet-created entry: opens directly in edit mode with a key input. */
   isNew: boolean;
   /** The entry's key (existing mode heading). */
   entryKey?: string;
   /** The new entry's key (controlled). */
   newKey?: string;
-  /** Existing mode: the version loaded. */
+  /** Concurrency token supplied by the host; never presented as document history. */
   version?: number | null;
   /** Existing mode: ISO expiry, shown when set. */
   expiresAt?: string | null;
@@ -27,6 +29,8 @@ export interface DataEntryEditorProps {
   onTextChange: (text: string) => void;
   /** Fired per edit of the new-entry key, with the new text. */
   onKeyChange: (key: string) => void;
+  /** Opens the host's delete confirmation for an existing entry. */
+  onDelete?: () => void;
   onSave: () => void;
   onCancel: () => void;
   /** Fired by the conflict prompt's Reload. */
@@ -34,16 +38,15 @@ export interface DataEntryEditorProps {
 }
 
 /**
- * A document opens in a modal; a key/value entry stays inline. Drafts, `ifVersion` and the
- * save mutation live in the host. Document validity is derived from the controlled text so
- * initial values, edits and reloads all gate Save alike.
+ * Existing entries open for viewing, then Edit enables changes inside the same modal.
+ * New entries start in edit mode. Drafts, `ifVersion` and mutations live in the host.
+ * Document validity is derived from the controlled text, including initial values and reloads.
  */
 export function DataEntryEditor({
   kind,
   isNew,
   entryKey,
   newKey,
-  version,
   expiresAt,
   text,
   error,
@@ -51,10 +54,17 @@ export function DataEntryEditor({
   saving,
   onTextChange,
   onKeyChange,
+  onDelete,
   onSave,
   onCancel,
   onReload,
 }: DataEntryEditorProps) {
+  const [editing, setEditing] = useState(isNew);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!isNew) closeButton.current?.focus();
+  }, [isNew]);
+  const noun = kind === "doc" ? "document" : "entry";
   const parsedDocument = kind === "doc" ? parseDocText(text) : undefined;
   const invalidDocument = parsedDocument !== undefined && !parsedDocument.ok;
   const valueError =
@@ -72,16 +82,14 @@ export function DataEntryEditor({
             onChange={(e) => onKeyChange(e.target.value)}
           />
         </label>
-      ) : (
-        <p className="w6w-muted w6w-small">
-          {version != null && <span>v{version}</span>}
-          {expiresAt && <span> · Expires {expiresAt}</span>}
-        </p>
-      )}
+      ) : expiresAt ? (
+        <p className="w6w-muted w6w-small">Expires {expiresAt}</p>
+      ) : null}
 
       {kind === "doc" ? (
         <JsonEditor
           value={text}
+          readOnly={!editing}
           onChange={onTextChange}
           minHeight="min(50vh, 400px)"
           maxHeight="60vh"
@@ -91,6 +99,7 @@ export function DataEntryEditor({
           data-testid="entry-value"
           value={text}
           aria-label="Value"
+          readOnly={!editing}
           onChange={(e) => onTextChange(e.target.value)}
         />
       )}
@@ -115,44 +124,59 @@ export function DataEntryEditor({
       )}
     </>
   );
-  const actions = (
-    <div className={kind === "doc" ? "w6w-modal-actions" : "w6w-data-entry-editor-actions"}>
-      <button
-        className="w6w-btn"
-        type="button"
-        data-testid="entry-save"
-        disabled={
-          Boolean(conflict) ||
-          Boolean(saving) ||
-          invalidDocument ||
-          (kind === "doc" && isNew && !newKey?.trim())
-        }
-        onClick={onSave}
-      >
-        Save
-      </button>
-      <button className="w6w-btn w6w-btn-ghost" type="button" onClick={onCancel}>
-        Cancel
-      </button>
-    </div>
-  );
-  return kind === "doc" ? (
+  return (
     <Modal
-      title={isNew ? "New document" : "Edit document"}
+      title={
+        isNew ? `New ${noun}` : editing ? `Edit ${noun}` : kind === "doc" ? "Document" : "Entry"
+      }
       subtitle={isNew ? undefined : entryKey}
-      size="wide"
-      onClose={onCancel}
+      size={kind === "doc" ? "wide" : "default"}
+      onClose={saving ? () => {} : onCancel}
     >
       <div className="w6w-modal-body" data-testid="entry-editor">
         {body}
       </div>
-      {actions}
+      <div className="w6w-modal-actions">
+        {!isNew && onDelete && (
+          <DeleteButton
+            label="Delete entry"
+            className="w6w-data-entry-delete"
+            disabled={saving}
+            onClick={onDelete}
+          />
+        )}
+        <button
+          ref={closeButton}
+          className="w6w-btn w6w-btn-ghost"
+          type="button"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          {editing ? "Cancel" : "Close"}
+        </button>
+        {editing ? (
+          <button
+            className="w6w-btn"
+            type="button"
+            data-testid="entry-save"
+            disabled={
+              Boolean(conflict) || Boolean(saving) || invalidDocument || (isNew && !newKey?.trim())
+            }
+            onClick={onSave}
+          >
+            Save
+          </button>
+        ) : (
+          <button
+            className="w6w-btn"
+            type="button"
+            disabled={saving}
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </button>
+        )}
+      </div>
     </Modal>
-  ) : (
-    <div className="w6w-card w6w-data-entry-editor" data-testid="entry-editor">
-      <h3>{isNew ? "New entry" : (entryKey ?? "")}</h3>
-      {body}
-      {actions}
-    </div>
   );
 }

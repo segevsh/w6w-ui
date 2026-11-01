@@ -44,7 +44,7 @@ const { act } = await import("react-dom/test-utils");
 const { DataEntryEditor } = await import("../DataEntryEditor.tsx");
 
 type Calls = Record<string, unknown[]>;
-function mount(props: Record<string, unknown>, calls: Calls = {}) {
+function mount(props: Record<string, unknown>, calls: Calls = {}, edit = true) {
   const rec =
     (name: string) =>
     (...args: unknown[]) => {
@@ -69,6 +69,12 @@ function mount(props: Record<string, unknown>, calls: Calls = {}) {
       } as never),
     ),
   );
+  if (edit && !props.isNew) {
+    const editButton = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Edit",
+    );
+    act(() => editButton?.click());
+  }
   return container;
 }
 
@@ -101,14 +107,14 @@ test("kv: value input fires onTextChange per edit; doc renders the JSON editor i
   assert.equal(d.querySelectorAll("h3").length, 1, "the modal owns the heading");
 });
 
-test("new mode: key input fires onKeyChange; existing mode shows version and expiry", () => {
+test("new mode: key input fires onKeyChange; existing mode shows expiry without a version label", () => {
   const calls: Calls = {};
   const n = mount({ isNew: true, newKey: "" }, calls);
   type(tid(n, "entry-new-key") as HTMLInputElement, "fresh");
   assert.deepEqual(calls.key, ["fresh"]);
   const e = mount({ version: 4, expiresAt: "2030-01-01T00:00:00Z" });
   assert.equal(tid(e, "entry-new-key"), null);
-  assert.match(e.textContent ?? "", /v4/);
+  assert.doesNotMatch(e.textContent ?? "", /v4/);
   assert.match(e.textContent ?? "", /Expires 2030-01-01/);
   assert.doesNotMatch(mount({ version: 4 }).textContent ?? "", /Expires/);
 });
@@ -138,7 +144,11 @@ test("conflict: prompt with copy, Reload fires, Save disabled", () => {
 
 test("saving disables Save; otherwise Save and Cancel fire", () => {
   const calls: Calls = {};
-  assert.equal((tid(mount({ saving: true }), "entry-save") as HTMLButtonElement).disabled, true);
+  assert.equal(
+    (tid(mount({ saving: true, isNew: true, newKey: "fresh" }), "entry-save") as HTMLButtonElement)
+      .disabled,
+    true,
+  );
   const c = mount({}, calls);
   assert.equal((tid(c, "entry-save") as HTMLButtonElement).disabled, false);
   click(tid(c, "entry-save"));
@@ -207,4 +217,28 @@ test("doc modal gates Save as JSON becomes invalid and valid again", () => {
     act(() => root.unmount());
     container.remove();
   }
+});
+
+test("existing documents open read-only; Edit and Delete are inside the modal", () => {
+  const calls: Calls = {};
+  const c = mount(
+    {
+      kind: "doc",
+      text: '{"hello":"world"}',
+      onDelete: () => {
+        calls.delete = [true];
+      },
+    },
+    calls,
+    false,
+  );
+  const modal = c.querySelector('dialog[open][aria-label="Document"]');
+  assert.ok(modal);
+  assert.equal(modal.querySelector(".cm-content")?.getAttribute("contenteditable"), "false");
+  assert.equal(tid(c, "entry-save"), null);
+  click(modal.querySelector('button[aria-label="Delete entry"]') as Element);
+  assert.deepEqual(calls.delete, [true]);
+  click(buttonNamed(c, "Edit"));
+  assert.equal(modal.querySelector(".cm-content")?.getAttribute("contenteditable"), "true");
+  assert.ok(tid(c, "entry-save"));
 });
