@@ -30,6 +30,7 @@ import type { StepMeta, StepStartState, StepTest } from "./provider.tsx";
 import { buildResolveScope, resolveParamValue } from "./resolve-params.ts";
 import { asFieldDefs, fieldsToParams } from "./trigger-fields.ts";
 import { type SubscriptionSummary, isExprValue, isSecretValue } from "./types.ts";
+import { type FlowConnections, connectionIdFor } from "./workflow-connections.ts";
 
 /**
  * What the editor knows about upstream steps' output SHAPES beyond the static
@@ -896,6 +897,7 @@ export function nodeMetaValues(
   nodes: StepNode[],
   subs: readonly SubscriptionSummary[],
   apps?: ReadonlyMap<string, { version?: string }>,
+  connections?: FlowConnections,
 ): Record<string, Record<string, unknown>> {
   const out: Record<string, Record<string, unknown>> = {};
   for (const n of nodes) {
@@ -904,7 +906,7 @@ export function nodeMetaValues(
     const meta: Record<string, unknown> = {
       app: step.uses.app,
       action: step.uses.action,
-      connectionId: step.uses.connection ?? null,
+      connectionId: connectionIdFor(step, connections) ?? null,
     };
     const version = apps?.get(step.uses.app)?.version;
     if (version) meta.version = version;

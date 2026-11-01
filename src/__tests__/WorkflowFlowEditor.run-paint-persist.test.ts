@@ -84,9 +84,9 @@ test("P2 — every other onChange in the editor is untagged (an edit still clear
 
 test("P3 — a viewport-only value (same id) re-derives nothing; the repaint is keyed on runState, not value", () => {
   const memo = findCalls(inner, "useMemo").find((c) =>
-    c.arguments[0]?.getText(sf).includes("workflowToFlow(value)"),
+    c.arguments[0]?.getText(sf).includes("centralizeConnections(value)"),
   );
-  assert.ok(memo, "initial must come from useMemo(() => workflowToFlow(value), …)");
+  assert.ok(memo, "initial workflow must only rehydrate on workflow identity change");
   assert.equal(memo.arguments[1]?.getText(sf), "[value.id]");
 
   const repaint = findCalls(inner, "useEffect").filter((c) => {

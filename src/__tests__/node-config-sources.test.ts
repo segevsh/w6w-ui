@@ -111,6 +111,19 @@ test("each node's static meta: app/action/connectionId from the definition + a w
   });
 });
 
+test("static metadata previews follow the shared account", async () => {
+  const { nodeMetaValues } = await import("../step-preview-state.ts");
+  const flow = workflowToFlow({
+    nodes: [
+      { id: "find", uses: { app: "io.w6w.eventbrite", action: "list", connectionRef: "eb" } },
+    ],
+  } as FlowWorkflow);
+  const connections = { eb: { app: "io.w6w.eventbrite", connection: "conn_a" } };
+  assert.equal(nodeMetaValues(flow.nodes, [], undefined, connections).find.connectionId, "conn_a");
+  connections.eb.connection = "conn_b";
+  assert.equal(nodeMetaValues(flow.nodes, [], undefined, connections).find.connectionId, "conn_b");
+});
+
 test("static meta.version is the version the canvas labels the node with; unknown stays at-run", async () => {
   const { nodeMetaValues, nodeMetaSampleValues } = await import("../step-preview-state.ts");
   const { buildResolveScope, resolveParamValue } = await import("../resolve-params.ts");

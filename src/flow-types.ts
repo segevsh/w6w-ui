@@ -15,6 +15,7 @@ export interface FlowStep {
     app: string;
     action: string;
     connection?: string | null;
+    connectionRef?: string;
     /** An app TRIGGER node (`action` is the trigger key): behaves like a built-in trigger on the canvas. */
     trigger?: true;
   };
@@ -222,6 +223,7 @@ export interface FlowWorkflow {
   description?: string;
   variables?: Array<{ key: string; type?: string; required?: boolean; default?: unknown }>;
   nodes: FlowStep[];
+  connections?: Record<string, { app: string; connection: string | null }>;
   edges?: FlowEdge[];
   canvas?: FlowCanvas;
   /**

@@ -18,6 +18,7 @@ import { RouterEditor } from "./RouterEditor.tsx";
 import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
+import { WorkflowConnectionSources, useWorkflowConnections } from "./WorkflowConnections.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
@@ -68,6 +69,7 @@ import type {
   WorkflowSummary,
 } from "./types.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
+import { connectionIdFor } from "./workflow-connections.ts";
 
 /** The step the builder emits — the editor assigns the final `id`. `NodeConfig`
  * carries the base settings (retry / onError / notes) set on the Config view. */
@@ -76,6 +78,7 @@ export interface BuiltStep extends NodeConfig {
     app: string;
     action: string;
     connection?: string | null;
+    connectionRef?: string;
     /** Marks an app TRIGGER node (`action` is the trigger key); the engine/server read it. */
     trigger?: true;
   };
@@ -2492,7 +2495,19 @@ export function AppStepConfig({
   const [actions, setActions] = useState<ActionDef[] | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
 
-  const [connectionId, setConnectionId] = useState<string>(initialConnection ?? "");
+  const [accountId, setAccountId] = useState<string>(initialConnection ?? "");
+  const [connectionRef, setConnectionRef] = useState<string | undefined>();
+  const connectionScope = useWorkflowConnections();
+  const connectionId = connectionRef
+    ? (connectionIdFor(
+        { id: stepId ?? "", uses: { app: appId, action: "", connectionRef } },
+        connectionScope?.connections,
+      ) ?? "")
+    : accountId;
+  const setConnectionId = useCallback((id: string | ((prev: string) => string)) => {
+    setConnectionRef(undefined);
+    setAccountId(id);
+  }, []);
   const [actionKey, setActionKey] = useState<string>(initialAction ?? "");
   const [withValues, setWithValues] = useState<Record<string, unknown>>(initialWith ?? {});
   const [showConnModal, setShowConnModal] = useState(false);
@@ -2540,7 +2555,7 @@ export function AppStepConfig({
     return () => {
       canceled = true;
     };
-  }, [api, appId, isTrigger]);
+  }, [api, appId, isTrigger, setConnectionId]);
 
   const refetchConns = async () => {
     const co = await api.listConnectionsForApp(appId);
@@ -2631,7 +2646,11 @@ export function AppStepConfig({
         // nothing is emitted here, and the server resolves the connection
         // live on every call. Never synthesise an id: it does not exist
         // server-side.
-        ...((needsConnection || autoSatisfied) && connectionId ? { connection: connectionId } : {}),
+        ...(connectionRef
+          ? { connectionRef }
+          : (needsConnection || autoSatisfied) && connectionId
+            ? { connection: connectionId }
+            : {}),
         ...(isTrigger ? { trigger: true as const } : {}),
       },
       with: withValues,
@@ -2664,7 +2683,7 @@ export function AppStepConfig({
   useEffect(() => {
     if (!onDraftChange || committedId === null) return;
     onDraftChange(committedId, buildStep());
-  }, [committedId, withValues, draftConfig, connectionId]);
+  }, [committedId, withValues, draftConfig, connectionId, connectionRef]);
 
   const changeConfigView = (v: ConfigView) => {
     if (v === "code") setCodeText(stepToJson(buildStep()));
@@ -2819,6 +2838,7 @@ export function AppStepConfig({
                   <span>Connection</span>
                   <div className="w6w-conn-label">
                     <span className="w6w-conn-label-name">
+                      {connectionRef ? "Shared · " : ""}
                       {selectedConn?.displayName || selectedConn?.id || connectionId}
                       {selectedConn?.state ? ` (${selectedConn.state})` : ""}
                     </span>
@@ -2839,6 +2859,20 @@ export function AppStepConfig({
                   </div>
                 </div>
               ))}
+
+            {showConnPicker && (
+              <WorkflowConnectionSources
+                step={{
+                  id: committedId ?? stepId ?? "",
+                  uses: { app: appId, action: actionKey, connectionRef },
+                }}
+                conns={conns}
+                onSelect={(ref) => {
+                  setConnectionRef(ref);
+                  setChangingConn(false);
+                }}
+              />
+            )}
 
             {/* Action */}
             {actions !== null &&

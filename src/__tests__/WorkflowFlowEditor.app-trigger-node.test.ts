@@ -201,7 +201,7 @@ test("A5: workflowToFlow -> flowToWorkflow keeps T1's uses/with (independent lit
   assert.deepEqual(t1?.uses, {
     app: "eventbrite",
     action: "event-updated",
-    connection: "conn_1",
+    connectionRef: "T1",
     trigger: true,
   });
   assert.deepEqual(t1?.with, { organization: "org_1" });
@@ -238,7 +238,9 @@ test("A4: editing T1 opens the SAME step editor as an action (Setup · Configure
   const last = changes.at(-1);
   assert.ok(last, "onChange fired");
   const t1 = last.nodes.find((n: { id: string }) => n.id === "T1");
-  assert.deepEqual(t1?.uses, { ...T1_USES });
+  const { connection, ...uses } = T1_USES;
+  assert.deepEqual(t1?.uses, { ...uses, connectionRef: "T1" });
+  assert.deepEqual(last.connections, { T1: { app: T1_USES.app, connection } });
   assert.deepEqual(t1?.with, { organization: "org_2" });
   assert.equal(last.nodes.length, 4, "same node, no duplicate");
   // Setup: the app, its account and the trigger, where an action's Action sits.
