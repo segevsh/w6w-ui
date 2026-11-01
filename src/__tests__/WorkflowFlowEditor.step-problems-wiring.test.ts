@@ -53,7 +53,10 @@ test("W2 — one useEffect keyed on stepProblems calls setNodes(applyStepProblem
     );
   });
   assert.equal(effects.length, 1, "exactly one effect depends on stepProblems");
-  assert.equal(effects[0].arguments[1].getText(sf), "[stepProblems, initial, setNodes]");
+  assert.equal(
+    effects[0].arguments[1].getText(sf),
+    "[stepProblems, initial, restoreVersion, setNodes]",
+  );
   const body = effects[0].arguments[0].getText(sf);
   assert.match(body, /setNodes\(/);
   assert.match(body, /applyStepProblems\(/);

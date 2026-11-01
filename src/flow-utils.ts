@@ -479,7 +479,7 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
  * either way (pinned by `flow-utils.test.ts` — "auto-layout agrees with first
  * open"). The **only** difference is that a stored coordinate does not win here:
  * overriding hand placement is precisely what the author asked for by clicking.
- * That is also why the caller confirms first — there is no undo in studio.
+ * The editor records this as one undoable layout change.
  *
  * Layering is keyed by **`node.id`**, not `node.data.step.id`: React Flow's
  * `edge.source`/`edge.target` name node ids, so keying by anything else would

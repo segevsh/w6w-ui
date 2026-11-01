@@ -37,7 +37,7 @@ const actions = [
     title: "List webhooks",
     params: [{ key: "note", label: "Note", type: "string" }],
   },
-  { key: "create", title: "Create webhook", params: [] },
+  { key: "create", title: "Create webhook", params: [{ key: "note", label: "Note", type: "string" }] },
   { key: "get", title: "Get event", params: [] },
 ];
 const conns = [{
@@ -51,6 +51,8 @@ const conns = [{
   displayName: "Eventbrite account",
   state: "connected",
 }];
+const storedTests = {};
+window.__testRuns = [];
 const methods = {
   getAppActions: async () => actions,
   listConnectionsForApp: async () => conns,
@@ -59,8 +61,24 @@ const methods = {
   getApp: async () => app,
   invokeAction: async (app, action, params, options) => {
     window.__invoke = options;
-    return { output: { ok: true } };
+    if (window.__holdTest) await new Promise((resolve) => { window.__releaseTest = resolve; });
+    return { value: { ok: true, learnedField: "kept after undo" } };
   },
+  listStepTests: async (_workflowId, stepId) => storedTests[stepId] ? [storedTests[stepId]] : [],
+  saveStepTest: async (workflowId, stepId, fixture) => {
+    const row = { ...storedTests[stepId], ...fixture, id: `test_${stepId}`, workflowId, stepId };
+    storedTests[stepId] = row;
+    return row;
+  },
+  recordStepTestRun: async (_workflowId, stepId, run) => {
+    window.__testRuns.push({ stepId, ...run });
+    storedTests[stepId] = { ...storedTests[stepId], lastRunAt: new Date().toISOString(), lastRunStatus: run.status, lastRunOutput: run.output };
+    return {};
+  },
+  loadNodeSamples: async () => Object.values(storedTests).filter((row) => row.lastRunOutput).map((row) => ({
+    nodeId: row.stepId, shape: { type: "object", fields: { learnedField: { type: "string" } } },
+    sample: row.lastRunOutput, source: "step_test", updatedAt: row.lastRunAt,
+  })),
 };
 const api = new Proxy(methods, {
   get: (t, k) =>
@@ -74,14 +92,18 @@ const api = new Proxy(methods, {
 function App() {
   const [value, setValue] = useState(initial);
   const [key, setKey] = useState(0);
+  const [readOnly, setReadOnly] = useState(false);
   window.__value = value;
   window.__reload = () => setKey((k) => k + 1);
+  window.__setWorkflow = setValue;
+  window.__setReadOnly = setReadOnly;
   return (
     <W6WUIProvider theme="light" api={api as any}>
       <div style={{ width: 1100, height: 740 }}>
         <WorkflowFlowEditor
           key={key}
           value={value as any}
+          readOnly={readOnly}
           onChange={(v) => setValue(v as any)}
           height="100%"
           apps={[app] as any}

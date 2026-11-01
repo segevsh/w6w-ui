@@ -9,6 +9,9 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- Ctrl/Cmd+Z undoes workflow edits to nodes, configuration, edges, connections and canvas layout.
+  Ctrl/Cmd+Shift+Z or Ctrl+Y redoes them. History keeps the latest 100 edits while the workflow is
+  open; test runs and learned output shapes stay intact, and text fields keep their own undo.
 - A node's input takes any number of incoming edges: wiring a second trigger (or a second path)
   into a node that already has one adds the edge instead of replacing the existing one. Only an
   exact duplicate, or an edge into a trigger, is refused.

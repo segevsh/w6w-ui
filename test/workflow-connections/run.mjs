@@ -19,7 +19,7 @@ const bundle = await build({
   format: "iife",
 });
 const css = await readFile(new URL("../../src/styles.css", import.meta.url));
-const browser = await chromium.launch({ args: ["--no-sandbox"] });
+const browser = await chromium.launch({ args: ["--no-sandbox"], executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
 try {
   const page = await browser.newPage({
     viewport: { width: 1150, height: 800 },

@@ -111,6 +111,12 @@ import {
 // them (see `flow-connect.ts`). This file is their only production caller.
 import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
 import {
+  FlowEditHistory,
+  captureFlowEdit,
+  isFlowTextTarget,
+  restoreFlowEdit,
+} from "./flow-history.ts";
+import {
   type LoopPaint,
   enclosingLoops,
   loopCardStyle,
@@ -520,6 +526,8 @@ const StepControlsCtx = createContext<StepControls | null>(null);
  *   - Selecting a node reveals a toolbar above it: Edit / Duplicate / Delete.
  *   - Edit opens a modal with a Form ⇄ JSON toggle for that step.
  *   - Every meaningful change fires `onChange` with an updated Workflow.
+ *   - Ctrl/Cmd+Z undoes graph edits; Ctrl/Cmd+Shift+Z (or Ctrl+Y) redoes them.
+ *     History is local to the open workflow and excludes tests, samples and viewport changes.
  */
 export function WorkflowFlowEditor(props: WorkflowFlowEditorProps) {
   return (
@@ -628,6 +636,14 @@ function Inner({
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed on workflow identity change only
   const initialCanvas = useMemo<FlowCanvas>(() => value.canvas ?? {}, [value.id]);
   const [canvas, setCanvas] = useState<FlowCanvas>(initialCanvas);
+  const [editHistory] = useState(
+    () =>
+      new FlowEditHistory(
+        captureFlowEdit(initialWorkflow, initial.nodes, initial.edges, connections, initialCanvas),
+      ),
+  );
+  const textEditGroup = useRef<object>();
+  const [restoreVersion, setRestoreVersion] = useState(0);
   // The draw-section tool, and the rectangle being dragged (client px) while it is armed.
   const [drawingSection, setDrawingSection] = useState(false);
   const [sectionDraft, setSectionDraft] = useState<{
@@ -642,6 +658,11 @@ function Inner({
   } | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const builderEditGroup = useRef<object>({});
+  useEffect(() => {
+    // The progressive add form creates and configures one node as one undoable action.
+    if (!builderOpen) builderEditGroup.current = {};
+  }, [builderOpen]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editView, setEditView] = useState<EditView>("props");
   // The step id awaiting delete confirmation — one pending slot driving one modal.
@@ -651,10 +672,10 @@ function Inner({
   // state) because it drives no render of its own — it only needs to survive
   // from the relayout click to the next commit of `nodes`.
   const relayoutPendingFitRef = useRef(false);
-  // Carries the flow container div so the capture-phase dblclick listener below
+  // Carries the flow container so the capture-phase dblclick listener below
   // can be attached/removed on it directly — see that effect for why a native
   // listener is required instead of React Flow's own node-double-click prop.
-  const flowContainerRef = useRef<HTMLDivElement>(null);
+  const flowContainerRef = useRef<HTMLElement>(null);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -686,7 +707,17 @@ function Inner({
     setEditingId(null);
     setCanvas(initialCanvas);
     setConnections(initialWorkflow.connections ?? {});
-  }, [initial, initialCanvas, initialWorkflow, setNodes, setEdges, setConnections]);
+    editHistory.reset(
+      captureFlowEdit(
+        initialWorkflow,
+        initial.nodes,
+        initial.edges,
+        initialWorkflow.connections ?? {},
+        initialCanvas,
+      ),
+    );
+    textEditGroup.current = undefined;
+  }, [initial, initialCanvas, initialWorkflow, setNodes, setEdges, setConnections, editHistory]);
 
   // These two stamps are declared AFTER the workflow-swap reset above on purpose: effects run in
   // declaration order, so the reset (which reseeds nodes from `initial`, with neither stamp) would
@@ -709,10 +740,9 @@ function Inner({
   //
   // Functional `setNodes`/`setEdges` updaters read the PREVIOUS state
   // directly, so `nodes`/`edges` need not be dependencies — keeping this
-  // effect keyed on `runState` alone (plus the setters, stable across
-  // renders) is what makes it fire on every run-state change and nothing
-  // else, including a plain drag or edit that doesn't touch `runState`.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
+  // effect keyed on `runState` is what keeps a plain drag or edit from repainting.
+  // Workflow swaps and undo/redo also re-stamp the restored graph from the current run.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` and `restoreVersion` re-stamp a restored graph
   useEffect(() => {
     setNodes((nds) => {
       // A loop body step has no record of its own; one whose For each is on another path stays
@@ -739,13 +769,13 @@ function Inner({
         return { ...e, className: visuals.className, label: visuals.label };
       }),
     );
-  }, [runState, initial, setNodes, setEdges]);
+  }, [runState, initial, restoreVersion, setNodes, setEdges]);
   // Host-supplied step problems — same live-repaint mechanism as runState above:
   // stamps/clears `data.stepProblems` only, never `data.step`.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` and `restoreVersion` re-stamp a restored graph
   useEffect(() => {
     setNodes((nds) => applyStepProblems(nds, stepProblems));
-  }, [stepProblems, initial, setNodes]);
+  }, [stepProblems, initial, restoreVersion, setNodes]);
 
   // Stamp the `canvas` key onto an outgoing workflow. Omitted entirely when there is nothing to
   // keep (no notes, no sections), so a workflow that never used the feature round-trips unchanged.
@@ -760,6 +790,16 @@ function Inner({
 
   const emitChange = useCallback(
     (nextNodes: StepNode[], nextEdges: Edge[], canvasOverride?: FlowCanvas) => {
+      editHistory.record(
+        captureFlowEdit(
+          value,
+          nextNodes,
+          nextEdges,
+          connectionsRef.current,
+          canvasOverride ?? canvas,
+        ),
+        builderOpen ? builderEditGroup.current : textEditGroup.current,
+      );
       onChange(
         withCanvas(
           flowToWorkflow({ ...value, connections: connectionsRef.current }, nextNodes, nextEdges),
@@ -767,7 +807,7 @@ function Inner({
         ),
       );
     },
-    [value, onChange, canvas, withCanvas],
+    [value, onChange, canvas, withCanvas, editHistory, builderOpen],
   );
 
   // Live gate while dragging a connection — React Flow marks the drop invalid
@@ -2022,6 +2062,70 @@ function Inner({
     ],
   );
 
+  const restoreEdit = (direction: "undo" | "redo") => {
+    if (readOnly) return;
+    const snapshot = editHistory[direction]();
+    if (!snapshot) return;
+    const graph = restoreFlowEdit(value, snapshot);
+    setNodes(graph.nodes.map((n) => ({ ...n, selected: n.id === selectedId })));
+    setEdges(graph.edges.map((e) => ({ ...e, selected: e.id === selectedEdgeId })));
+    setCanvas(snapshot.canvas);
+    setConnections(snapshot.connections);
+    if (!graph.nodes.some((n) => n.id === selectedId)) setSelectedId(null);
+    if (!graph.edges.some((e) => e.id === selectedEdgeId)) setSelectedEdgeId(null);
+    const keepEditor = graph.nodes.some((n) => n.id === editingId);
+    if (!keepEditor) setEditingId(null);
+    setBuilderOpen(false);
+    setDraftStepId(null);
+    setPendingConnect(null);
+    setPendingDelete(null);
+    setPendingCanvasDelete(null);
+    setLoopNotice(null);
+    setLaneError(null);
+    textEditGroup.current = undefined;
+    // Repaint from CURRENT run/problem data, and refresh authored fields in an open modal.
+    // Test results, cached samples and in-flight tests are deliberately left alone.
+    setRestoreVersion((v) => v + 1);
+    onChange(
+      withCanvas(
+        flowToWorkflow({ ...value, connections: snapshot.connections }, graph.nodes, graph.edges),
+        snapshot.canvas,
+      ),
+    );
+    if (!keepEditor && !runResult) flowContainerRef.current?.focus({ preventScroll: true });
+  };
+  const restoreEditRef = useRef(restoreEdit);
+  restoreEditRef.current = restoreEdit;
+  useEffect(() => {
+    const editor = flowContainerRef.current;
+    if (!editor) return;
+    let active = editor.contains(document.activeElement);
+    const trackActive = (event: Event) => {
+      // Removing a focused flyout button returns focus to body. Keep its editor active
+      // until the author actually focuses or clicks somewhere else.
+      if (event.type === "focusin" && event.target === document.body) return;
+      active = editor.contains(event.target as Node);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (readOnly || event.defaultPrevented || isFlowTextTarget(event.target)) return;
+      if (!editor.contains(event.target as Node) && !(active && event.target === document.body))
+        return;
+      const key = event.key.toLowerCase();
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      if (key !== "z" && !(key === "y" && !event.shiftKey)) return;
+      event.preventDefault();
+      restoreEditRef.current(key === "y" || event.shiftKey ? "redo" : "undo");
+    };
+    document.addEventListener("pointerdown", trackActive);
+    document.addEventListener("focusin", trackActive);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", trackActive);
+      document.removeEventListener("focusin", trackActive);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [readOnly]);
+
   const editor = (
     <StepControlsCtx.Provider value={controls}>
       <PortsLookupCtx.Provider value={portsLookup}>
@@ -2030,11 +2134,20 @@ function Inner({
             <CardDataProvider apps={appsById} registration={triggerRegistration}>
               <WorkflowProjectProvider project={project} workflowId={value.id}>
                 <ExpressionOptionsProvider value={mergedExprOptions}>
-                  <div
+                  <section
                     ref={flowContainerRef}
                     className="w6w-flow"
+                    tabIndex={-1}
+                    aria-label="Workflow editor"
                     style={{ width: "100%", height, position: "relative" }}
+                    onFocusCapture={(e) => {
+                      textEditGroup.current = isFlowTextTarget(e.target) ? {} : undefined;
+                    }}
+                    onBlurCapture={() => {
+                      textEditGroup.current = undefined;
+                    }}
                     onKeyDown={(e) => {
+                      if (e.defaultPrevented) return;
                       if (e.key !== "Backspace" && e.key !== "Delete") return;
                       // Only delete the selected node/edge when the key is aimed at the
                       // canvas — never while a modal is open or the user is editing a field.
@@ -2096,7 +2209,18 @@ function Inner({
                         const nextCanvas = membershipAfterDrag(dragged as StepNode[]);
                         const membershipChanged = nextCanvas !== canvas;
                         if (membershipChanged) setCanvas(nextCanvas);
-                        if (!savePosition && !membershipChanged) return;
+                        if (!savePosition && !membershipChanged) {
+                          editHistory.record(
+                            captureFlowEdit(
+                              value,
+                              nodes,
+                              edges,
+                              connectionsRef.current,
+                              nextCanvas,
+                            ),
+                          );
+                          return;
+                        }
                         emitChange(nodes, edges, nextCanvas);
                       }}
                       onMoveEnd={(event, viewport) => {
@@ -2397,6 +2521,7 @@ function Inner({
                       <StepEditModal
                         workflowId={value.id}
                         step={editingStep}
+                        restoreVersion={restoreVersion}
                         // Graph ancestors of the editing step, from `upstreamStateSources`
                         // (via `mergedExprOptions`) — the incoming-state picker seeds from
                         // each ancestor's latest saved step-test rather than re-walking the graph.
@@ -2532,7 +2657,7 @@ function Inner({
                         onClose={() => setPendingDelete(null)}
                       />
                     )}
-                  </div>
+                  </section>
                 </ExpressionOptionsProvider>
               </WorkflowProjectProvider>
             </CardDataProvider>
@@ -3837,6 +3962,8 @@ export function StepEditModal(props: StepEditModalProps) {
 interface StepEditModalProps {
   workflowId: string;
   step: FlowStep;
+  /** Refresh authored fields after undo/redo without remounting the Test tab. */
+  restoreVersion?: number;
   /** Graph ancestors of this step (from `upstreamStateSources`); the incoming-state picker seeds from their saved tests. */
   upstreamSteps: ExpressionStepSource[];
   /** The enclosing For each when this step is in its body: seeds `state.foreach` on Test. */
@@ -3856,6 +3983,7 @@ interface StepEditModalProps {
 function ActionStepEditModal({
   workflowId,
   step: initialStep,
+  restoreVersion,
   upstreamSteps,
   loop,
   onChange,
@@ -3905,6 +4033,16 @@ function ActionStepEditModal({
   const [renaming, setRenaming] = useState(false);
   const [draftId, setDraftId] = useState(step.id);
   const [renameErr, setRenameErr] = useState<string | null>(null);
+  const lastRestoreVersion = useRef(restoreVersion);
+  useEffect(() => {
+    if (lastRestoreVersion.current === restoreVersion) return;
+    lastRestoreVersion.current = restoreVersion;
+    setStep(initialStep);
+    setDraftId(initialStep.id);
+    setCodeText(stepToJson(initialStep));
+    setParamsCodeText(paramsToJson(initialStep));
+    setRenameErr(null);
+  }, [restoreVersion, initialStep]);
 
   const [params, setParams] = useState<ActionParam[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);

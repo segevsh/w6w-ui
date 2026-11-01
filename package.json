@@ -99,7 +99,8 @@
     "lint:tokens": "node scripts/lint-tokens.mjs",
     "coverage:stories": "node scripts/coverage-stories.mjs",
     "format": "biome format --write .",
-    "test:workflow-connections": "node test/workflow-connections/run.mjs"
+    "test:workflow-connections": "node test/workflow-connections/run.mjs",
+    "test:workflow-undo": "node test/workflow-connections/undo.mjs"
   },
   "peerDependencies": {
     "react": ">=18",
