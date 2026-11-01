@@ -54,6 +54,18 @@
 .w6w-data-entries-toolbar input[type="search"] {
   flex: 1;
   max-width: 20rem;
+  /* Same box as `.w6w-field` inputs — no host page styles a bare search input. */
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  font-family: inherit;
+}
+.w6w-data-entries-toolbar input[type="search"]:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
 }
 /* The wide-table pane: the sheet scrolls INSIDE this box, so a 24-column
    table never widens its container and the page itself never overflows. */

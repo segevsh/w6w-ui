@@ -336,7 +336,7 @@ export const DOCUMENT_APP = "@w6w/document";
  */
 export const MODEL_APP = "@w6w/model";
 /**
- * Compile a Handlebars `template` string against a resolved `values` object
+ * Render Handlebars text or JSON string values against a resolved `values` object
  * (core rfcs/node-types.md · F-3 amendment, "the `@w6w/template` host node").
  * Host node: `runInternalNode` short-circuits this id before the registry
  * loads a module — it needs no privileged host resource (no DB, no
@@ -1024,31 +1024,30 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     group: "compute",
     icon: ICON_TEMPLATE,
     // Static output shape (core rfcs/node-types.md:582): the already-rendered
-    // string, host-side Handlebars having run — an ordinary `var` ref, not the
+    // string or JSON, host-side Handlebars having run — an ordinary `var` ref, not the
     // `resolveRenderPart` mechanism.
     output: [{ key: "result" }],
     params: [
       {
         key: "template",
         label: "Template",
-        type: "text",
+        type: "json",
         required: true,
+        whole: true,
         hint:
-          "Handlebars template. Placeholder names are workflow-agnostic — bind them below. " +
+          'Enter a JSON string ("Hello {{name}}") or object, or bind one with ƒx. ' +
+          "String values render recursively; other values stay unchanged. " +
           "{{name}} is HTML-escaped; use {{{name}}} for raw output.",
       },
       {
-        // The manifest declares `values` as `type: "json"` — `"vars"` is a
-        // UI-only type, not a member of core's canonical `ParamType`, exactly
-        // the same divergence `data/index.ts:10-13` explains for `@w6w/data`'s
-        // own `vars` param. `required` surfaces the table in the form directly.
         key: "values",
         label: "Values",
         type: "vars",
         required: true,
-        default: [],
+        whole: true,
+        default: {},
         hint:
-          'A typed key/value array: [{ "key": "data", "type": "json", "value": ... }]. ' +
+          "Enter a JSON object, or use ƒx to bind data from workflow state or variables. " +
           "Each key becomes a top-level placeholder root.",
       },
     ],
@@ -1070,7 +1069,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Variables",
         required: true,
         default: [],
-        hint: "Typed key/value variables for downstream steps to reference.",
+        hint: "Set values for downstream steps using individual fields or a JSON object.",
       },
     ],
   },
@@ -1452,6 +1451,8 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     // `store` is `type: "string"` in the manifest (core `ParamType` has no `data-store`);
     // every entry's `store` param is the ui-only `data-store`, rendered as a store-name
     // picker when the host supplies `listDataStores` — the same precedent as `model-route`.
+    // Likewise `key` (get/set/delete/increment) is the ui-only `data-store-key`: a searchable
+    // picker of that store's entries when the host supplies `listDataStoreEntries`.
     ports: { in: 1, out: 1 },
     params: [
       {
@@ -1464,9 +1465,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
       {
         key: "required",
@@ -1503,9 +1504,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
       {
         key: "value",
@@ -1548,9 +1549,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
     ],
     output: [{ key: "key" }, { key: "deleted" }],
@@ -1574,9 +1575,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
       {
         key: "by",

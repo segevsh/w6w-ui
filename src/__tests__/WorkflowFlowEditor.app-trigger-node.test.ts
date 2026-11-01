@@ -186,6 +186,10 @@ test("A2: app trigger card has no target / error handle and is titled '<App> · 
   // A normal step keeps both (the assertion above is not vacuous).
   assert.equal(handles("A", "target").length, 1);
   assert.match(card("T1")?.textContent ?? "", /Eventbrite · Event Updated/);
+  // Both triggers wear the half-pill entry chrome; a normal step does not.
+  assert.ok(card("T2")?.querySelector(".w6w-node-trigger"), "built-in trigger is a half-pill");
+  assert.ok(card("T1")?.querySelector(".w6w-node-trigger"), "app trigger is a half-pill");
+  assert.equal(card("A")?.querySelector(".w6w-node-trigger"), null);
   await act(async () => root.unmount());
 });
 

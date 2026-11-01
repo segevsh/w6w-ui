@@ -36,3 +36,14 @@
 .w6w-datavar-row .w6w-btn {
   padding: var(--w6w-sp-1-5) var(--w6w-sp-2-5);
 }
+.w6w-datavar-modes {
+  margin-left: auto;
+}
+.w6w-datavar-modes .active {
+  background: var(--w6w-panel-2);
+  border-color: var(--w6w-accent);
+  color: var(--w6w-accent);
+}
+.w6w-datavar-error {
+  color: var(--w6w-danger);
+}

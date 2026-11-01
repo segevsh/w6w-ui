@@ -1,5 +1,14 @@
 import { effectiveParam, matchesParamCondition } from "@w6w/expr";
-import { type ReactNode, createContext, useContext, useEffect, useId, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { CodeEditor, type ScriptLanguage } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { Combobox } from "./components/Combobox.tsx";
@@ -470,6 +479,7 @@ function ParamFieldBody({
 }) {
   const listModelRoutes = useOptionalW6WApi()?.listModelRoutes;
   const listDataStores = useOptionalW6WApi()?.listDataStores;
+  const listDataStoreEntries = useOptionalW6WApi()?.listDataStoreEntries;
   const workflowProject = useWorkflowProject();
   const dyn = useContext(DynamicFieldsCtx);
   const dynState = dyn?.fields[param.key];
@@ -603,6 +613,31 @@ function ParamFieldBody({
         label={label}
         req={req}
         listDataStores={listDataStores}
+        project={workflowProject}
+      />
+    );
+  }
+
+  // `data-store-key` — a searchable picker of the sibling `store`'s entries when the host
+  // supplies `listDataStoreEntries` and `store` names a store literally; otherwise (no member,
+  // no store yet, or a store bound to an expression) the plain text input below, as `string`.
+  const storeName = effective?.("store");
+  if (
+    param.type === "data-store-key" &&
+    listDataStoreEntries &&
+    typeof storeName === "string" &&
+    storeName.trim() !== ""
+  ) {
+    return (
+      <StoreKeyField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        store={storeName}
+        listDataStoreEntries={listDataStoreEntries}
         project={workflowProject}
       />
     );
@@ -983,6 +1018,137 @@ function StoreField({
   );
 }
 
+type DataStoreEntryList = NonNullable<import("./provider.tsx").W6WApi["listDataStoreEntries"]>;
+
+/** Entries one picker request asks for: a page, never the whole store. */
+export const STORE_KEY_PAGE = 25;
+/** Typing settles this long before the key search goes to the host. */
+const STORE_KEY_DEBOUNCE_MS = 200;
+const PREVIEW_CHARS = 60;
+
+/** One muted line under an entry's key: its value, shortened, and when it last changed. */
+export function storeEntryDetail(entry: { value?: unknown; updatedAt?: string }): string {
+  let text = "";
+  if (entry.value !== undefined) {
+    try {
+      text = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
+    } catch {
+      text = String(entry.value);
+    }
+    text = text.replace(/\s+/g, " ");
+    if (text.length > PREVIEW_CHARS) text = `${text.slice(0, PREVIEW_CHARS - 1)}…`;
+  }
+  const when =
+    typeof entry.updatedAt === "string" && entry.updatedAt.length >= 16
+      ? `updated ${entry.updatedAt.slice(0, 16).replace("T", " ")}`
+      : "";
+  return [text, when].filter(Boolean).join(" · ");
+}
+
+/**
+ * The `data-store-key` picker: the chosen store's entry KEYS in a {@link Combobox}, each with
+ * a short value preview. Typing searches the host by key prefix (debounced, one page of
+ * {@link STORE_KEY_PAGE}); free text is still a value (`forceSelection={false}`), so a key that
+ * does not exist yet (a `set`) is typed as before, and an expression binds through the same
+ * {@link FxField} a `string` uses.
+ */
+function StoreKeyField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  store,
+  listDataStoreEntries,
+  project,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  /** The sibling `store` param's literal NAME. */
+  store: string;
+  listDataStoreEntries: DataStoreEntryList;
+  project: string | undefined;
+}) {
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState<Awaited<ReturnType<DataStoreEntryList>>>({ items: [] });
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLoading(true);
+    const prefix = query.trim();
+    const timer = setTimeout(
+      () => {
+        Promise.resolve()
+          .then(() =>
+            listDataStoreEntries(store, {
+              project,
+              prefix: prefix === "" ? undefined : prefix,
+              limit: STORE_KEY_PAGE,
+              signal: ctrl.signal,
+            }),
+          )
+          .then((r) => {
+            if (ctrl.signal.aborted) return;
+            setPage(r && Array.isArray(r.items) ? r : { items: [] });
+            setLoading(false);
+          })
+          .catch(() => {
+            if (ctrl.signal.aborted) return;
+            setPage({ items: [] });
+            setLoading(false);
+          });
+      },
+      prefix === "" ? 0 : STORE_KEY_DEBOUNCE_MS,
+    );
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [listDataStoreEntries, store, project, query]);
+  const raw = value ?? param.default ?? "";
+  const current = typeof raw === "string" ? raw : "";
+  const typed = query.trim();
+  return (
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
+      <Combobox
+        mode="combobox"
+        forceSelection={false}
+        aria-label={label}
+        disabled={readOnly}
+        value={current}
+        placeholder="Search entries or type a key…"
+        options={page.items.map((e) => ({
+          value: e.key,
+          label: e.key,
+          detail: storeEntryDetail(e) || undefined,
+        }))}
+        onInputChange={setQuery}
+        emptyText={
+          loading
+            ? "Searching…"
+            : typed !== ""
+              ? `No key starts with "${typed}" — Enter keeps it as typed`
+              : "No entries in this store"
+        }
+        footer={page.more ? "More entries — type to narrow by key" : undefined}
+        onChange={(next) => onChange(param.key, next)}
+      />
+    </FxField>
+  );
+}
+
 /**
  * Wraps a general scalar field (text/number `input`, `textarea`, or an
  * `options` dropdown) with an `fx` affordance: a small ƒx at the end of the
@@ -1156,11 +1322,15 @@ function JsonParamField({
   value,
   onChange,
   readOnly,
+  headerActions,
+  onValidityChange,
 }: {
   param: ActionParam;
   value: unknown;
   onChange: (key: string, value: unknown) => void;
   readOnly?: boolean;
+  headerActions?: ReactNode;
+  onValidityChange?: (valid: boolean) => void;
 }) {
   // "Bound" is DERIVED from the stored value on every render — never a local
   // flag — so control and value cannot disagree (same stance as `FxField`'s `fx`).
@@ -1204,11 +1374,13 @@ function JsonParamField({
   };
   const onValid = (parsed: unknown) => {
     setInvalid(false);
+    onValidityChange?.(true);
     onChange(param.key, parsed);
   };
   // Empty is not invalid: it clears the value (required-ness is enforced on
   // submit, not by this field). Only non-empty unparseable text is "Invalid JSON".
   const onValidity = ({ valid, error }: { valid: boolean; error?: string }) => {
+    onValidityChange?.(valid || error === "Empty");
     if (!valid && error === "Empty") {
       setInvalid(false);
       onChange(param.key, undefined);
@@ -1246,6 +1418,7 @@ function JsonParamField({
           {label}
           {param.required ? " *" : ""}
         </span>
+        {headerActions}
         {!bound && (
           <button
             type="button"
@@ -1728,6 +1901,52 @@ export interface DataVar {
 }
 
 const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
+const EMPTY_DATA_VARS: DataVar[] = [];
+
+/** Rows for a literal object or the existing typed-row format; bindings stay in JSON mode. */
+export function dataVarRows(value: unknown, previous: DataVar[] = []): DataVar[] | null {
+  if (Array.isArray(value)) {
+    return value.every((v) => v && typeof v === "object" && typeof v.key === "string")
+      ? (value as DataVar[])
+      : null;
+  }
+  if (
+    !value ||
+    typeof value !== "object" ||
+    holdsExpression(value) ||
+    wholeValueRef(value) ||
+    "$expr" in value
+  ) {
+    return null;
+  }
+  return Object.entries(value).map(([key, item]) => {
+    const old = previous.find((row) => row.key === key);
+    const type = typeof item;
+    return {
+      key,
+      type:
+        old && JSON.stringify(old.value) === JSON.stringify(item)
+          ? old.type
+          : type === "string" || type === "number" || type === "boolean"
+            ? type
+            : "json",
+      value: item,
+    };
+  });
+}
+
+/** Keep incomplete/duplicate-key rows as an array so opening JSON never drops an entry. */
+function dataVarsJson(value: unknown): unknown {
+  const rows = Array.isArray(value) ? dataVarRows(value) : null;
+  if (
+    !rows ||
+    rows.some((row) => !row.key) ||
+    new Set(rows.map((row) => row.key)).size !== rows.length
+  ) {
+    return value;
+  }
+  return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+}
 
 /** Coerce a text input into the variable's declared type (best-effort). */
 function coerceVarValue(type: DataVar["type"], raw: string): unknown {
@@ -1755,8 +1974,7 @@ function varValueToText(v: unknown): string {
 }
 
 /**
- * A `vars`-typed param: a dynamic table of typed key/value variables. The value
- * is an array of `{ key, type, value }`, collected into the step's `with`.
+ * A `vars`-typed param offers both typed rows and a JSON object/binding.
  */
 function VarsField({
   param,
@@ -1769,20 +1987,103 @@ function VarsField({
   onChange: (key: string, value: unknown) => void;
   readOnly?: boolean;
 }) {
-  const vars: DataVar[] = Array.isArray(value)
-    ? (value as DataVar[])
-    : Array.isArray(param.default)
-      ? (param.default as DataVar[])
-      : [];
+  const seed = value ?? param.default ?? EMPTY_DATA_VARS;
+  const jsonValue = useMemo(() => dataVarsJson(seed), [seed]);
+  const [mode, setMode] = useState<"fields" | "json">(() =>
+    Array.isArray(seed) ? "fields" : "json",
+  );
+  const previousRows = useRef<DataVar[]>([]);
+  const [invalidJson, setInvalidJson] = useState(false);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const rows = dataVarRows(seed, previousRows.current);
+  const vars = rows ?? [];
+  const jsonMode = mode === "json" || rows === null;
+  const label = param.label ?? param.key;
+  const toggle = (
+    <div className="w6w-view-toggle w6w-datavar-modes">
+      <button
+        type="button"
+        className={`w6w-btn w6w-btn-sm w6w-btn-ghost${!jsonMode ? " active" : ""}`}
+        aria-label={`Edit ${label} as fields`}
+        aria-pressed={!jsonMode}
+        disabled={invalidJson || !!jsonError || rows === null}
+        title={
+          rows === null
+            ? "Use a literal JSON object to edit individual fields"
+            : "Edit individual fields"
+        }
+        onClick={() => {
+          if (!readOnly && !Array.isArray(seed)) onChange(param.key, vars);
+          setMode("fields");
+        }}
+      >
+        Fields
+      </button>
+      <button
+        type="button"
+        className={`w6w-btn w6w-btn-sm w6w-btn-ghost${jsonMode ? " active" : ""}`}
+        aria-label={`Edit ${label} as JSON`}
+        aria-pressed={jsonMode}
+        onClick={() => {
+          previousRows.current = vars;
+          setMode("json");
+        }}
+      >
+        JSON
+      </button>
+    </div>
+  );
+  if (jsonMode) {
+    return (
+      <div className="w6w-datavar-json">
+        <JsonParamField
+          param={{
+            ...param,
+            type: "json",
+            whole: true,
+            default: {},
+            hint: "Enter a JSON object or use ƒx to bind one. Switch to Fields to edit individual values.",
+          }}
+          value={jsonValue}
+          readOnly={readOnly}
+          headerActions={toggle}
+          onValidityChange={(valid) => setInvalidJson(!valid)}
+          onChange={(key, next) => {
+            if (
+              next !== undefined &&
+              dataVarRows(next) === null &&
+              !wholeValueRef(next) &&
+              !holdsExpression(next) &&
+              !(next && typeof next === "object" && "$expr" in next)
+            ) {
+              setJsonError("Use a JSON object, a typed key/value array, or an object binding.");
+              return;
+            }
+            setJsonError(null);
+            setInvalidJson(false);
+            onChange(key, next);
+          }}
+        />
+        {jsonError && (
+          <span className="w6w-hint w6w-datavar-error" aria-live="polite">
+            {jsonError}
+          </span>
+        )}
+      </div>
+    );
+  }
   const commit = (next: DataVar[]) => onChange(param.key, next);
   const patch = (i: number, p: Partial<DataVar>) =>
     commit(vars.map((v, idx) => (idx === i ? { ...v, ...p } : v)));
 
   return (
     <div className="w6w-field">
-      <span>
-        {param.label ?? param.key}
-        {param.required ? " *" : ""}
+      <span className="w6w-field-labelrow">
+        <span>
+          {label}
+          {param.required ? " *" : ""}
+        </span>
+        {toggle}
       </span>
       <div className="w6w-stack">
         {vars.length === 0 && (

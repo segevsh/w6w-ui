@@ -177,9 +177,10 @@ export function DataTableGrid({
           rows={rows}
           rowKey={(row) => row.id}
           empty={
-            <p className="w6w-muted w6w-small">
+            // A div, not a <p>: `empty` is any node and callers often pass a <p>.
+            <div className="w6w-muted w6w-small">
               {loading ? "Loading…" : (empty ?? "No rows match this key prefix.")}
-            </p>
+            </div>
           }
         />
       </div>

@@ -79,3 +79,92 @@ test("an unknown config key shows the neutral 'resolved at run' hint", () => {
   assert.ok(html.includes("w6w-param-unevaluated"), "muted, not the danger class");
   assert.ok(!html.includes("w6w-param-unresolved"), html);
 });
+
+const META = {
+  find_webhook: {
+    app: "io.w6w.eventbrite",
+    action: "list-webhooks",
+    connectionId: "conn_T2N725mP2bxfyaoJ",
+  },
+  webhook_1: {
+    app: "@w6w/webhook",
+    action: "webhook",
+    connectionId: null,
+    subscriptionId: "sub_1",
+    url: URL,
+  },
+};
+
+test("static meta resolves without a run: connection id, a webhook's subscription; version is 'at-run'", () => {
+  const s = buildResolveScope(undefined, { steps: {} }, CONFIG, META);
+  const expect = (ref: string, value: unknown) =>
+    assert.deepStrictEqual(resolveParamValue(`{{ ${ref} }}`, s), [
+      { status: "resolved", ref, value },
+    ]);
+  expect("nodes.find_webhook.meta.connectionId", "conn_T2N725mP2bxfyaoJ");
+  expect("steps.find_webhook.meta.app", "io.w6w.eventbrite");
+  expect("nodes.webhook_1.meta.subscriptionId", "sub_1");
+  expect("nodes.webhook_1.meta.url", URL);
+  expect("nodes.webhook_1.meta.connectionId", null);
+  // config still sits at meta.config beside the static meta
+  expect("nodes.webhook_1.meta.config.url", URL);
+  assert.deepStrictEqual(resolveParamValue("{{ nodes.find_webhook.meta.version }}", s), [
+    { status: "at-run", ref: "nodes.find_webhook.meta.version" },
+  ]);
+  // A node with no static meta keeps its honest "unresolved".
+  assert.deepStrictEqual(resolveParamValue("{{ nodes.other.meta.app }}", s), [
+    { status: "unresolved", ref: "nodes.other.meta.app" },
+  ]);
+});
+
+test("a node's run meta wins over its static meta", () => {
+  const run = {
+    app: "io.w6w.eventbrite",
+    version: "0.4.3",
+    action: "list-webhooks",
+    connectionId: "conn_run",
+  };
+  const s = buildResolveScope(
+    undefined,
+    { steps: { find_webhook: { meta: run } } },
+    undefined,
+    META,
+  );
+  assert.equal(resolveParamJson("{{ nodes.find_webhook.meta.connectionId }}", s), "conn_run");
+  assert.equal(resolveParamJson("{{ nodes.find_webhook.meta.version }}", s), "0.4.3");
+});
+
+test("the Test tab previews a static meta ref as its value", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(ExpressionOptionsProvider, {
+      value: { nodeMeta: META },
+      children: React.createElement(ResolvedParams, {
+        params: PARAMS,
+        values: { vars: [{ key: "c", value: "{{ nodes.find_webhook.meta.connectionId }}" }] },
+        testStartState: { steps: {} },
+      }),
+    }),
+  );
+  assert.ok(html.includes("conn_T2N725mP2bxfyaoJ"), html);
+  assert.ok(!html.includes("w6w-param-unresolved"), html);
+});
+
+test("JSON key/value objects and whole-object bindings are visible in the Test preview", () => {
+  for (const vars of [
+    { url: "{{ nodes.webhook_1.meta.config.url }}" },
+    "{{ nodes.source.output }}",
+  ]) {
+    const html = renderToStaticMarkup(
+      React.createElement(ExpressionOptionsProvider, {
+        value: { nodeConfig: CONFIG },
+        children: React.createElement(ResolvedParams, {
+          params: PARAMS,
+          values: { vars },
+          testStartState: { steps: { source: { output: { url: URL } } } },
+        }),
+      }),
+    );
+    assert.ok(html.includes(URL), html);
+    assert.ok(!html.includes("None configured"), html);
+  }
+});

@@ -23,9 +23,10 @@ import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
-import type {
-  ExpressionLoopSource,
-  ExpressionStepSource,
+import {
+  type ExpressionLoopSource,
+  type ExpressionStepSource,
+  useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
@@ -1714,6 +1715,9 @@ export const StepTestRun = forwardRef<
   // never saves, records, invokes or notifies the host.
   const persistWorkflowId = persist?.workflowId;
   const persistStepId = persist?.stepId;
+  // The node's static metadata (`nodes.<id>.meta.*`): shown before any run, and under a run's own.
+  const nodeMeta = useExpressionOptions().nodeMeta;
+  const staticMeta = persistStepId ? nodeMeta?.[persistStepId] : undefined;
   useEffect(() => {
     if (!persistWorkflowId || !persistStepId) return;
     let canceled = false;
@@ -1887,12 +1891,18 @@ export const StepTestRun = forwardRef<
         <div className="w6w-testout">
           <div className="w6w-testout-label">Result (return value)</div>
           <ResultViewer value={state.value} maxHeight={220} />
-          {state.meta && (
+          {(state.meta || staticMeta) && (
             <>
               <div className="w6w-testout-label">Metadata</div>
-              <ResultViewer value={state.meta} maxHeight={220} />
+              <ResultViewer value={{ ...staticMeta, ...state.meta }} maxHeight={220} />
             </>
           )}
+        </div>
+      )}
+      {state?.status !== "done" && state?.status !== "running" && staticMeta && (
+        <div className="w6w-testout" data-testid="steptest-static-meta">
+          <div className="w6w-testout-label">Metadata</div>
+          <ResultViewer value={staticMeta} maxHeight={220} />
         </div>
       )}
       {logs && logs.length > 0 && (

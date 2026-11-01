@@ -11,6 +11,7 @@
  * this file's `W6WUIProviderProps.theme` doc and `docs/theming.md`.
  */
 import { type ReactNode, createContext, useContext } from "react";
+import type { NodeSample } from "./node-samples.ts";
 import { ProvidedThemeCtx } from "./theme.ts";
 import type {
   ActionDef,
@@ -182,6 +183,17 @@ export interface AppsPageResult {
   expiresAt?: string;
 }
 
+/**
+ * One page of a data store's entries for the `data-store-key` picker
+ * ({@link W6WApi.listDataStoreEntries}). `value` is the stored JSON, which the
+ * picker shortens to a one-line preview; `updatedAt` is an ISO timestamp.
+ */
+export interface DataStoreEntryOptions {
+  items: { key: string; value?: unknown; updatedAt?: string }[];
+  /** True when further matching entries exist past this page. */
+  more?: boolean;
+}
+
 export interface W6WApi {
   /**
    * List registered apps to pick from in the connection modal.
@@ -243,6 +255,21 @@ export interface W6WApi {
    * URL; `undefined` leaves the choice to the host.
    */
   listDataStores?(project?: string): Promise<{ name: string; kind: string }[]>;
+
+  /**
+   * OPTIONAL: ONE page of a data store's entries, for the `data-store-key`
+   * step-param picker (`@w6w/store` get/set/delete/increment). Absent, the key
+   * renders as a plain text input and this is never called.
+   * `store` is the store's NAME (what the step's `store` param holds) — the
+   * host resolves it to its own id. `prefix` is the server-side key search
+   * (the host's `GET /data-stores/:id/entries?prefix=`); `limit` caps the page,
+   * so a picker never loads a whole store. `more` is true when the store holds
+   * further matches past this page. `project` follows the `listDataStores` rule.
+   */
+  listDataStoreEntries?(
+    store: string,
+    opts: { project?: string; prefix?: string; limit?: number; signal?: AbortSignal },
+  ): Promise<DataStoreEntryOptions>;
 
   /**
    * OPTIONAL: resolve the choices of `options: { source: "resolveFields" }`
@@ -454,6 +481,15 @@ export interface W6WApi {
    * `/workflows/:workflowId/steps/:stepId/tests`.
    */
   listStepTests(workflowId: string, stepId: string): Promise<StepTest[]>;
+
+  /**
+   * OPTIONAL. The workflow's persisted node samples — each node's last output shape (and value,
+   * when kept) from a step Test, a node run or a full run, written server-side on every one of
+   * them. The flow editor loads them once per workflow so upstream keys survive a reload
+   * (`node-samples.ts`); a host without it behaves exactly as before. GETs
+   * `/workflows/:workflowId/node-samples` → `{ nodeSamples }`.
+   */
+  loadNodeSamples?(workflowId: string): Promise<NodeSample[]>;
 
   /**
    * List the caller's registered Functions (core rfcs/function.md) — drives

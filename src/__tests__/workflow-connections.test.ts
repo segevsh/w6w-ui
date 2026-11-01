@@ -37,6 +37,11 @@ test("legacy save centralizes IDs, preserves independent selections and round-tr
   assert.equal(legacy.nodes[0].uses.connection, "conn_a");
 });
 
+test("an empty draft without nodes stays loadable", () => {
+  const empty = { id: "draft", name: "New workflow" } as FlowWorkflow;
+  assert.equal(centralizeConnections(empty), empty);
+});
+
 test("source candidates are same-app configured nodes, regardless of graph ancestry", () => {
   const wf = centralizeConnections(legacy);
   assert.deepEqual(

@@ -113,6 +113,7 @@ import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
 import {
   type LoopPaint,
   enclosingLoops,
+  loopCardStyle,
   loopPaint,
   loopPaintKey,
   loopToneVar,
@@ -184,6 +185,12 @@ import {
   withViewport,
   workflowToFlow,
 } from "./flow-utils.ts";
+import {
+  type NodeSample,
+  effectiveNodeOutputs,
+  indexNodeSamples,
+  previewNodeOutputs,
+} from "./node-samples.ts";
 import { inferOutputFields } from "./output-shape.ts";
 // One implementation of the incoming-state pipeline, shared by every surface
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
@@ -209,6 +216,8 @@ import {
   loopItemText,
   nodeConfigSources,
   nodeConfigValues,
+  nodeMetaSampleValues,
+  nodeMetaValues,
   parseLoopSeed,
   resolveLoopItemsInState,
   startStateFromSeeds,
@@ -1774,13 +1783,54 @@ function Inner({
   // A For each's own saved Test (its item sample), by step id — read only as the loop's
   // item-shape fallback (`loopSourceFor`), never as that step's output.
   const [stepLoopSamples, setStepLoopSamples] = useState<Record<string, unknown[]>>({});
+  // When each of those saved tests last ran — a persisted node sample strictly newer than it wins.
+  const [stepTestRunAt, setStepTestRunAt] = useState<Record<string, string | null | undefined>>({});
+  // The workflow's PERSISTED node samples (`node-samples.ts`): each node's last output shape from
+  // any Test / node run / run, written server-side. Loaded per workflow (and again whenever a step
+  // editor or the builder opens, alongside the saved tests below), so upstream keys survive a
+  // reload, a reopen or another browser. A host without `loadNodeSamples` keeps `[]` — as before.
+  // While the add-step builder is open, the step being drafted (declared here, before its first read).
+  const [draftStepId, setDraftStepId] = useState<string | null>(null);
+  const [nodeSamples, setNodeSamples] = useState<NodeSample[]>([]);
+  const nodeSampleOpenKey = editingId ?? draftStepId ?? "";
+  useEffect(() => {
+    // Read the key so the effect re-runs when a step editor / the builder opens.
+    void nodeSampleOpenKey;
+    const load = api.loadNodeSamples;
+    if (typeof load !== "function" || !value.id) {
+      setNodeSamples([]);
+      return;
+    }
+    let canceled = false;
+    // Best-effort: a failed load keeps whatever was loaded before and never breaks the editor.
+    load(value.id).then(
+      (rows) => {
+        if (!canceled) setNodeSamples(Array.isArray(rows) ? rows : []);
+      },
+      () => {},
+    );
+    return () => {
+      canceled = true;
+    };
+  }, [api, value.id, nodeSampleOpenKey]);
+  const persistedSamples = useMemo(() => indexNodeSamples(nodeSamples), [nodeSamples]);
+  // Fresh (saved-test) outputs over the persisted ones, for SHAPES (skeletons included)…
+  const shapeOutputs = useMemo(
+    () => effectiveNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+    [stepTestOutputs, persistedSamples, stepTestRunAt],
+  );
+  // …and for the Result PREVIEWS (real values only, never a skeleton).
+  const previewOutputs = useMemo(
+    () => previewNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+    [stepTestOutputs, persistedSamples, stepTestRunAt],
+  );
   const stepShapes = useMemo<StepShapeContext>(
     () => ({
       actionDef: (app, action) => actionDefs[app]?.find((a) => a.key === action),
-      testOutputs: stepTestOutputs,
+      testOutputs: shapeOutputs,
       loopSamples: stepLoopSamples,
     }),
-    [actionDefs, stepTestOutputs, stepLoopSamples],
+    [actionDefs, shapeOutputs, stepLoopSamples],
   );
   // The ▶ Run modal's projection, kept WHOLE: ONE call yields both the seed chips' ancestors
   // (`.steps`) and the `loop` the Current item / Index seed comes from (never a second membership
@@ -1794,7 +1844,6 @@ function Inner({
   // While the add-step builder is open `editingId` is null, which makes
   // `upstreamStateSources` offer EVERY node — including the step being drafted
   // (progressively committed as a node). Exclude it from its own rail sources.
-  const [draftStepId, setDraftStepId] = useState<string | null>(null);
   const upstreamState = useMemo(() => {
     const st = upstreamStateSources(editingId, nodes, edges, stepShapes, draftStepId);
     return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
@@ -1822,6 +1871,7 @@ function Inner({
       setStepTestOutputs({});
       setStepTestMetas({});
       setStepLoopSamples({});
+      setStepTestRunAt({});
       return;
     }
     let canceled = false;
@@ -1838,6 +1888,7 @@ function Inner({
             ? {
                 id,
                 output: latest.lastRunOutput,
+                runAt: latest.lastRunAt,
                 meta: latest.lastRunMeta,
                 loopSample: foreachTestSample(latest),
               }
@@ -1856,13 +1907,16 @@ function Inner({
       const next: Record<string, unknown> = {};
       const nextMetas: Record<string, StepMeta> = {};
       const nextLoopSamples: Record<string, unknown[]> = {};
+      const nextRunAt: Record<string, string | null | undefined> = {};
       for (const r of res) {
         if (r?.meta) nextMetas[r.id] = r.meta;
         if (r?.loopSample) nextLoopSamples[r.id] = r.loopSample;
         if (!r || r.output === undefined || r.output === null) continue;
         next[r.id] = r.output;
+        nextRunAt[r.id] = r.runAt;
       }
       setStepTestOutputs(next);
+      setStepTestRunAt(nextRunAt);
       setStepTestMetas(nextMetas);
       setStepLoopSamples(nextLoopSamples);
     });
@@ -1875,8 +1929,8 @@ function Inner({
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
   const stepSampleValues = useMemo(
     () =>
-      upstreamSampleValues(upstreamState.steps, stepTestOutputs, stepTestMetas, upstreamState.loop),
-    [upstreamState.steps, upstreamState.loop, stepTestOutputs, stepTestMetas],
+      upstreamSampleValues(upstreamState.steps, previewOutputs, stepTestMetas, upstreamState.loop),
+    [upstreamState.steps, upstreamState.loop, previewOutputs, stepTestMetas],
   );
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
@@ -1900,6 +1954,12 @@ function Inner({
     () => nodeConfigValues(nodes, triggerRegistration.subs),
     [nodes, triggerRegistration.subs],
   );
+  // …and every node's static metadata (`nodes.<id>.meta.app|version|action|connectionId`, a
+  // webhook's subscription), readable without a run. `version` is the one the canvas labels.
+  const nodeMeta = useMemo(
+    () => nodeMetaValues(nodes, triggerRegistration.subs, appsById, connections),
+    [nodes, triggerRegistration.subs, appsById, connections],
+  );
   const mergedExprOptions = useMemo<ExpressionOptions>(
     () => ({
       ...(exprOptions ?? {}),
@@ -1908,9 +1968,12 @@ function Inner({
       loop: upstreamState.loop,
       nodeConfigs: nodeConfigs,
       nodeConfig,
+      nodeMeta,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
+        // Static meta under a test's reported meta, which wins.
+        ...nodeMetaSampleValues(nodeMeta),
         ...stepSampleValues,
       },
     }),
@@ -1921,6 +1984,7 @@ function Inner({
       stepSampleValues,
       nodeConfigs,
       nodeConfig,
+      nodeMeta,
     ],
   );
 
@@ -3014,19 +3078,9 @@ function LoopDots({ id }: { id: string }) {
   );
 }
 
-/**
- * The colour custom properties a card's root carries: its own tone for a For each's
- * Each item port, and its innermost loop's tone for a body step's tint.
- */
-function useLoopStyle(id: string, loopOf: string | undefined): CSSProperties | undefined {
-  const { tones } = useContext(LoopPaintCtx);
-  const own = tones.get(id);
-  const body = loopOf ? tones.get(loopOf) : undefined;
-  if (own === undefined && body === undefined) return undefined;
-  return {
-    ...(own === undefined ? {} : { "--w6w-loop-color": loopToneVar(own) }),
-    ...(body === undefined ? {} : { "--w6w-loop-body-color": loopToneVar(body) }),
-  } as CSSProperties;
+/** A card's loop colour: only a For each carries one, for its Each item port. */
+function useLoopStyle(id: string): CSSProperties | undefined {
+  return loopCardStyle(id, useContext(LoopPaintCtx).tones);
 }
 
 function PortHandle({
@@ -3406,7 +3460,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // is stamped by `Inner`'s live-run repaint effect, never by `workflowToFlow`.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
-  const loopStyle = useLoopStyle(id, data.loopOf);
+  const loopStyle = useLoopStyle(id);
   return (
     <div
       className={
@@ -3421,6 +3475,9 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
     >
       <NodeControls id={id} step={step} runnable />
       <div
+        // An app trigger gets the same half-pill entry chrome as a built-in trigger.
+        className={isTrigger ? "w6w-node-trigger" : undefined}
+        data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
         {...problemAttrs(data.stepProblems)}
         style={{
@@ -3440,8 +3497,8 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           opacity: isDisabledStep(step) ? 0.45 : selected ? 1 : visual.opacity,
           background: "var(--w6w-panel)",
           color: "var(--w6w-text)",
-          borderRadius: 4,
-          padding: "8px 12px",
+          // The trigger half-pill's radius + padding live in `.w6w-node-trigger`.
+          ...(isTrigger ? {} : { borderRadius: 4, padding: "8px 12px" }),
           minWidth: 180,
           fontSize: 13,
           display: "flex",
@@ -3534,7 +3591,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
-  const loopStyle = useLoopStyle(id, data.loopOf);
+  const loopStyle = useLoopStyle(id);
   return (
     <div
       className={

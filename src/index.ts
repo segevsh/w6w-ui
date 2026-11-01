@@ -8,12 +8,22 @@
 export { W6WUIProvider, useW6WApi } from "./provider.tsx";
 export type {
   AppsPageResult,
+  DataStoreEntryOptions,
   ListAppsPageOptions,
   StepTest,
   TestRunSummary,
   W6WApi,
   W6WUIProviderProps,
 } from "./provider.tsx";
+
+export {
+  effectiveNodeOutput,
+  effectiveNodeOutputs,
+  indexNodeSamples,
+  previewNodeOutputs,
+  shapeToSkeleton,
+} from "./node-samples.ts";
+export type { NodeSample, NodeShape } from "./node-samples.ts";
 
 export { createW6WApi, ApiError } from "./createW6WApi.ts";
 export type { CreateW6WApiOptions } from "./createW6WApi.ts";

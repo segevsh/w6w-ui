@@ -118,9 +118,10 @@ export function DataEntryList({
         rows={rows}
         rowKey={(row) => row.key}
         empty={
-          <p className="w6w-muted w6w-small">
+          // A div, not a <p>: `empty` is any node and callers often pass a <p>.
+          <div className="w6w-muted w6w-small">
             {loading ? "Loading…" : (empty ?? "No entries match this key prefix.")}
-          </p>
+          </div>
         }
       />
 

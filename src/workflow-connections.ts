@@ -25,7 +25,7 @@ export function centralizeConnections<T extends Pick<FlowWorkflow, "connections"
 ): T {
   let connections = workflow.connections ?? {};
   let changed = false;
-  const nodes = workflow.nodes.map((step) => {
+  const nodes = (workflow.nodes ?? []).map((step) => {
     if (!step.uses.connection || step.uses.connectionRef !== undefined) return step;
     const existing = Object.hasOwn(connections, step.id) ? connections[step.id] : undefined;
     const key =
