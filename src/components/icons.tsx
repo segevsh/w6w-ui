@@ -88,7 +88,8 @@ export type IconName =
   | "frame"
   | "bold"
   | "grip"
-  | "chevron-down";
+  | "chevron-down"
+  | "database";
 
 /**
  * Which attributes the shared `<svg>` root carries — i.e. how the glyph is
@@ -1052,6 +1053,22 @@ export const icons: Record<IconName, IconDef> = {
     body: (
       <>
         <polyline points="6 9 12 15 18 9" />
+      </>
+    ),
+  },
+  /**
+   * The workflow toolbar's State button (embed `WorkflowEditor.tsx`) — Feather `database`, a
+   * stack of records: the run's state tree.
+   */
+  database: {
+    viewBox: "0 0 24 24",
+    variant: "stroke",
+    strokeWidth: 2,
+    body: (
+      <>
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
       </>
     ),
   },

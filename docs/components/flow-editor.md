@@ -108,7 +108,9 @@ const workflow: FlowWorkflow = {
   See [Write to state](#write-to-state). Leave it out for the default: off, except on a Set data
   node, which merges into the root.
 - **`initialState`** (optional): the starting data, a JSON object the run's state tree begins with.
-  The editor keeps it as given.
+  Its values may be literal or `{{ }}` references to variables, constants, documents or a node's
+  static metadata, resolved once at run start. The editor keeps it as given. To edit it, a host
+  renders `ExpressionEditorModal` with `mode="json-binding"` and `startingState`.
 - **`canvas`** (optional): notes and sections drawn around the graph. The engine ignores it. See
   [Notes and sections](#notes-and-sections).
 

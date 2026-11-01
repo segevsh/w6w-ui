@@ -103,6 +103,8 @@ export type { ComboboxOption, ComboboxProps } from "./components/Combobox.tsx";
 
 export { ExpressionInput } from "./components/ExpressionInput.tsx";
 export type { ExpressionInputProps } from "./components/ExpressionInput.tsx";
+export { ExpressionEditorModal } from "./components/ExpressionEditorModal.tsx";
+export type { ExpressionEditorModalProps } from "./components/ExpressionEditorModal.tsx";
 
 export {
   ExpressionOptionsProvider,
