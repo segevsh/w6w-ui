@@ -165,7 +165,7 @@ test("the picker shows templates in Utilities and store actions in Data", async 
   await act(async () => root.unmount());
 });
 
-test("@w6w/template · render declares exactly [template, values] — template:text, values:vars", () => {
+test("@w6w/template · render declares exactly [template, values] — template:json, values:json", () => {
   const def = internalNodeDef(TEMPLATE_APP, "render");
   assert.ok(def, "internalNodeDef(@w6w/template, render) must be defined");
   const params = def?.params ?? [];
@@ -176,6 +176,9 @@ test("@w6w/template · render declares exactly [template, values] — template:t
   );
   const template = params.find((p) => p.key === "template");
   const values = params.find((p) => p.key === "values");
-  assert.equal(template?.type, "text", "template must be expression-capable (FxField-wrapped)");
-  assert.equal(values?.type, "vars", "values must render VarsField, not the generic json editor");
+  assert.equal(template?.type, "json", "template accepts text, objects and fx bindings");
+  assert.equal(template?.whole, true);
+  assert.equal(values?.type, "json", "values supports literal JSON and whole-object fx bindings");
+  assert.equal(values?.whole, true);
+  assert.deepEqual(values?.default, {});
 });
