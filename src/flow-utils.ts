@@ -36,7 +36,7 @@ import {
 // threading run state through it would repaint nothing on a poll tick.
 import type { RunStatus, StepVisualState } from "./run-visuals.ts";
 import type { StepProblem } from "./step-problems.ts";
-import { centralizeConnections } from "./workflow-connections.ts";
+import { centralizeConnections, pruneUnusedConnections } from "./workflow-connections.ts";
 
 export interface StepNodeData extends Record<string, unknown> {
   step: FlowStep;
@@ -682,7 +682,9 @@ export function flowToWorkflow(
 
   // A branched body (anything but a plain chain) also emits its body-internal edges.
   const nextEdges = [...plainEdges, ...eachLinks, ...loopBodyDefinitionEdges(nodes, edges)];
-  return centralizeConnections({ ...original, nodes: nextSteps, edges: nextEdges });
+  return pruneUnusedConnections(
+    centralizeConnections({ ...original, nodes: nextSteps, edges: nextEdges }),
+  );
 }
 
 /** The workflow's stored camera, as `settings.viewport` declares it. */

@@ -94,6 +94,10 @@ test("P7b the five label strings are pairwise distinct", () => {
 test("P8 found without displayName falls back to id; empty settled list is missing", () => {
   assert.equal(connectionButtonLabel("c2", [{ id: "c2" }], false), "c2");
   assert.equal(connectionButtonLabel("c2", [], false), "Missing connection — choose another");
+  assert.equal(
+    connectionButtonLabel("zero", [{ id: "zero", displayName: "Default", builtIn: true }], false),
+    "Built-in",
+  );
 });
 
 test("W5 flowToWorkflow output is identical with and without a stepProblems stamp", () => {

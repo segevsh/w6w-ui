@@ -110,13 +110,13 @@ export function isConnectionBlocked(
 /** The Setup tab's Connection button label — exactly five outcomes. */
 export function connectionButtonLabel(
   connection: string | undefined | null,
-  conns: { id: string; displayName?: string }[] | null,
+  conns: { id: string; displayName?: string; builtIn?: boolean }[] | null,
   failed: boolean,
 ): string {
   if (!connection) return "No connection";
   if (failed) return "Couldn't load connections";
   if (conns === null) return connection;
   const found = conns.find((c) => c.id === connection);
-  if (found) return found.displayName ?? connection;
+  if (found) return found.builtIn ? "Built-in" : (found.displayName ?? connection);
   return "Missing connection — choose another";
 }

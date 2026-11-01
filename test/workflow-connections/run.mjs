@@ -155,7 +155,7 @@ try {
 
   await page.evaluate(() => window.__setWorkflow({ manifestVersion: "2", id: "cohost_flow", name: "Cohost flow", nodes: [], edges: [] }));
   await startAdd("Cohost");
-  assert.equal(await connectionButton().innerText(), "Default");
+  assert.equal(await connectionButton().innerText(), "Built-in");
   assert.equal(await page.getByText(/Connected automatically|Use connection from a node/).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Create connection", exact: true }).count(), 0);
   await page.screenshot({ path: "/tmp/connection-picker-cohost.png" });
@@ -176,8 +176,48 @@ try {
   await page.waitForFunction(() => window.__value.nodes.every(n => window.__value.connections[n.uses.connectionRef].connection === "zerocred:cohost"));
   await close();
   await open((await definition()).nodes.at(-1).id);
-  assert.equal(await connectionButton().innerText(), "Default");
-  console.log("PASS: Cohost default, existing account inheritance, progressive shared switch, consistent add/edit UI");
+  assert.equal(await connectionButton().innerText(), "Built-in");
+  const users = (await definition()).nodes.map((n) => n.id);
+  const builtIn = page.locator('[data-connection-id="zerocred:cohost"]');
+  assert.match(await builtIn.innerText(), /Built-in.*In use in this workflow/s);
+  for (const id of users) assert.ok((await builtIn.innerText()).includes(id));
+  assert.equal(await page.locator('[data-connection-id]').first().getAttribute("data-connection-id"), "zerocred:cohost");
+  assert.equal(await page.getByText("No credentials required", { exact: true }).count(), 0);
+  await choose("cohost_account");
+  await page.getByRole("button", { name: "Only this node", exact: true }).click();
+  wf = await definition();
+  assert.equal(account(wf, users[0]), "zerocred:cohost");
+  assert.equal(account(wf, users[1]), "cohost_account");
+  await close();
+  await page.evaluate((wf) => window.__setWorkflow({
+    ...wf, id: "cohost_with_stale_alias", connections: {
+      ...wf.connections,
+      unused_old_node: { app: "cohost", connection: "zerocred:cohost" },
+    },
+  }), wf);
+  await open(users[1]);
+  assert.equal(await connectionButton().innerText(), "Cohost account");
+  assert.match(await builtIn.innerText(), /In use in this workflow/);
+  await choose("zerocred:cohost");
+  wf = await definition();
+  assert.equal(wf.connections.unused_old_node, undefined, "unused aliases disappear from saved JSON");
+  assert.ok(wf.nodes.every(n => account(wf, n.id) === "zerocred:cohost"));
+  await connectionButton().click();
+  await choose("cohost_account");
+  await page.getByRole("button", { name: "All 2 nodes", exact: true }).click();
+  wf = await definition();
+  assert.ok(Object.values(wf.connections).every((c) => c.connection === "cohost_account"), "last built-in use leaves no stale aliases");
+  await connectionButton().click();
+  await builtIn.waitFor();
+  assert.equal(await builtIn.count(), 1, "Built-in remains available after all nodes switch away");
+  await builtIn.screenshot({ path: "/tmp/builtin-connection-choice.png" });
+  await choose("zerocred:cohost");
+  await page.getByRole("button", { name: "All 2 nodes", exact: true }).click();
+  await close();
+  await page.evaluate(() => window.__reload());
+  await open(users[1]);
+  assert.equal(await connectionButton().innerText(), "Built-in");
+  console.log("PASS: Built-in stays selectable; in-use accounts appear first; individual/shared switching and stale-alias cleanup survive reload");
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();
