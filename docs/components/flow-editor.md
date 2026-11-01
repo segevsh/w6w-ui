@@ -331,6 +331,19 @@ map hasn't been reached. A `skipped` node with `skipReason: "not_on_path"` was o
 and never part of the run: it, its loop body and its edges get no run paint. `runState` is never
 written back into the workflow.
 
+## Test values come back
+
+The **Run node** form, a step's **Test** tab and a trigger's **Test** tab open with the values that
+node was last run with — after a reload, in another browser, or inside the embed. They are kept on
+the server for each workflow and node, never in the workflow itself, so testing never marks the
+workflow changed or makes a new version. A short **last used values · Clear** note shows when a form
+was filled this way; **Clear** empties it. A value typed into a secret field isn't kept, but a
+reference to a secret (`{{ secrets.NAME }}`) is. The header **Run** uses the manual trigger's last
+values too.
+
+Your `W6WUIProvider` api needs `loadTestInputs` and `saveTestInput` for this; `createW6WApi` has
+both. Without them, the forms fall back to the step's latest saved test.
+
 ## Helpers
 
 `@w6w/ui/flow` also exports what the canvas is built on, for when you render or inspect a workflow

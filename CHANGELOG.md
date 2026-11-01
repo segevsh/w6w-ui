@@ -14,6 +14,15 @@ repo's git history for exact dates and commits.
   hint (`Copies output.<path> into state.<key>`), and use the Set data row style: the same inputs,
   a trash `DeleteButton` and **+ Add field**. The left box is a free-text `Combobox` listing the
   step's output fields. **Under a key** is labelled **To state key**. The stored `state` is unchanged.
+- Test forms remember the last values used, server-side: the Run node modal, the step Test tab
+  (incoming state) and the trigger Test tab reopen PREFILLED with what that workflow + node last ran
+  with, after a success, a reload, another browser or the embed, and show a muted **last used
+  values · Clear** note. New optional `W6WApi.loadTestInputs` / `saveTestInput`
+  (`GET /workflows/:id/test-inputs`, `PUT /workflows/:id/nodes/:nodeId/test-input`), wired in
+  `createW6WApi`; a host without them keeps the step-test fixture prefill. Never in the workflow
+  definition (no dirty, no version); a literal typed into a `secret` param and sealed envelopes are
+  never remembered — bindings are. New exports `useRememberedTestInput`, `LastUsedNote`,
+  `findTestInput`, `rememberableInput`, `NodeTestInput`. 0.2.46.
 - `ExpressionEditorModal` json-binding mode takes `startingState` for a workflow's starting state
   (`Workflow.initialState`, evaluated once at run start): no Previous steps, State or Secrets in the
   rail, Documents shown, an **Insert as Reference / Value** toggle (a value copies the source's
