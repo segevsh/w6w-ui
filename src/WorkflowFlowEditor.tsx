@@ -116,6 +116,7 @@ import {
   isFlowTextTarget,
   restoreFlowEdit,
 } from "./flow-history.ts";
+import { relayoutFlow } from "./flow-layout.ts";
 import {
   type LoopPaint,
   enclosingLoops,
@@ -193,7 +194,6 @@ import {
   flowToWorkflow,
   idClashMessage,
   paramsToJson,
-  relayoutNodes,
   slugifyLabel,
   stepIdError,
   stepToJson,
@@ -1048,23 +1048,15 @@ function Inner({
 
   // ── Auto-layout (the fourth control button) ─────────────────────────────────
   //
-  // Re-flows the CURRENT canvas — including steps added and wires drawn since the
-  // last save — through `relayoutNodes`, which is the same layering + the same
-  // placement arithmetic `workflowToFlow` runs on first open. Not a second
-  // algorithm: "arrange" disagreeing with "how it opened" is the one thing an
-  // author notices immediately (D-I0-6 also pins that no layout dependency is
-  // added — the layerer already exists).
-  //
-  // `setNodes` then `emitChange` is what makes the result PERSIST: `flowToWorkflow`
-  // stamps each step with its node's rounded coordinate and the host's auto-save
-  // writes it, so a reload reopens on the re-flowed graph.
+  // Arrange the current paths and their section frames as one undoable edit.
   const performRelayout = useCallback(() => {
     if (readOnly) return;
-    const next = relayoutNodes(nodes, edges);
-    setNodes(next);
+    const next = relayoutFlow(nodes, edges, canvas);
+    setNodes(next.nodes);
+    setCanvas(next.canvas);
     relayoutPendingFitRef.current = true;
-    emitChange(next, edges);
-  }, [nodes, edges, setNodes, emitChange, readOnly]);
+    emitChange(next.nodes, edges, next.canvas);
+  }, [nodes, edges, canvas, setNodes, emitChange, readOnly]);
 
   // No confirmation (D-T2b): re-flowing is instant, deliberately with no
   // replacement gate — the intake is explicit this click should never warn. See

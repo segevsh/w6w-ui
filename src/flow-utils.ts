@@ -1,7 +1,7 @@
 /**
  * Convert between the Workflow logical model and the React Flow node/edge
- * representation. Also computes an auto-layout — a simple topological layering
- * (columns = depth; rows = sibling index) that is deterministic and portable
+ * representation. Also computes an auto-layout — topological columns with
+ * separate rows for independent paths — that is deterministic and portable
  * so the same workflow always opens with the same layout.
  */
 import type { Edge, Node } from "@xyflow/react";
@@ -264,7 +264,7 @@ function slotPosition(col: number, row: number): { x: number; y: number } {
  * Exceeding the bound *is* the cycle signal (`changed` is still true). The
  * layout then stays **usable** rather than throwing or refusing: the runaway
  * values are clamped to the last real column, so the steps on the cycle stack up
- * in one column (distinct rows — `workflowToFlow` counts rows per column) and
+ * in one column (the path layout gives them distinct rows) and
  * the author can see the loop they drew and delete an edge. Refusing to lay out
  * a cyclic graph would trade a hang for a workflow nobody can open to fix. The
  * clamp cannot fire on a DAG, because a DAG converges before the bound is spent —
@@ -310,6 +310,61 @@ function computeLayers(steps: FlowStep[], edges: FlowEdge[]): Map<string, number
 }
 
 /**
+ * Keep each path on its own row until it joins another path. A per-column row
+ * counter loses that ancestry and can draw one trigger's edge through a node
+ * belonging to another trigger.
+ *
+ * Choose one forward parent per node to form a layout forest. At a join, align
+ * with the furthest-away parent so its long edge can bypass the shorter path.
+ * Likewise place a parent's longest outgoing branch first. Other branches get
+ * their own rows, including the space their descendants need. Only forward
+ * edges participate, so even a malformed cycle has a finite, usable layout.
+ */
+function computePositions(
+  steps: FlowStep[],
+  edges: FlowEdge[],
+): Map<string, { x: number; y: number }> {
+  const layer = computeLayers(steps, edges);
+  const order = new Map(steps.map((s, i) => [s.id, i]));
+  const parent = new Map<string, string>();
+  for (const { from, to } of edges) {
+    const fromCol = layer.get(from);
+    const toCol = layer.get(to);
+    if (fromCol === undefined || toCol === undefined || fromCol >= toCol) continue;
+    const prev = parent.get(to);
+    if (
+      prev === undefined ||
+      fromCol < (layer.get(prev) ?? 0) ||
+      (fromCol === layer.get(prev) && (order.get(from) ?? 0) < (order.get(prev) ?? 0))
+    ) {
+      parent.set(to, from);
+    }
+  }
+  const children = new Map(steps.map((s) => [s.id, [] as string[]]));
+  for (const [child, from] of parent) children.get(from)?.push(child);
+  for (const siblings of children.values()) {
+    siblings.sort(
+      (a, b) =>
+        (layer.get(b) ?? 0) - (layer.get(a) ?? 0) || (order.get(a) ?? 0) - (order.get(b) ?? 0),
+    );
+  }
+  const positions = new Map<string, { x: number; y: number }>();
+  let row = 0;
+  for (const root of steps.filter((s) => !parent.has(s.id))) {
+    const stack = [root.id];
+    while (stack.length) {
+      const id = stack.pop();
+      if (id === undefined) continue;
+      positions.set(id, slotPosition(layer.get(id) ?? 0, row));
+      const branch = children.get(id) ?? [];
+      if (branch.length === 0) row++;
+      else for (let i = branch.length - 1; i >= 0; i--) stack.push(branch[i]);
+    }
+  }
+  return positions;
+}
+
+/**
  * A step's **stored** canvas coordinate, when it has a usable one.
  *
  * `position` arrives from a persisted JSON document (core `rfcs/workflow.md` ·
@@ -347,11 +402,8 @@ export function normalizeInput(input: FlowWorkflowInput): FlowWorkflow {
  * positioned graph mixes the two: positioned steps sit where they were left,
  * unpositioned ones take their computed slot.
  *
- * `computeLayers` runs over the **whole** graph either way, and the per-column
- * row counter advances for every step including positioned ones — so an
- * unpositioned step's computed coordinate is a pure function of the graph and
- * does not shift depending on which of its neighbours happen to carry a
- * coordinate.
+ * Layout runs over the whole graph, including positioned steps, so a fallback
+ * coordinate does not depend on which neighbours already have saved positions.
  */
 export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; edges: Edge[] } {
   const wf = normalizeInput(input);
@@ -395,21 +447,16 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
   const foreachIds = new Set(defs.filter(isForeachStep).map((s) => s.id));
   for (const e of edges) if (foreachIds.has(e.from) && isEachLink(e)) drop.add(e);
   if (drop.size > 0) edges = edges.filter((e) => !drop.has(e));
-  const layer = computeLayers(defs, [
+  const positions = computePositions(defs, [
     ...edges,
     ...eachEdges.map((e) => ({ from: e.source, to: e.target })),
   ]);
-  const rowsInLayer = new Map<number, number>();
-
   const nodes: StepNode[] = defs.map((step) => {
     const isInternal = isInternalApp(step.uses.app);
-    const col = layer.get(step.id) ?? 0;
-    const row = rowsInLayer.get(col) ?? 0;
-    rowsInLayer.set(col, row + 1);
     return {
       id: step.id,
       type: isInternal ? "control" : "step",
-      position: storedPosition(step) ?? slotPosition(col, row),
+      position: storedPosition(step) ?? positions.get(step.id) ?? slotPosition(0, 0),
       data: {
         step,
         isInternal,
@@ -474,7 +521,7 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
  * button acts on **what is currently on the canvas**, including steps added and
  * wires drawn since the last save.
  *
- * Same {@link computeLayers} and same {@link slotPosition} as {@link
+ * Same {@link computePositions} as {@link
  * workflowToFlow}, so a graph with no stored positions lays out byte-identically
  * either way (pinned by `flow-utils.test.ts` — "auto-layout agrees with first
  * open"). The **only** difference is that a stored coordinate does not win here:
@@ -497,19 +544,11 @@ export function relayoutNodes(nodes: StepNode[], edges: Edge[]): StepNode[] {
   // what makes this safe to call from a click: before it, a cyclic graph froze
   // the tab, and this button would have frozen it mid-edit.
   const steps: FlowStep[] = nodes.map((n) => ({ ...n.data.step, id: n.id }));
-  const layer = computeLayers(
+  const positions = computePositions(
     steps,
     edges.map((e) => ({ from: e.source, to: e.target })),
   );
-  const rowsInLayer = new Map<number, number>();
-  return nodes.map((n) => {
-    const col = layer.get(n.id) ?? 0;
-    const row = rowsInLayer.get(col) ?? 0;
-    // Advance for EVERY node, exactly as `workflowToFlow` does — the row counter
-    // is per column, and skipping any node would collapse two onto one slot.
-    rowsInLayer.set(col, row + 1);
-    return { ...n, position: slotPosition(col, row) };
-  });
+  return nodes.map((n) => ({ ...n, position: positions.get(n.id) ?? slotPosition(0, 0) }));
 }
 
 /**
