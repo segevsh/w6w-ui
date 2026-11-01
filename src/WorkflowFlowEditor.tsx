@@ -1827,11 +1827,11 @@ function Inner({
     () => nodeConfigValues(nodes, triggerRegistration.subs),
     [nodes, triggerRegistration.subs],
   );
-  // …and every node's static metadata (`nodes.<id>.meta.app|action|connectionId`, a webhook's
-  // subscription), readable without a run.
+  // …and every node's static metadata (`nodes.<id>.meta.app|version|action|connectionId`, a
+  // webhook's subscription), readable without a run. `version` is the one the canvas labels.
   const nodeMeta = useMemo(
-    () => nodeMetaValues(nodes, triggerRegistration.subs),
-    [nodes, triggerRegistration.subs],
+    () => nodeMetaValues(nodes, triggerRegistration.subs, appsById),
+    [nodes, triggerRegistration.subs, appsById],
   );
   const mergedExprOptions = useMemo<ExpressionOptions>(
     () => ({
@@ -1845,7 +1845,7 @@ function Inner({
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
-        // Static meta under a test's reported meta, which wins (and adds `version`).
+        // Static meta under a test's reported meta, which wins.
         ...nodeMetaSampleValues(nodeMeta),
         ...stepSampleValues,
       },

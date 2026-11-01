@@ -708,13 +708,16 @@ function subscriptionFor(
 /**
  * Each node's static metadata VALUES — the client's `nodeMetaOf`: `app`, `action` and
  * `connectionId` (the node's own connection, else `null`) from the definition, plus a webhook
- * trigger node's `subscriptionId` and `url` from its subscription ({@link subscriptionFor}).
- * Readable at `nodes.<id>.meta.<key>` whether or not the node ran; `version` is reported only
- * by a run, so it is never here. A node with no app is absent.
+ * trigger node's `subscriptionId` and `url` from its subscription ({@link subscriptionFor}), and
+ * `version` from `apps` — the same summary the canvas labels the node with (`<id> - v<version>`),
+ * i.e. the version it will dispatch. Readable at `nodes.<id>.meta.<key>` whether or not the node
+ * ran; a run's reported meta overrides it. An app with no known version has no `version` (the
+ * previews then say "resolved at run"). A node with no app is absent.
  */
 export function nodeMetaValues(
   nodes: StepNode[],
   subs: readonly SubscriptionSummary[],
+  apps?: ReadonlyMap<string, { version?: string }>,
 ): Record<string, Record<string, unknown>> {
   const out: Record<string, Record<string, unknown>> = {};
   for (const n of nodes) {
@@ -725,6 +728,8 @@ export function nodeMetaValues(
       action: step.uses.action,
       connectionId: step.uses.connection ?? null,
     };
+    const version = apps?.get(step.uses.app)?.version;
+    if (version) meta.version = version;
     const sub = subscriptionFor(step, subs);
     if (sub) meta.subscriptionId = sub.id;
     if (sub?.webhookUrl) meta.url = sub.webhookUrl;
