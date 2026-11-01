@@ -2203,6 +2203,7 @@ function Inner({
                     <ReactFlow
                       nodes={nodes}
                       edges={paintedEdges}
+                      minZoom={0.05}
                       // Straight segments with right-angle corners, not the library's
                       // default bezier curve — reads clearer on a wide, branchy graph
                       // than a sweeping curve does. One place: no edge object sets its

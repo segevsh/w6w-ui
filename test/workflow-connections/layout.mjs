@@ -161,6 +161,44 @@ try {
   console.log(
     "PASS: one undo/redo restores nodes and sections together; saved layout survives reload",
   );
+  const zoom = () =>
+    page
+      .locator(".react-flow__viewport")
+      .evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
+  const zoomOut = page.locator(".react-flow__controls-zoomout");
+  for (let i = 0; i < 30 && (await zoomOut.isEnabled()); i++) {
+    await zoomOut.click();
+  }
+  assert.ok(Math.abs((await zoom()) - 0.05) < 0.001, "can zoom out to 5%");
+  // A wheel gesture persists the viewport; fit/zoom helper calls intentionally do not.
+  await page.locator(".react-flow__controls-zoomin").click();
+  await page.mouse.move(900, 550);
+  await page.mouse.wheel(0, 600);
+  await page.waitForFunction(() => window.__value.settings?.viewport?.zoom === 0.05);
+  assert.equal((await page.evaluate(() => window.__value)).settings.viewport.zoom, 0.05);
+  await page.evaluate(() => window.__reload());
+  await page.getByTestId("rf__node-order_placed").waitFor();
+  assert.ok(Math.abs((await zoom()) - 0.05) < 0.001, "5% zoom survives reload");
+  await page.evaluate(
+    (wf) =>
+      window.__setWorkflow({
+        ...wf,
+        id: "wf_wide",
+        canvas: {},
+        nodes: wf.nodes.map((n) => ({ ...n, position: { x: n.position.x * 10, y: n.position.y } })),
+      }),
+    workflow,
+  );
+  await page.locator(".react-flow__controls-fitview").click();
+  await page.waitForFunction(
+    () =>
+      new DOMMatrixReadOnly(
+        getComputedStyle(document.querySelector(".react-flow__viewport")).transform,
+      ).a < 0.5,
+  );
+  assert.ok((await zoom()) < 0.5, "Fit view also passes the old limit");
+  assert.deepEqual(errors, []);
+  console.log("PASS: zoom-out reaches 5%, persists on reload, and Fit view fits wide workflows");
 } finally {
   await browser.close();
 }
