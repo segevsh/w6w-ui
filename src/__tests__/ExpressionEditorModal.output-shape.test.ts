@@ -42,6 +42,26 @@ g.MutationObserver =
 (dom.window as unknown as Record<string, unknown>).MutationObserver = g.MutationObserver;
 g.IS_REACT_ACT_ENVIRONMENT = true;
 
+// json-binding mode mounts a CodeMirror JsonEditor, which needs these (same shims as
+// `ParamsForm.json-binding.test.ts`).
+g.Window = dom.window.Window;
+const raf = (cb: (t: number) => void) => setTimeout(() => cb(Date.now()), 0) as unknown as number;
+g.requestAnimationFrame = raf;
+g.cancelAnimationFrame = (id: number) => clearTimeout(id);
+(dom.window as unknown as Record<string, unknown>).requestAnimationFrame = raf;
+(dom.window as unknown as Record<string, unknown>).cancelAnimationFrame = (id: number) =>
+  clearTimeout(id as unknown as NodeJS.Timeout);
+const rangeProto = dom.window.Range.prototype as unknown as Record<string, unknown>;
+rangeProto.getClientRects = () => [];
+rangeProto.getBoundingClientRect = () => ({
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+});
+
 // jsdom@30 doesn't implement <dialog>'s imperative API — `Modal.tsx` calls
 // `el.showModal()` in a mount effect, which would otherwise throw.
 (
@@ -192,7 +212,7 @@ test("a field row shows only its own name, indents under its parent and keeps th
             { key: "event", path: true },
             { key: "event.name", path: true },
           ],
-          outputsFrom: "test",
+          outputsFrom: "fresh",
         },
       ],
     },
@@ -229,7 +249,7 @@ test("a dotted key WITHOUT path stays a literal key and is dropped, as before", 
 test("fields from a test run say so when expanded", async () => {
   const { container } = await mountModal({
     options: {
-      steps: [{ id: "ev", outputs: [{ key: "id", path: true }], outputsFrom: "test" }],
+      steps: [{ id: "ev", outputs: [{ key: "id", path: true }], outputsFrom: "fresh" }],
     },
   });
   const group = groupFor(container, "Workflow state");
@@ -254,4 +274,102 @@ test("a step with no known shape tells the author to run a test, and still offer
     (editor.querySelector(".w6w-expr-chip") as HTMLElement).getAttribute("data-ref"),
     "nodes.ev.output",
   );
+});
+
+// ── declared output shapes: merge, hints, trigger.event, value sources ──────
+
+const expandFields = async (container: HTMLElement) => {
+  const group = groupFor(container, "Workflow state") as HTMLElement;
+  await click(group.querySelector('[data-testid="expr-toggle-fields"]') as Element);
+  return group;
+};
+
+test("real {a,b} + declared {b,c}: a, b, c listed, only c muted 'declared by the app'", async () => {
+  const { container } = await mountModal({
+    options: {
+      steps: [
+        {
+          id: "ev",
+          outputs: [
+            { key: "a", path: true },
+            { key: "b", path: true },
+            { key: "c", path: true, declaredOnly: true },
+          ],
+          outputsFrom: "fresh",
+        },
+      ],
+    },
+  });
+  const group = await expandFields(container);
+  const rows = Array.from(
+    group.querySelectorAll(".w6w-exprmodal-subsources .w6w-exprmodal-source"),
+  );
+  assert.deepEqual(
+    rows.map((b) => b.querySelector(".w6w-exprmodal-source-label")?.textContent),
+    ["a", "b", "c"],
+  );
+  const muted = rows.filter((b) => b.classList.contains("is-declared-only"));
+  assert.equal(muted.length, 1);
+  assert.equal(muted[0].querySelector(".w6w-exprmodal-source-label")?.textContent, "c");
+  assert.equal(muted[0].textContent?.includes("declared by the app"), true);
+  assert.equal(rows[0].textContent, "a");
+});
+
+for (const mode of ["expression", "json-binding"] as const) {
+  for (const [from, text, id] of [
+    ["fresh", "Fields from the last test run", "expr-fields-from-test"],
+    ["persisted", "Fields from last test", "expr-fields-from-test"],
+    ["declared", "declared by the app", "expr-fields-from-declared"],
+    ["sample", "example from the app", "expr-fields-from-sample"],
+  ] as const) {
+    test(`hint for a ${from} base in ${mode} mode`, async () => {
+      const { container } = await mountModal({
+        ...(mode === "json-binding" ? { mode } : {}),
+        options: { steps: [{ id: "ev", outputs: [{ key: "id", path: true }], outputsFrom: from }] },
+      });
+      const group = await expandFields(container);
+      assert.equal(group.querySelector(`[data-testid="${id}"]`)?.textContent, text);
+    });
+  }
+}
+
+test("trigger.event lists the app trigger's declared fields; each saves trigger.event.<key>", async () => {
+  const { container } = await mountModal({
+    options: {
+      hasTrigger: true,
+      eventOutputs: [
+        { key: "order_id", path: true },
+        { key: "attendees.0.email", path: true },
+      ],
+      eventOutputsFrom: "declared",
+    },
+  });
+  const group = groupFor(container, "Workflow state") as HTMLElement;
+  await click(group.querySelector('[data-testid="expr-caret-event"]') as Element);
+  const box = group.querySelector('[data-testid="expr-event-fields"]') as HTMLElement;
+  assert.equal(
+    box.querySelector('[data-testid="expr-fields-from-declared"]')?.textContent,
+    "declared by the app",
+  );
+  const titles = Array.from(box.querySelectorAll(".w6w-exprmodal-source")).map(
+    (b) => (b as HTMLElement).title,
+  );
+  assert.deepEqual(titles, ["Use trigger.event.order_id", "Use trigger.event.attendees.0.email"]);
+});
+
+test("Result names the tier of a sample- or persisted-sourced value, nothing for fresh", async () => {
+  const note = async (tier: "sample" | "persisted" | "fresh") => {
+    const { container } = await mountModal({
+      value: "{{ nodes.s.output.a }}",
+      options: {
+        steps: [{ id: "s", outputs: [{ key: "a", path: true }] }],
+        sampleValues: { "nodes.s.output.a": "v" },
+        valueSources: { "nodes.s.output.a": tier },
+      },
+    });
+    return container.querySelector('[data-testid="expr-result-source"]')?.textContent ?? null;
+  };
+  assert.equal(await note("sample"), "example from the app");
+  assert.equal(await note("persisted"), "from last test");
+  assert.equal(await note("fresh"), null);
 });

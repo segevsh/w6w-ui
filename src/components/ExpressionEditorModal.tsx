@@ -6,7 +6,7 @@ import { buildResolveScope } from "../resolve-params.ts";
 import { resolveParamJson } from "../resolved-json.ts";
 import type { ExprPart, ExprValue, SecretValue } from "../types.ts";
 import { Copyable } from "./Copyable.tsx";
-import type { ExpressionOptions } from "./ExpressionOptions.tsx";
+import type { ExpressionOptions, ExpressionStepSource } from "./ExpressionOptions.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { Modal } from "./Modal.tsx";
 import {
@@ -317,6 +317,9 @@ export function ExpressionEditorModal({
   const loopFields = (loop?.itemOutputs ?? []).filter((o) =>
     o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
   );
+  const eventFields = (options.eventOutputs ?? []).filter((o) =>
+    o.path ? isRefSafePath(o.key) : isRefSafeKey(o.key),
+  );
   const template = serializeTemplate(parts);
 
   // The sample map the Result pane previews against: host-seeded defaults
@@ -365,6 +368,19 @@ export function ExpressionEditorModal({
     }
   }, [parts, effectiveSamples, template]);
 
+  // Which non-fresh tiers the Result's substituted values came from (a value the author typed
+  // into the Sample values box overrides the tier and is not noted).
+  const resultNotes = useMemo(() => {
+    const notes = new Set<string>();
+    for (const ref of usedRefs) {
+      if (samples[ref] !== undefined) continue;
+      const tier = options.valueSources?.[ref];
+      if (tier === "sample") notes.add("example from the app");
+      else if (tier === "persisted") notes.add("from last test");
+    }
+    return [...notes];
+  }, [usedRefs, samples, options.valueSources]);
+
   // `sigil: null` drops the glyph — a step row with fields renders its own
   // disclosure caret in that spot instead (see the Workflow state loop).
   //
@@ -381,7 +397,7 @@ export function ExpressionEditorModal({
     ariaLabel?: string,
     // `name` replaces `label` in the tooltip (a tree row shows a short label but
     // names its full ref on hover); `depth` indents a tree row.
-    tree?: { name: string; depth: number },
+    tree?: { name: string; depth: number; declaredOnly?: boolean },
   ) => (
     <div
       key={`${part.kind}:${part.ref ?? label}`}
@@ -396,8 +412,8 @@ export function ExpressionEditorModal({
     >
       <button
         type="button"
-        className={`w6w-exprmodal-source ${cls}`}
-        style={{ flex: 1, minWidth: 0 }}
+        className={`w6w-exprmodal-source ${cls}${tree?.declaredOnly ? " is-declared-only" : ""}`}
+        style={{ flex: 1, minWidth: 0, ...(tree?.declaredOnly ? { opacity: 0.6 } : {}) }}
         title={`${composite || jsonBinding ? "Insert" : "Use"} ${tree?.name ?? label}`}
         aria-label={ariaLabel}
         onClick={() =>
@@ -410,6 +426,15 @@ export function ExpressionEditorModal({
       >
         {sigil !== null && <span className="w6w-expr-chip-sigil">{sigil}</span>}
         <span className="w6w-exprmodal-source-label">{label}</span>
+        {tree?.declaredOnly && (
+          <span
+            className="w6w-muted w6w-small"
+            data-testid="expr-declared-only"
+            style={{ marginLeft: 6 }}
+          >
+            declared by the app
+          </span>
+        )}
       </button>
       {!jsonBinding && (
         <IconButton
@@ -489,14 +514,40 @@ export function ExpressionEditorModal({
   // name (`outputFieldTree`). Each SAVES the canonical `nodes.<id>.output.<key>`
   // (the only form the engine resolves) — the key goes into the ref VERBATIM;
   // the short name and `o.label` are display data and never reach a ref.
-  const fieldSources = (stepId: string, fields: { key: string; path?: boolean }[]) =>
+  const fieldSources = (
+    stepId: string,
+    fields: { key: string; path?: boolean; declaredOnly?: true }[],
+    rootRef = `nodes.${stepId}.output`,
+  ) =>
     outputFieldTree(fields).map(({ field, depth, name }) => {
-      const ref = `nodes.${stepId}.output.${field.key}`;
+      const ref = `${rootRef}.${field.key}`;
       return source(name, { kind: "var", ref }, "w6w-exprmodal-field", null, false, undefined, {
         name: varLabel(ref),
         depth,
+        declaredOnly: field.declaredOnly === true,
       });
     });
+
+  // The step-level note on where a step's (or the trigger event's) fields came from. A test
+  // shape (fresh or persisted) keeps the "from the last test" note; an app's own declaration
+  // or sample says so.
+  const shapeHint = (from: ExpressionStepSource["outputsFrom"]) => {
+    if (from === "fresh" || from === "persisted") {
+      return (
+        <span className="w6w-exprmodal-shape-note" data-testid="expr-fields-from-test">
+          {from === "fresh" ? "Fields from the last test run" : "Fields from last test"}
+        </span>
+      );
+    }
+    if (from === "declared" || from === "sample") {
+      return (
+        <span className="w6w-exprmodal-shape-note" data-testid={`expr-fields-from-${from}`}>
+          {from === "declared" ? "declared by the app" : "example from the app"}
+        </span>
+      );
+    }
+    return null;
+  };
 
   // A Metadata-section node: its id inserts the whole `nodes.<id>.meta`; the caret beside it
   // opens its leaves and its `config`, collapsed by default (`mnode:<id>`).
@@ -632,12 +683,43 @@ export function ExpressionEditorModal({
                 </div>
               )}
               {options.hasTrigger &&
-                source(
-                  "trigger.event",
-                  { kind: "var", ref: "trigger.event" },
-                  "w6w-expr-chip-var",
-                  "⚡",
-                )}
+                (eventFields.length > 0 ? (
+                  <>
+                    <div className="w6w-exprmodal-source-row">
+                      <button
+                        type="button"
+                        className="w6w-exprmodal-caret-btn"
+                        data-testid="expr-caret-event"
+                        aria-expanded={expanded.has("event")}
+                        aria-label={expanded.has("event") ? "Hide fields" : "Show fields"}
+                        title={expanded.has("event") ? "Hide fields" : "Show fields"}
+                        onClick={() => toggleExpanded("event")}
+                      >
+                        {expanded.has("event") ? "▾" : "▸"}
+                      </button>
+                      {source(
+                        "trigger.event",
+                        { kind: "var", ref: "trigger.event" },
+                        "w6w-expr-chip-var",
+                        "⚡",
+                        true,
+                      )}
+                    </div>
+                    {expanded.has("event") && (
+                      <div className="w6w-exprmodal-subsources" data-testid="expr-event-fields">
+                        {shapeHint(options.eventOutputsFrom)}
+                        {fieldSources("", eventFields, "trigger.event")}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  source(
+                    "trigger.event",
+                    { kind: "var", ref: "trigger.event" },
+                    "w6w-expr-chip-var",
+                    "⚡",
+                  )
+                ))}
               {steps.map((st) => {
                 const cfg = configKeys.get(st.id) ?? [];
                 // Metadata shows for any node with a meta leaf (R-7, a webhook's subscription) or
@@ -708,6 +790,7 @@ export function ExpressionEditorModal({
                           </div>
                           {isOpen && (
                             <div className="w6w-exprmodal-subsources">
+                              {shapeHint(st.outputsFrom)}
                               {fieldSources(st.id, fields)}
                             </div>
                           )}
@@ -781,14 +864,7 @@ export function ExpressionEditorModal({
                         (`fieldSources`). */}
                     {fields.length > 0 && isOpen && (
                       <div className="w6w-exprmodal-subsources">
-                        {st.outputsFrom === "test" && (
-                          <span
-                            className="w6w-exprmodal-shape-note"
-                            data-testid="expr-fields-from-test"
-                          >
-                            Fields from the last test run
-                          </span>
-                        )}
+                        {shapeHint(st.outputsFrom)}
                         {fieldSources(st.id, fields)}
                       </div>
                     )}
@@ -1211,6 +1287,11 @@ export function ExpressionEditorModal({
               <Copyable value={result} readOnly>
                 <pre className="w6w-exprmodal-result">{result || " "}</pre>
               </Copyable>
+              {resultNotes.length > 0 && (
+                <span className="w6w-muted w6w-small" data-testid="expr-result-source">
+                  {resultNotes.join(" · ")}
+                </span>
+              )}
             </div>
           </div>
         )}
