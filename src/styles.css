@@ -5060,6 +5060,25 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   gap: var(--w6w-sp-2);
 }
 
+/* An If / Stop / Router row's resolved comparisons. Operands are arbitrary
+   resolved values (long URLs), so they wrap rather than widen the panel. */
+.w6w-execution-log-conditions {
+  font-size: var(--w6w-fs-xs);
+  table-layout: auto;
+}
+
+.w6w-execution-log-conditions code {
+  word-break: break-all;
+}
+
+.w6w-execution-log-condition-true {
+  color: var(--w6w-success);
+}
+
+.w6w-execution-log-condition-false {
+  color: var(--w6w-danger);
+}
+
 /* --- ExecutionList ------------------------------------------------------- */
 /* Rows of past executions: a click-to-select list plus a prev/next pager.
    Closer in shape to `.w6w-execution-log` (`_execution-log.scss`) than to

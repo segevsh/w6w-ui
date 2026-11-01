@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { CodeBlock } from "../CodeBlock.tsx";
+import { conditionOperatorLabel } from "../condition-editor.ts";
 import type { StepMeta } from "../provider.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { StepStatusPill } from "./StepStatusPill.tsx";
@@ -232,6 +233,7 @@ function ExecutionLogRow({ step }: { step: ExecutionLogStep }) {
         <summary className="w6w-section-summary">{header}</summary>
         {open && (
           <div className="w6w-execution-log-row-body w6w-section-body w6w-stack">
+            <ExecutionLogConditions input={step.input} />
             <ExecutionLogJson title="Input" value={step.input} />
             <ExecutionLogJson title="Output" value={step.output} />
             {step.meta && (
@@ -442,4 +444,100 @@ function ExecutionLogJson({ title, value }: { title: string; value: unknown }) {
       )}
     </div>
   );
+}
+
+interface ConditionRow {
+  left: unknown;
+  op: string;
+  right: unknown;
+  result: boolean;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The engine's `{ conditions, combinator? }` trace on a record, if it carries one. */
+function conditionTrace(v: unknown): { rows: ConditionRow[]; combinator?: string } | undefined {
+  if (!isRecord(v) || !Array.isArray(v.conditions)) return;
+  const rows = v.conditions.filter(
+    (r): r is ConditionRow => isRecord(r) && typeof r.op === "string" && "result" in r,
+  );
+  if (rows.length === 0) return;
+  return { rows, combinator: typeof v.combinator === "string" ? v.combinator : undefined };
+}
+
+/**
+ * An If / Stop workflow / Router input's resolved comparisons as a left | operator | right |
+ * result table — what was compared, not only `condition: true`. The engine records them
+ * beside the boolean (`{ conditions: [{ left, op, right, result }], combinator? }`; a Router
+ * per route); a record without that trace renders nothing, and the raw Input below still
+ * shows everything.
+ */
+function ExecutionLogConditions({ input }: { input: unknown }) {
+  const groups: { title?: string; trace: NonNullable<ReturnType<typeof conditionTrace>> }[] = [];
+  const own = conditionTrace(input);
+  if (own) groups.push({ trace: own });
+  if (isRecord(input) && Array.isArray(input.routes)) {
+    for (const route of input.routes) {
+      const trace = conditionTrace(route);
+      if (!trace || !isRecord(route)) continue;
+      groups.push({ title: String(route.label ?? route.id ?? "Route"), trace });
+    }
+  }
+  if (groups.length === 0) return null;
+  return (
+    <div className="w6w-execution-log-json w6w-stack" data-testid="execution-log-conditions">
+      <strong className="w6w-small">Condition</strong>
+      {groups.map(({ title, trace }, g) => (
+        <div key={title ?? g} className="w6w-stack">
+          {title && <span className="w6w-small w6w-muted">{title}</span>}
+          {trace.combinator && trace.rows.length > 1 && (
+            <span className="w6w-small w6w-muted">
+              {trace.combinator === "or" ? "Any row must match" : "Every row must match"}
+            </span>
+          )}
+          <div className="w6w-data-table-frame">
+            <table className="w6w-data-table w6w-execution-log-conditions">
+              <thead>
+                <tr>
+                  <th>Left</th>
+                  <th>Operator</th>
+                  <th>Right</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trace.rows.map((row, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional and never reorder.
+                  <tr key={i}>
+                    <td>
+                      <code>{operandText(row.left)}</code>
+                    </td>
+                    <td>{conditionOperatorLabel(row.op)}</td>
+                    <td>
+                      <code>{operandText(row.right)}</code>
+                    </td>
+                    <td
+                      className={
+                        row.result
+                          ? "w6w-execution-log-condition-true"
+                          : "w6w-execution-log-condition-false"
+                      }
+                    >
+                      {row.result ? "true" : "false"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A resolved operand as JSON, so `""`, `"5"` vs `5` and `null` read apart. */
+function operandText(value: unknown): string {
+  return JSON.stringify(value) ?? "undefined";
 }

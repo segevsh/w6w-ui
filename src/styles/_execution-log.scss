@@ -222,3 +222,18 @@
   justify-content: space-between;
   gap: var(--w6w-sp-2);
 }
+/* An If / Stop / Router row's resolved comparisons. Operands are arbitrary
+   resolved values (long URLs), so they wrap rather than widen the panel. */
+.w6w-execution-log-conditions {
+  font-size: var(--w6w-fs-xs);
+  table-layout: auto;
+}
+.w6w-execution-log-conditions code {
+  word-break: break-all;
+}
+.w6w-execution-log-condition-true {
+  color: var(--w6w-success);
+}
+.w6w-execution-log-condition-false {
+  color: var(--w6w-danger);
+}

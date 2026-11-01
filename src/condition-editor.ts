@@ -3,7 +3,27 @@ import { type ExprValue, type SecretValue, isExprValue } from "./types.ts";
 
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-const operators = new Set(["===", "!==", ">", ">=", "<", "<="]);
+/** The comparisons the condition builder offers, in menu order, with their labels. */
+export const CONDITION_OPERATORS = [
+  ["===", "equals"],
+  ["!==", "does not equal"],
+  [">", "greater than"],
+  [">=", "at least"],
+  ["<", "less than"],
+  ["<=", "at most"],
+] as const;
+const operators = new Set<string>(CONDITION_OPERATORS.map(([op]) => op));
+const operatorLabels: Record<string, string> = {
+  ...Object.fromEntries(CONDITION_OPERATORS),
+  "==": "equals",
+  "!=": "does not equal",
+  in: "is in",
+};
+
+/** A comparison operator as the builder names it (`===` → "equals"); unknown ones as written. */
+export function conditionOperatorLabel(op: string): string {
+  return operatorLabels[op] ?? op;
+}
 
 /** Decode only two-operand comparisons; all other conditions keep the full editor. */
 export function readComparison(value: unknown) {

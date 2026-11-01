@@ -3,7 +3,12 @@ import { ParamsForm } from "./ParamsForm.tsx";
 import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
-import { conditionOperandText, conditionOperandValue, readComparison } from "./condition-editor.ts";
+import {
+  CONDITION_OPERATORS,
+  conditionOperandText,
+  conditionOperandValue,
+  readComparison,
+} from "./condition-editor.ts";
 
 /** The standard expression textbox on either side of one comparison control. */
 export function ConditionEditor({
@@ -61,12 +66,11 @@ export function ConditionEditor({
             value={comparison.operator}
             onChange={(event) => change({ operator: event.target.value })}
           >
-            <option value="===">equals</option>
-            <option value="!==">does not equal</option>
-            <option value=">">greater than</option>
-            <option value=">=">at least</option>
-            <option value="<">less than</option>
-            <option value="<=">at most</option>
+            {CONDITION_OPERATORS.map(([op, label]) => (
+              <option key={op} value={op}>
+                {label}
+              </option>
+            ))}
           </select>
           <ExpressionInput
             value={conditionOperandText(comparison.right)}
