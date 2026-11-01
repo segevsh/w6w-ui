@@ -9,6 +9,12 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- `ExpressionEditorModal` json-binding mode takes `startingState` for a workflow's starting state
+  (`Workflow.initialState`, evaluated once at run start): no Previous steps, State or Secrets in the
+  rail, Documents shown, an **Insert as Reference / Value** toggle (a value copies the source's
+  current sample in), clicks always compose into the object, an empty draft saves `undefined`, and
+  `jsonProblem` refuses a draft. It also takes `title`. `addRefToDraft` takes an optional literal
+  value. New `database` icon. `ExpressionEditorModal` is now exported from the root entry.
 - The run state tree: a step's settings get **Write to state** (Off, Merge at root, Under a key, Pick
   fields, Append; `FlowStep.state`, `FlowWorkflow.initialState`). The expression picker gains a
   **State** section built before any run from the writers on the paths that reach the step (the old
