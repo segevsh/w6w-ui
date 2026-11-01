@@ -185,7 +185,7 @@ function optionsFor(editingId: string) {
   };
 }
 
-test("Workflow state lists only the edited node's own path: no other-path node, each with its Metadata chip", async () => {
+test("Workflow state lists only the edited node's own path: no other-path node, and no Metadata chip (meta is only in the Metadata section)", async () => {
   const { container } = await mountModal({ options: optionsFor("resource_uri_to_urn_2") });
   const state = groupFor(container, "Workflow state") as HTMLElement;
   assert.ok(state);
@@ -203,8 +203,10 @@ test("Workflow state lists only the edited node's own path: no other-path node, 
   ]) {
     assert.ok(!state.textContent?.includes(other), `${other} is on another path`);
   }
-  assert.equal(q(state, '[data-testid="expr-meta-toggle"]').length, 2, "one per upstream node");
+  assert.equal(q(state, '[data-testid="expr-meta-toggle"]').length, 0, "no per-node Metadata chip");
+  assert.equal(q(state, '[data-testid="expr-config-toggle"]').length, 0, "no config subtree");
   assert.equal(q(state, '[data-testid="expr-metadata-node"]').length, 0);
+  assert.ok(!state.textContent?.includes("Metadata"));
 });
 
 test("Metadata lists every node, other paths included, with its static meta and config", async () => {

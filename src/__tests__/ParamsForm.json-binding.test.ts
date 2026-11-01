@@ -506,13 +506,19 @@ test("C8 - an app step's Metadata leaves are offered and insert like any source"
     },
   );
   await click(fxButtons()[0]);
-  await click(doc().querySelector('[data-testid="expr-meta-toggle"]') as Element);
+  // Not beside the step in Workflow state: only in the Metadata section.
+  assert.equal(doc().querySelectorAll('[data-testid="expr-meta-toggle"]').length, 0);
+  const metaHeader = Array.from(doc().querySelectorAll('[data-testid="expr-section-toggle"]')).find(
+    (b) => b.textContent?.includes("Metadata"),
+  ) as Element;
+  await click(metaHeader);
+  await click(doc().querySelector('[data-testid="expr-metadata-node-toggle"]') as Element);
   const leafLabels = Array.from(
-    doc().querySelectorAll('[data-testid="expr-meta-fields"] .w6w-exprmodal-source-label'),
+    doc().querySelectorAll('[data-testid="expr-metadata-fields"] .w6w-exprmodal-source-label'),
   ).map((b) => b.textContent?.trim());
-  assert.deepEqual(leafLabels, ["All metadata", "App", "App version", "Action", "Connection ID"]);
+  assert.deepEqual(leafLabels, ["App", "App version", "Action", "Connection ID"]);
   const app = Array.from(
-    doc().querySelectorAll('[data-testid="expr-meta-fields"] .w6w-exprmodal-source'),
+    doc().querySelectorAll('[data-testid="expr-metadata-fields"] .w6w-exprmodal-source'),
   ).find((b) => b.querySelector(".w6w-exprmodal-source-label")?.textContent?.trim() === "App");
   await pick(app);
   assert.deepEqual(box.current.cfg, "{{ nodes.ev.meta.app }}");

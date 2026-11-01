@@ -278,23 +278,27 @@ export function ExpressionEditorModal({
   // other static meta its node carries (a webhook trigger's subscription id and URL) — never a
   // key the node does not have, so a `@w6w/webhook` node offers no connection id.
   const nodeMeta = options.nodeMeta ?? {};
-  const metaLeavesOf = (id: string, hasMeta: boolean) =>
+  const metaLeavesOf = (id: string) =>
     META_LEAVES.filter(([key]) =>
-      APP_META_KEYS.has(key) ? hasMeta : Object.hasOwn(nodeMeta[id] ?? {}, key),
+      APP_META_KEYS.has(key) ? isExternalAppNode(id) : Object.hasOwn(nodeMeta[id] ?? {}, key),
     );
-  // A node that is not upstream has no `hasMeta`: an external app is read off its static meta.
+  // An external app is an upstream step flagged `hasMeta` (R-7), or a node whose static meta
+  // names an app that is not built in (a node that is not upstream has no `hasMeta`).
+  const upstreamAppIds = steps.filter((st) => st.hasMeta === true).map((st) => st.id);
   const isExternalAppNode = (id: string) => {
+    if (upstreamAppIds.includes(id)) return true;
     const app = nodeMeta[id]?.app;
     return typeof app === "string" && !isInternalApp(app);
   };
-  const metaSources = (id: string, hasMeta: boolean) =>
-    metaLeavesOf(id, hasMeta).map(([key, label]) =>
+  const metaSources = (id: string) =>
+    metaLeavesOf(id).map(([key, label]) =>
       source(label, { kind: "var", ref: `nodes.${id}.meta.${key}` }, "w6w-expr-chip-var", "·"),
     );
   // Workflow state is only what this node can read at run time — its upstream `steps`, its
   // trigger's event, its loop's item. Every node's static meta, other paths included, sits in
-  // the separate Metadata section, keyed in node order (`nodeMeta`, then config-only nodes).
-  const metaIds = [...new Set([...Object.keys(nodeMeta), ...configKeys.keys()])];
+  // the separate Metadata section, keyed in node order (`nodeMeta`, then upstream app steps the
+  // host gave no static meta for, then config-only nodes) — the one place a node's meta is offered.
+  const metaIds = [...new Set([...Object.keys(nodeMeta), ...upstreamAppIds, ...configKeys.keys()])];
   const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
   const hasState = hasWorkflowState || !!loop;
   const sections: RailSectionKey[] = [
@@ -431,30 +435,11 @@ export function ExpressionEditorModal({
     "↻",
   );
 
-  // The Metadata disclosure (external app steps, R-7, and any node with config).
-  // It sits directly under the "N fields" toggle (same left edge, same glyph)
-  // when the step has fields, else on its own row.
-  const metaToggle = (id: string) => {
-    const open = expanded.has(`meta:${id}`);
-    return (
-      <button
-        type="button"
-        className="w6w-exprmodal-toggle-btn"
-        data-testid="expr-meta-toggle"
-        aria-expanded={open}
-        title={open ? "Hide metadata" : "Show metadata"}
-        onClick={() => toggleExpanded(`meta:${id}`)}
-      >
-        Metadata {open ? "⌄" : "›"}
-      </button>
-    );
-  };
   // Metadata's `config` entry: the node's static settings, collapsed until its
   // own toggle opens, each saving `nodes.<id>.meta.config.<key>`.
-  // `scope` keeps the Metadata section's disclosure apart from the same node's in Workflow state.
-  const configEntry = (id: string, keys: string[], scope = "cfg") => {
+  const configEntry = (id: string, keys: string[]) => {
     if (keys.length === 0) return null;
-    const open = expanded.has(`${scope}:${id}`);
+    const open = expanded.has(`mcfg:${id}`);
     return (
       <>
         <div className="w6w-exprmodal-source-row">
@@ -464,7 +449,7 @@ export function ExpressionEditorModal({
             data-testid="expr-config-toggle"
             aria-expanded={open}
             title={open ? "Hide config" : "Show config"}
-            onClick={() => toggleExpanded(`${scope}:${id}`)}
+            onClick={() => toggleExpanded(`mcfg:${id}`)}
           >
             config {open ? "⌄" : "›"}
           </button>
@@ -521,8 +506,8 @@ export function ExpressionEditorModal({
         </div>
         {open && (
           <div className="w6w-exprmodal-subsources" data-testid="expr-metadata-fields">
-            {metaSources(id, isExternalAppNode(id))}
-            {configEntry(id, configKeys.get(id) ?? [], "mcfg")}
+            {metaSources(id)}
+            {configEntry(id, configKeys.get(id) ?? [])}
           </div>
         )}
       </Fragment>
@@ -639,11 +624,8 @@ export function ExpressionEditorModal({
                   "⚡",
                 )}
               {steps.map((st) => {
-                const cfg = configKeys.get(st.id) ?? [];
-                // Metadata shows for any node with a meta leaf (R-7, a webhook's subscription) or
-                // config.
-                const showMeta =
-                  metaLeavesOf(st.id, st.hasMeta === true).length > 0 || cfg.length > 0;
+                // A node's meta (app, action, connection, config) is offered only in the
+                // Metadata section below, never beside its output here.
                 // Only keys that can become a ref the ENGINE resolves are
                 // offered. The guard lives here, at the one place a ref is
                 // built, so it holds for any host that supplies `steps` —
@@ -713,28 +695,6 @@ export function ExpressionEditorModal({
                           )}
                         </>
                       )}
-                      {showMeta && (
-                        <>
-                          <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
-                            {metaToggle(st.id)}
-                          </div>
-                          {expanded.has(`meta:${st.id}`) && (
-                            <div
-                              className="w6w-exprmodal-subsources"
-                              data-testid="expr-meta-fields"
-                            >
-                              {source(
-                                "All metadata",
-                                { kind: "var", ref: `nodes.${st.id}.meta` },
-                                "w6w-expr-chip-var",
-                                "·",
-                              )}
-                              {metaSources(st.id, st.hasMeta === true)}
-                              {configEntry(st.id, cfg)}
-                            </div>
-                          )}
-                        </>
-                      )}
                     </Fragment>
                   );
                 }
@@ -754,14 +714,11 @@ export function ExpressionEditorModal({
                           {isOpen ? "▾" : "▸"}
                         </button>
                         {wholeBtn}
-                        <div className="w6w-exprmodal-toggle-stack">
-                          <FieldsToggle
-                            count={fields.length}
-                            open={isOpen}
-                            onToggle={() => toggleExpanded(stepKey)}
-                          />
-                          {showMeta && metaToggle(st.id)}
-                        </div>
+                        <FieldsToggle
+                          count={fields.length}
+                          open={isOpen}
+                          onToggle={() => toggleExpanded(stepKey)}
+                        />
                       </div>
                     ) : (
                       wholeBtn
@@ -791,25 +748,6 @@ export function ExpressionEditorModal({
                         )}
                         {fieldSources(st.id, fields)}
                       </div>
-                    )}
-                    {/* External app steps (`st.hasMeta`, R-7): a fixed group of four
-                        leaves, a webhook trigger's subscription leaves, plus, for any node
-                        with settings, `config`. Independent of the fields caret and of
-                        `needsTest`. */}
-                    {showMeta && (
-                      <>
-                        {fields.length === 0 && (
-                          <div className="w6w-exprmodal-source-row w6w-exprmodal-meta-row">
-                            {metaToggle(st.id)}
-                          </div>
-                        )}
-                        {expanded.has(`meta:${st.id}`) && (
-                          <div className="w6w-exprmodal-subsources" data-testid="expr-meta-fields">
-                            {metaSources(st.id, st.hasMeta === true)}
-                            {configEntry(st.id, cfg)}
-                          </div>
-                        )}
-                      </>
                     )}
                   </Fragment>
                 );
