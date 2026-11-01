@@ -72,7 +72,7 @@ test("deleting a note or section is confirmed through ConfirmModal, never window
 });
 
 test("readOnly hides the toolbar controls and gates every canvas mutation", () => {
-  const panel = source.indexOf("{!readOnly && (\n                      <Panel");
+  const panel = source.search(/\{!readOnly && \(\n\s*<Panel/);
   assert.ok(panel > 0, "toolbar Panel must sit under !readOnly");
   const after = source.slice(panel, panel + 1600);
   assert.match(after, /data-testid="add-note"/);

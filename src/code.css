@@ -32,7 +32,9 @@
  * host rule — even a plain `:root { ... }` — wins without !important. Tokens are
  * defined on :root so every `.w6w-*` component inherits them out of the box.
  */
-/* Light — the base defaults. */
+/* Light — the base defaults.
+   `--w6w-loop-N` is the For each palette (flow-loop-colors.ts, LOOP_TONES): no red,
+   black or green, so a loop never reads as an error port or a success edge. */
 :where(:root) {
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
@@ -48,6 +50,12 @@
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
+  --w6w-loop-1: #2f6fdf;
+  --w6w-loop-2: #7c4ddb;
+  --w6w-loop-3: #b7791f;
+  --w6w-loop-4: #0e8fa8;
+  --w6w-loop-5: #b0399f;
+  --w6w-loop-6: #4f4fc7;
   --w6w-code-comment: #6b7280;
   --w6w-code-keyword: #8250df;
   --w6w-code-string: #0a7b34;
@@ -77,6 +85,12 @@
     --w6w-health-down: var(--w6w-danger);
     --w6w-health-unknown: #9aa3b2;
     --w6w-icon-swatch: #1f232c;
+    --w6w-loop-1: #5b9bff;
+    --w6w-loop-2: #a98bff;
+    --w6w-loop-3: #f0b13a;
+    --w6w-loop-4: #3cc6e0;
+    --w6w-loop-5: #e47ad6;
+    --w6w-loop-6: #8a8aff;
     --w6w-scheme: dark;
     --w6w-code-comment: #7d8797;
     --w6w-code-keyword: #d2a8ff;
@@ -105,6 +119,12 @@
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
+  --w6w-loop-1: #2f6fdf;
+  --w6w-loop-2: #7c4ddb;
+  --w6w-loop-3: #b7791f;
+  --w6w-loop-4: #0e8fa8;
+  --w6w-loop-5: #b0399f;
+  --w6w-loop-6: #4f4fc7;
   --w6w-code-comment: #6b7280;
   --w6w-code-keyword: #8250df;
   --w6w-code-string: #0a7b34;
@@ -130,6 +150,12 @@
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #9aa3b2;
   --w6w-icon-swatch: #1f232c;
+  --w6w-loop-1: #5b9bff;
+  --w6w-loop-2: #a98bff;
+  --w6w-loop-3: #f0b13a;
+  --w6w-loop-4: #3cc6e0;
+  --w6w-loop-5: #e47ad6;
+  --w6w-loop-6: #8a8aff;
   --w6w-code-comment: #7d8797;
   --w6w-code-keyword: #d2a8ff;
   --w6w-code-string: #7ee787;

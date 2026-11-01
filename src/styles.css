@@ -699,7 +699,9 @@ svg.react-flow__connectionline {
  * host rule — even a plain `:root { ... }` — wins without !important. Tokens are
  * defined on :root so every `.w6w-*` component inherits them out of the box.
  */
-/* Light — the base defaults. */
+/* Light — the base defaults.
+   `--w6w-loop-N` is the For each palette (flow-loop-colors.ts, LOOP_TONES): no red,
+   black or green, so a loop never reads as an error port or a success edge. */
 :where(:root) {
   --w6w-bg: #f7f8fa;
   --w6w-panel: #ffffff;
@@ -715,6 +717,12 @@ svg.react-flow__connectionline {
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
+  --w6w-loop-1: #2f6fdf;
+  --w6w-loop-2: #7c4ddb;
+  --w6w-loop-3: #b7791f;
+  --w6w-loop-4: #0e8fa8;
+  --w6w-loop-5: #b0399f;
+  --w6w-loop-6: #4f4fc7;
   --w6w-code-comment: #6b7280;
   --w6w-code-keyword: #8250df;
   --w6w-code-string: #0a7b34;
@@ -744,6 +752,12 @@ svg.react-flow__connectionline {
     --w6w-health-down: var(--w6w-danger);
     --w6w-health-unknown: #9aa3b2;
     --w6w-icon-swatch: #1f232c;
+    --w6w-loop-1: #5b9bff;
+    --w6w-loop-2: #a98bff;
+    --w6w-loop-3: #f0b13a;
+    --w6w-loop-4: #3cc6e0;
+    --w6w-loop-5: #e47ad6;
+    --w6w-loop-6: #8a8aff;
     --w6w-scheme: dark;
     --w6w-code-comment: #7d8797;
     --w6w-code-keyword: #d2a8ff;
@@ -772,6 +786,12 @@ svg.react-flow__connectionline {
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #5f6875;
   --w6w-icon-swatch: #f0f2f6;
+  --w6w-loop-1: #2f6fdf;
+  --w6w-loop-2: #7c4ddb;
+  --w6w-loop-3: #b7791f;
+  --w6w-loop-4: #0e8fa8;
+  --w6w-loop-5: #b0399f;
+  --w6w-loop-6: #4f4fc7;
   --w6w-code-comment: #6b7280;
   --w6w-code-keyword: #8250df;
   --w6w-code-string: #0a7b34;
@@ -797,6 +817,12 @@ svg.react-flow__connectionline {
   --w6w-health-down: var(--w6w-danger);
   --w6w-health-unknown: #9aa3b2;
   --w6w-icon-swatch: #1f232c;
+  --w6w-loop-1: #5b9bff;
+  --w6w-loop-2: #a98bff;
+  --w6w-loop-3: #f0b13a;
+  --w6w-loop-4: #3cc6e0;
+  --w6w-loop-5: #e47ad6;
+  --w6w-loop-6: #8a8aff;
   --w6w-code-comment: #7d8797;
   --w6w-code-keyword: #d2a8ff;
   --w6w-code-string: #7ee787;
@@ -3935,9 +3961,10 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 }
 
 /* For each loops (T2.3.1). The Each item edge — a loop-body link, never
-   serialized — reads as a solid accent line, distinct from the error dash. */
+   serialized — reads as a solid line in its loop's colour (`--w6w-loop-color`,
+   set per edge by `paintLoopEdges`), distinct from the error dash. */
 .w6w-flow .react-flow__edge.w6w-edge-each .react-flow__edge-path {
-  stroke: var(--w6w-accent);
+  stroke: var(--w6w-loop-color, var(--w6w-accent));
 }
 
 .w6w-flow .react-flow__edge.w6w-edge-each .react-flow__edge-text {
@@ -3948,10 +3975,10 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   fill: var(--w6w-panel);
 }
 
-/* The Each item handle: accent-tinted, on the right beside the Done handle. */
+/* The Each item handle: in its loop's colour, on the right beside the Done handle. */
 .w6w-flow .react-flow__handle.w6w-handle-each {
-  background: var(--w6w-accent);
-  border-color: var(--w6w-accent);
+  background: var(--w6w-loop-color, var(--w6w-accent));
+  border-color: var(--w6w-loop-color, var(--w6w-accent));
 }
 
 .w6w-flow .w6w-node-foreach .react-flow__handle-right {
@@ -3971,18 +3998,26 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-muted);
 }
 
-/* A loop-body step: tinted, with a badge naming its For each. */
+/* A loop-body step: tinted in its loop's colour, with one dot per enclosing For each
+   just above its top-right corner (named on hover). */
 .w6w-flow .w6w-node-in-loop [data-run-status] {
-  background: color-mix(in srgb, var(--w6w-accent) 10%, var(--w6w-panel)) !important;
+  background: color-mix(in srgb, var(--w6w-loop-body-color, var(--w6w-accent)) 10%, var(--w6w-panel)) !important;
 }
 
-.w6w-flow .w6w-loop-badge {
-  display: inline-block;
-  margin-top: var(--w6w-sp-1);
-  padding: 0 var(--w6w-sp-2);
-  border: 1px solid var(--w6w-accent);
-  border-radius: 999px;
-  color: var(--w6w-accent);
+.w6w-flow .w6w-loop-dots {
+  position: absolute;
+  top: -11px; /* lint-tokens-allow: dot sits just above the card edge */
+  right: var(--w6w-sp-1);
+  display: flex;
+  gap: var(--w6w-sp-0-5);
+}
+
+.w6w-flow .w6w-loop-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--w6w-panel);
+  cursor: help;
 }
 
 .w6w-flow .w6w-loop-legacy-note {
