@@ -88,15 +88,23 @@ function freeKey(obj: Record<string, unknown> | null, key: string): string {
  *   that is an object gets a new property at its end, an array a new element at its end.
  *   Otherwise the quoted marker goes at the caret.
  *
+ * With `literal`, the same placement inserts that VALUE instead of the reference (a literal-JSON
+ * field such as a workflow's starting state, where no `{{ }}` marker is ever evaluated): as JSON
+ * where a value goes, as its text inside a string. The key is still named after `ref`.
+ *
  * Returns the new text and the caret after the inserted reference.
  */
 export function addRefToDraft(
   text: string,
   pos: number,
   ref: string,
+  literal?: { value: unknown },
 ): { text: string; caret: number } {
-  const marker = `{{ ${ref} }}`;
-  const quoted = JSON.stringify(marker);
+  const literalJson = literal ? (JSON.stringify(literal.value) ?? "null") : "";
+  const marker = literal
+    ? JSON.stringify(typeof literal.value === "string" ? literal.value : literalJson).slice(1, -1)
+    : `{{ ${ref} }}`;
+  const quoted = literal ? literalJson : JSON.stringify(marker);
   const at = (i: number, insert: string) => ({
     text: text.slice(0, i) + insert + text.slice(i),
     caret: i + insert.length,

@@ -1,3 +1,4 @@
+import { type StateWriteConfig, validateStateConfig } from "@w6w/expr";
 import {
   Background,
   type Connection,
@@ -79,6 +80,7 @@ import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { Copyable } from "./components/Copyable.tsx";
+import { DeleteButton } from "./components/DeleteButton.tsx";
 import {
   type ExpressionLoopSource,
   type ExpressionOptions,
@@ -114,6 +116,7 @@ import {
   isFlowTextTarget,
   restoreFlowEdit,
 } from "./flow-history.ts";
+import { relayoutFlow } from "./flow-layout.ts";
 import {
   type LoopPaint,
   enclosingLoops,
@@ -142,6 +145,15 @@ import {
   withPaused,
 } from "./flow-node-flags.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
+import {
+  STATE_MODES,
+  STATE_MODE_LABELS,
+  type StateMode,
+  seedStateWrite,
+  setStateWrite,
+  stateWriteFor,
+  stateWriteVisible,
+} from "./flow-state.ts";
 import {
   FOREACH_DONE_ROUTE,
   RACE_APP,
@@ -182,7 +194,6 @@ import {
   flowToWorkflow,
   idClashMessage,
   paramsToJson,
-  relayoutNodes,
   slugifyLabel,
   stepIdError,
   stepToJson,
@@ -197,7 +208,7 @@ import {
   splitNodeOutputs,
   splitPreviewOutputs,
 } from "./node-samples.ts";
-import { inferOutputFields } from "./output-shape.ts";
+import { inferOutputFields, resolveOutputShape } from "./output-shape.ts";
 // One implementation of the incoming-state pipeline, shared by every surface
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
 // form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
@@ -214,6 +225,7 @@ import {
 // pixels: a live-run repaint effect (in `Inner`) feeds the results into
 // `data`, and `StepNodeCard`/`ControlNodeCard` read them back off `data`.
 import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./run-visuals.ts";
+import { computeStateShape } from "./state-shape.ts";
 import {
   type SeedSource,
   type StepShapeContext,
@@ -257,6 +269,7 @@ import type {
 } from "./types.ts";
 import { portsLookupFromDefs, useAppActionDefs, useAppTriggerDefs } from "./use-app-action-defs.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
+import { LastUsedNote, useRememberedTestInput } from "./use-test-input.tsx";
 import {
   type FlowConnections,
   centralizeConnections,
@@ -1036,23 +1049,15 @@ function Inner({
 
   // ── Auto-layout (the fourth control button) ─────────────────────────────────
   //
-  // Re-flows the CURRENT canvas — including steps added and wires drawn since the
-  // last save — through `relayoutNodes`, which is the same layering + the same
-  // placement arithmetic `workflowToFlow` runs on first open. Not a second
-  // algorithm: "arrange" disagreeing with "how it opened" is the one thing an
-  // author notices immediately (D-I0-6 also pins that no layout dependency is
-  // added — the layerer already exists).
-  //
-  // `setNodes` then `emitChange` is what makes the result PERSIST: `flowToWorkflow`
-  // stamps each step with its node's rounded coordinate and the host's auto-save
-  // writes it, so a reload reopens on the re-flowed graph.
+  // Arrange the current paths and their section frames as one undoable edit.
   const performRelayout = useCallback(() => {
     if (readOnly) return;
-    const next = relayoutNodes(nodes, edges);
-    setNodes(next);
+    const next = relayoutFlow(nodes, edges, canvas);
+    setNodes(next.nodes);
+    setCanvas(next.canvas);
     relayoutPendingFitRef.current = true;
-    emitChange(next, edges);
-  }, [nodes, edges, setNodes, emitChange, readOnly]);
+    emitChange(next.nodes, edges, next.canvas);
+  }, [nodes, edges, canvas, setNodes, emitChange, readOnly]);
 
   // No confirmation (D-T2b): re-flowing is instant, deliberately with no
   // replacement gate — the intake is explicit this click should never warn. See
@@ -1894,6 +1899,30 @@ function Inner({
     const st = upstreamStateSources(editingId, nodes, edges, stepShapes, draftStepId);
     return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
   }, [editingId, draftStepId, nodes, edges, stepShapes]);
+  // The merged workflow STATE the edited step reads (starting data, variables, upstream
+  // writers in run order) — the picker's "State" section and its `state.<path>` previews.
+  const stateShape = useMemo(
+    () =>
+      computeStateShape({
+        anchorId: editingId ?? draftStepId,
+        nodes,
+        edges,
+        initialState: value.initialState,
+        variables: value.variables,
+        shapes: stepShapes,
+        previewOutputs: { ...previewTiers.persisted, ...previewTiers.fresh },
+      }),
+    [
+      editingId,
+      draftStepId,
+      nodes,
+      edges,
+      value.initialState,
+      value.variables,
+      stepShapes,
+      previewTiers,
+    ],
+  );
   // A stable identity for *which* steps are upstream. The memo above rebuilds on
   // every node drag and every field edit; this string changes only when the SET
   // does, so the fetch below doesn't re-run on each keystroke.
@@ -2036,6 +2065,7 @@ function Inner({
       eventOutputs: upstreamState.eventOutputs,
       eventOutputsFrom: upstreamState.eventOutputsFrom,
       loop: upstreamState.loop,
+      stateShape: { fields: stateShape.fields },
       nodeConfigs: nodeConfigs,
       nodeConfig,
       nodeMeta,
@@ -2046,12 +2076,14 @@ function Inner({
         // Static meta under a test's reported meta, which wins.
         ...nodeMetaSampleValues(nodeMeta),
         ...stepSampleValues,
+        ...stateShape.sampleValues,
       },
     }),
     [
       exprOptions,
       inheritedExprOptions.sampleValues,
       upstreamState,
+      stateShape,
       stepSampleValues,
       stepValueSources,
       nodeConfigs,
@@ -2171,6 +2203,7 @@ function Inner({
                     <ReactFlow
                       nodes={nodes}
                       edges={paintedEdges}
+                      minZoom={0.05}
                       // Straight segments with right-angle corners, not the library's
                       // default bezier curve — reads clearer on a wide, branchy graph
                       // than a sweeping curve does. One place: no edge object sets its
@@ -2527,6 +2560,11 @@ function Inner({
                         loop={mergedExprOptions.loop}
                         readOnly={readOnly}
                         fanOutCount={fanOutCounts.get(editingId) ?? 0}
+                        stateOutputFields={resolveOutputShape(
+                          stepShapes.actionDef?.(editingStep.uses.app, editingStep.uses.action),
+                          stepShapes.testOutputs?.[editingId],
+                          stepShapes.persistedOutputs?.[editingId],
+                        )?.fields.map((f) => f.key)}
                         initialView={editView}
                         stepProblems={editingNode?.data.stepProblems}
                         onChange={(next) => updateStep(editingId, next)}
@@ -3056,20 +3094,36 @@ function StepRunCollect({
   // state in its `input` (that is what the Test tab writes there too).
   // An `ExprValue` (`{type:"expr",…}`) round-trips untouched: `FxField` derives
   // expression mode from the value, so it comes back as a chip, not as text.
+  //
+  // The REMEMBERED test input (`node_test_inputs`, server-side, written by every
+  // Run / Test of this node) wins over the fixture: it is what was last typed on
+  // ANY surface, including this one. A row that is `{}` was cleared — the form
+  // stays on its declared defaults and the fixture is not consulted.
+  const remembered = useRememberedTestInput(workflowId, step.id);
   const [seeded, setSeeded] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seeds ONCE, when the remembered read settles — a later save must not re-seed
   useEffect(() => {
+    if (!remembered.loaded) return;
     let canceled = false;
+    const apply = (input: Record<string, unknown> | undefined, fromMemory: boolean) => {
+      if (input && Object.keys(input).length > 0) {
+        if (isTrigger) setValues((v) => ({ ...v, ...input }));
+        else setStateText(JSON.stringify(input, null, 2));
+        if (fromMemory) setPrefilled(true);
+      }
+      setSeeded(true);
+    };
+    if (remembered.input !== undefined) {
+      apply(remembered.input, true);
+      return;
+    }
     api
       .listStepTests(workflowId, step.id)
       .then((tests) => {
         if (canceled) return;
         const latest = tests.length ? tests[tests.length - 1] : null;
-        if (isTrigger) {
-          if (latest?.with) setValues((v) => ({ ...v, ...latest.with }));
-        } else if (latest?.input && Object.keys(latest.input).length > 0) {
-          setStateText(JSON.stringify(latest.input, null, 2));
-        }
-        setSeeded(true);
+        apply(isTrigger ? latest?.with : latest?.input, false);
       })
       // Never block or break the form: no fixture (or a failed list) just leaves
       // the declared defaults in place, silently.
@@ -3079,7 +3133,15 @@ function StepRunCollect({
     return () => {
       canceled = true;
     };
-  }, [api, workflowId, step.id, isTrigger]);
+  }, [api, workflowId, step.id, isTrigger, remembered.loaded]);
+  const [formKey, setFormKey] = useState(0);
+  const clearRemembered = () => {
+    remembered.clear();
+    setPrefilled(false);
+    if (isTrigger) setValues(seedValues(defs));
+    else setStateText("{}");
+    setFormKey((k) => k + 1);
+  };
 
   // A raw-JSON draft that is not a values map (unparseable, or an array/scalar/
   // `null`) never reaches `values` — the entry form holds it back and says so
@@ -3124,6 +3186,7 @@ function StepRunCollect({
               . Disabled nodes are skipped.
             </p>
           )}
+          {prefilled && params !== null && seeded && <LastUsedNote onClear={clearRemembered} />}
           {params === null || !seeded ? (
             <p className="w6w-muted w6w-small">
               {params === null ? "Loading parameters…" : "Loading saved values…"}
@@ -3131,6 +3194,8 @@ function StepRunCollect({
           ) : isTrigger ? (
             <>
               <PropertyEntryForm
+                // Remounted on Clear, so a raw-JSON draft is re-derived from the defaults too.
+                key={formKey}
                 params={params}
                 values={values}
                 onChange={setValues}
@@ -3179,9 +3244,13 @@ function StepRunCollect({
           disabled={!canRun}
           // A trigger IS the start state, so it seeds nothing from upstream —
           // its filled fields go out as params (`{ input }`) exactly as before.
-          onClick={() =>
-            onRun(isTrigger ? values : (state ?? {}), isTrigger ? undefined : startState)
-          }
+          onClick={() => {
+            // Remembered server-side BEFORE the run, so reopening this modal (or
+            // the Test tab, or the header Run) comes back prefilled whatever the
+            // run's outcome. Secret literals are dropped; bindings are kept.
+            remembered.save(isTrigger ? values : (state ?? {}), params ?? []);
+            onRun(isTrigger ? values : (state ?? {}), isTrigger ? undefined : startState);
+          }}
         >
           ▶ Run
         </button>
@@ -3972,6 +4041,8 @@ interface StepEditModalProps {
   initialView?: EditView;
   /** Most outgoing edges this node has in one lane; "Run next nodes" needs >= 2. */
   fanOutCount?: number;
+  /** This step's own output field keys, offered by "Write to state" › Pick fields (free text still accepted). */
+  stateOutputFields?: string[];
   /** Fired the instant the footer Test button is clicked, before the test runs (T1.1.1). */
   onTestRun?: () => void;
   /** Host-supplied problems for this step; a dangling connection locks Configure/Test, a fixable one gets a button. */
@@ -3989,6 +4060,7 @@ function ActionStepEditModal({
   readOnly,
   initialView = "props",
   fanOutCount = 0,
+  stateOutputFields,
   onTestRun,
   stepProblems,
 }: StepEditModalProps) {
@@ -4182,8 +4254,27 @@ function ActionStepEditModal({
   // on this surface's own noun): the fixture's `input` slot is where both
   // surfaces write it. Applied only while the box is still untouched, so a slow
   // list can never overwrite what the operator is typing.
+  //
+  // The remembered test input (`node_test_inputs`, written by every Run / Test
+  // of this node on any surface) wins over the fixture; a `{}` row was cleared.
+  // A For each keeps its fixture-only seeding (its Test saves a sample instead).
+  const rememberedTest = useRememberedTestInput(
+    (testable && !isTrigger) || isForeach ? workflowId : undefined,
+    step.id,
+  );
+  const [testPrefilled, setTestPrefilled] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seeds ONCE, when the remembered read settles — a later save must not re-seed
   useEffect(() => {
     if ((!testable || isTrigger) && !isForeach) return;
+    if (!rememberedTest.loaded) return;
+    if (!isForeach && rememberedTest.input !== undefined) {
+      const input = rememberedTest.input;
+      if (Object.keys(input).length === 0) return;
+      const next = JSON.stringify(input, null, 2);
+      setTestState((cur) => (cur.trim() === "{}" ? next : cur));
+      setTestPrefilled(true);
+      return;
+    }
     let canceled = false;
     api
       .listStepTests(workflowId, step.id)
@@ -4200,7 +4291,7 @@ function ActionStepEditModal({
     return () => {
       canceled = true;
     };
-  }, [api, workflowId, step.id, testable, isTrigger, isForeach]);
+  }, [api, workflowId, step.id, testable, isTrigger, isForeach, rememberedTest.loaded]);
 
   // The incoming-state override, and the payload it produces. The step's STORED
   // configuration is what runs; the override is merged over it. A box that is
@@ -4543,6 +4634,15 @@ function ActionStepEditModal({
                     readOnly={readOnly}
                     onChange={commit}
                   />
+                  {stateWriteVisible(step) && (
+                    <StepStateControl
+                      step={step}
+                      inLoop={loop !== undefined}
+                      outputFields={stateOutputFields}
+                      readOnly={readOnly}
+                      onChange={commit}
+                    />
+                  )}
                 </div>
               )}
             </>
@@ -4583,6 +4683,15 @@ function ActionStepEditModal({
                       step — only the incoming state changes per run.
                     </p>
                     <LoopSeedField seed={loopSeed} readOnly={readOnly} />
+                    {testPrefilled && !readOnly && (
+                      <LastUsedNote
+                        onClear={() => {
+                          rememberedTest.clear();
+                          setTestPrefilled(false);
+                          setTestState("{}");
+                        }}
+                      />
+                    )}
                     <IncomingStateField
                       text={testState}
                       onChange={setTestState}
@@ -4784,6 +4893,230 @@ function StepFanOutControl({
         </span>
       )}
     </label>
+  );
+}
+
+/** Column headers over the "Write to state" mapping rows: which side is the step, which is state. */
+function StateMapHead({ to }: { to: string }) {
+  return (
+    <div className="w6w-state-map-row w6w-state-map-head" aria-hidden="true">
+      <span>From this step output</span>
+      <span />
+      <span>{to}</span>
+    </div>
+  );
+}
+
+function StateMapArrow() {
+  return (
+    <span className="w6w-state-map-arrow" aria-hidden="true">
+      →
+    </span>
+  );
+}
+
+/**
+ * A path in this step's output: picks from the fields `resolveOutputShape` found
+ * (declared output, the last test or a saved sample) and takes free text for
+ * anything else. Blank means the whole output.
+ */
+function StateOutputPathInput({
+  label,
+  fields,
+  value,
+  readOnly,
+  onChange,
+}: {
+  label: string;
+  fields?: string[];
+  value: string;
+  readOnly?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const options = useMemo(() => (fields ?? []).map((k) => ({ value: k, label: k })), [fields]);
+  return (
+    <Combobox
+      mode="combobox"
+      forceSelection={false}
+      aria-label={label}
+      placeholder="Whole output, or e.g. order"
+      options={options}
+      value={value}
+      disabled={readOnly}
+      emptyText={
+        options.length > 0
+          ? "No matching field — keep typing a path"
+          : "Test this step to list its output fields, or type a path"
+      }
+      onChange={onChange}
+    />
+  );
+}
+
+/**
+ * "Write to state" — where this step's output lands in the run's state tree
+ * (`Node.state`). Off is the key's absence (Merge at root on Set data, R14);
+ * every rule about paths and keys comes from `@w6w/expr` `validateStateConfig`.
+ */
+function StepStateControl({
+  step,
+  inLoop,
+  outputFields,
+  readOnly,
+  onChange,
+}: {
+  step: FlowStep;
+  inLoop: boolean;
+  outputFields?: string[];
+  readOnly?: boolean;
+  onChange: (next: FlowStep) => void;
+}) {
+  const config = stateWriteFor(step);
+  const issues = validateStateConfig(config);
+  const commitConfig = (next: StateWriteConfig) => onChange(setStateWrite(step, next));
+  const rows = config.mode === "pick" && Array.isArray(config.map) ? config.map : [];
+  const setRow = (i: number, patch: Partial<{ from: string; to: string }>) =>
+    commitConfig({
+      mode: "pick",
+      map: rows.map((r, j) => (j === i ? { ...r, ...patch } : r)),
+    });
+  const setAppend = (patch: { path?: string; from?: string }) => {
+    if (config.mode !== "append") return;
+    const path = patch.path ?? config.path;
+    const from = "from" in patch ? patch.from : config.from;
+    commitConfig({ mode: "append", path, ...(from ? { from } : {}) });
+  };
+  return (
+    <div className="w6w-field w6w-stack">
+      <label className="w6w-field">
+        <span>Write to state</span>
+        <select
+          aria-label="Write to state"
+          value={config.mode}
+          disabled={readOnly}
+          onChange={(e) => commitConfig(seedStateWrite(step, e.target.value as StateMode))}
+        >
+          {STATE_MODES.map((m) => (
+            <option key={m} value={m}>
+              {STATE_MODE_LABELS[m]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {config.mode === "key" && (
+        <label className="w6w-field">
+          <span>To state key</span>
+          <input
+            type="text"
+            aria-label="State key"
+            placeholder="e.g. order"
+            value={config.key}
+            disabled={readOnly}
+            onChange={(e) => commitConfig({ mode: "key", key: e.target.value })}
+          />
+          <span className="w6w-hint">
+            Copies the whole step output into <code>state.&lt;key&gt;</code>. A dotted key such as{" "}
+            <code>order.id</code> nests.
+          </span>
+        </label>
+      )}
+      {config.mode === "pick" && (
+        <div className="w6w-stack">
+          <StateMapHead to="To state key" />
+          {rows.length === 0 && (
+            <p className="w6w-muted w6w-small">No fields yet — add one below.</p>
+          )}
+          {rows.map((row, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional; their order is the write order
+            <div key={i} className="w6w-datavar-row w6w-state-map-row">
+              <StateOutputPathInput
+                label="From output field"
+                fields={outputFields}
+                value={row.from}
+                readOnly={readOnly}
+                onChange={(from) => setRow(i, { from })}
+              />
+              <StateMapArrow />
+              <input
+                type="text"
+                aria-label="To state path"
+                placeholder="e.g. order"
+                value={row.to}
+                disabled={readOnly}
+                onChange={(e) => setRow(i, { to: e.target.value })}
+              />
+              {!readOnly && (
+                <DeleteButton
+                  label="Remove field"
+                  onClick={() =>
+                    commitConfig({ mode: "pick", map: rows.filter((_, j) => j !== i) })
+                  }
+                />
+              )}
+            </div>
+          ))}
+          {!readOnly && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost w6w-state-map-add"
+              aria-label="Add field"
+              onClick={() => commitConfig({ mode: "pick", map: [...rows, { from: "", to: "" }] })}
+            >
+              + Add field
+            </button>
+          )}
+          <span className="w6w-hint">
+            Copies <code>output.&lt;path&gt;</code> into <code>state.&lt;key&gt;</code>. Leave the
+            left side blank to copy the whole output.
+          </span>
+        </div>
+      )}
+      {config.mode === "append" && (
+        <div className="w6w-stack">
+          <StateMapHead to="Append to state list" />
+          <div className="w6w-datavar-row w6w-state-map-row">
+            <StateOutputPathInput
+              label="Output field to append"
+              fields={outputFields}
+              value={config.from ?? ""}
+              readOnly={readOnly}
+              onChange={(from) => setAppend({ from })}
+            />
+            <StateMapArrow />
+            <input
+              type="text"
+              aria-label="Append to state path"
+              placeholder="e.g. orders"
+              value={config.path}
+              disabled={readOnly}
+              onChange={(e) => setAppend({ path: e.target.value })}
+            />
+          </div>
+          <span className="w6w-hint">
+            Appends <code>output.&lt;path&gt;</code> to the list at <code>state.&lt;key&gt;</code>.
+            Leave the left side blank to append the whole output.
+          </span>
+        </div>
+      )}
+      {issues.length > 0 && (
+        <div role="alert" className="w6w-state-write-issues w6w-small">
+          {issues.map((issue) => (
+            <div key={`${issue.code}:${issue.message}`}>{issue.message}</div>
+          ))}
+        </div>
+      )}
+      {config.mode !== "off" && (
+        <span className="w6w-muted w6w-small">
+          Writing <code>null</code> deletes the key, and secrets are stored masked.
+        </span>
+      )}
+      {inLoop && (
+        <span className="w6w-muted w6w-small">
+          This step is inside a For each, so it writes once per item — Append collects one entry per
+          item.
+        </span>
+      )}
+    </div>
   );
 }
 

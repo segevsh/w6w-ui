@@ -430,7 +430,9 @@ function RepeatField({
 const PYTHON_CODE_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
 
 /** Earlier script defaults (the ones that named `input`, then `vars`/`consts`/`state`) — still untouched
- *  boilerplate a `language` switch may swap, on a step saved while that wording was current. */
+ *  boilerplate a `language` switch may swap, on a step saved while that wording was current.
+ *  Recognition-only: these match text already saved, so they keep their old `state.nodes` wording
+ *  and are never offered as a default. */
 const LEGACY_CODE_DEFAULTS = [
   "// Read `input` (bound under Input), plus `vars`, `consts` and `state.nodes.<step-id>.output`.\n// Runs as a function body. Return the step's output.\nreturn input;",
   '# Read `input` (bound under Input), plus `vars`, `consts` and `state["nodes"][<step-id>]["output"]`.\n# Runs as a function body. Return the step\'s output.\nreturn input',

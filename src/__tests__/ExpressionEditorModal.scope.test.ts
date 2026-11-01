@@ -187,7 +187,7 @@ function optionsFor(editingId: string) {
 
 test("Workflow state lists only the edited node's own path: no other-path node, and no Metadata chip (meta is only in the Metadata section)", async () => {
   const { container } = await mountModal({ options: optionsFor("resource_uri_to_urn_2") });
-  const state = groupFor(container, "Workflow state") as HTMLElement;
+  const state = groupFor(container, "Previous steps") as HTMLElement;
   assert.ok(state);
   const rows = q(state, ".w6w-exprmodal-source-label").map((l) => l.textContent);
   assert.deepEqual(rows, ["trigger.event", "eb_webhook", "data_normalize"]);
@@ -278,14 +278,14 @@ test("Metadata: a node's id row inserts its whole nodes.<id>.meta", async () => 
 test("accordion: Workflow state opens by default, one section at a time, headers and + Add always shown", async () => {
   const { container } = await mountModal({ options: optionsFor("resource_uri_to_urn_2") });
   const labels = q(container, ".w6w-exprmodal-group-label").map((l) => l.textContent);
-  assert.deepEqual(labels, ["Workflow state", "Metadata", "Variables", "Documents", "Secrets"]);
-  assert.deepEqual(openSections(container), ["Workflow state"]);
+  assert.deepEqual(labels, ["Previous steps", "Metadata", "Variables", "Documents", "Secrets"]);
+  assert.deepEqual(openSections(container), ["Previous steps"]);
   const bodyOf = (label: string) =>
     (groupFor(container, label) as HTMLElement).querySelector(
       ".w6w-exprmodal-group-body",
     ) as HTMLElement & { inert?: boolean };
   assert.equal(bodyOf("Variables").inert, true, "a closed body leaves the tab order");
-  assert.equal(bodyOf("Workflow state").inert, false);
+  assert.equal(bodyOf("Previous steps").inert, false);
   // Collapsed sections still show their + Add.
   assert.ok(container.querySelector('[data-testid="expr-add-var"]'));
   assert.ok(container.querySelector('[data-testid="expr-add-secret"]'));
@@ -296,7 +296,7 @@ test("accordion: Workflow state opens by default, one section at a time, headers
   assert.deepEqual(openSections(container), ["Metadata"]);
   await click(headerOf(groupFor(container, "Metadata") as HTMLElement));
   assert.deepEqual(openSections(container), [], "clicking the open one collapses it");
-  assert.equal(groupFor(container, "Workflow state")?.classList.contains("is-open"), false);
+  assert.equal(groupFor(container, "Previous steps")?.classList.contains("is-open"), false);
 });
 
 test("accordion, Function context: Inputs opens by default", async () => {
@@ -308,8 +308,8 @@ test("Workflow state folds in the enclosing loop's current item", async () => {
   const { container } = await mountModal({
     options: { steps: [{ id: "for_each_1" }], loop: { foreachId: "for_each_1", itemOutputs: [] } },
   });
-  const state = groupFor(container, "Workflow state") as HTMLElement;
+  const state = groupFor(container, "Previous steps") as HTMLElement;
   assert.ok(state.querySelector('[data-testid="expr-loop-group"]'));
-  assert.deepEqual(openSections(container), ["Workflow state"]);
+  assert.deepEqual(openSections(container), ["Previous steps"]);
   assert.ok(!groupFor(container, "Loop"), "no separate Loop section");
 });

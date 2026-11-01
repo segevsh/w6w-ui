@@ -1,7 +1,8 @@
 /**
  * Host-supplied per-step problems painted on the canvas. Pure — no React or
  * @xyflow imports. The host owns detection (connection problems from the host's
- * own lookup, loop problems from `findLoopProblems` in `@w6w/ui/flow`); the
+ * own lookup, loop problems from `findLoopProblems` and parallel state writes from
+ * `findStateWriteProblems` in `@w6w/ui/flow`); the
  * canvas only paints what it is given and offers each problem's one-click fix.
  */
 import type { LoopInvalid } from "./flow-loop.ts";
@@ -15,7 +16,9 @@ export type StepProblem =
   | { code: "unknown_connection"; connection: string }
   | { code: "foreach_wrapped_items"; fix: StepProblemFix }
   | { code: "foreach_body_refs_output"; foreachId: string; refs: string[]; fix: StepProblemFix }
-  | { code: "loop_body_invalid"; reason: LoopInvalid };
+  | { code: "loop_body_invalid"; reason: LoopInvalid }
+  /** Writes a state path that a step running at the same time (`with`) also writes (`findStateWriteProblems`). */
+  | { code: "state_parallel_write"; path: string[]; with: string[] };
 
 /** Keyed by step id; a step carries every problem it has (D-B1). */
 export type StepProblems = Record<string, StepProblem[]>;
@@ -85,6 +88,10 @@ export function stepProblemTooltip(p: StepProblem): string {
       const text = INVALID_LOOP_TEXT[p.reason.reason] ?? "This loop's body is not valid";
       return p.reason.stepId ? `${text} (${p.reason.stepId})` : text;
     }
+    case "state_parallel_write": {
+      const label = `state${p.path.length ? `.${p.path.join(".")}` : ""}`;
+      return `Writes ${label} at the same time as ${p.with.join(", ")} — parallel branches don't see each other's writes; the final value follows the workflow's step order`;
+    }
   }
 }
 
@@ -103,13 +110,13 @@ export function isConnectionBlocked(
 /** The Setup tab's Connection button label — exactly five outcomes. */
 export function connectionButtonLabel(
   connection: string | undefined | null,
-  conns: { id: string; displayName?: string }[] | null,
+  conns: { id: string; displayName?: string; builtIn?: boolean }[] | null,
   failed: boolean,
 ): string {
   if (!connection) return "No connection";
   if (failed) return "Couldn't load connections";
   if (conns === null) return connection;
   const found = conns.find((c) => c.id === connection);
-  if (found) return found.displayName ?? connection;
+  if (found) return found.builtIn ? "Built-in" : (found.displayName ?? connection);
   return "Missing connection — choose another";
 }

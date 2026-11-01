@@ -221,6 +221,36 @@ test("A3 — with showCallable: title is the callable name, subtitle is kind + s
   }
 });
 
+test("A3 — a row shows its trigger (+ trigger node) and an input snippet in the subtitle", async () => {
+  const items = [
+    item({
+      id: "run_1",
+      trigger: "event",
+      triggerNodeId: "order_placed_1",
+      inputPreview: '{"order": {"id": "o_1"',
+    }),
+    item({ id: "run_2", trigger: "manual", inputPreview: '{"orderId": "5GIj"}' }),
+    item({ id: "run_3", trigger: "custom_kind" }),
+    item({ id: "run_4" }),
+  ];
+  const { container, root } = await renderList({ items });
+  try {
+    const subtitles = rows(container).map((r) => text(r.querySelector(".w6w-list-item-subtitle")));
+    assert.deepEqual(subtitles, [
+      'run_1 · Event · order_placed_1 · {"order": {"id": "o_1"',
+      'run_2 · Manual · {"orderId": "5GIj"}',
+      "run_3 · custom_kind",
+      "run_4",
+    ]);
+    const snippet = rows(container)[1].querySelector('[data-testid="execution-row-input"]');
+    assert.equal(snippet?.tagName, "CODE");
+    assert.equal(snippet?.getAttribute("title"), '{"orderId": "5GIj"}', "full preview on hover");
+    assert.equal(rows(container)[3].querySelector('[data-testid="execution-row-trigger"]'), null);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 test("A3 — selectedId marks exactly that row active (`aria-pressed`), and only there", async () => {
   const items = [item({ id: "a" }), item({ id: "b" }), item({ id: "c" })];
   const { container, root } = await renderList({ items, selectedId: "b", onSelect: () => {} });

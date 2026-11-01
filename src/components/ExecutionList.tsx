@@ -28,6 +28,14 @@ export interface ExecutionListItem {
   /** The execution this one is a re-run of — the row then carries a "Re-run"
    * tag. `null`/omitted ⇒ an ordinary execution. */
   rerunOf?: string | null;
+  /** How the run was started (`manual`, `schedule`, `webhook`, `event`, `replay`, or any other
+   *  value the host passes through). `null`/omitted ⇒ no trigger segment. */
+  trigger?: string | null;
+  /** The trigger node the run entered through, shown beside the trigger. */
+  triggerNodeId?: string | null;
+  /** The start of the run's input as JSON text, shown as a one-line snippet. `null`/omitted ⇒
+   *  no snippet. */
+  inputPreview?: string | null;
 }
 
 export interface ExecutionListProps {
@@ -72,6 +80,22 @@ const KIND_LABEL: Record<ExecutionKind, string> = {
   endpoint: "Endpoint",
   workflow: "Workflow",
 };
+
+/** Known trigger kinds' labels; any other value is shown as given. */
+const TRIGGER_LABEL: Record<string, string> = {
+  manual: "Manual",
+  schedule: "Schedule",
+  webhook: "Webhook",
+  event: "Event",
+  replay: "Replay",
+};
+
+/** The row's trigger segment — `Event · order_placed_1` — or `null` when the host gave none. */
+function triggerText(item: ExecutionListItem): string | null {
+  if (!item.trigger) return null;
+  const label = TRIGGER_LABEL[item.trigger] ?? item.trigger;
+  return item.triggerNodeId ? `${label} · ${item.triggerNodeId}` : label;
+}
 
 /**
  * A paged list of past executions: one row per run, click-to-select, with a
@@ -151,9 +175,28 @@ export function ExecutionList({
                 </>
               }
               subtitle={
-                showCallable
-                  ? `${KIND_LABEL[item.kind]} · ${formatExecutionTime(item.startedAt)}`
-                  : item.id
+                <>
+                  {showCallable
+                    ? `${KIND_LABEL[item.kind]} · ${formatExecutionTime(item.startedAt)}`
+                    : item.id}
+                  {triggerText(item) && (
+                    <span className="w6w-execution-trigger" data-testid="execution-row-trigger">
+                      {` · ${triggerText(item)}`}
+                    </span>
+                  )}
+                  {item.inputPreview && (
+                    <>
+                      {" · "}
+                      <code
+                        className="w6w-execution-input-preview"
+                        data-testid="execution-row-input"
+                        title={item.inputPreview}
+                      >
+                        {item.inputPreview}
+                      </code>
+                    </>
+                  )}
+                </>
               }
               trailing={formatDurationMs(item.durationMs)}
               active={item.id === selectedId}

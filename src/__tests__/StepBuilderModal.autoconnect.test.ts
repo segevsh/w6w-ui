@@ -162,12 +162,12 @@ function connectionButton(container: Element) {
   return button;
 }
 
-test("zero-credential app shows an editable Default account and commits it explicitly", async () => {
+test("zero-credential app shows an editable Built-in account and commits it explicitly", async () => {
   const { container, root, onAddCalls } = await mount(
     async () => [{ ...T, autoSatisfied: true }],
     async () => [],
   );
-  assert.equal(connectionButton(container).textContent, "Default");
+  assert.equal(connectionButton(container).textContent, "Built-in");
   assert.doesNotMatch(
     container.textContent ?? "",
     /Connected automatically|Create connection|Use connection from a node/,
@@ -184,12 +184,12 @@ test("zero-credential app shows an editable Default account and commits it expli
   await act(async () => root.unmount());
 });
 
-test("JIT Default keeps the scheduled-run caveat", async () => {
+test("JIT Built-in keeps the scheduled-run caveat", async () => {
   const { container, root } = await mount(
     async () => [{ key: "jit", type: "jit", available: true, autoSatisfied: true }],
     async () => [],
   );
-  assert.equal(connectionButton(container).textContent, "Default");
+  assert.equal(connectionButton(container).textContent, "Built-in");
   assert.match(container.textContent ?? "", /Scheduled or queued runs need a stored connection/);
   await act(async () => root.unmount());
 });
@@ -204,7 +204,7 @@ test("ordinary app selects its available account", async () => {
   await act(async () => root.unmount());
 });
 
-test("mixed auth defaults to Default and allows a stored OAuth account from the same menu", async () => {
+test("mixed auth defaults to Built-in and allows a stored OAuth account from the same menu", async () => {
   const { container, root, onAddCalls } = await mount(
     async () => [
       { key: "oauth", type: "oauth2" },
@@ -212,7 +212,7 @@ test("mixed auth defaults to Default and allows a stored OAuth account from the 
     ],
     async () => [{ id: "oauth1", appId: "sendgrid", authKey: "oauth", state: "connected" }],
   );
-  assert.equal(connectionButton(container).textContent, "Default");
+  assert.equal(connectionButton(container).textContent, "Built-in");
   await act(async () => connectionButton(container).click());
   const choice = document.querySelector('[data-connection-id="oauth1"]') as HTMLButtonElement;
   assert.ok(choice);

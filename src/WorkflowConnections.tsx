@@ -52,6 +52,9 @@ export function WorkflowConnectionPicker({
   const disabled = readOnly || scope?.readOnly;
   const connections = scope?.connections ?? {};
   const nodes = scope?.nodes ?? [];
+  const choices = (conns ?? [])
+    .map((conn) => ({ conn, users: connectionUsers(step.uses.app, conn.id, nodes, connections) }))
+    .sort((a, b) => Number(b.users.length > 0) - Number(a.users.length > 0));
   const currentId =
     connectionIdFor(step, connections) ??
     (step.uses.connectionRef === undefined
@@ -120,8 +123,7 @@ export function WorkflowConnectionPicker({
               </p>
             )}
             <div className="w6w-stepbuilder-list">
-              {(conns ?? []).map((conn) => {
-                const users = connectionUsers(step.uses.app, conn.id, nodes, connections);
+              {choices.map(({ conn, users }) => {
                 return (
                   <button
                     key={conn.id}
@@ -133,12 +135,12 @@ export function WorkflowConnectionPicker({
                     onClick={() => choose(conn.id)}
                   >
                     <span className="w6w-stepbuilder-item-main">
-                      <strong>{conn.displayName || conn.id}</strong>
+                      <strong>{conn.builtIn ? "Built-in" : conn.displayName || conn.id}</strong>
                       <span className="w6w-muted w6w-small">
                         {users.length > 0
                           ? `In use in this workflow · ${users.map((n) => n.id).join(", ")}`
                           : conn.builtIn
-                            ? "No credentials required"
+                            ? "Built-in connection"
                             : conn.state}
                       </span>
                     </span>

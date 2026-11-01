@@ -12,6 +12,7 @@
  */
 import { type ReactNode, createContext, useContext } from "react";
 import type { NodeSample } from "./node-samples.ts";
+import type { NodeTestInput } from "./test-inputs.ts";
 import { ProvidedThemeCtx } from "./theme.ts";
 import type {
   ActionDef,
@@ -490,6 +491,22 @@ export interface W6WApi {
    * `/workflows/:workflowId/node-samples` → `{ nodeSamples }`.
    */
   loadNodeSamples?(workflowId: string): Promise<NodeSample[]>;
+
+  /**
+   * OPTIONAL. The test input each node of the workflow last ran with in the editor (a trigger's
+   * filled fields, any other node's incoming state) — so the Run node modal, the Test tabs and the
+   * header Run reopen prefilled (`test-inputs.ts`). Server-side, never in the workflow definition.
+   * GETs `/workflows/:workflowId/test-inputs` → `{ testInputs }`. A host without it falls back to
+   * the latest step-test fixture, as before.
+   */
+  loadTestInputs?(workflowId: string): Promise<NodeTestInput[]>;
+
+  /**
+   * OPTIONAL. Remember the node's test input (newest wins; `{}` is a CLEAR). The server drops
+   * sealed envelopes; the caller drops literal secrets first (`rememberableInput`). PUTs
+   * `/workflows/:workflowId/nodes/:nodeId/test-input` `{ input }`.
+   */
+  saveTestInput?(workflowId: string, nodeId: string, input: Record<string, unknown>): Promise<void>;
 
   /**
    * List the caller's registered Functions (core rfcs/function.md) — drives

@@ -9,6 +9,7 @@ import {
   connectionSourceNodes,
   connectionUsers,
   defaultConnectionFor,
+  pruneUnusedConnections,
   replaceWorkflowConnection,
   selectNodeConnection,
   withConnectionRef,
@@ -107,13 +108,14 @@ test("new nodes inherit the last configured same-app node, including disconnecte
   });
 });
 
-test("zero-credential apps default to Default, but existing workflow accounts take priority", () => {
+test("zero-credential apps default to Built-in, but existing workflow accounts take priority", () => {
   const defaults = withDefaultConnection(
     "eventbrite",
     [{ key: "zero-credential", type: "custom" }],
     choices,
   );
   assert.equal(defaults.length, 3);
+  assert.equal(defaults[2].displayName, "Built-in");
   assert.deepEqual(defaultConnectionFor(draft, defaults, [], {}), {
     connection: "zerocred:eventbrite",
   });
@@ -144,6 +146,94 @@ test("zero-credential apps default to Default, but existing workflow accounts ta
     true,
   );
   assert.deepEqual(defaultConnectionFor(draft, [{ ...choices[0], appId: "other" }], [], {}), {});
+});
+
+test("saving drops unused aliases while preserving every live connection reference", () => {
+  const wf: FlowWorkflow = {
+    ...legacy,
+    nodes: [
+      {
+        id: "order_placed_1",
+        uses: {
+          app: "cohost",
+          action: "order-placed",
+          trigger: true,
+          connectionRef: "order_placed_1",
+        },
+      },
+      {
+        id: "get_order",
+        uses: { app: "cohost", action: "get-order", connectionRef: "get_event_1" },
+      },
+      {
+        id: "mail_send_1",
+        uses: { app: "sendgrid", action: "mail-send", connectionRef: "mail_send_1" },
+      },
+    ],
+    connections: {
+      get_event_1: { app: "cohost", connection: "zerocred:cohost" },
+      get_order_1: { app: "cohost", connection: "zerocred:cohost" },
+      mail_send_1: { app: "sendgrid", connection: "conn_mail" },
+      order_placed_1: { app: "cohost", connection: "zerocred:cohost" },
+    },
+  };
+  const switched = replaceWorkflowConnection(
+    "cohost",
+    "zerocred:cohost",
+    "conn_test",
+    wf.nodes,
+    wf.connections ?? {},
+  );
+  const current = { ...wf, connections: switched };
+  const graph = workflowToFlow(current);
+  const saved = flowToWorkflow(current, graph.nodes, graph.edges);
+  assert.deepEqual(saved.connections, {
+    get_event_1: { app: "cohost", connection: "conn_test" },
+    mail_send_1: { app: "sendgrid", connection: "conn_mail" },
+    order_placed_1: { app: "cohost", connection: "conn_test" },
+  });
+  assert.deepEqual(
+    saved.nodes.map((n) => n.uses),
+    wf.nodes.map((n) => n.uses),
+  );
+  assert.equal(
+    wf.connections?.get_order_1.connection,
+    "zerocred:cohost",
+    "does not mutate the original",
+  );
+  assert.strictEqual(pruneUnusedConnections(saved), saved, "clean workflows do not churn");
+  const deleted = flowToWorkflow(
+    saved,
+    graph.nodes.filter((n) => n.id !== "get_order"),
+    [],
+  );
+  assert.equal(deleted.connections?.get_event_1, undefined);
+  assert.equal(deleted.connections?.order_placed_1.connection, "conn_test");
+});
+
+test("cleanup keeps shared aliases after their original node is removed, and retains invalid refs for validation", () => {
+  const shared = {
+    ...legacy,
+    nodes: [withConnectionRef(legacy.nodes[1], "original_node")],
+    connections: {
+      original_node: { app: "eventbrite", connection: "conn_a" },
+      unused: { app: "eventbrite", connection: "conn_b" },
+    },
+  };
+  assert.deepEqual(pruneUnusedConnections(shared).connections, {
+    original_node: { app: "eventbrite", connection: "conn_a" },
+  });
+  const invalid = {
+    ...shared,
+    nodes: [
+      {
+        ...shared.nodes[0],
+        uses: { app: "foreign", action: "run", connectionRef: "original_node" },
+      },
+    ],
+  };
+  assert.ok(pruneUnusedConnections(invalid).connections.original_node);
+  assert.deepEqual(pruneUnusedConnections({ ...shared, nodes: [] }).connections, {});
 });
 
 test("account usage and all-node replacement include separate refs without touching other apps", () => {

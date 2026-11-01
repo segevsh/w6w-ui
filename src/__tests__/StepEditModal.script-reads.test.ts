@@ -89,8 +89,8 @@ type FlowStep = import("../flow-types.ts").FlowStep;
 const CODE = `const total = '{{ nodes.fetch.output.costs.total }}';
 const region = '{{ var.region }}';
 return { total, region };`;
-const CONVERTED = `const total = state.nodes.fetch.output.costs.total;
-const region = vars.region;
+const CONVERTED = `const total = run.nodes.fetch.output.costs.total;
+const region = state.region;
 return { total, region };`;
 
 function fakeApi() {
@@ -218,16 +218,16 @@ test("Input is collapsed under Custom input (advanced) when empty, open when set
 test("a step chip inserts a code read; How to read data shows the three reads", async () => {
   const { container, root, changes } = await mount({ code: "return 1;" });
   const chip = container.querySelector(
-    '.w6w-script-insert button[title="Insert state.nodes.fetch.output"]',
+    '.w6w-script-insert button[title="Insert run.nodes.fetch.output"]',
   );
   assert.ok(chip, "a chip for the upstream step");
   await act(async () => (chip as HTMLButtonElement).click());
   await flush();
   const code = String(changes.at(-1)?.with?.code);
-  assert.ok(code.includes("state.nodes.fetch.output"), code);
+  assert.ok(code.includes("run.nodes.fetch.output"), code);
   assert.ok(!code.includes("{{"), "never a {{ }} marker");
   const help = container.querySelector(".w6w-script-help-examples")?.textContent ?? "";
-  for (const read of ["state.nodes.fetch.output", "vars.region", "consts.api_base"]) {
+  for (const read of ["run.nodes.fetch.output", "state.region", "consts.api_base"]) {
     assert.ok(help.includes(read), read);
   }
   await act(async () => root.unmount());

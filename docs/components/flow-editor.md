@@ -104,6 +104,13 @@ const workflow: FlowWorkflow = {
 - **`fanOut`** (optional, on a node): `"parallel"` runs a node's next nodes at the same time. Leave it
   out and they run one after another. Only `"parallel"` is ever written; `"sequential"` is the
   absence of the key.
+- **`state`** (optional, on a node): where the node's output is written into the run's state tree.
+  See [Write to state](#write-to-state). Leave it out for the default: off, except on a Set data
+  node, which merges into the root.
+- **`initialState`** (optional): the starting data, a JSON object the run's state tree begins with.
+  Its values may be literal or `{{ }}` references to variables, constants, documents or a node's
+  static metadata, resolved once at run start. The editor keeps it as given. To edit it, a host
+  renders `ExpressionEditorModal` with `mode="json-binding"` and `startingState`.
 - **`canvas`** (optional): notes and sections drawn around the graph. The engine ignores it. See
   [Notes and sections](#notes-and-sections).
 
@@ -278,6 +285,32 @@ more edges in a lane. The glyph shows the mode (`⇉` parallel, `→` sequence),
 Its label reads `Runs these N nodes in parallel` or `Runs these N nodes in sequence`, where N is
 the largest number of edges leaving the node in either lane.
 
+## Write to state
+
+A node's settings carry a **Write to state** control, under **Run next nodes**. It decides where the
+node's output lands in the run's state tree, which later nodes read as `state.<path>`. It shows on
+app steps and triggers, not on control nodes such as If or For each. The five modes are:
+
+- **Off**: nothing is written. This is the default, so choosing it removes the `state` key.
+- **Merge at root**: the output's fields merge into the top of the tree (`{ mode: "root" }`).
+- **Under a key**: the whole output is stored at one key (`{ mode: "key", key }`). A dotted key
+  such as `order.id` nests.
+- **Pick fields**: one row per field, read left to right as **From this step output** → **To state
+  key**, so each row copies `output.<path>` into `state.<key>`
+  (`{ mode: "pick", map: [{ from, to }] }`). Leave the left side blank for the whole output. The rows
+  write in order. The left box lists the node's own output fields (its declared output, its last
+  test or a saved sample) and still takes any path you type. Rows use the same inputs, trash button
+  and **+ Add** button as the Set data fields.
+- **Append**: adds the output, or one output field, to the end of a list at a state path
+  (`{ mode: "append", path, from? }`). It shows one **From this step output** → **Append to state
+  list** row. Leave the left side blank to append the whole output.
+
+A **Set data** node merges at the root when it has no `state`, so for it **Merge at root** is the
+absence of the key and **Off** is written as `{ mode: "off" }`. A value of `null` deletes its key
+rather than storing `null`, and secrets are stored masked. A node inside a For each writes once per
+item; **Append** collects one entry per item. A key or path the engine would refuse shows its
+reason under the control.
+
 ## Show a run on the canvas
 
 The canvas doesn't fetch runs. Poll the run yourself (`GET /runs/:id`) and pass each result as
@@ -297,6 +330,19 @@ Run statuses are `queued`, `running`, `succeeded`, `failed` and `canceled`. Node
 map hasn't been reached. A `skipped` node with `skipReason: "not_on_path"` was on another path
 and never part of the run: it, its loop body and its edges get no run paint. `runState` is never
 written back into the workflow.
+
+## Test values come back
+
+The **Run node** form, a step's **Test** tab and a trigger's **Test** tab open with the values that
+node was last run with — after a reload, in another browser, or inside the embed. They are kept on
+the server for each workflow and node, never in the workflow itself, so testing never marks the
+workflow changed or makes a new version. A short **last used values · Clear** note shows when a form
+was filled this way; **Clear** empties it. A value typed into a secret field isn't kept, but a
+reference to a secret (`{{ secrets.NAME }}`) is. The header **Run** uses the manual trigger's last
+values too.
+
+Your `W6WUIProvider` api needs `loadTestInputs` and `saveTestInput` for this; `createW6WApi` has
+both. Without them, the forms fall back to the step's latest saved test.
 
 ## Helpers
 

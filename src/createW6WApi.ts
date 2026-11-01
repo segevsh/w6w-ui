@@ -6,6 +6,7 @@
  */
 import type { NodeSample } from "./node-samples.ts";
 import type { StepMeta, StepTest, TestRunSummary, W6WApi } from "./provider.tsx";
+import type { NodeTestInput } from "./test-inputs.ts";
 import type {
   ActionDef,
   ApiCallRecord,
@@ -330,6 +331,17 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
       req<{ nodeSamples?: NodeSample[] }>(
         `/workflows/${encodeURIComponent(workflowId)}/node-samples`,
       ).then((r) => r.nodeSamples ?? []),
+
+    loadTestInputs: (workflowId) =>
+      req<{ testInputs?: NodeTestInput[] }>(
+        `/workflows/${encodeURIComponent(workflowId)}/test-inputs`,
+      ).then((r) => r.testInputs ?? []),
+
+    saveTestInput: (workflowId, nodeId, input) =>
+      req<{ ok: boolean }>(
+        `/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(nodeId)}/test-input`,
+        { method: "PUT", body: JSON.stringify({ input }) },
+      ).then(() => undefined),
 
     recordStepTestRun: (workflowId, stepId, body) =>
       req<{ run: unknown }>(

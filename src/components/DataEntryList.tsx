@@ -1,6 +1,5 @@
 import { type FormEvent, type ReactNode, useState } from "react";
 import { DataTable, type DataTableColumn } from "./DataTable.tsx";
-import { DeleteButton } from "./DeleteButton.tsx";
 
 /** One row of a kv/doc store's entry list, as the host has already prepared it. */
 export interface DataEntryListRow {
@@ -20,10 +19,8 @@ export interface DataEntryListProps {
   searchValue?: string;
   /** Renders "Load more" when true. */
   hasMore?: boolean;
-  /** Fired when the key button of a row is clicked. */
+  /** Fired when a row is opened by mouse or its key button by keyboard. */
   onOpen: (key: string) => void;
-  /** Fired when a row's Delete is clicked. Confirmation is the host's. */
-  onDelete: (key: string) => void;
   /** Fired with the prefix text when the search form is SUBMITTED (never per keystroke). */
   onSearch: (text: string) => void;
   /** Fired by the "New entry" button. */
@@ -44,7 +41,6 @@ export function DataEntryList({
   searchValue,
   hasMore,
   onOpen,
-  onDelete,
   onSearch,
   onNew,
   onLoadMore,
@@ -58,35 +54,28 @@ export function DataEntryList({
     {
       key: "key",
       header: "Key",
+      width: "38%",
       render: (row) => (
         <button
           type="button"
-          className="w6w-btn w6w-btn-ghost"
+          className="w6w-data-entry-key"
+          title={row.key}
           data-testid="entry-key"
-          onClick={() => onOpen(row.key)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(row.key);
+          }}
         >
           {row.key}
         </button>
       ),
     },
     {
-      key: "version",
-      header: "Version",
-      render: (row) => (
-        <span className="w6w-muted w6w-small" data-testid="entry-version">
-          v{row.version}
-        </span>
-      ),
-    },
-    {
       key: "value",
       header: "Value",
-      render: (row) => <span className="w6w-muted w6w-small">{row.preview}</span>,
-    },
-    {
-      key: "actions",
-      header: "",
-      render: (row) => <DeleteButton label="Delete entry" onClick={() => onDelete(row.key)} />,
+      render: (row) => (
+        <span className="w6w-muted w6w-small w6w-data-entry-preview">{row.preview}</span>
+      ),
     },
   ];
   return (
@@ -114,6 +103,8 @@ export function DataEntryList({
       </form>
 
       <DataTable
+        className="w6w-data-entry-list"
+        onRowClick={(row) => onOpen(row.key)}
         columns={columns}
         rows={rows}
         rowKey={(row) => row.key}

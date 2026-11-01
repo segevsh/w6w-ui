@@ -1453,6 +1453,15 @@ select optgroup {
   gap: var(--w6w-sp-1);
 }
 
+/* The seed-mode "Insert as" toggle is a <fieldset> for its group semantics; drop the
+   browser's fieldset chrome so it lays out like the plain row it replaced. */
+.w6w-exprmodal-insert-as {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
 /* A rail section is an accordion item: its header always shows, its body animates open
    (grid-template-rows 0fr -> 1fr) and only one section is open at a time. */
 .w6w-exprmodal-group {
@@ -1530,7 +1539,7 @@ select optgroup {
     transition: none;
   }
 }
-/* A labelled block inside a section (Workflow state's Loop). */
+/* A labelled block inside a section (Previous steps' Loop). */
 .w6w-exprmodal-subgroup {
   display: flex;
   flex-direction: column;
@@ -4134,6 +4143,37 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-muted);
 }
 
+/* "Write to state" (step settings): the `validateStateConfig` messages for the current config. */
+.w6w-state-write-issues {
+  color: var(--w6w-danger);
+}
+
+/* "Write to state" mapping rows (Pick fields, Append): the shared `.w6w-datavar-row`
+   input style, laid out as output path → state key → remove. The header row uses the
+   same columns so each label sits over its input. Doubled on the row so it beats
+   `.w6w-datavar-row`'s own columns whatever the partial order. */
+.w6w-state-map-row,
+.w6w-datavar-row.w6w-state-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1rem minmax(0, 1fr) 2rem;
+  gap: var(--w6w-sp-1-5);
+  align-items: center;
+}
+
+.w6w-state-map-head {
+  color: var(--w6w-muted);
+  font-size: 12px;
+}
+
+.w6w-state-map-arrow {
+  color: var(--w6w-muted);
+  text-align: center;
+}
+
+.w6w-state-map-add {
+  align-self: flex-start;
+}
+
 .w6w-section {
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
@@ -5235,6 +5275,31 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-danger);
 }
 
+/* A step's State block: its state writes in recorded order (`state.<path>: old → new`),
+   warnings marked, then the run's state after this step. Values are arbitrary JSON,
+   so rows wrap rather than widen the panel. */
+.w6w-execution-log-state {
+  min-width: 0;
+}
+
+.w6w-execution-log-state-writes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--w6w-font-mono);
+  word-break: break-all;
+}
+
+.w6w-execution-log-state-warning {
+  padding-left: var(--w6w-sp-1-5);
+  border-left: 2px solid var(--w6w-danger);
+  color: var(--w6w-danger);
+  font-family: inherit;
+}
+
 /* --- ExecutionList ------------------------------------------------------- */
 /* Rows of past executions: a click-to-select list plus a prev/next pager.
    Closer in shape to `.w6w-execution-log` (`_execution-log.scss`) than to
@@ -5287,6 +5352,12 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
 
 .w6w-execution-list-rerun {
   flex-shrink: 0;
+}
+
+/* The row's input snippet: inline in the subtitle, so the subtitle's own
+   one-line ellipsis cuts it — no box of its own, just the code face. */
+.w6w-execution-input-preview {
+  font-family: var(--w6w-font-mono);
 }
 
 /* Both non-list branches (the loading and the empty `<p>`) hang straight off
@@ -6468,6 +6539,41 @@ button.w6w-rel-open:focus-visible strong {
 .w6w-data-entries-toolbar input[type=search]:focus {
   outline: none;
   border-color: var(--w6w-accent);
+}
+
+/* Entries open a viewer. Keep the list quiet and bounded, even for long keys or JSON. */
+.w6w-data-entry-list {
+  table-layout: fixed;
+}
+
+.w6w-data-entry-key,
+.w6w-data-entry-preview {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.w6w-data-entry-key {
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.w6w-data-entry-key:focus-visible {
+  outline: 2px solid var(--w6w-accent);
+  outline-offset: 2px;
+}
+
+.w6w-data-entry-delete {
+  margin-inline-end: auto;
 }
 
 /* The wide-table pane: the sheet scrolls INSIDE this box, so a 24-column

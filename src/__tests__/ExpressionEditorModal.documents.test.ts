@@ -193,7 +193,7 @@ test("A4a/M5 — the render action appears ONLY inside the Documents group's fie
     "exactly one render action in the whole rail — the one document field — not zero (survivors must be counted too)",
   );
 
-  for (const label of ["Variables", "Secrets", "Inputs", "Workflow state"]) {
+  for (const label of ["Variables", "Secrets", "Inputs", "Previous steps"]) {
     const group = groupFor(container, label);
     assert.ok(group, `expected a ${label} group to be present in this fixture`);
     assert.equal(

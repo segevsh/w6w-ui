@@ -9,6 +9,33 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- **Write to state** says which side is which. **Pick fields** and **Append** rows carry the column
+  headers **From this step output** → **To state key** (or **Append to state list**), an arrow and a
+  hint (`Copies output.<path> into state.<key>`), and use the Set data row style: the same inputs,
+  a trash `DeleteButton` and **+ Add field**. The left box is a free-text `Combobox` listing the
+  step's output fields. **Under a key** is labelled **To state key**. The stored `state` is unchanged.
+- Test forms remember the last values used, server-side: the Run node modal, the step Test tab
+  (incoming state) and the trigger Test tab reopen PREFILLED with what that workflow + node last ran
+  with, after a success, a reload, another browser or the embed, and show a muted **last used
+  values · Clear** note. New optional `W6WApi.loadTestInputs` / `saveTestInput`
+  (`GET /workflows/:id/test-inputs`, `PUT /workflows/:id/nodes/:nodeId/test-input`), wired in
+  `createW6WApi`; a host without them keeps the step-test fixture prefill. Never in the workflow
+  definition (no dirty, no version); a literal typed into a `secret` param and sealed envelopes are
+  never remembered — bindings are. New exports `useRememberedTestInput`, `LastUsedNote`,
+  `findTestInput`, `rememberableInput`, `NodeTestInput`. 0.2.46.
+- `ExpressionEditorModal` json-binding mode takes `startingState` for a workflow's starting state
+  (`Workflow.initialState`, evaluated once at run start): no Previous steps, State or Secrets in the
+  rail, Documents shown, an **Insert as Reference / Value** toggle (a value copies the source's
+  current sample in), clicks always compose into the object, an empty draft saves `undefined`, and
+  `jsonProblem` refuses a draft. It also takes `title`. `addRefToDraft` takes an optional literal
+  value. New `database` icon. `ExpressionEditorModal` is now exported from the root entry.
+- The run state tree: a step's settings get **Write to state** (Off, Merge at root, Under a key, Pick
+  fields, Append; `FlowStep.state`, `FlowWorkflow.initialState`). The expression picker gains a
+  **State** section built before any run from the writers on the paths that reach the step (the old
+  "Workflow state" section is now "Previous steps"), and ƒx previews resolve `state.*` (`state`,
+  `var` and `vars` are one tree). The run log shows each step's state writes and "State after this
+  step" (`ExecutionLogStep.stateWrites` / `stateAfter`), and `findStateWriteProblems` (`@w6w/ui/flow`)
+  flags two parallel branches writing the same path. Script ƒx insertions read `run.*`.
 - Ctrl/Cmd+Z undoes workflow edits to nodes, configuration, edges, connections and canvas layout.
   Ctrl/Cmd+Shift+Z or Ctrl+Y redoes them. History keeps the latest 100 edits while the workflow is
   open; test runs and learned output shapes stay intact, and text fields keep their own undo.

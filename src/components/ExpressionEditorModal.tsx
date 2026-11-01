@@ -61,7 +61,7 @@ export interface ExpressionEditorModalProps {
   onClose: () => void;
   /**
    * `"json-binding"`: the value of a whole `json`/`group` param, composed as JSON. The rail
-   * shows Workflow state (each step's "Entire output", its fields and, for an app step, its
+   * shows Previous steps (each step's "Entire output", its fields and, for an app step, its
    * Metadata), Inputs and Variables — no Secrets or Documents. A click on a source into an empty
    * draft (or one holding only a reference) binds it: `onSaveJson("{{ ref }}")` and close. Into a
    * draft being composed it ADDS the reference (`addRefToDraft`, `json-compose.ts`): at the caret
@@ -80,6 +80,19 @@ export interface ExpressionEditorModalProps {
    * draft composes as usual.
    */
   whole?: boolean;
+  /**
+   * json-binding mode only: a workflow's starting state (`Workflow.initialState`), evaluated once
+   * at run start. The rail has no Previous steps or State section (the state is blank then) and
+   * no Secrets (a secret never enters state), but does list Documents. A toggle above it picks
+   * what a source click inserts: its reference (default), or its current sample value as a
+   * literal. A click always composes into the object, never binds the whole field. An empty
+   * draft saves `undefined`; Save is refused while `jsonProblem` names a problem.
+   */
+  startingState?: boolean;
+  /** Starting-state mode: why the draft text cannot be saved (`null` when it can). */
+  jsonProblem?: (text: string) => string | null;
+  /** The modal's title, in place of "Edit JSON value" / "Edit expression". */
+  title?: string;
 }
 
 export function ExpressionEditorModal({
@@ -94,8 +107,14 @@ export function ExpressionEditorModal({
   jsonValue,
   onSaveJson,
   whole: wholeField,
+  startingState: startingStateProp,
+  jsonProblem,
+  title,
 }: ExpressionEditorModalProps) {
   const jsonBinding = mode === "json-binding";
+  const seedMode = jsonBinding && startingStateProp === true;
+  // Starting-state mode: what a source click inserts — the reference, or its value now.
+  const [insertAs, setInsertAs] = useState<"ref" | "value">("ref");
   // json-binding mode's compose pane: the draft text, whether it parses, and the CodeMirror
   // view (for inserting at the caret).
   const [jsonText, setJsonText] = useState(() =>
@@ -114,9 +133,41 @@ export function ExpressionEditorModal({
       return { ok: false };
     }
   }, [jsonText]);
+  const seedProblem = seedMode ? (jsonProblem?.(jsonText) ?? null) : null;
+  const canSaveJson = seedMode
+    ? (jsonText.trim() === "" || jsonParsed.ok) && seedProblem === null
+    : jsonParsed.ok;
+  const sampleScope = () =>
+    buildResolveScope(
+      options.sampleValues,
+      sampleStepsState(options.sampleValues),
+      options.nodeConfig,
+      options.nodeMeta,
+    );
   const insertJsonRef = (ref: string) => {
     const view = jsonView.current;
     const doc = view ? view.state.doc.toString() : jsonText;
+    if (seedMode) {
+      // The starting state is an object: a click adds a key, never binds the whole field. As a
+      // value, the source's current sample is copied in and no longer follows the source.
+      const literal =
+        insertAs === "value"
+          ? { value: resolveParamJson(`{{ ${ref} }}`, sampleScope()) ?? null }
+          : undefined;
+      const base = doc.trim() === "" ? "{}" : doc;
+      const pos = jsonTouched.current && view ? view.state.selection.main.head : base.length;
+      const next = addRefToDraft(base, pos, ref, literal);
+      if (!view) {
+        setJsonText(next.text);
+        return;
+      }
+      view.dispatch({
+        changes: { from: 0, to: doc.length, insert: next.text },
+        selection: { anchor: next.caret },
+      });
+      view.focus();
+      return;
+    }
     // An empty draft — or one that is only a reference (a bound field being re-picked) — is a
     // binding: the click saves that reference and closes, as a click does in expression mode.
     let whole: string | null = null;
@@ -181,7 +232,7 @@ export function ExpressionEditorModal({
     });
   };
   // The rail's sections are an accordion: at most one open at a time. "auto" until the author
-  // picks one — then the default (Workflow state, else the first section present) applies.
+  // picks one — then the default (Previous steps, else the first section present) applies.
   const [openPick, setOpenPick] = useState<RailSectionKey | null | "auto">("auto");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: paint on `paintGen`, not on every `parts` change; edits otherwise flow through the DOM.
@@ -294,20 +345,27 @@ export function ExpressionEditorModal({
     metaLeavesOf(id).map(([key, label]) =>
       source(label, { kind: "var", ref: `nodes.${id}.meta.${key}` }, "w6w-expr-chip-var", "·"),
     );
-  // Workflow state is only what this node can read at run time — its upstream `steps`, its
+  // Previous steps is only what this node can read at run time — its upstream `steps`, its
   // trigger's event, its loop's item. Every node's static meta, other paths included, sits in
   // the separate Metadata section, keyed in node order (`nodeMeta`, then upstream app steps the
   // host gave no static meta for, then config-only nodes) — the one place a node's meta is offered.
   const metaIds = [...new Set([...Object.keys(nodeMeta), ...upstreamAppIds, ...configKeys.keys()])];
   const hasWorkflowState = steps.length > 0 || !!options.hasTrigger;
-  const hasState = hasWorkflowState || !!loop;
+  const hasState = !seedMode && (hasWorkflowState || !!loop);
+  // The merged workflow STATE (`state.<path>`, `state-shape.ts`): its own section, present only
+  // when something is in it, so every other section keeps its place.
+  const stateFields = seedMode
+    ? []
+    : (options.stateShape?.fields ?? []).filter((f) => isRefSafePath(f.key));
   const sections: RailSectionKey[] = [
     ...(hasState ? (["state"] as const) : []),
+    ...(stateFields.length > 0 ? (["runstate"] as const) : []),
     ...(metaIds.length > 0 ? (["meta"] as const) : []),
     ...(options.inputs !== undefined ? (["inputs"] as const) : []),
     "vars",
     ...(constants.length > 0 ? (["consts"] as const) : []),
-    ...(!jsonBinding ? (["docs", "secrets"] as const) : []),
+    ...(!jsonBinding || seedMode ? (["docs"] as const) : []),
+    ...(!jsonBinding ? (["secrets"] as const) : []),
   ];
   const openSection =
     openPick === "auto" || (openPick !== null && !sections.includes(openPick))
@@ -386,7 +444,7 @@ export function ExpressionEditorModal({
   }, [usedRefs, samples, options.valueSources]);
 
   // `sigil: null` drops the glyph — a step row with fields renders its own
-  // disclosure caret in that spot instead (see the Workflow state loop).
+  // disclosure caret in that spot instead (see the Previous steps loop).
   //
   // A LEAF row's click saves that single ref as if it were the only thing in
   // the editor and Save were pressed; a COMPOSITE row (it has a disclosure for
@@ -401,7 +459,7 @@ export function ExpressionEditorModal({
     ariaLabel?: string,
     // `name` replaces `label` in the tooltip (a tree row shows a short label but
     // names its full ref on hover); `depth` indents a tree row.
-    tree?: { name: string; depth: number; declaredOnly?: boolean },
+    tree?: { name: string; depth: number; declaredOnly?: boolean; somePaths?: boolean },
   ) => (
     <div
       key={`${part.kind}:${part.ref ?? label}`}
@@ -437,6 +495,16 @@ export function ExpressionEditorModal({
             style={{ marginLeft: 6 }}
           >
             declared by the app
+          </span>
+        )}
+        {tree?.somePaths && (
+          <span
+            className="w6w-muted w6w-small"
+            data-testid="expr-state-some-paths"
+            title="Set on some paths into this step, not all"
+            style={{ marginLeft: 6 }}
+          >
+            some paths
           </span>
         )}
       </button>
@@ -567,7 +635,7 @@ export function ExpressionEditorModal({
 
   return (
     <Modal
-      title={jsonBinding ? "Edit JSON value" : "Edit expression"}
+      title={title ?? (jsonBinding ? "Edit JSON value" : "Edit expression")}
       subtitle={fieldLabel ? <code>{fieldLabel}</code> : undefined}
       onClose={onClose}
       size="full"
@@ -581,11 +649,15 @@ export function ExpressionEditorModal({
               type="button"
               className="w6w-btn"
               data-testid="expr-json-save"
-              disabled={!jsonParsed.ok}
-              title={jsonParsed.ok ? "Save the composed JSON" : "Compose valid JSON to save"}
+              disabled={!canSaveJson}
+              title={
+                canSaveJson
+                  ? "Save the composed JSON"
+                  : (seedProblem ?? "Compose valid JSON to save")
+              }
               onClick={() => {
-                if (!jsonParsed.ok) return;
-                onSaveJson?.(jsonParsed.value);
+                if (!canSaveJson) return;
+                onSaveJson?.(jsonParsed.ok ? jsonParsed.value : undefined);
                 onClose();
               }}
             >
@@ -633,17 +705,44 @@ export function ExpressionEditorModal({
           {/* First slot — context-specific, mutually exclusive in the real
               wiring (a Function supplies `inputs` and never `steps`; the flow
               editor supplies `steps`/`hasTrigger` and never `inputs`). Render
-              Workflow state first should a host ever supply both. */}
-          {jsonBinding && !hasState && (
+              Previous steps first should a host ever supply both. */}
+          {seedMode && (
+            <fieldset
+              className="w6w-exprmodal-insert-as"
+              aria-label="Insert as"
+              style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 8 }}
+            >
+              <span className="w6w-muted w6w-small">Insert as</span>
+              {(
+                [
+                  ["ref", "Reference", "Insert {{ ref }}: resolved when each run starts"],
+                  ["value", "Value", "Insert the current value, copied in as it is now"],
+                ] as const
+              ).map(([key, label, hint]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={insertAs === key}
+                  data-testid={`expr-insert-as-${key}`}
+                  title={hint}
+                  className={`w6w-btn w6w-btn-sm${insertAs === key ? "" : " w6w-btn-ghost"}`}
+                  onClick={() => setInsertAs(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </fieldset>
+          )}
+          {jsonBinding && !seedMode && !hasState && (
             <span className="w6w-expr-menu-empty">No upstream steps</span>
           )}
           {hasState && (
-            <RailSection label="Workflow state" {...sectionProps("state")}>
+            <RailSection label="Previous steps" {...sectionProps("state")}>
               {loop && (
                 <div className="w6w-exprmodal-subgroup" data-testid="expr-loop-group">
                   <span className="w6w-exprmodal-shape-note">Loop</span>
                   {/* The item's keys nest under "Current item", collapsed behind the
-                      same "N fields ›" toggle a Workflow state step uses. */}
+                      same "N fields ›" toggle a Previous steps step uses. */}
                   {loopFields.length > 0 ? (
                     <div className="w6w-exprmodal-source-row">
                       {currentItemBtn}
@@ -830,6 +929,27 @@ export function ExpressionEditorModal({
               })}
             </RailSection>
           )}
+          {stateFields.length > 0 && (
+            <RailSection label="State" testId="expr-state-group" {...sectionProps("runstate")}>
+              {/* The workflow state this step reads: starting data, variables and what upstream
+                  steps write. A field only some entry paths set says so. */}
+              {source("state", { kind: "var", ref: "state" }, "w6w-expr-chip-var", "◇", true)}
+              <div className="w6w-exprmodal-subsources" data-testid="expr-state-fields">
+                {outputFieldTree(stateFields).map(({ field, depth, name }) => {
+                  const ref = `state.${field.key}`;
+                  return source(
+                    name,
+                    { kind: "var", ref },
+                    "w6w-exprmodal-field",
+                    null,
+                    false,
+                    undefined,
+                    { name: varLabel(ref), depth, somePaths: field.paths === "some" },
+                  );
+                })}
+              </div>
+            </RailSection>
+          )}
           {metaIds.length > 0 && (
             <RailSection label="Metadata" testId="expr-metadata-group" {...sectionProps("meta")}>
               {/* Every node in the workflow, other paths included: its static meta
@@ -838,7 +958,7 @@ export function ExpressionEditorModal({
             </RailSection>
           )}
 
-          {/* Inputs and Variables in both modes; Documents and Secrets in expression mode only. */}
+          {/* Inputs and Variables in both modes; Documents in expression and starting-state mode; Secrets in expression mode only. */}
           <>
             {options.inputs !== undefined && (
               <RailSection label="Inputs" {...sectionProps("inputs")}>
@@ -883,44 +1003,41 @@ export function ExpressionEditorModal({
               </RailSection>
             )}
           </>
-          {!jsonBinding && (
-            <>
-              <RailSection label="Documents" {...sectionProps("docs")}>
-                {documents.length === 0 && (
-                  <span className="w6w-expr-menu-empty">No documents</span>
-                )}
-                {documents.map((d) => {
-                  // Same guard, same single render site, as the steps block above:
-                  // enumerated raw at the source (studio's `document-sources.ts`),
-                  // filtered exactly once, here, where the ref is built (A3, A4a).
-                  const fields = (d.fields ?? []).filter((f) => isRefSafeKey(f.key));
-                  const docKey = `doc:${d.key}`;
-                  const isOpen = expanded.has(docKey);
-                  // The whole document — unconditional, for every format, exactly
-                  // as before (A2). Its class, label, sigil and inserted ref are
-                  // unchanged from before.
-                  const wholeBtn = source(
-                    d.key,
-                    { kind: "var", ref: `documents.${d.key}` },
-                    "w6w-expr-chip-var",
-                    "▦",
-                    fields.length > 0,
-                  );
-                  return (
-                    <Fragment key={d.key}>
-                      {fields.length > 0 ? (
-                        <div className="w6w-exprmodal-source-row">
-                          {wholeBtn}
-                          <FieldsToggle
-                            count={fields.length}
-                            open={isOpen}
-                            onToggle={() => toggleExpanded(docKey)}
-                          />
-                        </div>
-                      ) : (
-                        wholeBtn
-                      )}
-                      {/* …and one source per surviving top-level field, nested
+          {(!jsonBinding || seedMode) && (
+            <RailSection label="Documents" {...sectionProps("docs")}>
+              {documents.length === 0 && <span className="w6w-expr-menu-empty">No documents</span>}
+              {documents.map((d) => {
+                // Same guard, same single render site, as the steps block above:
+                // enumerated raw at the source (studio's `document-sources.ts`),
+                // filtered exactly once, here, where the ref is built (A3, A4a).
+                const fields = (d.fields ?? []).filter((f) => isRefSafeKey(f.key));
+                const docKey = `doc:${d.key}`;
+                const isOpen = expanded.has(docKey);
+                // The whole document — unconditional, for every format, exactly
+                // as before (A2). Its class, label, sigil and inserted ref are
+                // unchanged from before.
+                const wholeBtn = source(
+                  d.key,
+                  { kind: "var", ref: `documents.${d.key}` },
+                  "w6w-expr-chip-var",
+                  "▦",
+                  fields.length > 0,
+                );
+                return (
+                  <Fragment key={d.key}>
+                    {fields.length > 0 ? (
+                      <div className="w6w-exprmodal-source-row">
+                        {wholeBtn}
+                        <FieldsToggle
+                          count={fields.length}
+                          open={isOpen}
+                          onToggle={() => toggleExpanded(docKey)}
+                        />
+                      </div>
+                    ) : (
+                      wholeBtn
+                    )}
+                    {/* …and one source per surviving top-level field, nested
                       under it, collapsed until the toggle above is expanded.
                       The label is the field key itself — the parent row above
                       already shows `d.key` — never `varLabel(ref)`, which
@@ -930,13 +1047,14 @@ export function ExpressionEditorModal({
                       placeholder-substitution behaviour is discoverable at
                       the moment of insertion — not only via the chip's own
                       post-insertion ⇄ toggle. */}
-                      {fields.length > 0 && isOpen && (
-                        <div className="w6w-exprmodal-subsources">
-                          {fields.map((f) => {
-                            const ref = `documents.${d.key}.${f.key}`;
-                            return (
-                              <div key={ref} className="w6w-exprmodal-subsource-row">
-                                {source(f.key, { kind: "var", ref }, "w6w-expr-chip-var", "·")}
+                    {fields.length > 0 && isOpen && (
+                      <div className="w6w-exprmodal-subsources">
+                        {fields.map((f) => {
+                          const ref = `documents.${d.key}.${f.key}`;
+                          return (
+                            <div key={ref} className="w6w-exprmodal-subsource-row">
+                              {source(f.key, { kind: "var", ref }, "w6w-expr-chip-var", "·")}
+                              {!jsonBinding && (
                                 <button
                                   type="button"
                                   className="w6w-exprmodal-render-btn"
@@ -947,38 +1065,39 @@ export function ExpressionEditorModal({
                                 >
                                   ▤
                                 </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </RailSection>
-
-              <RailSection
-                label="Secrets"
-                {...sectionProps("secrets")}
-                action={
-                  options.createSecret && (
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                      data-testid="expr-add-secret"
-                      onClick={() => setAdding("secret")}
-                    >
-                      + Add
-                    </button>
-                  )
-                }
-              >
-                {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
-                {secrets.map((s) =>
-                  source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
-                )}
-              </RailSection>
-            </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </RailSection>
+          )}
+          {!jsonBinding && (
+            <RailSection
+              label="Secrets"
+              {...sectionProps("secrets")}
+              action={
+                options.createSecret && (
+                  <button
+                    type="button"
+                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+                    data-testid="expr-add-secret"
+                    onClick={() => setAdding("secret")}
+                  >
+                    + Add
+                  </button>
+                )
+              }
+            >
+              {secrets.length === 0 && <span className="w6w-expr-menu-empty">No secrets</span>}
+              {secrets.map((s) =>
+                source(s, { kind: "secret", ref: s }, "w6w-expr-chip-secret", "🔒"),
+              )}
+            </RailSection>
           )}
         </aside>
 
@@ -1005,7 +1124,11 @@ export function ExpressionEditorModal({
                   height="100%"
                   minHeight="0px"
                   aria-label="Compose JSON"
-                  placeholder='{ "key": "{{ nodes.step_1.output }}" }'
+                  placeholder={
+                    seedMode
+                      ? '{ "region": "us", "template": "{{ documents.welcome }}" }'
+                      : '{ "key": "{{ nodes.step_1.output }}" }'
+                  }
                   onCreateEditor={(view) => {
                     jsonView.current = view;
                   }}
@@ -1017,22 +1140,21 @@ export function ExpressionEditorModal({
                 Result
                 <span className="w6w-muted w6w-small">
                   {" "}
-                  — live preview against the sample values
+                  {seedMode
+                    ? " — the state each run starts with, against the sample values"
+                    : " — live preview against the sample values"}
                 </span>
               </span>
+              {seedProblem && (
+                <span className="w6w-muted w6w-small" role="alert" data-testid="expr-json-problem">
+                  {seedProblem}
+                </span>
+              )}
               <pre className="w6w-exprmodal-result" data-testid="expr-json-result">
                 {jsonParsed.ok
                   ? JSON.stringify(
                       resolveComposed(jsonParsed.value, (leaf) =>
-                        resolveParamJson(
-                          leaf,
-                          buildResolveScope(
-                            options.sampleValues,
-                            sampleStepsState(options.sampleValues),
-                            options.nodeConfig,
-                            options.nodeMeta,
-                          ),
-                        ),
+                        resolveParamJson(leaf, sampleScope()),
                       ),
                       null,
                       2,
@@ -1258,7 +1380,15 @@ export function ExpressionEditorModal({
  * unnoticed, leaving authors no visible way to reach `get_event_1.name`.
  */
 /** The rail's accordion sections, in render order. */
-type RailSectionKey = "state" | "meta" | "inputs" | "vars" | "consts" | "docs" | "secrets";
+type RailSectionKey =
+  | "state"
+  | "runstate"
+  | "meta"
+  | "inputs"
+  | "vars"
+  | "consts"
+  | "docs"
+  | "secrets";
 
 /**
  * One collapsible rail section. The header (and its `action`, e.g. "+ Add") always shows; the

@@ -43,6 +43,18 @@ export function centralizeConnections<T extends Pick<FlowWorkflow, "connections"
   return changed ? { ...workflow, nodes, connections } : workflow;
 }
 
+/** Drop only unreferenced aliases when serializing the complete workflow. */
+export function pruneUnusedConnections<T extends Pick<FlowWorkflow, "connections" | "nodes">>(
+  workflow: T,
+): T {
+  if (!workflow.connections) return workflow;
+  const used = new Set(workflow.nodes.map((node) => node.uses.connectionRef));
+  const entries = Object.entries(workflow.connections);
+  const kept = entries.filter(([ref]) => used.has(ref));
+  if (kept.length === entries.length) return workflow;
+  return { ...workflow, connections: Object.fromEntries(kept) };
+}
+
 export function withConnectionRef(step: FlowStep, connectionRef: string): FlowStep {
   const { connection: _connection, ...uses } = step.uses;
   return { ...step, uses: { ...uses, connectionRef } };
@@ -135,7 +147,7 @@ export function withDefaultConnection(
       id: `zerocred:${appId}`,
       appId,
       authKey: "zero-credential",
-      displayName: "Default",
+      displayName: "Built-in",
       builtIn: true,
       state: "connected",
     },
