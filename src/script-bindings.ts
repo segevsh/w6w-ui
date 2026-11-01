@@ -3,10 +3,10 @@
  * engine's `LITERAL_PARAMS`, node-types RFC amendment 2026-10-30): a marker typed into the code
  * reaches the sandbox as literal text — `'{{ nodes.a.output.total }}'` is that exact string at
  * run time, never the value. A script reads run data from its read-only globals instead:
- * `run.nodes.<id>.output` (also `run.trigger`,
- * `run.foreach`), the workflow state tree as `state.<name>` (or `vars.<name>`, the same tree with
- * no `run` fall-through), and `consts.<name>` (Python indexes them). `state.nodes…` is the older
- * spelling of `run.nodes…`: it still works in saved scripts, but is never inserted.
+ * `run.nodes.<id>.output` (also `run.trigger`, `run.foreach`), the workflow state tree as
+ * `state.<name>` (or `vars.<name>`, the same tree with no `run` fall-through), and
+ * `consts.<name>` (Python indexes them). `state.nodes…` is the older spelling of `run.nodes…`:
+ * it still works in saved scripts, but is never inserted.
  *
  * {@link findCodeBindings} finds the markers that would run (strings and code, not comments),
  * {@link codeReadFor} spells one reference as that code read, and
@@ -131,9 +131,9 @@ const isStateRoot = (root: string): boolean => ROOTS[root]?.[0] === "state";
  * `run.nodes.a.output.total` (JavaScript/TypeScript) or `run["nodes"]["a"]["output"]["total"]`
  * (Python); `state.x` / `var.x` / `vars.x` → `state.x`; `const.tier` → `consts.tier`. A state
  * ref with no path, or whose first key is one `run` exposes (`state.nodes.x`), reads `vars`
- * instead, which has no fall-through to `run`, so it reads the tree exactly as the expression does. `null` for anything a
- * script cannot read that way — `secrets.*`, `documents.*`, a Function's `inputs.*`, or an
- * expression with operators or filters.
+ * instead, which has no fall-through to `run`, so it reads the tree exactly as the expression
+ * does. `null` for anything a script cannot read that way — `secrets.*`, `documents.*`, a
+ * Function's `inputs.*`, or an expression with operators or filters.
  */
 export function codeReadFor(ref: string, language: ScriptLanguage = "javascript"): string | null {
   const text = ref.trim();

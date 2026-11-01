@@ -164,8 +164,7 @@ export function buildResolveScope(
         vars[key] = value;
         varRanks[key] = rank;
       }
-    }
-    else if (ref.startsWith(DOCUMENTS_PREFIX))
+    } else if (ref.startsWith(DOCUMENTS_PREFIX))
       documents[ref.slice(DOCUMENTS_PREFIX.length)] = value;
     else if (ref.startsWith(CONST_PREFIX)) constants[ref.slice(CONST_PREFIX.length)] = value;
   }

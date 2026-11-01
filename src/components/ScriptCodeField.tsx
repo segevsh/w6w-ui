@@ -134,8 +134,8 @@ export function ScriptCodeField({
           <code>input</code> is the same as <code>run</code> unless you set Custom input.
         </span>
         <span className="w6w-hint">
-          <code>state.nodes…</code> is the older spelling of <code>run.nodes…</code> and still
-          works in saved scripts; use <code>run.nodes…</code> in new ones.
+          <code>state.nodes…</code> is the older spelling of <code>run.nodes…</code> and still works
+          in saved scripts; use <code>run.nodes…</code> in new ones.
         </span>
       </details>
       {pickerOpen && (

@@ -72,9 +72,7 @@ test("the user's script: each whole-string marker becomes a state read", () => {
   const r = convertCodeBindingsToReads(USER_CODE);
   assert.equal(r.converted, 2);
   assert.equal(r.left, 0);
-  assert.ok(
-    r.code.includes("const cost_total = run.nodes.get_event_ticket_1.output.costs.total;"),
-  );
+  assert.ok(r.code.includes("const cost_total = run.nodes.get_event_ticket_1.output.costs.total;"));
   assert.ok(r.code.includes("const cost_tax = run.nodes.get_event_ticket_1.output.costs.tax;"));
   assert.deepEqual(findCodeBindings(r.code), [], "nothing left");
 });

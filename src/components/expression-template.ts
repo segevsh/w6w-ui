@@ -93,6 +93,8 @@ interface LocalRunScope {
   /** Project vars. `vars` is its permanent alias (engine `evalRoot`). */
   var: unknown;
   vars: unknown;
+  /** The run's workflow state tree — the same object as `var`/`vars` (R17: a root of its own). */
+  state?: unknown;
   steps: unknown;
   nodes?: unknown;
   trigger: unknown;
@@ -114,6 +116,7 @@ interface LocalRunScope {
 const RUN_SCOPE_ROOTS: Record<keyof LocalRunScope, true> = {
   var: true,
   vars: true,
+  state: true,
   steps: true,
   nodes: true,
   trigger: true,
