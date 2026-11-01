@@ -134,3 +134,46 @@ export function previewNodeOutputs(
   }
   return out;
 }
+
+/**
+ * {@link effectiveNodeOutputs} split into its two tiers, so the editor can hand the picker
+ * `testOutputs` (fresh) and `persistedOutputs` (persisted) SEPARATELY and show the right hint.
+ * A persisted sample wins only when there is no fresh output or it is strictly newer than
+ * `freshAt`; then the fresh entry is dropped from `fresh` and the persisted shape (its kept
+ * value, else its skeleton) goes in `persisted`. Elsewhere `fresh` is the fresh map unchanged.
+ */
+export function splitNodeOutputs(
+  fresh: Record<string, unknown>,
+  persisted: Record<string, NodeSample>,
+  freshAt?: Record<string, string | null | undefined>,
+): { fresh: Record<string, unknown>; persisted: Record<string, unknown> } {
+  const outFresh: Record<string, unknown> = { ...fresh };
+  const outPersisted: Record<string, unknown> = {};
+  for (const [id, p] of Object.entries(persisted)) {
+    if (fresh[id] !== undefined && !persistedIsNewer(p, freshAt?.[id])) continue;
+    delete outFresh[id];
+    outPersisted[id] = hasSampleValue(p) ? p.sample : shapeToSkeleton(p.shape);
+  }
+  return { fresh: outFresh, persisted: outPersisted };
+}
+
+/**
+ * {@link previewNodeOutputs} split into tiers: `persisted` holds only REAL kept values of the
+ * persisted samples that win (never a skeleton); `fresh` is the fresh map minus those ids.
+ */
+export function splitPreviewOutputs(
+  fresh: Record<string, unknown>,
+  persisted: Record<string, NodeSample>,
+  freshAt?: Record<string, string | null | undefined>,
+): { fresh: Record<string, unknown>; persisted: Record<string, unknown> } {
+  const outFresh: Record<string, unknown> = { ...fresh };
+  const outPersisted: Record<string, unknown> = {};
+  for (const [id, p] of Object.entries(persisted)) {
+    if (!hasSampleValue(p)) continue;
+    if (fresh[id] === undefined || persistedIsNewer(p, freshAt?.[id])) {
+      delete outFresh[id];
+      outPersisted[id] = p.sample;
+    }
+  }
+  return { fresh: outFresh, persisted: outPersisted };
+}

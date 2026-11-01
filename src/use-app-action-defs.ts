@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { type PortsLookup, isInternalApp } from "./flow-types.ts";
 import type { StepNode } from "./flow-utils.ts";
 import type { W6WApi } from "./provider.tsx";
-import type { ActionDef } from "./types.ts";
+import type { ActionDef, TriggerSummary } from "./types.ts";
 
 export function useAppActionDefs(api: W6WApi, nodes: StepNode[]): Record<string, ActionDef[]> {
   const [defs, setDefs] = useState<Record<string, ActionDef[]>>({});
@@ -45,6 +45,54 @@ export function useAppActionDefs(api: W6WApi, nodes: StepNode[]): Record<string,
       }),
     ).then((res) => {
       const loaded = res.filter((r): r is readonly [string, ActionDef[]] => r !== null);
+      if (loaded.length === 0) return;
+      setDefs((prev) => ({ ...prev, ...Object.fromEntries(loaded) }));
+    });
+  }, [api, appIdsKey]);
+  return defs;
+}
+
+/**
+ * The trigger definitions of every app a workflow's APP-TRIGGER nodes (`uses.trigger === true`)
+ * use, so the editor can offer `trigger.event.<field>` from a trigger's declared `output` /
+ * `sample` without a run. Same shape as {@link useAppActionDefs}: fetched once per app id
+ * (`getAppTriggers`, optional on the api — absent means no claim), keyed on the sorted set of
+ * app ids, best-effort, a failed fetch retried by a later change.
+ */
+export function useAppTriggerDefs(
+  api: W6WApi,
+  nodes: StepNode[],
+): Record<string, TriggerSummary[]> {
+  const [defs, setDefs] = useState<Record<string, TriggerSummary[]>>({});
+  const requested = useRef(new Set<string>());
+  const appIdsKey = JSON.stringify(
+    [
+      ...new Set(
+        nodes.filter((n) => n.data.step.uses.trigger === true).map((n) => n.data.step.uses.app),
+      ),
+    ]
+      .filter((app) => app && !isInternalApp(app))
+      .sort(),
+  );
+  useEffect(() => {
+    const load = api.getAppTriggers;
+    if (typeof load !== "function") return;
+    const missing = (JSON.parse(appIdsKey) as string[]).filter(
+      (app) => !requested.current.has(app),
+    );
+    if (missing.length === 0) return;
+    for (const app of missing) requested.current.add(app);
+    Promise.all(
+      missing.map(async (app) => {
+        try {
+          return [app, await load.call(api, app)] as const;
+        } catch {
+          requested.current.delete(app);
+          return null;
+        }
+      }),
+    ).then((res) => {
+      const loaded = res.filter((r): r is readonly [string, TriggerSummary[]] => r !== null);
       if (loaded.length === 0) return;
       setDefs((prev) => ({ ...prev, ...Object.fromEntries(loaded) }));
     });

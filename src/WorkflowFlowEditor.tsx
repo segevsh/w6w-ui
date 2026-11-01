@@ -182,9 +182,9 @@ import {
 } from "./flow-utils.ts";
 import {
   type NodeSample,
-  effectiveNodeOutputs,
   indexNodeSamples,
-  previewNodeOutputs,
+  splitNodeOutputs,
+  splitPreviewOutputs,
 } from "./node-samples.ts";
 import { inferOutputFields } from "./output-shape.ts";
 // One implementation of the incoming-state pipeline, shared by every surface
@@ -206,6 +206,7 @@ import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./
 import {
   type SeedSource,
   type StepShapeContext,
+  declaredSamples,
   foreachTestFixture,
   foreachTestSample,
   loopItemText,
@@ -218,6 +219,7 @@ import {
   startStateFromSeeds,
   stepBuilderLoop,
   stepBuilderUpstreamSteps,
+  upstreamSampleValueSources,
   upstreamSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
@@ -243,7 +245,7 @@ import type {
   ConnectionSummary,
   SubscriptionSummary,
 } from "./types.ts";
-import { portsLookupFromDefs, useAppActionDefs } from "./use-app-action-defs.ts";
+import { portsLookupFromDefs, useAppActionDefs, useAppTriggerDefs } from "./use-app-action-defs.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
 
 /**
@@ -586,6 +588,7 @@ function Inner({
   // Catalog ports reach resolution through this lookup, never by stamping
   // `step.ports` (which would persist into every saved workflow).
   const actionDefs = useAppActionDefs(api, nodes);
+  const triggerDefs = useAppTriggerDefs(api, nodes);
   const portsLookup = useMemo(() => portsLookupFromDefs(actionDefs), [actionDefs]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1739,23 +1742,26 @@ function Inner({
     };
   }, [api, value.id, nodeSampleOpenKey]);
   const persistedSamples = useMemo(() => indexNodeSamples(nodeSamples), [nodeSamples]);
-  // Fresh (saved-test) outputs over the persisted ones, for SHAPES (skeletons included)…
-  const shapeOutputs = useMemo(
-    () => effectiveNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+  // Fresh (saved-test) and persisted outputs stay SEPARATE tiers, for SHAPES (skeletons included):
+  // a persisted sample is offered only where it wins (no saved test, or strictly newer).
+  const shapeTiers = useMemo(
+    () => splitNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
     [stepTestOutputs, persistedSamples, stepTestRunAt],
   );
   // …and for the Result PREVIEWS (real values only, never a skeleton).
-  const previewOutputs = useMemo(
-    () => previewNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+  const previewTiers = useMemo(
+    () => splitPreviewOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
     [stepTestOutputs, persistedSamples, stepTestRunAt],
   );
   const stepShapes = useMemo<StepShapeContext>(
     () => ({
       actionDef: (app, action) => actionDefs[app]?.find((a) => a.key === action),
-      testOutputs: shapeOutputs,
+      triggerDef: (app, trigger) => triggerDefs[app]?.find((t) => t.key === trigger),
+      testOutputs: shapeTiers.fresh,
+      persistedOutputs: shapeTiers.persisted,
       loopSamples: stepLoopSamples,
     }),
-    [actionDefs, shapeOutputs, stepLoopSamples],
+    [actionDefs, triggerDefs, shapeTiers, stepLoopSamples],
   );
   // The ▶ Run modal's projection, kept WHOLE: ONE call yields both the seed chips' ancestors
   // (`.steps`) and the `loop` the Current item / Index seed comes from (never a second membership
@@ -1852,10 +1858,32 @@ function Inner({
   // The last test output, flattened onto the very refs the picker inserts: the
   // whole output, and each offered field path (nested ones included). Values
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
+  const declared = useMemo(() => declaredSamples(nodes, stepShapes), [nodes, stepShapes]);
+  const sampleTiers = useMemo(
+    () => ({ persisted: previewTiers.persisted, samples: declared.samples, event: declared.event }),
+    [previewTiers.persisted, declared],
+  );
   const stepSampleValues = useMemo(
     () =>
-      upstreamSampleValues(upstreamState.steps, previewOutputs, stepTestMetas, upstreamState.loop),
-    [upstreamState.steps, upstreamState.loop, previewOutputs, stepTestMetas],
+      upstreamSampleValues(
+        upstreamState.steps,
+        previewTiers.fresh,
+        stepTestMetas,
+        upstreamState.loop,
+        sampleTiers,
+      ),
+    [upstreamState.steps, upstreamState.loop, previewTiers.fresh, stepTestMetas, sampleTiers],
+  );
+  const stepValueSources = useMemo(
+    () =>
+      upstreamSampleValueSources(
+        upstreamState.steps,
+        previewTiers.fresh,
+        stepTestMetas,
+        upstreamState.loop,
+        sampleTiers,
+      ),
+    [upstreamState.steps, upstreamState.loop, previewTiers.fresh, stepTestMetas, sampleTiers],
   );
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
@@ -1894,6 +1922,7 @@ function Inner({
       nodeConfigs: nodeConfigs,
       nodeConfig,
       nodeMeta,
+      valueSources: stepValueSources,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
@@ -1907,6 +1936,7 @@ function Inner({
       inheritedExprOptions.sampleValues,
       upstreamState,
       stepSampleValues,
+      stepValueSources,
       nodeConfigs,
       nodeConfig,
       nodeMeta,
