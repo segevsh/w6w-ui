@@ -4,9 +4,8 @@
 // used to free the source's exit port lane-BLINDLY, so the moment a second wire
 // was dragged out of a step the first one was deleted — which made a
 // `send → (error) → fallback` shape literally unauthorable. Capacity is now
-// per-lane at the SOURCE and deliberately lane-blind at the TARGET; both halves
-// are asserted here, because "make it symmetric" is the plausible cleanup that
-// would let a `ports.in: 1` node silently accept two inbound edges.
+// per-lane at the SOURCE, and the TARGET has none: an input accepts any number of
+// inbound edges and a connect never evicts one.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge } from "@xyflow/react";
@@ -116,14 +115,28 @@ test("a catalog lookup cap reaches connect without being written on the step", (
   assert.equal(ABCD[0].data.step.ports, undefined);
 });
 
-test("target entry capacity stays LANE-BLIND — a ports.in:1 step keeps one inbound", () => {
-  // A lane-partitioned target rule (the plausible "symmetry" cleanup) would let
-  // this 1-in node hold two inbound edges at once. `ports.in` alone governs it.
+test("an input accepts many edges — a connect NEVER evicts an inbound edge", () => {
+  // `ports.in: 1` (and the default) used to evict the oldest inbound edge.
+  const trig = (id: string) => node(id, { in: 0, out: 1 });
+  const nodes = [trig("order"), trig("manual"), node("t", { in: 1, out: 1 }), node("u")];
+  const one = [rf("order", "t", "success")];
+  const two = applyConnect("manual", "t", nodes, one);
+  assert.ok(two, "a second trigger may feed the same node");
+  assert.deepEqual(pairs(two), ["order->t:success", "manual->t:success"]);
+  const three = applyConnect("u", "t", nodes, two);
+  assert.ok(three);
+  assert.deepEqual(pairs(three), ["order->t:success", "manual->t:success", "u->t:success"]);
+  // An exact duplicate is still refused; so is connecting INTO a trigger.
+  assert.equal(applyConnect("manual", "t", nodes, two), null);
+  assert.equal(canConnect("u", "order", nodes, []), false);
+  assert.equal(applyConnect("u", "order", nodes, []), null);
+});
+
+test("a different lane into a ports.in:1 step also keeps the existing inbound", () => {
   const nodes = [node("a"), node("b"), node("t", { in: 1, out: 1 })];
   const next = applyConnect("b", "t", nodes, [rf("a", "t", "success")], "error");
-  assert.ok(next, "the connection must be allowed");
-  assert.deepEqual(pairs(next), ["b->t:error"]);
-  assert.equal(next.filter((e) => e.target === "t").length, 1);
+  assert.ok(next);
+  assert.deepEqual(pairs(next), ["a->t:success", "b->t:error"]);
 });
 
 test("a multi-in target still fans in — ports.in:10 keeps a success AND an error inbound", () => {
