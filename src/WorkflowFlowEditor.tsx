@@ -264,11 +264,23 @@ function clashInvolvedIds(
   return [source, target, sitting?.source, sitting?.target];
 }
 
+/** What kind of change an `onChange` reports — see `WorkflowFlowEditorProps.onChange`. */
+export interface FlowChangeMeta {
+  viewportOnly?: true;
+}
+
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
   value: FlowWorkflow;
-  /** Fired whenever the user changes the graph — new nodes, edges, or step edits. */
-  onChange: (next: FlowWorkflow) => void;
+  /**
+   * Fired whenever the user changes the graph — new nodes, edges, or step edits.
+   *
+   * `meta.viewportOnly` is `true` when the change is the author's pan/zoom being
+   * written to `settings.viewport` and nothing else. A host that drops the shown
+   * run on an edit (so the run paint stops describing a workflow that changed)
+   * keeps it for these: moving the camera changes nothing that ran.
+   */
+  onChange: (next: FlowWorkflow, meta?: FlowChangeMeta) => void;
   /** Disable all interactions — pans/zooms are still enabled. */
   readOnly?: boolean;
   /** Height of the editor viewport. Defaults to 480px. */
@@ -1917,7 +1929,9 @@ function Inner({
                       // a 150ms trailing timer of its own (no timer belongs here).
                       const base = flowToWorkflow(value, nodes, edges);
                       const next = withViewport(base, viewport);
-                      if (next !== base) onChange(next);
+                      // `viewportOnly`: a camera move must not cost the host its run
+                      // paint (adhoc/run-paint) — only the definition changing does.
+                      if (next !== base) onChange(next, { viewportOnly: true });
                     }}
                     onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
                       // ⚠️ Only primitives are stored from this handler: React Flow re-invokes
