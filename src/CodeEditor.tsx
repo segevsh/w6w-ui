@@ -13,7 +13,7 @@ import type { ThemeMode } from "./types.ts";
  * Prism *display-highlighting* grammar name a sibling module exports for
  * rendered snippets. Deliberately its own type, not shared with that one.
  */
-export type ScriptLanguage = "javascript" | "python";
+export type ScriptLanguage = "javascript" | "typescript" | "python";
 
 // Exhaustive over every `ScriptLanguage` member, with no fallback arm — a
 // third value added to the union fails to compile here instead of silently
@@ -23,6 +23,8 @@ function languageExtension(language: ScriptLanguage): Extension {
   switch (language) {
     case "javascript":
       return javascript();
+    case "typescript":
+      return javascript({ typescript: true });
     case "python":
       return python();
   }

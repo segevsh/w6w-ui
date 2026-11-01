@@ -61,6 +61,7 @@ const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { EditorView } = await import("@codemirror/view");
+const { javascriptLanguage, typescriptLanguage } = await import("@codemirror/lang-javascript");
 const { ParamsForm } = await import("../ParamsForm.tsx");
 const { internalNodeParams, internalNodeDefaults, SCRIPT_APP } = await import("../flow-types.ts");
 type ActionParam = import("../types.ts").ActionParam;
@@ -143,18 +144,37 @@ function viewFor(container: Element, ariaLabel: string) {
 }
 
 // `@uiw/react-codemirror`'s controlled-`value` sync defers an external
-// overwrite while its own 200ms "isTyping" latch is live (so a controlled
-// re-render mid-keystroke doesn't fight the user) — matched here so a
-// subsequent action (e.g. a language switch) exercises the real steady-state
-// sync path rather than racing that debounce window.
-const CODEMIRROR_TYPING_LATCH_MS = 200;
+// overwrite while its "isTyping" latch is live (so a controlled re-render
+// mid-keystroke doesn't fight the user) — waited out here so a subsequent
+// action (e.g. a language switch) exercises the real steady-state sync path
+// rather than racing that debounce window. The latch is NOT wall-clock: it
+// expires after 200 ticks of a `setInterval(…, 1)` (`TimeoutLatch` in the
+// library's `timeoutLatch.js`), and a loaded CI runner fires that interval far
+// less than once a millisecond — a fixed 250ms sleep left it live and the
+// language switch's swap deferred past the assertion. So count ticks of our
+// own 1ms interval instead: it is registered after the latch's, so Node runs
+// the latch's tick first on every loop turn, and outlasting it in ticks means
+// the latch has expired however slow the machine is.
+const CODEMIRROR_TYPING_LATCH_TICKS = 200;
+
+function intervalTicks(n: number) {
+  return new Promise<void>((resolve) => {
+    let ticks = 0;
+    const id = setInterval(() => {
+      if (++ticks >= n) {
+        clearInterval(id);
+        resolve();
+      }
+    }, 1);
+  });
+}
 
 /** Replace the `code` editor's whole document — the real `onChange` wiring fires from this. */
 async function setCode(container: Element, text: string) {
   const view = viewFor(container, "code code");
   await act(async () => {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
-    await new Promise((r) => setTimeout(r, CODEMIRROR_TYPING_LATCH_MS + 50));
+    await intervalTicks(CODEMIRROR_TYPING_LATCH_TICKS + 50);
   });
 }
 
@@ -373,6 +393,43 @@ test("d — a `code` param with no `language` sibling renders exactly as today",
     null,
     "no Language select is synthesized",
   );
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("h — javascript → typescript: the JS default stays and the editor parses TypeScript", async () => {
+  const { container, root, values } = await render(SCRIPT_PARAMS, {});
+  assert.ok(javascriptLanguage.isActiveAt(viewFor(container, "code code").state, 0));
+
+  await setLanguage(container, "typescript");
+
+  const view = viewFor(container, "code code");
+  assert.equal(view.state.doc.toString(), JS_DEFAULT, "JS boilerplate is valid TypeScript");
+  assert.ok(typescriptLanguage.isActiveAt(view.state, 0), "CodeMirror's TypeScript mode is live");
+  assert.equal(values.current.language, "typescript");
+
+  await act(async () => {
+    root.unmount();
+  });
+});
+
+test("i — typed code survives typescript → javascript, and python → typescript swaps the Python default", async () => {
+  const { container, root } = await render(SCRIPT_PARAMS, {});
+  await setLanguage(container, "typescript");
+  await setCode(container, "const n: number = 1;\nreturn n;");
+  await setLanguage(container, "javascript");
+  assert.equal(
+    viewFor(container, "code code").state.doc.toString(),
+    "const n: number = 1;\nreturn n;",
+  );
+
+  await setCode(container, JS_DEFAULT);
+  await setLanguage(container, "python");
+  assert.equal(viewFor(container, "code code").state.doc.toString(), PYTHON_DEFAULT);
+  await setLanguage(container, "typescript");
+  assert.equal(viewFor(container, "code code").state.doc.toString(), JS_DEFAULT);
 
   await act(async () => {
     root.unmount();
