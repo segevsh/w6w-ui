@@ -4134,6 +4134,11 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-muted);
 }
 
+/* "Write to state" (step settings): the `validateStateConfig` messages for the current config. */
+.w6w-state-write-issues {
+  color: var(--w6w-danger);
+}
+
 .w6w-section {
   border: 1px solid var(--w6w-border);
   border-radius: 8px;

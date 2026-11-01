@@ -1,3 +1,4 @@
+import { type StateWriteConfig, validateStateConfig } from "@w6w/expr";
 import {
   Background,
   type Connection,
@@ -33,6 +34,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -143,6 +145,15 @@ import {
 } from "./flow-node-flags.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
 import {
+  STATE_MODES,
+  STATE_MODE_LABELS,
+  type StateMode,
+  seedStateWrite,
+  setStateWrite,
+  stateWriteFor,
+  stateWriteVisible,
+} from "./flow-state.ts";
+import {
   FOREACH_DONE_ROUTE,
   RACE_APP,
   RACE_DESCRIPTION,
@@ -197,7 +208,7 @@ import {
   splitNodeOutputs,
   splitPreviewOutputs,
 } from "./node-samples.ts";
-import { inferOutputFields } from "./output-shape.ts";
+import { inferOutputFields, resolveOutputShape } from "./output-shape.ts";
 // One implementation of the incoming-state pipeline, shared by every surface
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
 // form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
@@ -2527,6 +2538,11 @@ function Inner({
                         loop={mergedExprOptions.loop}
                         readOnly={readOnly}
                         fanOutCount={fanOutCounts.get(editingId) ?? 0}
+                        stateOutputFields={resolveOutputShape(
+                          stepShapes.actionDef?.(editingStep.uses.app, editingStep.uses.action),
+                          stepShapes.testOutputs?.[editingId],
+                          stepShapes.persistedOutputs?.[editingId],
+                        )?.fields.map((f) => f.key)}
                         initialView={editView}
                         stepProblems={editingNode?.data.stepProblems}
                         onChange={(next) => updateStep(editingId, next)}
@@ -3972,6 +3988,8 @@ interface StepEditModalProps {
   initialView?: EditView;
   /** Most outgoing edges this node has in one lane; "Run next nodes" needs >= 2. */
   fanOutCount?: number;
+  /** This step's own output field keys, offered by "Write to state" › Pick fields (free text still accepted). */
+  stateOutputFields?: string[];
   /** Fired the instant the footer Test button is clicked, before the test runs (T1.1.1). */
   onTestRun?: () => void;
   /** Host-supplied problems for this step; a dangling connection locks Configure/Test, a fixable one gets a button. */
@@ -3989,6 +4007,7 @@ function ActionStepEditModal({
   readOnly,
   initialView = "props",
   fanOutCount = 0,
+  stateOutputFields,
   onTestRun,
   stepProblems,
 }: StepEditModalProps) {
@@ -4543,6 +4562,15 @@ function ActionStepEditModal({
                     readOnly={readOnly}
                     onChange={commit}
                   />
+                  {stateWriteVisible(step) && (
+                    <StepStateControl
+                      step={step}
+                      inLoop={loop !== undefined}
+                      outputFields={stateOutputFields}
+                      readOnly={readOnly}
+                      onChange={commit}
+                    />
+                  )}
                 </div>
               )}
             </>
@@ -4784,6 +4812,176 @@ function StepFanOutControl({
         </span>
       )}
     </label>
+  );
+}
+
+/**
+ * "Write to state" — where this step's output lands in the run's state tree
+ * (`Node.state`). Off is the key's absence (Merge at root on Set data, R14);
+ * every rule about paths and keys comes from `@w6w/expr` `validateStateConfig`.
+ */
+function StepStateControl({
+  step,
+  inLoop,
+  outputFields,
+  readOnly,
+  onChange,
+}: {
+  step: FlowStep;
+  inLoop: boolean;
+  outputFields?: string[];
+  readOnly?: boolean;
+  onChange: (next: FlowStep) => void;
+}) {
+  const listId = useId();
+  const config = stateWriteFor(step);
+  const issues = validateStateConfig(config);
+  const commitConfig = (next: StateWriteConfig) => onChange(setStateWrite(step, next));
+  const rows = config.mode === "pick" && Array.isArray(config.map) ? config.map : [];
+  const setRow = (i: number, patch: Partial<{ from: string; to: string }>) =>
+    commitConfig({
+      mode: "pick",
+      map: rows.map((r, j) => (j === i ? { ...r, ...patch } : r)),
+    });
+  return (
+    <div className="w6w-field w6w-stack">
+      <label className="w6w-field">
+        <span>Write to state</span>
+        <select
+          aria-label="Write to state"
+          value={config.mode}
+          disabled={readOnly}
+          onChange={(e) => commitConfig(seedStateWrite(step, e.target.value as StateMode))}
+        >
+          {STATE_MODES.map((m) => (
+            <option key={m} value={m}>
+              {STATE_MODE_LABELS[m]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {config.mode === "key" && (
+        <label className="w6w-field">
+          <span>Key</span>
+          <input
+            type="text"
+            aria-label="State key"
+            value={config.key}
+            disabled={readOnly}
+            onChange={(e) => commitConfig({ mode: "key", key: e.target.value })}
+          />
+          <span className="w6w-muted w6w-small">
+            The whole output is stored at <code>state.&lt;key&gt;</code>. A dotted key such as{" "}
+            <code>order.id</code> nests.
+          </span>
+        </label>
+      )}
+      {config.mode === "pick" && (
+        <div className="w6w-stack">
+          {outputFields && outputFields.length > 0 && (
+            <datalist id={listId}>
+              {outputFields.map((k) => (
+                <option key={k} value={k} />
+              ))}
+            </datalist>
+          )}
+          {rows.map((row, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional; their order is the write order
+            <div key={i} className="w6w-array-row">
+              <input
+                type="text"
+                aria-label="From output field"
+                placeholder="Output field (blank = whole output)"
+                list={outputFields && outputFields.length > 0 ? listId : undefined}
+                value={row.from}
+                disabled={readOnly}
+                onChange={(e) => setRow(i, { from: e.target.value })}
+              />
+              <input
+                type="text"
+                aria-label="To state path"
+                placeholder="State path"
+                value={row.to}
+                disabled={readOnly}
+                onChange={(e) => setRow(i, { to: e.target.value })}
+              />
+              <button
+                type="button"
+                aria-label="Remove field"
+                disabled={readOnly}
+                onClick={() => commitConfig({ mode: "pick", map: rows.filter((_, j) => j !== i) })}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            aria-label="Add field"
+            disabled={readOnly}
+            onClick={() => commitConfig({ mode: "pick", map: [...rows, { from: "", to: "" }] })}
+          >
+            Add field
+          </button>
+        </div>
+      )}
+      {config.mode === "append" && (
+        <div className="w6w-stack">
+          <label className="w6w-field">
+            <span>Append to</span>
+            <input
+              type="text"
+              aria-label="Append to state path"
+              value={config.path}
+              disabled={readOnly}
+              onChange={(e) => {
+                const { from } = config;
+                commitConfig({
+                  mode: "append",
+                  path: e.target.value,
+                  ...(from !== undefined ? { from } : {}),
+                });
+              }}
+            />
+          </label>
+          <label className="w6w-field">
+            <span>Output field to append</span>
+            <input
+              type="text"
+              aria-label="Output field to append"
+              placeholder="Blank = the whole output"
+              value={config.from ?? ""}
+              disabled={readOnly}
+              onChange={(e) =>
+                commitConfig({
+                  mode: "append",
+                  path: config.path,
+                  ...(e.target.value !== "" ? { from: e.target.value } : {}),
+                })
+              }
+            />
+          </label>
+        </div>
+      )}
+      {issues.length > 0 && (
+        <div role="alert" className="w6w-state-write-issues w6w-small">
+          {issues.map((issue) => (
+            <div key={`${issue.code}:${issue.message}`}>{issue.message}</div>
+          ))}
+        </div>
+      )}
+      {config.mode !== "off" && (
+        <span className="w6w-muted w6w-small">
+          Writing <code>null</code> deletes the key, and secrets are stored masked.
+        </span>
+      )}
+      {inLoop && (
+        <span className="w6w-muted w6w-small">
+          This step is inside a For each, so it writes once per item — Append collects one entry per
+          item.
+        </span>
+      )}
+    </div>
   );
 }
 
