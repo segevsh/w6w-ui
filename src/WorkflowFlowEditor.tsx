@@ -187,9 +187,9 @@ import {
 } from "./flow-utils.ts";
 import {
   type NodeSample,
-  effectiveNodeOutputs,
   indexNodeSamples,
-  previewNodeOutputs,
+  splitNodeOutputs,
+  splitPreviewOutputs,
 } from "./node-samples.ts";
 import { inferOutputFields } from "./output-shape.ts";
 // One implementation of the incoming-state pipeline, shared by every surface
@@ -211,6 +211,7 @@ import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./
 import {
   type SeedSource,
   type StepShapeContext,
+  declaredSamples,
   foreachTestFixture,
   foreachTestSample,
   loopItemText,
@@ -223,6 +224,7 @@ import {
   startStateFromSeeds,
   stepBuilderLoop,
   stepBuilderUpstreamSteps,
+  upstreamSampleValueSources,
   upstreamSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
@@ -248,7 +250,7 @@ import type {
   ConnectionSummary,
   SubscriptionSummary,
 } from "./types.ts";
-import { portsLookupFromDefs, useAppActionDefs } from "./use-app-action-defs.ts";
+import { portsLookupFromDefs, useAppActionDefs, useAppTriggerDefs } from "./use-app-action-defs.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
 import {
   type FlowConnections,
@@ -615,6 +617,7 @@ function Inner({
   // Catalog ports reach resolution through this lookup, never by stamping
   // `step.ports` (which would persist into every saved workflow).
   const actionDefs = useAppActionDefs(api, nodes);
+  const triggerDefs = useAppTriggerDefs(api, nodes);
   const portsLookup = useMemo(() => portsLookupFromDefs(actionDefs), [actionDefs]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1814,23 +1817,26 @@ function Inner({
     };
   }, [api, value.id, nodeSampleOpenKey]);
   const persistedSamples = useMemo(() => indexNodeSamples(nodeSamples), [nodeSamples]);
-  // Fresh (saved-test) outputs over the persisted ones, for SHAPES (skeletons included)…
-  const shapeOutputs = useMemo(
-    () => effectiveNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+  // Fresh (saved-test) and persisted outputs stay SEPARATE tiers, for SHAPES (skeletons included):
+  // a persisted sample is offered only where it wins (no saved test, or strictly newer).
+  const shapeTiers = useMemo(
+    () => splitNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
     [stepTestOutputs, persistedSamples, stepTestRunAt],
   );
   // …and for the Result PREVIEWS (real values only, never a skeleton).
-  const previewOutputs = useMemo(
-    () => previewNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+  const previewTiers = useMemo(
+    () => splitPreviewOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
     [stepTestOutputs, persistedSamples, stepTestRunAt],
   );
   const stepShapes = useMemo<StepShapeContext>(
     () => ({
       actionDef: (app, action) => actionDefs[app]?.find((a) => a.key === action),
-      testOutputs: shapeOutputs,
+      triggerDef: (app, trigger) => triggerDefs[app]?.find((t) => t.key === trigger),
+      testOutputs: shapeTiers.fresh,
+      persistedOutputs: shapeTiers.persisted,
       loopSamples: stepLoopSamples,
     }),
-    [actionDefs, shapeOutputs, stepLoopSamples],
+    [actionDefs, triggerDefs, shapeTiers, stepLoopSamples],
   );
   // The ▶ Run modal's projection, kept WHOLE: ONE call yields both the seed chips' ancestors
   // (`.steps`) and the `loop` the Current item / Index seed comes from (never a second membership
@@ -1927,10 +1933,32 @@ function Inner({
   // The last test output, flattened onto the very refs the picker inserts: the
   // whole output, and each offered field path (nested ones included). Values
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
+  const declared = useMemo(() => declaredSamples(nodes, stepShapes), [nodes, stepShapes]);
+  const sampleTiers = useMemo(
+    () => ({ persisted: previewTiers.persisted, samples: declared.samples, event: declared.event }),
+    [previewTiers.persisted, declared],
+  );
   const stepSampleValues = useMemo(
     () =>
-      upstreamSampleValues(upstreamState.steps, previewOutputs, stepTestMetas, upstreamState.loop),
-    [upstreamState.steps, upstreamState.loop, previewOutputs, stepTestMetas],
+      upstreamSampleValues(
+        upstreamState.steps,
+        previewTiers.fresh,
+        stepTestMetas,
+        upstreamState.loop,
+        sampleTiers,
+      ),
+    [upstreamState.steps, upstreamState.loop, previewTiers.fresh, stepTestMetas, sampleTiers],
+  );
+  const stepValueSources = useMemo(
+    () =>
+      upstreamSampleValueSources(
+        upstreamState.steps,
+        previewTiers.fresh,
+        stepTestMetas,
+        upstreamState.loop,
+        sampleTiers,
+      ),
+    [upstreamState.steps, upstreamState.loop, previewTiers.fresh, stepTestMetas, sampleTiers],
   );
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
@@ -1965,10 +1993,13 @@ function Inner({
       ...(exprOptions ?? {}),
       steps: upstreamState.steps,
       hasTrigger: upstreamState.hasTrigger,
+      eventOutputs: upstreamState.eventOutputs,
+      eventOutputsFrom: upstreamState.eventOutputsFrom,
       loop: upstreamState.loop,
       nodeConfigs: nodeConfigs,
       nodeConfig,
       nodeMeta,
+      valueSources: stepValueSources,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
@@ -1982,6 +2013,7 @@ function Inner({
       inheritedExprOptions.sampleValues,
       upstreamState,
       stepSampleValues,
+      stepValueSources,
       nodeConfigs,
       nodeConfig,
       nodeMeta,
@@ -3764,6 +3796,36 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
+/**
+ * The state the Test tab PREVIEWS its resolved params against: the seeded `testStartState`
+ * (what the test will actually send) with, for each upstream `nodes.<id>.output` and the
+ * `trigger.event` that the seeds do not carry, the value the editor already previews in the ƒx
+ * Result (`sampleValues`: a persisted test's kept value or the app's declared `sample`). A seeded
+ * output always wins. Only the PREVIEW reads this; the invoke is still sent `testStartState`.
+ */
+export function previewStartState(
+  state: StepStartState | undefined,
+  sampleValues: Record<string, unknown> | undefined,
+): StepStartState | undefined {
+  if (!sampleValues) return state;
+  const steps: NonNullable<StepStartState["steps"]> = { ...(state?.steps ?? {}) };
+  let added = false;
+  for (const [ref, value] of Object.entries(sampleValues)) {
+    const m = /^nodes\.([^.]+)\.output$/.exec(ref);
+    if (!m || steps[m[1]]?.output !== undefined) continue;
+    steps[m[1]] = { ...(steps[m[1]] ?? {}), output: value };
+    added = true;
+  }
+  const event = sampleValues["trigger.event"];
+  const addEvent = event !== undefined && state?.trigger?.event === undefined;
+  if (!added && !addEvent) return state;
+  return {
+    ...(state ?? {}),
+    ...(added ? { steps } : {}),
+    ...(addEvent ? { trigger: { ...(state?.trigger ?? {}), event } } : {}),
+  };
+}
+
 export function StepEditModal(props: StepEditModalProps) {
   // One editor for every node. An app trigger node rides the action editor:
   // Setup (app, account, trigger) · Configure (its params) · Test.
@@ -3966,6 +4028,7 @@ function ActionStepEditModal({
   // resolve to what that step last produced instead of to "".
   const loopSeed = useLoopSeed(testable && !isTrigger ? loop : undefined);
   const testStartState = startStateFromSeeds(seedSources, loopSeedValue(loopSeed));
+  const previewState = previewStartState(testStartState, useExpressionOptions().sampleValues);
 
   // The incoming state this step was last tested or run with comes back (T4.1.3
   // on this surface's own noun): the fixture's `input` slot is where both
@@ -4375,7 +4438,7 @@ function ActionStepEditModal({
                       <ResolvedParams
                         params={params}
                         values={testValues}
-                        testStartState={testStartState}
+                        testStartState={previewState}
                         view={testView}
                         literalKeys={step.uses.app === SCRIPT_APP ? SCRIPT_LITERAL_KEYS : undefined}
                       />

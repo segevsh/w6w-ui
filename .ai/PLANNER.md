@@ -950,3 +950,18 @@ file: `NODE_OPTIONS=--experimental-strip-types pnpm test` gives 1456 pass / 0 fa
   create-a-subscription behaviour) and `WorkflowFlowEditor.app-trigger-node.test.ts`. The first app trigger
   added to a trigger-less chain auto-wiring to the chain root is unpinned, and so is pressing ▶ on an app
   trigger node (that project's FOLLOWUPS, T2.1.2).
+
+## 26-11-01-01-declared-output-shapes (verified: 2026-11-01, ui@634db57 on `proj/26-11-01-01-declared-output-shapes`)
+
+- **Shape tiers.** `src/output-shape.ts` `OutputShapeSource` is `"fresh" | "persisted" | "declared" | "sample"` (the old `"test"` value is gone).
+  - **Keys merge, never hide.** A real shape (fresh in-memory output, or persisted `node_samples` via `loadNodeSamples`) lists ALL its keys.
+  - **Declared-only keys** (the action's/trigger's `output`) are added muted.
+  - **Declaration fallback.** `output` alone drives keys only when no real shape exists. `sample` keys are used only when `output` is absent.
+  - **Values:** fresh > persisted > declared `sample`. No placeholder values are ever fabricated.
+  - **Required test:** real {a,b} + declared {b,c} → a, b, c with c muted (`src/__tests__/output-shape.test.ts`).
+- **Hint texts (exact, pinned):** "declared by the app", "example from the app", "from last test". "from last test" is shown for fresh AND persisted test output. Rendered in `src/components/ExpressionEditorModal.tsx` / `ExpressionOptions.tsx`, in both the expanded and the collapsed layouts.
+- **`StepShapeContext`** (`src/step-preview-state.ts`) carries `persistedOutputs` (separate from fresh) and a `triggerDef` lookup. `upstreamStateSources` returns `eventOutputs`/`eventOutputsFrom`.
+- **App trigger nodes** (`uses.trigger === true`) get `trigger.event.<key>` sources from the trigger's declared `output`. There is NO `nodes.<id>.output` alias for a trigger node. Trigger defs load via `useAppTriggerDefs` (`src/use-app-action-defs.ts`), and `TriggerSummary` (`src/types.ts`) carries `output`/`sample`.
+- **List item fields:** a declared `OutputField.items` expands to `<key>.0.<itemKey>` picker paths and feeds a For each's current-item keys.
+- **Eventbrite fixture:** `src/__tests__/fixtures/eventbrite-declared.json` is a copy of the real declarations, used by `WorkflowFlowEditor.declared-shapes.test.ts` (mounted editor).
+- **Gate baseline:** `NODE_OPTIONS=--experimental-strip-types pnpm test` → 1648 tests, 0 fail (2026-11-01, after merging main forward).

@@ -10,6 +10,7 @@ import {
   indexNodeSamples,
   previewNodeOutputs,
   shapeToSkeleton,
+  splitNodeOutputs,
 } from "../node-samples.ts";
 import { inferOutputFields } from "../output-shape.ts";
 import { upstreamSampleValues, upstreamStateSources } from "../step-preview-state.ts";
@@ -141,20 +142,22 @@ test("simulated reload — no in-memory outputs, only persisted samples: the pic
     }),
   ]);
   const fresh = {}; // after a reload nothing is in memory
+  const tiers = splitNodeOutputs(fresh, persisted);
   const { steps } = upstreamStateSources("added", nodes, edges, {
-    testOutputs: effectiveNodeOutputs(fresh, persisted),
+    testOutputs: tiers.fresh,
+    persistedOutputs: tiers.persisted,
   });
   const byId = Object.fromEntries(steps.map((s) => [s.id, s]));
   assert.deepEqual(
     byId.fetch.outputs?.map((o) => o.key),
     ["user", "user.email"],
   );
-  assert.equal(byId.fetch.outputsFrom, "test");
+  assert.equal(byId.fetch.outputsFrom, "persisted");
   assert.deepEqual(
     byId.only_shape.outputs?.map((o) => o.key),
     ["total"],
   );
-  assert.equal(byId.only_shape.outputsFrom, "test");
+  assert.equal(byId.only_shape.outputsFrom, "persisted");
   // The ƒx previews read the real persisted value, and nothing made up for the shape-only node.
   const values = upstreamSampleValues(steps, previewNodeOutputs(fresh, persisted), {});
   assert.equal(values["nodes.fetch.output.user.email"], "a@b.c");

@@ -11,6 +11,7 @@
  */
 import type { Edge } from "@xyflow/react";
 import type {
+  ExpressionFieldSource,
   ExpressionLoopSource,
   ExpressionStepSource,
 } from "./components/ExpressionOptions.tsx";
@@ -20,6 +21,7 @@ import { TRIGGER_APP, WEBHOOK_APP, internalNodeDef, isInternalApp } from "./flow
 import type { StepNode } from "./flow-utils.ts";
 import {
   type ActionShapeDef,
+  declaredItemFields,
   inferOutputFields,
   resolveOutputShape,
   valueAtPath,
@@ -42,8 +44,18 @@ export interface StepShapeContext {
    * no "run a test" claim it might have to retract a moment later.
    */
   actionDef?: (app: string, action: string) => ActionShapeDef | undefined;
-  /** Each step's latest saved test-run output, by step id. */
+  /**
+   * An app TRIGGER's definition (its declared `output` / `sample`), same "undefined = not
+   * loaded, no claim" semantics as `actionDef`. Feeds `trigger.event.<key>`.
+   */
+  triggerDef?: (app: string, trigger: string) => ActionShapeDef | undefined;
+  /** Each step's FRESH test-run output (this session), by step id. */
   testOutputs?: Record<string, unknown>;
+  /**
+   * Each step's PERSISTED test output (server-side `node_samples`), by step id. A SEPARATE
+   * input from `testOutputs` so the tiers stay visible; fresh beats persisted.
+   */
+  persistedOutputs?: Record<string, unknown>;
   /** Each For each's saved Test sample (`foreachTestSample`), by step id — the item-shape fallback. */
   loopSamples?: Record<string, unknown[]>;
 }
@@ -102,13 +114,28 @@ function projectStepSources(
   ids: Set<string>,
   nodes: StepNode[],
   shapes: StepShapeContext = {},
-): { steps: ExpressionStepSource[]; hasTrigger: boolean } {
+): {
+  steps: ExpressionStepSource[];
+  hasTrigger: boolean;
+  eventOutputs?: ExpressionFieldSource[];
+  eventOutputsFrom?: "declared" | "sample";
+} {
   const steps: ExpressionStepSource[] = [];
   let hasTrigger = false;
+  let eventShape: ReturnType<typeof resolveOutputShape>;
   for (const n of nodes) {
     if (!ids.has(n.id)) continue;
     const step = n.data.step;
     const isTrigger = internalNodeDef(step.uses.app, step.uses.action)?.group === "trigger";
+    if (step.uses.trigger === true) {
+      // An APP trigger offers `trigger.event` with its declared event fields. Its own
+      // `steps` entry below is unchanged (no `nodes.<id>.output` alias for the event).
+      hasTrigger = true;
+      eventShape ??= resolveOutputShape(
+        shapes.triggerDef?.(step.uses.app, step.uses.action),
+        undefined,
+      );
+    }
     if (isTrigger) {
       // `trigger.event` stays on offer — but the trigger is ALSO a `steps.<id>`
       // source (see `upstreamStateSources`'s doc below), so it falls through to
@@ -152,18 +179,19 @@ function projectStepSources(
       continue;
     }
     const testOutput = shapes.testOutputs?.[step.id];
+    const persistedOutput = shapes.persistedOutputs?.[step.id];
     if (isInternalApp(step.uses.app)) {
       // A built-in node with no static output (`@w6w/script`, a Function
-      // call, …): its last test run is the only shape there is.
-      const fields = inferOutputFields(testOutput);
-      steps.push(fields ? { ...source, outputs: fields, outputsFrom: "test" } : source);
+      // call, …): its last test run (fresh, else persisted) is the only shape there is.
+      const real = resolveOutputShape(undefined, testOutput, persistedOutput);
+      steps.push(real ? { ...source, outputs: real.fields, outputsFrom: real.from } : source);
       continue;
     }
     // An app action: its declared `output`, else its `sample`, else the last
     // test run (`output-shape.ts`). With none, the author has to run a test —
     // but only say so once the action definition has actually loaded.
     const action = shapes.actionDef?.(step.uses.app, step.uses.action);
-    const shape = resolveOutputShape(action, testOutput);
+    const shape = resolveOutputShape(action, testOutput, persistedOutput);
     // Only this branch is an external app action, so only it carries `hasMeta` (R-7),
     // and only with a real app id (a blank `uses.app` is a half-built step).
     const meta = step.uses.app.trim() !== "" ? { hasMeta: true as const } : {};
@@ -173,7 +201,13 @@ function projectStepSources(
       steps.push(action ? { ...source, needsTest: true, ...meta } : { ...source, ...meta });
     }
   }
-  return { steps, hasTrigger };
+  return {
+    steps,
+    hasTrigger,
+    ...(eventShape && (eventShape.from === "declared" || eventShape.from === "sample")
+      ? { eventOutputs: eventShape.fields, eventOutputsFrom: eventShape.from }
+      : {}),
+  };
 }
 
 /**
@@ -248,7 +282,13 @@ function loopAwareSources(
   nodes: StepNode[],
   edges: Edge[],
   shapes: StepShapeContext = {},
-): { steps: ExpressionStepSource[]; hasTrigger: boolean; extraSampleIds: string[] } {
+): {
+  steps: ExpressionStepSource[];
+  hasTrigger: boolean;
+  extraSampleIds: string[];
+  eventOutputs?: ExpressionFieldSource[];
+  eventOutputsFrom?: "declared" | "sample";
+} {
   const membership = loopMembership(nodes, edges);
   const visible = new Set<string>();
   for (const id of ids) {
@@ -270,12 +310,14 @@ function loopAwareSources(
       ? resolveOutputShape(
           shapes.actionDef?.(lastStep.uses.app, lastStep.uses.action),
           testOutputs[last],
+          shapes.persistedOutputs?.[last],
         )
       : undefined;
     if (!extra.includes(last)) extra.push(last);
     const fields = (shape?.fields ?? []).map((f) => ({
       key: `items.0.${f.key}`,
       path: true as const,
+      ...(f.declaredOnly ? { declaredOnly: true as const } : {}),
     }));
     return {
       id: st.id,
@@ -284,7 +326,45 @@ function loopAwareSources(
       ...(shape ? { outputsFrom: shape.from } : {}),
     };
   });
-  return { steps, hasTrigger: projected.hasTrigger, extraSampleIds: extra };
+  return {
+    steps,
+    hasTrigger: projected.hasTrigger,
+    extraSampleIds: extra,
+    ...(projected.eventOutputs
+      ? { eventOutputs: projected.eventOutputs, eventOutputsFrom: projected.eventOutputsFrom }
+      : {}),
+  };
+}
+
+/** `nodes.<id>.output.<path>` / `steps.<id>.output.<path>` → its parts, else `undefined`. */
+function outputRefParts(ref: string): { id: string; path: string } | undefined {
+  const segs = ref.trim().split(".");
+  if ((segs[0] !== "nodes" && segs[0] !== "steps") || segs.length < 4 || segs[2] !== "output") {
+    return undefined;
+  }
+  return { id: segs[1], path: segs.slice(3).join(".") };
+}
+
+/** The declared item keys / sample item behind a For each's whole-value `items` ref, if any. */
+function declaredLoopItems(
+  items: unknown,
+  nodes: StepNode[],
+  shapes: StepShapeContext,
+): { itemSample?: unknown; itemOutputs?: ExpressionFieldSource[] } | undefined {
+  const ref = wholeValueRef(items);
+  const parts = ref ? outputRefParts(ref) : undefined;
+  const step = parts ? nodes.find((n) => n.id === parts.id)?.data.step : undefined;
+  if (!parts || !step) return undefined;
+  const def = shapes.actionDef?.(step.uses.app, step.uses.action);
+  const sampled = valueAtPath(def?.sample, parts.path);
+  const first = Array.isArray(sampled) && sampled.length > 0 ? sampled[0] : undefined;
+  const declaredItems = declaredItemFields(def?.output, parts.path);
+  const itemOutputs = declaredItems ?? inferOutputFields(first);
+  if (first === undefined && !itemOutputs) return undefined;
+  return {
+    ...(first !== undefined ? { itemSample: first } : {}),
+    ...(itemOutputs ? { itemOutputs } : {}),
+  };
 }
 
 /** The `loop` source for a step in `foreachId`'s body — keys absent when unresolvable. */
@@ -297,13 +377,21 @@ function loopSourceFor(
   const items = nodes.find((n) => n.id === foreachId)?.data.step.with?.items;
   // Live resolution first (it follows the current binding); the For each's own saved Test
   // covers the case the upstream steps have no saved output to resolve against.
-  const live = resolveLoopItems(items, shapes.testOutputs ?? {});
+  // Real outputs are read fresh-else-persisted (a persisted test supplies what no fresh one did).
+  const real = { ...(shapes.persistedOutputs ?? {}), ...(shapes.testOutputs ?? {}) };
+  const live = resolveLoopItems(items, real);
   const arr = live && live.length > 0 ? live : shapes.loopSamples?.[foreachId];
   if (arr && arr.length > 0) {
     loop.itemSample = arr[0];
     const outputs = inferOutputFields(arr[0]);
     if (outputs) loop.itemOutputs = outputs;
+    return loop;
   }
+  // Never run: a whole-value ref to an upstream step's DECLARED array field gives the item
+  // keys (`items`), and a declared `sample`'s first element the sample item. Never fabricated.
+  const declared = declaredLoopItems(items, nodes, shapes);
+  if (declared?.itemSample !== undefined) loop.itemSample = declared.itemSample;
+  if (declared?.itemOutputs) loop.itemOutputs = declared.itemOutputs;
   return loop;
 }
 
@@ -364,6 +452,9 @@ export function upstreamStateSources(
    * and the enclosing For each itself (its Test's item sample).
    */
   extraSampleIds?: string[];
+  /** An app trigger ancestor's declared `trigger.event.<key>` fields. */
+  eventOutputs?: ExpressionFieldSource[];
+  eventOutputsFrom?: "declared" | "sample";
 } {
   // `draftId` anchors the add-step builder's rail, but only for a draft that already sits in a
   // loop body; every other builder add (floating, or outside a body) keeps offering every node.
@@ -376,6 +467,9 @@ export function upstreamStateSources(
   return {
     steps: out.steps,
     hasTrigger: out.hasTrigger,
+    ...(out.eventOutputs
+      ? { eventOutputs: out.eventOutputs, eventOutputsFrom: out.eventOutputsFrom }
+      : {}),
     ...(ownLoop ? { loop: loopSourceFor(ownLoop, nodes, shapes) } : {}),
     ...(out.extraSampleIds.length > 0 ? { extraSampleIds: out.extraSampleIds } : {}),
   };
@@ -589,26 +683,110 @@ export function upstreamSampleValues(
   testOutputs: Record<string, unknown>,
   testMetas: Record<string, StepMeta>,
   loop?: ExpressionLoopSource,
+  tiers?: SampleTiers,
 ): Record<string, unknown> {
+  return collectSampleValues(steps, testOutputs, testMetas, loop, tiers).values;
+}
+
+/**
+ * The lower tiers of preview values, beside the fresh `testOutputs`: the PERSISTED test
+ * outputs and the app's declared `sample`s (by step id; `event` is an app trigger's sample,
+ * read as `trigger.event`). Precedence per ref: fresh > persisted > sample.
+ */
+export interface SampleTiers {
+  persisted?: Record<string, unknown>;
+  samples?: Record<string, unknown>;
+  event?: unknown;
+}
+
+/** Which tier each value in {@link upstreamSampleValues} came from, keyed by the same ref. */
+export function upstreamSampleValueSources(
+  steps: ExpressionStepSource[],
+  testOutputs: Record<string, unknown>,
+  testMetas: Record<string, StepMeta>,
+  loop?: ExpressionLoopSource,
+  tiers?: SampleTiers,
+): Record<string, "fresh" | "persisted" | "sample"> {
+  return collectSampleValues(steps, testOutputs, testMetas, loop, tiers).sources;
+}
+
+/**
+ * The declared `sample` of each app step (by id) and of an app trigger (as the event
+ * sample), read through `shapes.actionDef` / `triggerDef`. An `output`-only definition
+ * contributes nothing: no placeholders are fabricated.
+ */
+export function declaredSamples(
+  nodes: StepNode[],
+  shapes: StepShapeContext,
+): { samples: Record<string, unknown>; event?: unknown } {
+  const samples: Record<string, unknown> = {};
+  let event: unknown;
+  for (const n of nodes) {
+    const u = n.data.step.uses;
+    if (u.trigger === true) {
+      const v = shapes.triggerDef?.(u.app, u.action)?.sample;
+      if (event === undefined && v !== undefined) event = v;
+      continue;
+    }
+    if (isInternalApp(u.app)) continue;
+    const v = shapes.actionDef?.(u.app, u.action)?.sample;
+    if (v !== undefined) samples[n.id] = v;
+  }
+  return { samples, ...(event !== undefined ? { event } : {}) };
+}
+
+function collectSampleValues(
+  steps: ExpressionStepSource[],
+  testOutputs: Record<string, unknown>,
+  testMetas: Record<string, StepMeta>,
+  loop: ExpressionLoopSource | undefined,
+  tiers: SampleTiers = {},
+): { values: Record<string, unknown>; sources: Record<string, "fresh" | "persisted" | "sample"> } {
   const next: Record<string, unknown> = {};
-  const put = (path: string, value: unknown) => {
-    next[`nodes.${path}`] = value;
-    next[`steps.${path}`] = value;
-  };
+  const sources: Record<string, "fresh" | "persisted" | "sample"> = {};
   for (const st of steps) {
     Object.assign(next, stepMetaSampleValues(st.id, testMetas[st.id]));
-    const output = testOutputs[st.id];
-    if (output === undefined) continue;
-    put(`${st.id}.output`, output);
-    if (typeof output === "object" && output !== null && !Array.isArray(output)) {
-      for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
-        put(`${st.id}.output.${k}`, v);
+    // Lowest tier first; a higher tier overwrites the refs it supplies.
+    const layers = [
+      ["sample", tiers.samples?.[st.id]],
+      ["persisted", tiers.persisted?.[st.id]],
+      ["fresh", testOutputs[st.id]],
+    ] as const;
+    for (const [tier, output] of layers) {
+      if (output === undefined) continue;
+      const put = (path: string, value: unknown) => {
+        for (const root of ["nodes", "steps"]) {
+          next[`${root}.${path}`] = value;
+          sources[`${root}.${path}`] = tier;
+        }
+      };
+      put(`${st.id}.output`, output);
+      if (typeof output === "object" && output !== null && !Array.isArray(output)) {
+        for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
+          put(`${st.id}.output.${k}`, v);
+        }
+      }
+      for (const o of st.outputs ?? []) {
+        if (!o.path || !o.key.includes(".")) continue;
+        const v = valueAtPath(output, o.key);
+        if (v !== undefined) put(`${st.id}.output.${o.key}`, v);
       }
     }
-    for (const o of st.outputs ?? []) {
-      if (!o.path || !o.key.includes(".")) continue;
-      const v = valueAtPath(output, o.key);
-      if (v !== undefined) put(`${st.id}.output.${o.key}`, v);
+  }
+  if (tiers.event !== undefined) {
+    const put = (ref: string, value: unknown) => {
+      next[ref] = value;
+      sources[ref] = "sample";
+    };
+    put("trigger.event", tiers.event);
+    if (typeof tiers.event === "object" && tiers.event !== null && !Array.isArray(tiers.event)) {
+      for (const [k, v] of Object.entries(tiers.event as Record<string, unknown>)) {
+        put(`trigger.event.${k}`, v);
+      }
+    }
+    for (const f of inferOutputFields(tiers.event) ?? []) {
+      const v = valueAtPath(tiers.event, f.key);
+      if (v !== undefined) put(`trigger.event.${f.key}`, v);
     }
   }
   if (loop && "itemSample" in loop) {
@@ -619,7 +797,7 @@ export function upstreamSampleValues(
     }
     next["foreach.index"] = 0;
   }
-  return next;
+  return { values: next, sources };
 }
 
 /** A sealed secret, an expression envelope or a `{ "$": path }` binding: not configuration. */

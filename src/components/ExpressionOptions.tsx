@@ -59,6 +59,18 @@ export function excludeSelfStep(
   return selfId ? steps.filter((s) => s.id !== selfId) : steps;
 }
 
+/** One pickable output field of a step / trigger event, as the rail lists it. */
+export interface ExpressionFieldSource {
+  key: string;
+  label?: string;
+  path?: boolean;
+  /**
+   * `true` for a key the app DECLARES but the step's real (fresh/persisted) shape lacks:
+   * offered muted, "declared by the app".
+   */
+  declaredOnly?: true;
+}
+
 /** An upstream step whose output this field can reference (`nodes.<id>.output`). */
 export interface ExpressionStepSource {
   /** Step id — the key under `steps` in the run scope. */
@@ -81,14 +93,14 @@ export interface ExpressionStepSource {
    * **Omitted** (not `[]`) when the step declares no outputs, so a consumer can
    * tell "nothing declared" from "declared none" without a special case.
    */
-  outputs?: { key: string; label?: string; path?: boolean }[];
+  outputs?: ExpressionFieldSource[];
   /**
-   * Where `outputs` came from, for an app-action step: the action's declared
-   * `output`, its `sample`, or the step's last test run (`output-shape.ts`).
+   * Where `outputs` came from, for an app-action step: a fresh test output, the persisted
+   * test shape, the action's declared `output`, or its `sample` (`output-shape.ts`).
    * An entry with `path: true` is a dot path into nested output (`start.utc`),
    * checked segment by segment; without it the key is one literal key.
    */
-  outputsFrom?: "declared" | "sample" | "test";
+  outputsFrom?: "fresh" | "persisted" | "declared" | "sample";
   /**
    * `true` when the step is an app action that declares no output shape and has
    * no test run yet — the picker tells the author to run a test to see fields.
@@ -189,6 +201,19 @@ export interface ExpressionOptions {
   loop?: ExpressionLoopSource;
   /** Whether a trigger event is in scope (`trigger.event`). */
   hasTrigger?: boolean;
+  /**
+   * An APP trigger's declared event fields, offered as `trigger.event.<key>` under the
+   * `trigger.event` chip. Omitted when none are known.
+   */
+  eventOutputs?: ExpressionFieldSource[];
+  /** Where {@link eventOutputs} came from: the trigger's declared `output`, or its `sample`. */
+  eventOutputsFrom?: "declared" | "sample";
+  /**
+   * Which tier each value in {@link sampleValues} came from, keyed by the same full ref:
+   * a fresh test output, the persisted test (`from last test`) or the app's declared
+   * `sample` (`example from the app`). A ref absent here is not a step/event value.
+   */
+  valueSources?: Record<string, "fresh" | "persisted" | "sample">;
   /**
    * Every node's configuration keys, read as `nodes.<id>.config.<key>` on any run whether or not
    * the node runs — its literal settings, and a webhook trigger's `url`. Offered as the rail's
