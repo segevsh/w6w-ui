@@ -593,8 +593,8 @@ test("C10 a 3-step body authored by applyConnect serializes to with.body, no bod
   const out = flowToWorkflow(wf, nodes, edges);
   const fe3 = out.nodes.find((n) => n.id === "fe3");
   assert.deepEqual((fe3?.with as { body: string[] }).body, ["f", "g", "h"]);
-  const body = new Set(["f", "g", "h"]);
-  assert.ok(!(out.edges ?? []).some((e) => body.has(e.from) || body.has(e.to)));
+  // Only the For each's own Each item link names a body step.
+  assert.deepEqual(out.edges, [{ from: "fe3", to: "f", route: "each" }]);
 });
 
 test("C11 loopRefusalMessage: seven distinct non-empty strings", () => {

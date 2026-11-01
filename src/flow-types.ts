@@ -163,11 +163,21 @@ export function edgeVisuals(
 export const ERROR_SOURCE_HANDLE = "out-error";
 
 /**
- * The handle id of a For each's **Each item** exit port (the success lane keeps the
- * unnamed handle, rendered as **Done**). Canvas-only: the `each` lane is never
- * serialized — `flowToWorkflow` derives `with.body` from these edges instead.
+ * The handle id of a For each's **Each item** exit port. The `each` lane derives
+ * `with.body` on save; its link to the first body step is also saved as a
+ * {@link FOREACH_EACH_ROUTE} edge so a reader sees which port it leaves.
  */
 export const EACH_SOURCE_HANDLE = "out-each";
+
+/**
+ * `Edge.route` of a For each's **Done** port (the engine's `FOREACH_DONE_ROUTE`): the
+ * success edge that runs once, after every iteration. An unrouted For each success
+ * edge — the shape saved before the port had an id — is read as Done.
+ */
+export const FOREACH_DONE_ROUTE = "done";
+
+/** `Edge.route` of a For each's Each item link to `with.body[0]` (engine `FOREACH_EACH_ROUTE`). */
+export const FOREACH_EACH_ROUTE = "each";
 
 /**
  * A lane on the CANVAS. `"each"` is canvas-only (a For each → body-step edge);
