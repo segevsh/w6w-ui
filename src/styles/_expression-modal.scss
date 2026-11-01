@@ -15,6 +15,14 @@
   flex-direction: column;
   gap: var(--w6w-sp-1);
 }
+/* The seed-mode "Insert as" toggle is a <fieldset> for its group semantics; drop the
+   browser's fieldset chrome so it lays out like the plain row it replaced. */
+.w6w-exprmodal-insert-as {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
 /* A rail section is an accordion item: its header always shows, its body animates open
    (grid-template-rows 0fr -> 1fr) and only one section is open at a time. */
 .w6w-exprmodal-group {
