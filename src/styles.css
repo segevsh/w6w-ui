@@ -5203,6 +5203,31 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-danger);
 }
 
+/* A step's State block: its state writes in recorded order (`state.<path>: old → new`),
+   warnings marked, then the run's state after this step. Values are arbitrary JSON,
+   so rows wrap rather than widen the panel. */
+.w6w-execution-log-state {
+  min-width: 0;
+}
+
+.w6w-execution-log-state-writes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-0-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--w6w-font-mono);
+  word-break: break-all;
+}
+
+.w6w-execution-log-state-warning {
+  padding-left: var(--w6w-sp-1-5);
+  border-left: 2px solid var(--w6w-danger);
+  color: var(--w6w-danger);
+  font-family: inherit;
+}
+
 /* --- ExecutionList ------------------------------------------------------- */
 /* Rows of past executions: a click-to-select list plus a prev/next pager.
    Closer in shape to `.w6w-execution-log` (`_execution-log.scss`) than to
