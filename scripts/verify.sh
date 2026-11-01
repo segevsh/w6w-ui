@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The ONE list of checks for @w6w/ui. CI's `test` job runs exactly this file after
+# The ONE list of checks for @w6w/ui. CI's `verify` job runs exactly this file after
 # `pnpm install --frozen-lockfile`, and so does the pre-push hook (w6w-io/w6w
 # .githooks/pre-push), so a push that passes here passes CI. Add a check HERE, never
 # only in ci.yml. Expects the sibling layout: ../core next to this repo.
