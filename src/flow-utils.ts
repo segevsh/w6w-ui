@@ -10,17 +10,23 @@ import {
   definitionLoops,
   eachLaneEdge,
   effectiveEdges,
+  isEachLink,
   isForeachStep,
   loopBodies,
+  loopBodyDefinitionEdges,
   stripBody,
 } from "./flow-loop.ts";
 import {
   type CanvasLane,
+  FOREACH_DONE_ROUTE,
+  FOREACH_EACH_ROUTE,
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
   type FlowWorkflowInput,
+  IF_FALSE_ROUTE,
   edgeVisuals,
+  isIfStep,
   isInternalApp,
   sourceHandleForLane,
 } from "./flow-types.ts";
@@ -30,6 +36,7 @@ import {
 // threading run state through it would repaint nothing on a poll tick.
 import type { RunStatus, StepVisualState } from "./run-visuals.ts";
 import type { StepProblem } from "./step-problems.ts";
+import { centralizeConnections } from "./workflow-connections.ts";
 
 export interface StepNodeData extends Record<string, unknown> {
   step: FlowStep;
@@ -84,8 +91,9 @@ export type StepNode = Node<StepNodeData>;
  * rewrite) in `flow-connect.ts`. A second hand-rolled copy of the template is
  * exactly how the rename path came to drop the qualifier.
  */
-export function flowEdgeId(from: string, to: string, when?: CanvasLane): string {
-  return when === "error" ? `${from}->${to}:error` : `${from}->${to}`;
+export function flowEdgeId(from: string, to: string, when?: CanvasLane, route?: string): string {
+  const base = when === "error" ? `${from}->${to}:error` : `${from}->${to}`;
+  return route === undefined ? base : `${base}:route:${encodeURIComponent(route)}`;
 }
 
 /**
@@ -360,6 +368,16 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
   for (const [fid, loop] of Object.entries(definitionLoops(wf))) {
     if ("invalid" in loop) continue;
     let prev = fid;
+    if (loop.edges && loop.body.length > 0) {
+      // A branched body: the Each-item link, then each declared body edge as an each-lane edge.
+      eachEdges.push(eachLaneEdge(fid, loop.body[0], true));
+      for (const e of loop.edges) {
+        drop.add(e);
+        eachEdges.push(eachLaneEdge(e.from, e.to, false, e.route));
+      }
+      for (const id of loop.body) loopOf.set(id, fid);
+      continue;
+    }
     for (const id of loop.body) {
       if (loop.source === "legacy") {
         const e = edges.find(
@@ -373,6 +391,9 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
     }
     if (loop.source === "legacy") legacyFoes.add(fid);
   }
+  // A For each's saved Each item link is redrawn from its body above, never as a plain edge.
+  const foreachIds = new Set(defs.filter(isForeachStep).map((s) => s.id));
+  for (const e of edges) if (foreachIds.has(e.from) && isEachLink(e)) drop.add(e);
   if (drop.size > 0) edges = edges.filter((e) => !drop.has(e));
   const layer = computeLayers(defs, [
     ...edges,
@@ -398,7 +419,17 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
     };
   });
 
-  const flowEdges: Edge[] = edges.map((e) => {
+  // An If has no error port: its bottom handle is the False branch (ifPortLayout).
+  // An error edge saved from that handle before it was False is read as False.
+  const ifIds = new Set(defs.filter(isIfStep).map((s) => s.id));
+  // A For each's unrouted success edge (saved before its Done port had an id) is Done.
+  const flowEdges: Edge[] = edges.map((saved) => {
+    const e: FlowEdge =
+      saved.when === "error" && saved.route === undefined && ifIds.has(saved.from)
+        ? { from: saved.from, to: saved.to, route: IF_FALSE_ROUTE }
+        : foreachIds.has(saved.from) && saved.route === undefined && saved.when !== "error"
+          ? { ...saved, route: FOREACH_DONE_ROUTE }
+          : saved;
     // Omitted ⇒ "success" (core rfcs/workflow.md · Edge.when amendment). The
     // lane rides on `data` so flowToWorkflow can read it straight back off the
     // React Flow edge; the className + label that tell an error edge apart on
@@ -418,12 +449,12 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
     // reads it back, so this does not touch the persisted `Edge.when` round-trip.
     const when = e.when ?? "success";
     return {
-      id: flowEdgeId(e.from, e.to, when),
+      id: flowEdgeId(e.from, e.to, when, e.route),
       source: e.from,
       target: e.to,
-      sourceHandle: sourceHandleForLane(when),
+      sourceHandle: e.route === undefined ? sourceHandleForLane(when) : `route:${e.route}`,
       animated: false,
-      data: { when },
+      data: { when, ...(e.route === undefined ? {} : { route: e.route }) },
       // No run state here either (T1.1.1): `workflowToFlow` only ever runs
       // on workflow identity change (Trap 1), never on a live run's poll
       // tick, so it has no run state to pass — the live-run repaint effect
@@ -448,7 +479,7 @@ export function workflowToFlow(input: FlowWorkflowInput): { nodes: StepNode[]; e
  * either way (pinned by `flow-utils.test.ts` — "auto-layout agrees with first
  * open"). The **only** difference is that a stored coordinate does not win here:
  * overriding hand placement is precisely what the author asked for by clicking.
- * That is also why the caller confirms first — there is no undo in studio.
+ * The editor records this as one undoable layout change.
  *
  * Layering is keyed by **`node.id`**, not `node.data.step.id`: React Flow's
  * `edge.source`/`edge.target` name node ids, so keying by anything else would
@@ -586,15 +617,33 @@ export function flowToWorkflow(
   // touch a body step the engine will own (any such edge is a PlanError there).
   const bodyIds = new Set<string>();
   for (const chain of derived.values()) for (const id of chain) bodyIds.add(id);
-  const nextEdges: FlowEdge[] = edges
+  const foreachIds = new Set(nodes.filter((n) => isForeachStep(n.data?.step)).map((n) => n.id));
+  const plainEdges: FlowEdge[] = edges
     .filter((e) => edgeLane(e) !== "each" && !bodyIds.has(e.source) && !bodyIds.has(e.target))
-    .map((e) =>
-      edgeLane(e) === "error"
-        ? { from: e.source, to: e.target, when: "error" }
-        : { from: e.source, to: e.target },
-    );
+    .map((e): FlowEdge => {
+      const route =
+        typeof e.data?.route === "string"
+          ? e.data.route
+          : foreachIds.has(e.source) && edgeLane(e) === "success"
+            ? FOREACH_DONE_ROUTE
+            : undefined;
+      return {
+        from: e.source,
+        to: e.target,
+        ...(edgeLane(e) === "error" ? { when: "error" as const } : {}),
+        ...(route === undefined ? {} : { route }),
+      };
+    });
 
-  return { ...original, nodes: nextSteps, edges: nextEdges };
+  // Each For each's Each item link names its port, so no reader takes it for Done.
+  const eachLinks: FlowEdge[] = [];
+  for (const [fid, chain] of derived) {
+    if (chain.length > 0) eachLinks.push({ from: fid, to: chain[0], route: FOREACH_EACH_ROUTE });
+  }
+
+  // A branched body (anything but a plain chain) also emits its body-internal edges.
+  const nextEdges = [...plainEdges, ...eachLinks, ...loopBodyDefinitionEdges(nodes, edges)];
+  return centralizeConnections({ ...original, nodes: nextSteps, edges: nextEdges });
 }
 
 /** The workflow's stored camera, as `settings.viewport` declares it. */

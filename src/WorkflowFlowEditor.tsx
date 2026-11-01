@@ -22,12 +22,13 @@ import {
   useNodeId,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
 } from "@xyflow/react";
 import type { FinalConnectionState } from "@xyflow/react";
 import { Handle } from "@xyflow/react";
 import {
+  type CSSProperties,
   type ReactNode,
-  type RefObject,
   createContext,
   useCallback,
   useContext,
@@ -36,25 +37,34 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
-import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
 import { CanvasLayer } from "./CanvasLayer.tsx";
+import { ConditionEditor } from "./ConditionEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm } from "./ParamsForm.tsx";
 import { PropertyEntryForm } from "./PropertyEntryForm.tsx";
+import { RouterEditor } from "./RouterEditor.tsx";
 import {
+  AppTriggerTestNote,
   type BuiltStep,
   type ConfigView,
   ConfigViewToggle,
   StepBuilderModal,
   StepTestRun,
   type StepTestRunHandle,
+  getTriggerDefs,
   requiredParamsFilled,
 } from "./StepBuilderModal.tsx";
+import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
+import { pickWebhookSubscription } from "./WebhookListenPanel.tsx";
+import {
+  WorkflowConnectionPicker,
+  WorkflowConnectionsContext,
+  useWorkflowConnections,
+} from "./WorkflowConnections.tsx";
 import type { FlowCanvas } from "./canvas-types.ts";
 import {
   assignMembership,
@@ -64,6 +74,7 @@ import {
   renameSectionMember,
   sectionsContaining,
 } from "./canvas-utils.ts";
+import { AnchoredFlyout } from "./components/AnchoredFlyout.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
@@ -82,6 +93,7 @@ import { InternalIcon } from "./components/InternalIcon.tsx";
 import { Modal } from "./components/Modal.tsx";
 import { ResolvedParams } from "./components/ResolvedParams.tsx";
 import { ResultViewer } from "./components/ResultViewer.tsx";
+import { ScriptBindingsNotice, useScriptConversion } from "./components/ScriptBindingsNotice.tsx";
 import {
   applyConnect,
   canConnect,
@@ -96,6 +108,21 @@ import {
 // The connection rules live in a JSX-free `.ts` module so `node --test` can run
 // them (see `flow-connect.ts`). This file is their only production caller.
 import { fanOutLabel, fanOutState, setFanOut } from "./flow-fanout.ts";
+import {
+  FlowEditHistory,
+  captureFlowEdit,
+  isFlowTextTarget,
+  restoreFlowEdit,
+} from "./flow-history.ts";
+import {
+  type LoopPaint,
+  enclosingLoops,
+  loopCardStyle,
+  loopPaint,
+  loopPaintKey,
+  loopToneVar,
+  paintLoopEdges,
+} from "./flow-loop-colors.ts";
 import { isForeachStep } from "./flow-loop.ts";
 import {
   type LoopRefusalReason,
@@ -105,7 +132,28 @@ import {
   stampLoopOf,
   stripBody,
 } from "./flow-loop.ts";
+import {
+  DISABLED_LABEL,
+  PAUSED_LABEL,
+  isDisabledStep,
+  isPausedStep,
+  pausedStopAt,
+  withDisabled,
+  withPaused,
+} from "./flow-node-flags.ts";
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
+import {
+  FOREACH_DONE_ROUTE,
+  RACE_APP,
+  RACE_DESCRIPTION,
+  ROUTER_APP,
+  ifPortLayout,
+  isIfStep,
+  routeFromHandle,
+  routeHandle,
+  routerPortLayout,
+  routesForStep,
+} from "./flow-types.ts";
 import {
   CALL_APP,
   CONTROL_APP,
@@ -115,6 +163,7 @@ import {
   type FlowStep,
   type FlowWorkflow,
   type PortsLookup,
+  SCRIPT_APP,
   WEBHOOK_APP,
   edgeVisuals,
   internalNodeIcon,
@@ -122,7 +171,7 @@ import {
   internalNodeParams,
   isControlApp,
   isInternalApp,
-  isTriggerApp,
+  isTriggerStep,
   laneForSourceHandle,
   nodePortsForStep,
 } from "./flow-types.ts";
@@ -142,6 +191,13 @@ import {
   withViewport,
   workflowToFlow,
 } from "./flow-utils.ts";
+import {
+  type NodeSample,
+  indexNodeSamples,
+  splitNodeOutputs,
+  splitPreviewOutputs,
+} from "./node-samples.ts";
+import { inferOutputFields } from "./output-shape.ts";
 // One implementation of the incoming-state pipeline, shared by every surface
 // that offers upstream seed chips (this file's step editor + ▶ Run collect
 // form, and StepBuilderModal's add-step Test tab) — see `step-preview-state.ts`'s
@@ -161,12 +217,20 @@ import { type RunState, edgeRunState, stepNodeVisual, stepVisualState } from "./
 import {
   type SeedSource,
   type StepShapeContext,
+  declaredSamples,
+  foreachTestFixture,
+  foreachTestSample,
   loopItemText,
+  nodeConfigSources,
+  nodeConfigValues,
+  nodeMetaSampleValues,
+  nodeMetaValues,
   parseLoopSeed,
-  resolveLoopItems,
+  resolveLoopItemsInState,
   startStateFromSeeds,
   stepBuilderLoop,
   stepBuilderUpstreamSteps,
+  upstreamSampleValueSources,
   upstreamSampleValues,
   upstreamStateSources,
 } from "./step-preview-state.ts";
@@ -174,12 +238,16 @@ import {
   type StepProblem,
   type StepProblems,
   applyStepProblems,
-  connectionButtonLabel,
   isConnectionBlocked,
   stepProblemTooltip,
 } from "./step-problems.ts";
 import { useEffectiveTheme } from "./theme.ts";
 import { asFieldDefs, fieldsToParams, seedValues } from "./trigger-fields.ts";
+import {
+  appTriggerNodesOf,
+  registrationDisplay,
+  subscriptionsByNode,
+} from "./trigger-registration.ts";
 import type {
   ActionDef,
   ActionParam,
@@ -187,8 +255,16 @@ import type {
   ConnectionSummary,
   SubscriptionSummary,
 } from "./types.ts";
-import { portsLookupFromDefs, useAppActionDefs } from "./use-app-action-defs.ts";
+import { portsLookupFromDefs, useAppActionDefs, useAppTriggerDefs } from "./use-app-action-defs.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
+import {
+  type FlowConnections,
+  centralizeConnections,
+  connectionIdFor,
+  defaultConnectionFor,
+  selectNodeConnection,
+  withConnectionRef,
+} from "./workflow-connections.ts";
 
 /**
  * What the "Run on" control does, shown on the lane panel (T1.1.1).
@@ -228,11 +304,23 @@ function clashInvolvedIds(
   return [source, target, sitting?.source, sitting?.target];
 }
 
+/** What kind of change an `onChange` reports — see `WorkflowFlowEditorProps.onChange`. */
+export interface FlowChangeMeta {
+  viewportOnly?: true;
+}
+
 export interface WorkflowFlowEditorProps {
   /** The workflow being edited. The editor re-derives layout when this changes identity. */
   value: FlowWorkflow;
-  /** Fired whenever the user changes the graph — new nodes, edges, or step edits. */
-  onChange: (next: FlowWorkflow) => void;
+  /**
+   * Fired whenever the user changes the graph — new nodes, edges, or step edits.
+   *
+   * `meta.viewportOnly` is `true` when the change is the author's pan/zoom being
+   * written to `settings.viewport` and nothing else. A host that drops the shown
+   * run on an edit (so the run paint stops describing a workflow that changed)
+   * keeps it for these: moving the camera changes nothing that ran.
+   */
+  onChange: (next: FlowWorkflow, meta?: FlowChangeMeta) => void;
   /** Disable all interactions — pans/zooms are still enabled. */
   readOnly?: boolean;
   /** Height of the editor viewport. Defaults to 480px. */
@@ -320,6 +408,32 @@ export interface WorkflowFlowEditorProps {
    * `onChange` and never overwrites the stored viewport.
    */
   fitViewKey?: string | number | boolean;
+  /**
+   * Run from a node: ▶ runs THAT node and then continues through every node downstream of it,
+   * following the edges the way a real run does, and stops BEFORE each paused node
+   * (`ui.paused`). The host enqueues it as a real run (`POST /workflows/:id/nodes/:nodeId/run`
+   * with `continue: true`) and shows it like any run — `runState` + its run log.
+   *
+   * Called from the ▶ collect form's Run button with:
+   * - `stopAt` — every paused node except the start node itself;
+   * - `state` — the upstream outputs the form seeded (saved step tests / the last run), the same
+   *   start state a single-node run is given;
+   * - `input` — the filled values, only when the start node is a trigger.
+   *
+   * Omitted ⇒ ▶ test-runs the single node exactly as before (and flow-control nodes have no ▶).
+   * A rejected promise is shown in the run modal.
+   */
+  onRunFromNode?: (nodeId: string, req: RunFromNodeRequest) => Promise<void> | void;
+}
+
+/** What {@link WorkflowFlowEditorProps.onRunFromNode} is called with. */
+export interface RunFromNodeRequest {
+  /** Paused node ids the run must stop before (never the start node). */
+  stopAt: string[];
+  /** Upstream outputs seeded from saved step tests / the last run; absent when none. */
+  state?: StepStartState;
+  /** The trigger's filled values — present only when the start node is a trigger. */
+  input?: Record<string, unknown>;
 }
 
 /**
@@ -329,6 +443,8 @@ export interface WorkflowFlowEditorProps {
 const PortsLookupCtx = createContext<PortsLookup | undefined>(undefined);
 /** Per-step max outgoing edges in one lane (`fanOutState().count`); drives the card badge. */
 const FanOutCountsCtx = createContext<ReadonlyMap<string, number>>(new Map());
+/** Each For each's tone and each step's loop, for the Each item port and the loop dots. */
+const LoopPaintCtx = createContext<LoopPaint>({ tones: new Map(), loopOf: new Map() });
 
 /** The inline refusal when a source is already at its finite `out` cap (no eviction). */
 function outCapMessage(cap: number): string {
@@ -336,6 +452,38 @@ function outCapMessage(cap: number): string {
 }
 
 const AppsCtx = createContext<Map<string, AppSummary>>(new Map());
+
+/** The workflow's node-bound Subscriptions, read once per editor (not per card). */
+interface TriggerRegistrationValue {
+  byNode: ReadonlyMap<string, SubscriptionSummary>;
+  /** The whole list — a webhook node's `nodes.<id>.meta.config.url` comes from it. */
+  subs: readonly SubscriptionSummary[];
+  /** Present only when the host can retry; re-reads the list after the retry. */
+  retry?: (subscriptionId: string) => Promise<void>;
+}
+const TriggerRegistrationCtx = createContext<TriggerRegistrationValue>({
+  byNode: new Map(),
+  subs: [],
+});
+
+/** `AppsCtx` plus the trigger-registration context (one provider, no extra nesting level). */
+function CardDataProvider({
+  apps,
+  registration,
+  children,
+}: {
+  apps: Map<string, AppSummary>;
+  registration: TriggerRegistrationValue;
+  children: ReactNode;
+}) {
+  return (
+    <AppsCtx.Provider value={apps}>
+      <TriggerRegistrationCtx.Provider value={registration}>
+        {children}
+      </TriggerRegistrationCtx.Provider>
+    </AppsCtx.Provider>
+  );
+}
 
 /** Which view the step edit modal opens in: the tabbed form, raw JSON, or node settings. */
 type EditView = "props" | "json" | "settings";
@@ -350,6 +498,12 @@ interface StepControls {
   onRun: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Toggle `ui.paused` — test runs started from ▶ stop before a paused node. */
+  onTogglePause: (id: string) => void;
+  /** Toggle `disabled` — a disabled node is skipped in every run. */
+  onToggleDisable: (id: string) => void;
+  /** True when ▶ runs on from the node (`onRunFromNode`), so flow-control nodes get a ▶ too. */
+  runsFromNode: boolean;
   /**
    * Open the step builder for a new step wired to this port — a plain click on the
    * port. Same path as dropping a dragged connection on empty canvas.
@@ -370,6 +524,8 @@ const StepControlsCtx = createContext<StepControls | null>(null);
  *   - Selecting a node reveals a toolbar above it: Edit / Duplicate / Delete.
  *   - Edit opens a modal with a Form ⇄ JSON toggle for that step.
  *   - Every meaningful change fires `onChange` with an updated Workflow.
+ *   - Ctrl/Cmd+Z undoes graph edits; Ctrl/Cmd+Shift+Z (or Ctrl+Y) redoes them.
+ *     History is local to the open workflow and excludes tests, samples and viewport changes.
  */
 export function WorkflowFlowEditor(props: WorkflowFlowEditorProps) {
   return (
@@ -424,15 +580,34 @@ function Inner({
   stepProblems,
   onTestRun,
   fitViewKey,
+  onRunFromNode,
 }: WorkflowFlowEditorProps) {
   const api = useW6WApi();
   const appsById = useMemo(() => new Map((apps ?? []).map((a) => [a.id, a])), [apps]);
+  const triggerRegistration = useTriggerRegistration(value);
   const [runResult, setRunResult] = useState<StepRunState | null>(null);
   // Re-hydrate nodes+edges only when the workflow id changes identity. Local
   // edits (drag, connect, delete) go through the useNodesState / useEdgesState
   // handles so React Flow's own state stays authoritative during interaction.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-derive layout only on workflow identity change
-  const initial = useMemo(() => workflowToFlow(value), [value.id]);
+  const initialWorkflow = useMemo(() => centralizeConnections(value), [value.id]);
+  const initial = useMemo(() => workflowToFlow(initialWorkflow), [initialWorkflow]);
+  const [connections, setConnectionsState] = useState<FlowConnections>(
+    initialWorkflow.connections ?? {},
+  );
+  const connectionsRef = useRef(connections);
+  const setConnections = useCallback((next: FlowConnections) => {
+    connectionsRef.current = next;
+    setConnectionsState(next);
+  }, []);
+  const prepareStep = useCallback(
+    (step: FlowStep) => {
+      const next = centralizeConnections({ nodes: [step], connections: connectionsRef.current });
+      if (next.connections !== connectionsRef.current) setConnections(next.connections);
+      return next.nodes[0];
+    },
+    [setConnections],
+  );
   // The camera to open at, read at mount for the same reason `initial` is: React
   // Flow consumes `defaultViewport` in a mount-only effect (ZoomPane's `XYPanZoom`
   // init), so a fresh object per render would be inert but misleading — and this
@@ -450,6 +625,7 @@ function Inner({
   // Catalog ports reach resolution through this lookup, never by stamping
   // `step.ports` (which would persist into every saved workflow).
   const actionDefs = useAppActionDefs(api, nodes);
+  const triggerDefs = useAppTriggerDefs(api, nodes);
   const portsLookup = useMemo(() => portsLookupFromDefs(actionDefs), [actionDefs]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -458,6 +634,14 @@ function Inner({
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed on workflow identity change only
   const initialCanvas = useMemo<FlowCanvas>(() => value.canvas ?? {}, [value.id]);
   const [canvas, setCanvas] = useState<FlowCanvas>(initialCanvas);
+  const [editHistory] = useState(
+    () =>
+      new FlowEditHistory(
+        captureFlowEdit(initialWorkflow, initial.nodes, initial.edges, connections, initialCanvas),
+      ),
+  );
+  const textEditGroup = useRef<object>();
+  const [restoreVersion, setRestoreVersion] = useState(0);
   // The draw-section tool, and the rectangle being dragged (client px) while it is armed.
   const [drawingSection, setDrawingSection] = useState(false);
   const [sectionDraft, setSectionDraft] = useState<{
@@ -472,6 +656,11 @@ function Inner({
   } | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const builderEditGroup = useRef<object>({});
+  useEffect(() => {
+    // The progressive add form creates and configures one node as one undoable action.
+    if (!builderOpen) builderEditGroup.current = {};
+  }, [builderOpen]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editView, setEditView] = useState<EditView>("props");
   // The step id awaiting delete confirmation — one pending slot driving one modal.
@@ -481,10 +670,10 @@ function Inner({
   // state) because it drives no render of its own — it only needs to survive
   // from the relayout click to the next commit of `nodes`.
   const relayoutPendingFitRef = useRef(false);
-  // Carries the flow container div so the capture-phase dblclick listener below
+  // Carries the flow container so the capture-phase dblclick listener below
   // can be attached/removed on it directly — see that effect for why a native
   // listener is required instead of React Flow's own node-double-click prop.
-  const flowContainerRef = useRef<HTMLDivElement>(null);
+  const flowContainerRef = useRef<HTMLElement>(null);
   // When a connection drag is released on empty canvas, we open the builder to
   // create a new node and auto-wire it to the handle it was dragged from.
   const [pendingConnect, setPendingConnect] = useState<{
@@ -498,6 +687,7 @@ function Inner({
      * "success" for that gesture without a separate branch.
      */
     lane: CanvasLane;
+    route?: string;
   } | null>(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   // React Flow's `colorMode` defaults to "light", so without this its chrome
@@ -514,7 +704,18 @@ function Inner({
     setSelectedId(null);
     setEditingId(null);
     setCanvas(initialCanvas);
-  }, [initial, initialCanvas, setNodes, setEdges]);
+    setConnections(initialWorkflow.connections ?? {});
+    editHistory.reset(
+      captureFlowEdit(
+        initialWorkflow,
+        initial.nodes,
+        initial.edges,
+        initialWorkflow.connections ?? {},
+        initialCanvas,
+      ),
+    );
+    textEditGroup.current = undefined;
+  }, [initial, initialCanvas, initialWorkflow, setNodes, setEdges, setConnections, editHistory]);
 
   // These two stamps are declared AFTER the workflow-swap reset above on purpose: effects run in
   // declaration order, so the reset (which reseeds nodes from `initial`, with neither stamp) would
@@ -537,34 +738,42 @@ function Inner({
   //
   // Functional `setNodes`/`setEdges` updaters read the PREVIOUS state
   // directly, so `nodes`/`edges` need not be dependencies — keeping this
-  // effect keyed on `runState` alone (plus the setters, stable across
-  // renders) is what makes it fire on every run-state change and nothing
-  // else, including a plain drag or edit that doesn't touch `runState`.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
+  // effect keyed on `runState` is what keeps a plain drag or edit from repainting.
+  // Workflow swaps and undo/redo also re-stamp the restored graph from the current run.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` and `restoreVersion` re-stamp a restored graph
   useEffect(() => {
-    setNodes((nds) =>
-      nds.map((n) => {
-        const stepStatus = stepVisualState(runState, n.id);
+    setNodes((nds) => {
+      // A loop body step has no record of its own; one whose For each is on another path stays
+      // unpainted with it (computed here, not read off `data.loopOf`, which may not be stamped yet).
+      const loopOf = new Map(stampLoopOf(nds, edges).map((n) => [n.id, n.data.loopOf]));
+      return nds.map((n) => {
+        const stepStatus = stepVisualState(runState, n.id, enclosingLoops(n.id, loopOf));
         if (n.data.stepStatus === stepStatus && n.data.runStatus === runState?.status) return n;
         return { ...n, data: { ...n.data, stepStatus, runStatus: runState?.status } };
-      }),
-    );
+      });
+    });
     setEdges((eds) =>
       eds.map((e) => {
         const lane = edgeLane(e);
-        const run = edgeRunState(runState, e.source, lane);
+        const run = edgeRunState(
+          runState,
+          e.source,
+          lane,
+          typeof e.data?.route === "string" ? e.data.route : undefined,
+          e.target,
+        );
         const visuals = edgeVisuals(lane, run);
         if (e.className === visuals.className && e.label === visuals.label) return e;
         return { ...e, className: visuals.className, label: visuals.label };
       }),
     );
-  }, [runState, initial, setNodes, setEdges]);
+  }, [runState, initial, restoreVersion, setNodes, setEdges]);
   // Host-supplied step problems — same live-repaint mechanism as runState above:
   // stamps/clears `data.stepProblems` only, never `data.step`.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` re-stamps after a workflow swap
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `initial` and `restoreVersion` re-stamp a restored graph
   useEffect(() => {
     setNodes((nds) => applyStepProblems(nds, stepProblems));
-  }, [stepProblems, initial, setNodes]);
+  }, [stepProblems, initial, restoreVersion, setNodes]);
 
   // Stamp the `canvas` key onto an outgoing workflow. Omitted entirely when there is nothing to
   // keep (no notes, no sections), so a workflow that never used the feature round-trips unchanged.
@@ -579,15 +788,31 @@ function Inner({
 
   const emitChange = useCallback(
     (nextNodes: StepNode[], nextEdges: Edge[], canvasOverride?: FlowCanvas) => {
-      onChange(withCanvas(flowToWorkflow(value, nextNodes, nextEdges), canvasOverride ?? canvas));
+      editHistory.record(
+        captureFlowEdit(
+          value,
+          nextNodes,
+          nextEdges,
+          connectionsRef.current,
+          canvasOverride ?? canvas,
+        ),
+        builderOpen ? builderEditGroup.current : textEditGroup.current,
+      );
+      onChange(
+        withCanvas(
+          flowToWorkflow({ ...value, connections: connectionsRef.current }, nextNodes, nextEdges),
+          canvasOverride ?? canvas,
+        ),
+      );
     },
-    [value, onChange, canvas, withCanvas],
+    [value, onChange, canvas, withCanvas, editHistory, builderOpen],
   );
 
   // Live gate while dragging a connection — React Flow marks the drop invalid
   // (and won't fire onConnect) when this returns false.
   const isValidConnection = useCallback(
-    (c: Connection | Edge) => canConnect(c.source, c.target, nodes, edges, portsLookup),
+    (c: Connection | Edge) =>
+      canConnect(c.source, c.target, nodes, edges, portsLookup, routeFromHandle(c.sourceHandle)),
     [nodes, edges, portsLookup],
   );
 
@@ -622,8 +847,8 @@ function Inner({
       // The lane rides on the handle the wire was dragged from (T1.1.1) — the
       // one canonicalisation point, so a handle-to-handle drag and the
       // drag-to-empty-canvas gesture in `onConnectEnd` cannot disagree on what
-      // counts as the error port. applyConnect replaces a full single-slot port
-      // rather than ignoring the drop.
+      // counts as the error port. applyConnect only ever adds an edge: an input
+      // takes any number, an exit at its finite cap refuses.
       const next = applyConnect(
         params.source,
         params.target,
@@ -631,6 +856,7 @@ function Inner({
         edges,
         laneForSourceHandle(params.sourceHandle),
         portsLookup,
+        routeFromHandle(params.sourceHandle),
       );
       if (!next) {
         // FAIL LOUDLY when the refusal is one the drag could not have shown. Every
@@ -656,6 +882,7 @@ function Inner({
           edges,
           lane,
           portsLookup,
+          routeFromHandle(params.sourceHandle),
         );
         if (refusal && refusal.refused === "loop") {
           setLoopNotice({ nodeId: params.source, reason: refusal.reason });
@@ -746,6 +973,7 @@ function Inner({
         handleType,
         position,
         lane: dragLane(connectStartRef.current, fromNode.id, connectionState.fromHandle),
+        route: routeFromHandle(connectionState.fromHandle?.id),
       });
       setBuilderOpen(true);
     },
@@ -771,7 +999,7 @@ function Inner({
             : lane === "each"
               ? { x: r.x + r.w + gap, y: r.y - r.h - gap / 2 }
               : { x: r.x + r.w + gap, y: r.y };
-      setPendingConnect({ nodeId, handleType, position, lane });
+      setPendingConnect({ nodeId, handleType, position, lane, route: routeFromHandle(handleId) });
       setBuilderOpen(true);
     },
     [readOnly, nodes],
@@ -969,11 +1197,11 @@ function Inner({
         nodes.map((n) => n.id),
         slugifyLabel(internalNodeLabel(built.uses.app, built.uses.action)),
       );
-      const step: FlowStep = {
+      const step: FlowStep = prepareStep({
         id,
         uses: built.uses,
         ...(built.with && Object.keys(built.with).length > 0 ? { with: built.with } : {}),
-      };
+      });
       const newNode: StepNode = {
         id,
         type: isInternal ? "control" : "step",
@@ -985,7 +1213,7 @@ function Inner({
 
       // Auto-wire the edge back to the handle the drag started from. Dragging a
       // source handle points the edge at the new node; a target handle reverses it.
-      // Gated + replacing per the port rules (applyConnect) against the new node.
+      // Gated per the port rules (applyConnect) against the new node; it only adds.
       let nextEdges = edges;
       // A loop-breaking auto-wire is never silent (D-B2): the step is added
       // unconnected only together with the typed notice, anchored to the source node.
@@ -1014,6 +1242,7 @@ function Inner({
           edges,
           pendingConnect.lane,
           portsLookup,
+          pendingConnect.route,
         );
         if (!wired) noteLoopRefusal(source, target, pendingConnect.lane, pendingConnect.nodeId);
         nextEdges = wired ?? edges;
@@ -1025,8 +1254,8 @@ function Inner({
         // decides if and where it feeds in). A non-trigger step prefers
         // wiring an existing UNCONNECTED trigger forward (the likely intent
         // right after adding one) over extending the current tail.
-        const existingTrigger = nodes.find((n) => isTriggerApp(n.data.step.uses.app));
-        if (isTriggerApp(built.uses.app)) {
+        const existingTrigger = nodes.find((n) => isTriggerStep(n.data.step.uses));
+        if (isTriggerStep(built.uses)) {
           if (!existingTrigger) {
             const root = findChainRoot(nodes, edges);
             if (root) {
@@ -1059,12 +1288,41 @@ function Inner({
       emitChange(nextNodes, nextEdges);
       return id;
     },
-    [nodes, edges, setNodes, setEdges, emitChange, readOnly, pendingConnect, portsLookup],
+    [
+      nodes,
+      edges,
+      setNodes,
+      setEdges,
+      emitChange,
+      readOnly,
+      pendingConnect,
+      portsLookup,
+      prepareStep,
+    ],
   );
 
   // Apply an edit to a step, rewiring edges if its id changed.
   const updateStep = useCallback(
-    (prevId: string, next: FlowStep) => {
+    (prevId: string, draft: FlowStep) => {
+      let next = draft;
+      const previous = nodes.find((n) => n.id === prevId)?.data.step;
+      // The progressive add form still emits inline account IDs. Reuse its private
+      // binding on later field edits, and detach once if it was sharing a binding.
+      if (
+        draft.uses.connection &&
+        !draft.uses.connectionRef &&
+        previous?.uses.connectionRef &&
+        previous.uses.app === draft.uses.app
+      ) {
+        const selected = selectNodeConnection(
+          withConnectionRef(draft, previous.uses.connectionRef),
+          draft.uses.connection,
+          nodes.map((n) => n.data.step),
+          connectionsRef.current,
+        );
+        setConnections(selected.connections);
+        next = selected.step;
+      } else next = prepareStep(draft);
       const idChanged = next.id !== prevId;
       if (idChanged && nodes.some((n) => n.id === next.id)) return; // reject dup id
       const nextNodes = nodes.map((n) =>
@@ -1094,9 +1352,26 @@ function Inner({
         return;
       }
       setNodes(nextNodes);
-      emitChange(nextNodes, edges);
+      const routeIds = new Set(routesForStep(next).map((r) => r.id));
+      const nextEdges = edges.filter(
+        (e) =>
+          e.source !== next.id || e.data?.route === undefined || routeIds.has(String(e.data.route)),
+      );
+      if (nextEdges.length !== edges.length) setEdges(nextEdges);
+      emitChange(nextNodes, nextEdges);
     },
-    [nodes, edges, canvas, setNodes, setEdges, selectedId, editingId, emitChange],
+    [
+      nodes,
+      edges,
+      canvas,
+      setNodes,
+      setEdges,
+      selectedId,
+      editingId,
+      emitChange,
+      prepareStep,
+      setConnections,
+    ],
   );
 
   // ── Notes & sections ────────────────────────────────────────────────────────
@@ -1297,11 +1572,67 @@ function Inner({
   const runStep = useCallback(
     (id: string) => {
       const node = nodes.find((n) => n.id === id);
-      // Flow-control nodes can't run standalone; app + compute/trigger nodes can.
-      if (!node || isControlApp(node.data.step.uses.app)) return;
+      // Flow-control nodes can't run standalone; app + compute/trigger nodes can. A run that
+      // continues downstream is a real run, so it can start at a flow-control node too.
+      if (!node || (!onRunFromNode && isControlApp(node.data.step.uses.app))) return;
       setRunResult({ stepId: id, status: "collect" });
     },
-    [nodes],
+    [nodes, onRunFromNode],
+  );
+
+  // ▶ with a host that runs on from the node: the collect form's values become a real run that
+  // continues downstream and stops before every paused node. The host owns the request and the
+  // run it shows, so the modal closes once the run has started; a refusal stays in the modal.
+  const performRunFromNode = useCallback(
+    async (id: string, values: Record<string, unknown>, state?: StepStartState) => {
+      if (!onRunFromNode) return;
+      const node = nodes.find((n) => n.id === id);
+      if (!node) return;
+      const isTrigger = isTriggerStep(node.data.step.uses);
+      const req: RunFromNodeRequest = {
+        stopAt: pausedStopAt(
+          nodes.map((n) => n.data.step),
+          id,
+        ),
+        ...(state ? { state } : {}),
+        ...(isTrigger ? { input: values } : {}),
+      };
+      setRunResult({ stepId: id, status: "running" });
+      try {
+        await onRunFromNode(id, req);
+        setRunResult(null);
+      } catch (e) {
+        const err = e as { message?: string; code?: string };
+        setRunResult({
+          stepId: id,
+          status: "error",
+          error: err.message ?? String(e),
+          errorCode: err.code,
+        });
+      }
+    },
+    [nodes, onRunFromNode],
+  );
+
+  // Pause / disable: flip one flag on one step, keeping the node's run/problem stamps.
+  const patchStep = useCallback(
+    (id: string, fn: (step: FlowStep) => FlowStep) => {
+      if (readOnly) return;
+      const nextNodes = nodes.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, step: fn(n.data.step) } } : n,
+      );
+      setNodes(nextNodes);
+      emitChange(nextNodes, edges);
+    },
+    [nodes, edges, setNodes, emitChange, readOnly],
+  );
+  const togglePause = useCallback(
+    (id: string) => patchStep(id, (s) => withPaused(s, !isPausedStep(s))),
+    [patchStep],
+  );
+  const toggleDisable = useCallback(
+    (id: string) => patchStep(id, (s) => withDisabled(s, !isDisabledStep(s))),
+    [patchStep],
   );
 
   // Invoke one step through the invoke API with the properties collected in the
@@ -1321,7 +1652,7 @@ function Inner({
       const node = nodes.find((n) => n.id === id);
       if (!node) return;
       const step = node.data.step;
-      const isTrigger = isTriggerApp(step.uses.app);
+      const isTrigger = isTriggerStep(step.uses);
       // A trigger's filled fields ARE the run's starting state: the handler
       // returns `params.input` verbatim, so anything else comes back `{}`. Every
       // other step is ALREADY CONFIGURED — `values` is the incoming state the
@@ -1339,12 +1670,14 @@ function Inner({
       setRunResult({ stepId: id, status: "running" });
       try {
         const result = await api.invokeAction(step.uses.app, step.uses.action, payload, {
-          ...(step.uses.connection ? { connectionId: step.uses.connection } : {}),
+          connectionId: connectionIdFor(step, connectionsRef.current),
           // Scope document expressions to the workflow's selected project (T2.1.2).
           project,
           // Omitted when nothing upstream has a saved output, so a run with no
           // seed sends exactly the request it sent before.
           ...(state ? { state } : {}),
+          // So `{{ nodes.<id>.config.* }}` resolves as on a run.
+          workflowId: value.id,
         });
         // Script nodes may return captured console output alongside the value.
         const logs = (result as { logs?: string[] }).logs;
@@ -1378,7 +1711,7 @@ function Inner({
         persistStepRun(id, fixture, { status: "failed", error: err.message ?? String(e) });
       }
     },
-    [nodes, api, persistStepRun, project, onTestRun],
+    [nodes, api, persistStepRun, project, onTestRun, value.id],
   );
 
   const controls = useMemo<StepControls>(
@@ -1394,10 +1727,22 @@ function Inner({
       onRun: runStep,
       onDuplicate: duplicateStep,
       onDelete: deleteStep,
+      onTogglePause: togglePause,
+      onToggleDisable: toggleDisable,
+      runsFromNode: !!onRunFromNode,
       onAddFromPort: addFromPort,
       readOnly,
     }),
-    [runStep, duplicateStep, deleteStep, addFromPort, readOnly],
+    [
+      runStep,
+      duplicateStep,
+      deleteStep,
+      togglePause,
+      toggleDisable,
+      onRunFromNode,
+      addFromPort,
+      readOnly,
+    ],
   );
 
   // Opens the step editor on a canvas node double-click — deliberately NOT
@@ -1453,6 +1798,14 @@ function Inner({
     return m;
   }, [nodes, edges]);
 
+  // Loop colours: keyed on loop membership only, so a drag keeps the same context value.
+  const loopKey = loopPaintKey(nodes);
+  const paint = useMemo(() => loopPaint(loopKey), [loopKey]);
+  const paintedEdges = useMemo(
+    () => paintLoopEdges(edges, paint.tones, paint.loopOf),
+    [edges, paint],
+  );
+
   const nodeTypes = useMemo(
     () => ({
       step: StepNodeCard,
@@ -1470,12 +1823,60 @@ function Inner({
   // `steps.<id>.output.<field>` without running anything first.
   const [stepTestOutputs, setStepTestOutputs] = useState<Record<string, unknown>>({});
   const [stepTestMetas, setStepTestMetas] = useState<Record<string, StepMeta>>({});
+  // A For each's own saved Test (its item sample), by step id — read only as the loop's
+  // item-shape fallback (`loopSourceFor`), never as that step's output.
+  const [stepLoopSamples, setStepLoopSamples] = useState<Record<string, unknown[]>>({});
+  // When each of those saved tests last ran — a persisted node sample strictly newer than it wins.
+  const [stepTestRunAt, setStepTestRunAt] = useState<Record<string, string | null | undefined>>({});
+  // The workflow's PERSISTED node samples (`node-samples.ts`): each node's last output shape from
+  // any Test / node run / run, written server-side. Loaded per workflow (and again whenever a step
+  // editor or the builder opens, alongside the saved tests below), so upstream keys survive a
+  // reload, a reopen or another browser. A host without `loadNodeSamples` keeps `[]` — as before.
+  // While the add-step builder is open, the step being drafted (declared here, before its first read).
+  const [draftStepId, setDraftStepId] = useState<string | null>(null);
+  const [nodeSamples, setNodeSamples] = useState<NodeSample[]>([]);
+  const nodeSampleOpenKey = editingId ?? draftStepId ?? "";
+  useEffect(() => {
+    // Read the key so the effect re-runs when a step editor / the builder opens.
+    void nodeSampleOpenKey;
+    const load = api.loadNodeSamples;
+    if (typeof load !== "function" || !value.id) {
+      setNodeSamples([]);
+      return;
+    }
+    let canceled = false;
+    // Best-effort: a failed load keeps whatever was loaded before and never breaks the editor.
+    load(value.id).then(
+      (rows) => {
+        if (!canceled) setNodeSamples(Array.isArray(rows) ? rows : []);
+      },
+      () => {},
+    );
+    return () => {
+      canceled = true;
+    };
+  }, [api, value.id, nodeSampleOpenKey]);
+  const persistedSamples = useMemo(() => indexNodeSamples(nodeSamples), [nodeSamples]);
+  // Fresh (saved-test) and persisted outputs stay SEPARATE tiers, for SHAPES (skeletons included):
+  // a persisted sample is offered only where it wins (no saved test, or strictly newer).
+  const shapeTiers = useMemo(
+    () => splitNodeOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+    [stepTestOutputs, persistedSamples, stepTestRunAt],
+  );
+  // …and for the Result PREVIEWS (real values only, never a skeleton).
+  const previewTiers = useMemo(
+    () => splitPreviewOutputs(stepTestOutputs, persistedSamples, stepTestRunAt),
+    [stepTestOutputs, persistedSamples, stepTestRunAt],
+  );
   const stepShapes = useMemo<StepShapeContext>(
     () => ({
       actionDef: (app, action) => actionDefs[app]?.find((a) => a.key === action),
-      testOutputs: stepTestOutputs,
+      triggerDef: (app, trigger) => triggerDefs[app]?.find((t) => t.key === trigger),
+      testOutputs: shapeTiers.fresh,
+      persistedOutputs: shapeTiers.persisted,
+      loopSamples: stepLoopSamples,
     }),
-    [actionDefs, stepTestOutputs],
+    [actionDefs, triggerDefs, shapeTiers, stepLoopSamples],
   );
   // The ▶ Run modal's projection, kept WHOLE: ONE call yields both the seed chips' ancestors
   // (`.steps`) and the `loop` the Current item / Index seed comes from (never a second membership
@@ -1489,7 +1890,6 @@ function Inner({
   // While the add-step builder is open `editingId` is null, which makes
   // `upstreamStateSources` offer EVERY node — including the step being drafted
   // (progressively committed as a node). Exclude it from its own rail sources.
-  const [draftStepId, setDraftStepId] = useState<string | null>(null);
   const upstreamState = useMemo(() => {
     const st = upstreamStateSources(editingId, nodes, edges, stepShapes, draftStepId);
     return { ...st, steps: excludeSelfStep(st.steps, editingId ?? draftStepId) };
@@ -1513,9 +1913,11 @@ function Inner({
   // is sent to the engine.
   useEffect(() => {
     const ids = JSON.parse(upstreamIdsKey) as string[];
-    if (!editingId || ids.length === 0) {
+    if ((!editingId && !draftStepId) || ids.length === 0) {
       setStepTestOutputs({});
       setStepTestMetas({});
+      setStepLoopSamples({});
+      setStepTestRunAt({});
       return;
     }
     let canceled = false;
@@ -1528,7 +1930,15 @@ function Inner({
           // `listStepTests` is oldest-first, so the LAST entry is the most recent
           // fixture — the "latest" convention this file already uses twice.
           const latest = tests.length ? tests[tests.length - 1] : null;
-          return latest ? { id, output: latest.lastRunOutput, meta: latest.lastRunMeta } : null;
+          return latest
+            ? {
+                id,
+                output: latest.lastRunOutput,
+                runAt: latest.lastRunAt,
+                meta: latest.lastRunMeta,
+                loopSample: foreachTestSample(latest),
+              }
+            : null;
         } catch {
           return null;
         }
@@ -1542,25 +1952,53 @@ function Inner({
       if (canceled) return;
       const next: Record<string, unknown> = {};
       const nextMetas: Record<string, StepMeta> = {};
+      const nextLoopSamples: Record<string, unknown[]> = {};
+      const nextRunAt: Record<string, string | null | undefined> = {};
       for (const r of res) {
         if (r?.meta) nextMetas[r.id] = r.meta;
+        if (r?.loopSample) nextLoopSamples[r.id] = r.loopSample;
         if (!r || r.output === undefined || r.output === null) continue;
         next[r.id] = r.output;
+        nextRunAt[r.id] = r.runAt;
       }
       setStepTestOutputs(next);
+      setStepTestRunAt(nextRunAt);
       setStepTestMetas(nextMetas);
+      setStepLoopSamples(nextLoopSamples);
     });
     return () => {
       canceled = true;
     };
-  }, [api, value.id, editingId, upstreamIdsKey]);
+  }, [api, value.id, editingId, draftStepId, upstreamIdsKey]);
   // The last test output, flattened onto the very refs the picker inserts: the
   // whole output, and each offered field path (nested ones included). Values
   // pass through unstringified — the modal's `effectiveSamples` stringifies.
+  const declared = useMemo(() => declaredSamples(nodes, stepShapes), [nodes, stepShapes]);
+  const sampleTiers = useMemo(
+    () => ({ persisted: previewTiers.persisted, samples: declared.samples, event: declared.event }),
+    [previewTiers.persisted, declared],
+  );
   const stepSampleValues = useMemo(
     () =>
-      upstreamSampleValues(upstreamState.steps, stepTestOutputs, stepTestMetas, upstreamState.loop),
-    [upstreamState.steps, upstreamState.loop, stepTestOutputs, stepTestMetas],
+      upstreamSampleValues(
+        upstreamState.steps,
+        previewTiers.fresh,
+        stepTestMetas,
+        upstreamState.loop,
+        sampleTiers,
+      ),
+    [upstreamState.steps, upstreamState.loop, previewTiers.fresh, stepTestMetas, sampleTiers],
+  );
+  const stepValueSources = useMemo(
+    () =>
+      upstreamSampleValueSources(
+        upstreamState.steps,
+        previewTiers.fresh,
+        stepTestMetas,
+        upstreamState.loop,
+        sampleTiers,
+      ),
+    [upstreamState.steps, upstreamState.loop, previewTiers.fresh, stepTestMetas, sampleTiers],
   );
 
   // …merged with the host-supplied vars/secrets/sealSecret so the expression
@@ -1577,167 +2015,284 @@ function Inner({
   // anything the prop adds, and `steps.*` computed here), and layering alone
   // would let the object built below shadow the inherited one wholesale.
   const inheritedExprOptions = useExpressionOptions();
+  // Every node's `nodes.<id>.config` keys — offered whether or not the node is upstream.
+  const nodeConfigs = useMemo(() => nodeConfigSources(nodes), [nodes]);
+  // …and their values, so the Test tab previews a config ref instead of calling it unresolved.
+  const nodeConfig = useMemo(
+    () => nodeConfigValues(nodes, triggerRegistration.subs),
+    [nodes, triggerRegistration.subs],
+  );
+  // …and every node's static metadata (`nodes.<id>.meta.app|version|action|connectionId`, a
+  // webhook's subscription), readable without a run. `version` is the one the canvas labels.
+  const nodeMeta = useMemo(
+    () => nodeMetaValues(nodes, triggerRegistration.subs, appsById, connections),
+    [nodes, triggerRegistration.subs, appsById, connections],
+  );
   const mergedExprOptions = useMemo<ExpressionOptions>(
     () => ({
       ...(exprOptions ?? {}),
       steps: upstreamState.steps,
       hasTrigger: upstreamState.hasTrigger,
+      eventOutputs: upstreamState.eventOutputs,
+      eventOutputsFrom: upstreamState.eventOutputsFrom,
       loop: upstreamState.loop,
+      nodeConfigs: nodeConfigs,
+      nodeConfig,
+      nodeMeta,
+      valueSources: stepValueSources,
       sampleValues: {
         ...(inheritedExprOptions.sampleValues ?? {}),
         ...(exprOptions?.sampleValues ?? {}),
+        // Static meta under a test's reported meta, which wins.
+        ...nodeMetaSampleValues(nodeMeta),
         ...stepSampleValues,
       },
     }),
-    [exprOptions, inheritedExprOptions.sampleValues, upstreamState, stepSampleValues],
+    [
+      exprOptions,
+      inheritedExprOptions.sampleValues,
+      upstreamState,
+      stepSampleValues,
+      stepValueSources,
+      nodeConfigs,
+      nodeConfig,
+      nodeMeta,
+    ],
   );
 
-  return (
+  const restoreEdit = (direction: "undo" | "redo") => {
+    if (readOnly) return;
+    const snapshot = editHistory[direction]();
+    if (!snapshot) return;
+    const graph = restoreFlowEdit(value, snapshot);
+    setNodes(graph.nodes.map((n) => ({ ...n, selected: n.id === selectedId })));
+    setEdges(graph.edges.map((e) => ({ ...e, selected: e.id === selectedEdgeId })));
+    setCanvas(snapshot.canvas);
+    setConnections(snapshot.connections);
+    if (!graph.nodes.some((n) => n.id === selectedId)) setSelectedId(null);
+    if (!graph.edges.some((e) => e.id === selectedEdgeId)) setSelectedEdgeId(null);
+    const keepEditor = graph.nodes.some((n) => n.id === editingId);
+    if (!keepEditor) setEditingId(null);
+    setBuilderOpen(false);
+    setDraftStepId(null);
+    setPendingConnect(null);
+    setPendingDelete(null);
+    setPendingCanvasDelete(null);
+    setLoopNotice(null);
+    setLaneError(null);
+    textEditGroup.current = undefined;
+    // Repaint from CURRENT run/problem data, and refresh authored fields in an open modal.
+    // Test results, cached samples and in-flight tests are deliberately left alone.
+    setRestoreVersion((v) => v + 1);
+    onChange(
+      withCanvas(
+        flowToWorkflow({ ...value, connections: snapshot.connections }, graph.nodes, graph.edges),
+        snapshot.canvas,
+      ),
+    );
+    if (!keepEditor && !runResult) flowContainerRef.current?.focus({ preventScroll: true });
+  };
+  const restoreEditRef = useRef(restoreEdit);
+  restoreEditRef.current = restoreEdit;
+  useEffect(() => {
+    const editor = flowContainerRef.current;
+    if (!editor) return;
+    let active = editor.contains(document.activeElement);
+    const trackActive = (event: Event) => {
+      // Removing a focused flyout button returns focus to body. Keep its editor active
+      // until the author actually focuses or clicks somewhere else.
+      if (event.type === "focusin" && event.target === document.body) return;
+      active = editor.contains(event.target as Node);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (readOnly || event.defaultPrevented || isFlowTextTarget(event.target)) return;
+      if (!editor.contains(event.target as Node) && !(active && event.target === document.body))
+        return;
+      const key = event.key.toLowerCase();
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      if (key !== "z" && !(key === "y" && !event.shiftKey)) return;
+      event.preventDefault();
+      restoreEditRef.current(key === "y" || event.shiftKey ? "redo" : "undo");
+    };
+    document.addEventListener("pointerdown", trackActive);
+    document.addEventListener("focusin", trackActive);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", trackActive);
+      document.removeEventListener("focusin", trackActive);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [readOnly]);
+
+  const editor = (
     <StepControlsCtx.Provider value={controls}>
       <PortsLookupCtx.Provider value={portsLookup}>
         <FanOutCountsCtx.Provider value={fanOutCounts}>
-          <AppsCtx.Provider value={appsById}>
-            <WorkflowProjectProvider project={project}>
-              <ExpressionOptionsProvider value={mergedExprOptions}>
-                <div
-                  ref={flowContainerRef}
-                  className="w6w-flow"
-                  style={{ width: "100%", height, position: "relative" }}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Backspace" && e.key !== "Delete") return;
-                    // Only delete the selected node/edge when the key is aimed at the
-                    // canvas — never while a modal is open or the user is editing a field.
-                    // The modal <dialog> is a DOM descendant here, so its keystrokes
-                    // bubble up; without this guard, backspacing a typo deletes a node.
-                    if (editingId || builderOpen || (!selectedId && !selectedEdgeId)) return;
-                    const t = e.target as HTMLElement;
-                    if (
-                      t.isContentEditable ||
-                      t.tagName === "INPUT" ||
-                      t.tagName === "TEXTAREA" ||
-                      t.tagName === "SELECT" ||
-                      t.closest("dialog, .w6w-modal") !== null
-                    ) {
-                      return;
-                    }
-                    e.preventDefault();
-                    // A selected node takes precedence (its confirm); else drop the edge.
-                    if (selectedId) deleteStep(selectedId);
-                    else if (selectedEdgeId) deleteEdge(selectedEdgeId);
-                  }}
-                >
-                  <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    // Straight segments with right-angle corners, not the library's
-                    // default bezier curve — reads clearer on a wide, branchy graph
-                    // than a sweeping curve does. One place: no edge object sets its
-                    // own `type`, so this alone governs every edge on the canvas.
-                    // `connectionLineType` matches it for the in-progress drag line,
-                    // so the preview doesn't curve while the settled edge won't.
-                    defaultEdgeOptions={{ type: "smoothstep" }}
-                    connectionLineType={ConnectionLineType.SmoothStep}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onConnectStart={(_e, p) => {
-                      connectStartRef.current = p;
+          <LoopPaintCtx.Provider value={paint}>
+            <CardDataProvider apps={appsById} registration={triggerRegistration}>
+              <WorkflowProjectProvider project={project} workflowId={value.id}>
+                <ExpressionOptionsProvider value={mergedExprOptions}>
+                  <section
+                    ref={flowContainerRef}
+                    className="w6w-flow"
+                    tabIndex={-1}
+                    aria-label="Workflow editor"
+                    style={{ width: "100%", height, position: "relative" }}
+                    onFocusCapture={(e) => {
+                      textEditGroup.current = isFlowTextTarget(e.target) ? {} : undefined;
                     }}
-                    onConnectEnd={onConnectEnd}
-                    onPaneClick={() => setLoopNotice(null)}
-                    isValidConnection={isValidConnection}
-                    // A finished drag is what makes a new coordinate stick: until this
-                    // existed, dragging went only through `onNodesChange` and never
-                    // marked the workflow changed, so the position was lost on reload.
-                    // `flowToWorkflow` (inside `emitChange`) does the conversion and the
-                    // rounding — nothing is converted here.
-                    //
-                    // Drag STOP, never `onNodeDrag`: the per-frame variant fires on every
-                    // animation frame of the gesture, and the host's auto-save is a
-                    // trailing debounce over emitted changes, so a per-frame emit is a
-                    // write storm by construction.
-                    //
-                    // No `readOnly` term is needed: `nodesDraggable={!readOnly}` below
-                    // means React Flow never starts the drag, so this cannot fire at all
-                    // in a read-only editor. Measured, not assumed — the probe's readOnly
-                    // fixture asserts the node does not move (F4-V1).
-                    onNodeDragStop={(_e, _n, dragged) => {
-                      const nextCanvas = membershipAfterDrag(dragged as StepNode[]);
-                      const membershipChanged = nextCanvas !== canvas;
-                      if (membershipChanged) setCanvas(nextCanvas);
-                      if (!savePosition && !membershipChanged) return;
-                      emitChange(nodes, edges, nextCanvas);
+                    onBlurCapture={() => {
+                      textEditGroup.current = undefined;
                     }}
-                    onMoveEnd={(event, viewport) => {
-                      // FIRST statement, and load-bearing. React Flow passes
-                      // `event === null` when the move was NOT user-initiated
-                      // (@xyflow/react 12.11.1, `types/component-props.d.ts` on
-                      // `onMoveEnd`: "If the movement is not user-initiated, the event
-                      // parameter will be `null`."). The `fitView` on open is exactly
-                      // such a move — without this guard every open would emit a change,
-                      // and with the host's auto-save every page load would be a write.
-                      if (!event) return;
-                      // `readOnly` is checked here and NOT delegated, because — unlike a
-                      // drag — panning and zooming stay enabled in a read-only editor (see
-                      // the prop's docstring), so this handler really does fire and a
-                      // viewer must not write to what they are only looking at.
-                      if (readOnly) return;
-                      // `savePosition` is deliberately NOT re-checked here: `withViewport`
-                      // is the single place that reads the flag for this path and returns
-                      // its argument unchanged when it is off, so a duplicate term would be
-                      // unobservable — measured as a surviving mutant (T3.3.2-mutants.sh
-                      // C5) and removed rather than shipped as an unpinnable branch.
-                      //
-                      // Emit ONLY when `withViewport` hands back a different reference:
-                      // it returns `value`'s base unchanged when the rounded viewport
-                      // already equals the stored one, so a pan that lands back where it
-                      // started emits nothing. Rate is bounded by the gesture, not the
-                      // frame — `onMoveEnd` is d3-zoom's terminal event, and
-                      // `@xyflow/system` additionally coalesces scroll-driven pans behind
-                      // a 150ms trailing timer of its own (no timer belongs here).
-                      const base = flowToWorkflow(value, nodes, edges);
-                      const next = withViewport(base, viewport);
-                      if (next !== base) onChange(next);
-                    }}
-                    onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
-                      // ⚠️ Only primitives are stored from this handler: React Flow re-invokes
-                      // it (inline) after every re-render of this component, so storing a
-                      // fresh array here defeats React's `Object.is` bail-out and loops —
-                      // a silent CPU burn in a page, a frozen main thread under Storybook.
-                      setSelectedId(sel[0]?.id ?? null);
-                      setSelectedEdgeId(edgeSel[0]?.id ?? null);
-                      if (loopNoticeSelRef.current !== (sel[0]?.id ?? null)) {
-                        loopNoticeSelRef.current = sel[0]?.id ?? null;
-                        setLoopNotice(null);
+                    onKeyDown={(e) => {
+                      if (e.defaultPrevented) return;
+                      if (e.key !== "Backspace" && e.key !== "Delete") return;
+                      // Only delete the selected node/edge when the key is aimed at the
+                      // canvas — never while a modal is open or the user is editing a field.
+                      // The modal <dialog> is a DOM descendant here, so its keystrokes
+                      // bubble up; without this guard, backspacing a typo deletes a node.
+                      if (editingId || builderOpen || (!selectedId && !selectedEdgeId)) return;
+                      const t = e.target as HTMLElement;
+                      if (
+                        t.isContentEditable ||
+                        t.tagName === "INPUT" ||
+                        t.tagName === "TEXTAREA" ||
+                        t.tagName === "SELECT" ||
+                        t.closest("dialog, .w6w-modal") !== null
+                      ) {
+                        return;
                       }
-                      // Deliberately NOT clearing `laneError` here — see its declaration.
+                      e.preventDefault();
+                      // A selected node takes precedence (its confirm); else drop the edge.
+                      if (selectedId) deleteStep(selectedId);
+                      else if (selectedEdgeId) deleteEdge(selectedEdgeId);
                     }}
-                    nodeTypes={nodeTypes}
-                    nodesDraggable={!readOnly}
-                    nodesConnectable={!readOnly}
-                    // A click on a port adds a step from it (PortHandle) — not the library's
-                    // click-a-port-then-click-another connect mode, which shows nothing
-                    // after the first click and reads as a dead port.
-                    connectOnClick={false}
-                    elementsSelectable
-                    // Reopen at the camera the author left, when the workflow stores one;
-                    // otherwise fit the graph exactly as before. The two props are spread
-                    // in so only ONE of them is ever passed: they are mutually exclusive
-                    // by the library's own rule — "If a default viewport is provided but
-                    // `fitView` is enabled, the default viewport will be ignored"
-                    // (`types/component-props.d.ts` on `defaultViewport`) — and a stray
-                    // `fitView` would silently discard the restored view.
-                    {...(savedViewport ? { defaultViewport: savedViewport } : { fitView: true })}
-                    // Deletion is owned solely by the guarded onKeyDown handler above
-                    // (canvas-only, with a confirm). Disable React Flow's built-in
-                    // Backspace/Delete so it can't silently remove a node — e.g. while a
-                    // modal is open or the user is editing a field.
-                    deleteKeyCode={null}
-                    colorMode={colorMode}
-                    proOptions={{ hideAttribution: true }}
                   >
-                    <Background gap={16} />
-                    {/* `showInteractive={false}` still suppresses the lock button; the
+                    <ReactFlow
+                      nodes={nodes}
+                      edges={paintedEdges}
+                      // Straight segments with right-angle corners, not the library's
+                      // default bezier curve — reads clearer on a wide, branchy graph
+                      // than a sweeping curve does. One place: no edge object sets its
+                      // own `type`, so this alone governs every edge on the canvas.
+                      // `connectionLineType` matches it for the in-progress drag line,
+                      // so the preview doesn't curve while the settled edge won't.
+                      defaultEdgeOptions={{ type: "smoothstep" }}
+                      connectionLineType={ConnectionLineType.SmoothStep}
+                      onNodesChange={onNodesChange}
+                      onEdgesChange={onEdgesChange}
+                      onConnect={onConnect}
+                      onConnectStart={(_e, p) => {
+                        connectStartRef.current = p;
+                      }}
+                      onConnectEnd={onConnectEnd}
+                      onPaneClick={() => setLoopNotice(null)}
+                      isValidConnection={isValidConnection}
+                      // A finished drag is what makes a new coordinate stick: until this
+                      // existed, dragging went only through `onNodesChange` and never
+                      // marked the workflow changed, so the position was lost on reload.
+                      // `flowToWorkflow` (inside `emitChange`) does the conversion and the
+                      // rounding — nothing is converted here.
+                      //
+                      // Drag STOP, never `onNodeDrag`: the per-frame variant fires on every
+                      // animation frame of the gesture, and the host's auto-save is a
+                      // trailing debounce over emitted changes, so a per-frame emit is a
+                      // write storm by construction.
+                      //
+                      // No `readOnly` term is needed: `nodesDraggable={!readOnly}` below
+                      // means React Flow never starts the drag, so this cannot fire at all
+                      // in a read-only editor. Measured, not assumed — the probe's readOnly
+                      // fixture asserts the node does not move (F4-V1).
+                      onNodeDragStop={(_e, _n, dragged) => {
+                        const nextCanvas = membershipAfterDrag(dragged as StepNode[]);
+                        const membershipChanged = nextCanvas !== canvas;
+                        if (membershipChanged) setCanvas(nextCanvas);
+                        if (!savePosition && !membershipChanged) {
+                          editHistory.record(
+                            captureFlowEdit(
+                              value,
+                              nodes,
+                              edges,
+                              connectionsRef.current,
+                              nextCanvas,
+                            ),
+                          );
+                          return;
+                        }
+                        emitChange(nodes, edges, nextCanvas);
+                      }}
+                      onMoveEnd={(event, viewport) => {
+                        // FIRST statement, and load-bearing. React Flow passes
+                        // `event === null` when the move was NOT user-initiated
+                        // (@xyflow/react 12.11.1, `types/component-props.d.ts` on
+                        // `onMoveEnd`: "If the movement is not user-initiated, the event
+                        // parameter will be `null`."). The `fitView` on open is exactly
+                        // such a move — without this guard every open would emit a change,
+                        // and with the host's auto-save every page load would be a write.
+                        if (!event) return;
+                        // `readOnly` is checked here and NOT delegated, because — unlike a
+                        // drag — panning and zooming stay enabled in a read-only editor (see
+                        // the prop's docstring), so this handler really does fire and a
+                        // viewer must not write to what they are only looking at.
+                        if (readOnly) return;
+                        // `savePosition` is deliberately NOT re-checked here: `withViewport`
+                        // is the single place that reads the flag for this path and returns
+                        // its argument unchanged when it is off, so a duplicate term would be
+                        // unobservable — measured as a surviving mutant (T3.3.2-mutants.sh
+                        // C5) and removed rather than shipped as an unpinnable branch.
+                        //
+                        // Emit ONLY when `withViewport` hands back a different reference:
+                        // it returns `value`'s base unchanged when the rounded viewport
+                        // already equals the stored one, so a pan that lands back where it
+                        // started emits nothing. Rate is bounded by the gesture, not the
+                        // frame — `onMoveEnd` is d3-zoom's terminal event, and
+                        // `@xyflow/system` additionally coalesces scroll-driven pans behind
+                        // a 150ms trailing timer of its own (no timer belongs here).
+                        const base = flowToWorkflow(value, nodes, edges);
+                        const next = withViewport(base, viewport);
+                        // `viewportOnly`: a camera move must not cost the host its run
+                        // paint (adhoc/run-paint) — only the definition changing does.
+                        if (next !== base) onChange(next, { viewportOnly: true });
+                      }}
+                      onSelectionChange={({ nodes: sel, edges: edgeSel }) => {
+                        // ⚠️ Only primitives are stored from this handler: React Flow re-invokes
+                        // it (inline) after every re-render of this component, so storing a
+                        // fresh array here defeats React's `Object.is` bail-out and loops —
+                        // a silent CPU burn in a page, a frozen main thread under Storybook.
+                        setSelectedId(sel[0]?.id ?? null);
+                        setSelectedEdgeId(edgeSel[0]?.id ?? null);
+                        if (loopNoticeSelRef.current !== (sel[0]?.id ?? null)) {
+                          loopNoticeSelRef.current = sel[0]?.id ?? null;
+                          setLoopNotice(null);
+                        }
+                        // Deliberately NOT clearing `laneError` here — see its declaration.
+                      }}
+                      nodeTypes={nodeTypes}
+                      nodesDraggable={!readOnly}
+                      nodesConnectable={!readOnly}
+                      // A click on a port adds a step from it (PortHandle) — not the library's
+                      // click-a-port-then-click-another connect mode, which shows nothing
+                      // after the first click and reads as a dead port.
+                      connectOnClick={false}
+                      elementsSelectable
+                      // Reopen at the camera the author left, when the workflow stores one;
+                      // otherwise fit the graph exactly as before. The two props are spread
+                      // in so only ONE of them is ever passed: they are mutually exclusive
+                      // by the library's own rule — "If a default viewport is provided but
+                      // `fitView` is enabled, the default viewport will be ignored"
+                      // (`types/component-props.d.ts` on `defaultViewport`) — and a stray
+                      // `fitView` would silently discard the restored view.
+                      {...(savedViewport ? { defaultViewport: savedViewport } : { fitView: true })}
+                      // Deletion is owned solely by the guarded onKeyDown handler above
+                      // (canvas-only, with a confirm). Disable React Flow's built-in
+                      // Backspace/Delete so it can't silently remove a node — e.g. while a
+                      // modal is open or the user is editing a field.
+                      deleteKeyCode={null}
+                      colorMode={colorMode}
+                      proOptions={{ hideAttribution: true }}
+                    >
+                      <Background gap={16} />
+                      {/* `showInteractive={false}` still suppresses the lock button; the
                     child is appended AFTER the three built-ins (zoom in / zoom out /
                     fit view), so auto-layout reads as the fourth control in the same
                     stack — "beside the zoom controls", not a floating panel. It
@@ -1746,103 +2301,103 @@ function Inner({
                     inherited custom properties on the `.w6w-flow` wrapper, so any
                     control button added later is themed for free (measured in both
                     stylesheet orders — T3.1.1's evaluation built this exact shape). */}
-                    <Controls showInteractive={false}>
-                      {!readOnly && (
-                        <ControlButton
-                          onClick={requestRelayout}
-                          title="Auto-layout — re-flow the graph into columns"
-                          aria-label="Auto-layout the graph"
-                        >
-                          {/* `icons.tsx`'s `layout` — the three-box hierarchy. It must NOT be a
+                      <Controls showInteractive={false}>
+                        {!readOnly && (
+                          <ControlButton
+                            onClick={requestRelayout}
+                            title="Auto-layout — re-flow the graph into columns"
+                            aria-label="Auto-layout the graph"
+                          >
+                            {/* `icons.tsx`'s `layout` — the three-box hierarchy. It must NOT be a
                           `fill="none" stroke=…` glyph: the library styles a control button's
                           svg as `svg { width: 100%; max-width: 12px; max-height: 12px;
                           fill: currentColor }` (`@xyflow/react/dist/style.css`), so a stroked
                           root would render as nothing at all in here — hence `layout`'s bare
                           root (see its entry). */}
-                          <Icon name="layout" />
-                        </ControlButton>
+                            <Icon name="layout" />
+                          </ControlButton>
+                        )}
+                      </Controls>
+                      <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
+                      {!readOnly && (
+                        <Panel position="top-left" className="w6w-flow-tools">
+                          <button
+                            type="button"
+                            className="w6w-btn"
+                            onClick={() => setBuilderOpen(true)}
+                          >
+                            + Node
+                          </button>
+                          <IconButton
+                            label="Add note"
+                            icon="sticky-note"
+                            className="w6w-flow-tool"
+                            data-testid="add-note"
+                            onClick={addNote}
+                          />
+                          <IconButton
+                            label="Draw section"
+                            title="Draw section — drag a frame on the canvas (Esc cancels)"
+                            icon="frame"
+                            className={`w6w-flow-tool${drawingSection ? " active" : ""}`}
+                            aria-pressed={drawingSection}
+                            data-testid="draw-section"
+                            onClick={() => {
+                              setDrawingSection(!drawingSection);
+                              setSectionDraft(null);
+                            }}
+                          />
+                        </Panel>
                       )}
-                    </Controls>
-                    <MiniMap pannable zoomable style={{ background: "var(--w6w-panel-2)" }} />
-                    {!readOnly && (
-                      <Panel position="top-left" className="w6w-flow-tools">
-                        <button
-                          type="button"
-                          className="w6w-btn"
-                          onClick={() => setBuilderOpen(true)}
-                        >
-                          + Node
-                        </button>
-                        <IconButton
-                          label="Add note"
-                          icon="sticky-note"
-                          className="w6w-flow-tool"
-                          data-testid="add-note"
-                          onClick={addNote}
-                        />
-                        <IconButton
-                          label="Draw section"
-                          title="Draw section — drag a frame on the canvas (Esc cancels)"
-                          icon="frame"
-                          className={`w6w-flow-tool${drawingSection ? " active" : ""}`}
-                          aria-pressed={drawingSection}
-                          data-testid="draw-section"
-                          onClick={() => {
-                            setDrawingSection(!drawingSection);
-                            setSectionDraft(null);
-                          }}
-                        />
-                      </Panel>
-                    )}
-                    {/* The draw-section surface: above the graph (z 4, after the renderer)
+                      {/* The draw-section surface: above the graph (z 4, after the renderer)
                     and below the panels (z 5), so the tool button stays clickable. */}
-                    {!readOnly && drawingSection && (
-                      <div
-                        className="w6w-section-draw nopan nodrag nowheel"
-                        data-testid="section-draw-surface"
-                        onPointerDown={(e) => {
-                          if (e.button !== 0) return;
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                          const { clientX: x, clientY: y } = e;
-                          setSectionDraft({ sx: x, sy: y, ex: x, ey: y });
-                        }}
-                        onPointerMove={(e) => {
-                          const { clientX: x, clientY: y } = e;
-                          setSectionDraft((d) => d && { ...d, ex: x, ey: y });
-                        }}
-                        onPointerUp={() => {
-                          const d = sectionDraft;
-                          setSectionDraft(null);
-                          setDrawingSection(false);
-                          if (!d) return;
-                          const a = screenToFlowPosition({ x: d.sx, y: d.sy });
-                          const dragged = Math.abs(d.ex - d.sx) > 6 || Math.abs(d.ey - d.sy) > 6;
-                          addSectionAt(
-                            a,
-                            dragged ? screenToFlowPosition({ x: d.ex, y: d.ey }) : null,
-                          );
-                        }}
-                      >
-                        {sectionDraft &&
-                          (() => {
-                            const box = flowContainerRef.current?.getBoundingClientRect();
-                            const ox = box?.left ?? 0;
-                            const oy = box?.top ?? 0;
-                            return (
-                              <div
-                                className="w6w-section-draw-rect"
-                                style={{
-                                  left: Math.min(sectionDraft.sx, sectionDraft.ex) - ox,
-                                  top: Math.min(sectionDraft.sy, sectionDraft.ey) - oy,
-                                  width: Math.abs(sectionDraft.ex - sectionDraft.sx),
-                                  height: Math.abs(sectionDraft.ey - sectionDraft.sy),
-                                }}
-                              />
+                      {!readOnly && drawingSection && (
+                        <div
+                          className="w6w-section-draw nopan nodrag nowheel"
+                          data-testid="section-draw-surface"
+                          onPointerDown={(e) => {
+                            if (e.button !== 0) return;
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            const { clientX: x, clientY: y } = e;
+                            setSectionDraft({ sx: x, sy: y, ex: x, ey: y });
+                          }}
+                          onPointerMove={(e) => {
+                            const { clientX: x, clientY: y } = e;
+                            setSectionDraft((d) => d && { ...d, ex: x, ey: y });
+                          }}
+                          onPointerUp={() => {
+                            const d = sectionDraft;
+                            setSectionDraft(null);
+                            setDrawingSection(false);
+                            if (!d) return;
+                            const a = screenToFlowPosition({ x: d.sx, y: d.sy });
+                            const dragged = Math.abs(d.ex - d.sx) > 6 || Math.abs(d.ey - d.sy) > 6;
+                            addSectionAt(
+                              a,
+                              dragged ? screenToFlowPosition({ x: d.ex, y: d.ey }) : null,
                             );
-                          })()}
-                      </div>
-                    )}
-                    {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
+                          }}
+                        >
+                          {sectionDraft &&
+                            (() => {
+                              const box = flowContainerRef.current?.getBoundingClientRect();
+                              const ox = box?.left ?? 0;
+                              const oy = box?.top ?? 0;
+                              return (
+                                <div
+                                  className="w6w-section-draw-rect"
+                                  style={{
+                                    left: Math.min(sectionDraft.sx, sectionDraft.ex) - ox,
+                                    top: Math.min(sectionDraft.sy, sectionDraft.ey) - oy,
+                                    width: Math.abs(sectionDraft.ex - sectionDraft.sx),
+                                    height: Math.abs(sectionDraft.ey - sectionDraft.sy),
+                                  }}
+                                />
+                              );
+                            })()}
+                        </div>
+                      )}
+                      {/* Which outcome the selected edge carries (core rfcs/workflow.md ·
                     `Edge.when`). Revealed only when exactly ONE edge is selected —
                     `selectedEdgeId` is already `edgeSel[0]`, so selecting a node or
                     nothing hides it. top-left is `+ Node`, Controls are bottom-left,
@@ -1851,235 +2406,275 @@ function Inner({
                     chosen by which handle it was dragged from — this panel keeps its
                     job as the RE-LANE affordance for an edge already drawn on the
                     wrong port, not the only way to author an error edge. */}
-                    {!readOnly && selectedEdge && edgeLane(selectedEdge) !== "each" && (
-                      <Panel position="top-right">
-                        <div className="w6w-edge-lane">
-                          <span className="w6w-muted w6w-small">Run on</span>
-                          {(["success", "error"] as const).map((lane) => (
-                            <button
-                              key={lane}
-                              type="button"
-                              className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
-                                edgeLane(selectedEdge) === lane ? " active" : ""
-                              }`}
-                              aria-pressed={edgeLane(selectedEdge) === lane}
-                              title={LANE_HINT}
-                              onClick={() => setEdgeLane(lane)}
-                            >
-                              {lane === "success" ? "Success" : "Error"}
-                            </button>
-                          ))}
-                          {laneError?.edgeId === selectedEdge.id && (
-                            <span className="w6w-edge-lane-err w6w-small" role="alert">
-                              {laneError.message}
-                            </span>
-                          )}
-                        </div>
-                      </Panel>
-                    )}
-                    {loopNotice && (
-                      <NodeToolbar nodeId={loopNotice.nodeId} position={Position.Bottom} isVisible>
-                        <div className="w6w-loop-notice w6w-small" role="alert">
-                          {loopRefusalMessage(loopNotice.reason)}
-                        </div>
-                      </NodeToolbar>
-                    )}
-                    <CanvasLayer
-                      canvas={canvas}
-                      readOnly={readOnly}
-                      savePosition={savePosition}
-                      onChange={onCanvasChange}
-                      onSectionDrop={onSectionDrop}
-                      onRequestDelete={(kind, id) =>
-                        !readOnly && setPendingCanvasDelete({ kind, id })
-                      }
-                    />
-                  </ReactFlow>
-                  {pendingCanvasDelete && (
-                    <ConfirmModal
-                      title={pendingCanvasDelete.kind === "note" ? "Delete note" : "Delete section"}
-                      message={
-                        pendingCanvasDelete.kind === "note"
-                          ? "Delete this note?"
-                          : "Delete this section? Its nodes are kept."
-                      }
-                      confirmLabel="Delete"
-                      onConfirm={() => {
-                        performCanvasDelete(pendingCanvasDelete.kind, pendingCanvasDelete.id);
-                        setPendingCanvasDelete(null);
-                      }}
-                      onClose={() => setPendingCanvasDelete(null)}
-                    />
-                  )}
-
-                  {builderOpen && (
-                    <StepBuilderModal
-                      onClose={() => {
-                        setBuilderOpen(false);
-                        setPendingConnect(null);
-                        setDraftStepId(null);
-                      }}
-                      onAdd={(built) => {
-                        const id = addBuiltStep(built);
-                        if (id) setDraftStepId(id);
-                        return id;
-                      }}
-                      // Progressive commit (T4.1.1): once `addBuiltStep` has minted
-                      // the step's id, every subsequent field change updates that
-                      // same node instead of waiting for a final "Add node" click.
-                      onDraftChange={(id, next) => updateStep(id, { id, ...next })}
-                      workflowId={value.id}
-                      // The new step's known upstream ancestors, from the handle a
-                      // connection drag was released from (T1.1.1) — so the builder's
-                      // own Test tab can seed `{{ steps.<id>.output.<field> }}` the
-                      // same way the step editor's Test tab already does.
-                      upstreamSteps={stepBuilderUpstreamSteps(pendingConnect, nodes, edges)}
-                      loop={stepBuilderLoop(pendingConnect, nodes, edges, stepShapes)}
-                    />
-                  )}
-
-                  {editingStep && editingId && (
-                    // No `key` on purpose: renaming a step updates `editingId`, and a keyed
-                    // remount would drop focus mid-keystroke. The modal seeds its own state
-                    // once and unmounts (editingId → null) between edits of different nodes.
-                    <StepEditModal
-                      workflowId={value.id}
-                      step={editingStep}
-                      // Graph ancestors of the editing step, from `upstreamStateSources`
-                      // (via `mergedExprOptions`) — the incoming-state picker seeds from
-                      // each ancestor's latest saved step-test rather than re-walking the graph.
-                      upstreamSteps={mergedExprOptions.steps ?? []}
-                      loop={mergedExprOptions.loop}
-                      foreachItemCount={
-                        isForeachStep(editingStep)
-                          ? resolveLoopItems(editingStep.with?.items, stepTestOutputs)?.length
-                          : undefined
-                      }
-                      readOnly={readOnly}
-                      fanOutCount={fanOutCounts.get(editingId) ?? 0}
-                      initialView={editView}
-                      stepProblems={editingNode?.data.stepProblems}
-                      onChange={(next) => updateStep(editingId, next)}
-                      onClose={() => setEditingId(null)}
-                      onTestRun={onTestRun}
-                    />
-                  )}
-
-                  {runResult && (
-                    <Modal
-                      title={`${collecting ? "Run node" : "Test run"}: ${runResult.stepId}`}
-                      onClose={() => setRunResult(null)}
-                    >
-                      {collecting && runningStep && (
-                        <StepRunCollect
-                          // Keyed on the step so switching nodes re-seeds the form.
-                          key={runResult.stepId}
-                          workflowId={value.id}
-                          step={runningStep}
-                          upstreamSteps={runSteps}
-                          loop={runUpstreamSteps?.loop}
-                          onCancel={() => setRunResult(null)}
-                          onRun={(values, state) => performRunStep(runResult.stepId, values, state)}
-                        />
+                      {!readOnly &&
+                        selectedEdge &&
+                        edgeLane(selectedEdge) !== "each" &&
+                        nodes.find((n) => n.id === selectedEdge.source)?.data.step.uses.app !==
+                          ROUTER_APP && (
+                          <Panel position="top-right">
+                            <div className="w6w-edge-lane">
+                              <span className="w6w-muted w6w-small">Run on</span>
+                              {(["success", "error"] as const).map((lane) => (
+                                <button
+                                  key={lane}
+                                  type="button"
+                                  className={`w6w-btn w6w-btn-sm w6w-btn-ghost${
+                                    edgeLane(selectedEdge) === lane ? " active" : ""
+                                  }`}
+                                  aria-pressed={edgeLane(selectedEdge) === lane}
+                                  title={LANE_HINT}
+                                  onClick={() => setEdgeLane(lane)}
+                                >
+                                  {lane === "success" ? "Success" : "Error"}
+                                </button>
+                              ))}
+                              {laneError?.edgeId === selectedEdge.id && (
+                                <span className="w6w-edge-lane-err w6w-small" role="alert">
+                                  {laneError.message}
+                                </span>
+                              )}
+                            </div>
+                          </Panel>
+                        )}
+                      {loopNotice && (
+                        <NodeToolbar
+                          nodeId={loopNotice.nodeId}
+                          position={Position.Bottom}
+                          isVisible
+                        >
+                          <div className="w6w-loop-notice w6w-small" role="alert">
+                            {loopRefusalMessage(loopNotice.reason)}
+                          </div>
+                        </NodeToolbar>
                       )}
-                      {/* The collect phase renders its own actions (Run + Cancel),
+                      <CanvasLayer
+                        canvas={canvas}
+                        readOnly={readOnly}
+                        savePosition={savePosition}
+                        onChange={onCanvasChange}
+                        onSectionDrop={onSectionDrop}
+                        onRequestDelete={(kind, id) =>
+                          !readOnly && setPendingCanvasDelete({ kind, id })
+                        }
+                      />
+                    </ReactFlow>
+                    {pendingCanvasDelete && (
+                      <ConfirmModal
+                        title={
+                          pendingCanvasDelete.kind === "note" ? "Delete note" : "Delete section"
+                        }
+                        message={
+                          pendingCanvasDelete.kind === "note"
+                            ? "Delete this note?"
+                            : "Delete this section? Its nodes are kept."
+                        }
+                        confirmLabel="Delete"
+                        onConfirm={() => {
+                          performCanvasDelete(pendingCanvasDelete.kind, pendingCanvasDelete.id);
+                          setPendingCanvasDelete(null);
+                        }}
+                        onClose={() => setPendingCanvasDelete(null)}
+                      />
+                    )}
+
+                    {builderOpen && (
+                      <StepBuilderModal
+                        onClose={() => {
+                          setBuilderOpen(false);
+                          setPendingConnect(null);
+                          setDraftStepId(null);
+                        }}
+                        onAdd={(built) => {
+                          const id = addBuiltStep(built);
+                          if (id) setDraftStepId(id);
+                          return id;
+                        }}
+                        // Progressive commit (T4.1.1): once `addBuiltStep` has minted
+                        // the step's id, every subsequent field change updates that
+                        // same node instead of waiting for a final "Add node" click.
+                        onDraftChange={(id, next) => updateStep(id, { id, ...next })}
+                        // A picked app trigger lands in the node's own step editor,
+                        // on its config, the way any node opens.
+                        onOpenStep={(id) => {
+                          setBuilderOpen(false);
+                          setPendingConnect(null);
+                          setDraftStepId(null);
+                          setEditView("props");
+                          setEditingId(id);
+                        }}
+                        workflowId={value.id}
+                        // The new step's known upstream ancestors, from the handle a
+                        // connection drag was released from (T1.1.1) — so the builder's
+                        // own Test tab can seed `{{ steps.<id>.output.<field> }}` the
+                        // same way the step editor's Test tab already does.
+                        upstreamSteps={stepBuilderUpstreamSteps(pendingConnect, nodes, edges)}
+                        loop={stepBuilderLoop(pendingConnect, nodes, edges, stepShapes)}
+                      />
+                    )}
+
+                    {editingStep && editingId && (
+                      // No `key` on purpose: renaming a step updates `editingId`, and a keyed
+                      // remount would drop focus mid-keystroke. The modal seeds its own state
+                      // once and unmounts (editingId → null) between edits of different nodes.
+                      <StepEditModal
+                        workflowId={value.id}
+                        step={editingStep}
+                        restoreVersion={restoreVersion}
+                        // Graph ancestors of the editing step, from `upstreamStateSources`
+                        // (via `mergedExprOptions`) — the incoming-state picker seeds from
+                        // each ancestor's latest saved step-test rather than re-walking the graph.
+                        upstreamSteps={mergedExprOptions.steps ?? []}
+                        loop={mergedExprOptions.loop}
+                        readOnly={readOnly}
+                        fanOutCount={fanOutCounts.get(editingId) ?? 0}
+                        initialView={editView}
+                        stepProblems={editingNode?.data.stepProblems}
+                        onChange={(next) => updateStep(editingId, next)}
+                        onClose={() => setEditingId(null)}
+                        onTestRun={onTestRun}
+                      />
+                    )}
+
+                    {runResult && (
+                      <Modal
+                        title={`${collecting ? "Run node" : "Test run"}: ${runResult.stepId}`}
+                        onClose={() => setRunResult(null)}
+                      >
+                        {collecting && runningStep && (
+                          <StepRunCollect
+                            // Keyed on the step so switching nodes re-seeds the form.
+                            key={runResult.stepId}
+                            workflowId={value.id}
+                            step={runningStep}
+                            upstreamSteps={runSteps}
+                            loop={runUpstreamSteps?.loop}
+                            continues={
+                              onRunFromNode
+                                ? {
+                                    stopAt: pausedStopAt(
+                                      nodes.map((n) => n.data.step),
+                                      runResult.stepId,
+                                    ),
+                                  }
+                                : undefined
+                            }
+                            onCancel={() => setRunResult(null)}
+                            onRun={(values, state) =>
+                              onRunFromNode
+                                ? performRunFromNode(runResult.stepId, values, state)
+                                : performRunStep(runResult.stepId, values, state)
+                            }
+                          />
+                        )}
+                        {/* The collect phase renders its own actions (Run + Cancel),
                       gated on the required fields being filled. The status/result/log
                       blocks scroll inside the body; Close stays pinned below it. */}
-                      {!collecting && (
-                        <>
-                          <div className="w6w-modal-body">
-                            {runResult.status === "running" && (
-                              <p className="w6w-muted w6w-small">Running…</p>
-                            )}
-                            {runResult.status === "error" && (
-                              <div className="w6w-result w6w-error">
-                                {runResult.errorCode && (
-                                  <div
-                                    className="w6w-small"
-                                    style={{ opacity: 0.75, marginBottom: 4 }}
-                                  >
-                                    <code>{runResult.errorCode}</code>
-                                  </div>
-                                )}
-                                {runResult.error || "The node failed with no error message."}
-                              </div>
-                            )}
-                            {runResult.status === "done" && (
-                              <div>
-                                <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
-                                  Result
-                                </div>
-                                <ResultViewer value={runResult.value} maxHeight={360} />
-                                {runResult.meta && (
-                                  <>
+                        {!collecting && (
+                          <>
+                            <div className="w6w-modal-body">
+                              {runResult.status === "running" && (
+                                <p className="w6w-muted w6w-small">Running…</p>
+                              )}
+                              {runResult.status === "error" && (
+                                <div className="w6w-result w6w-error">
+                                  {runResult.errorCode && (
                                     <div
-                                      className="w6w-muted w6w-small"
-                                      style={{ margin: "10px 0 6px" }}
+                                      className="w6w-small"
+                                      style={{ opacity: 0.75, marginBottom: 4 }}
                                     >
-                                      Metadata
+                                      <code>{runResult.errorCode}</code>
                                     </div>
-                                    <ResultViewer value={runResult.meta} maxHeight={360} />
-                                  </>
-                                )}
-                              </div>
-                            )}
-                            {runResult.logs && runResult.logs.length > 0 && (
-                              <div>
-                                <div
-                                  className="w6w-muted w6w-small"
-                                  style={{ margin: "10px 0 6px" }}
-                                >
-                                  Console output
+                                  )}
+                                  {runResult.error || "The node failed with no error message."}
                                 </div>
-                                <pre
-                                  className="w6w-result"
-                                  style={{
-                                    whiteSpace: "pre-wrap",
-                                    maxHeight: 200,
-                                    overflow: "auto",
-                                    margin: 0,
-                                  }}
-                                >
-                                  {runResult.logs.join("\n")}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                          <div className="w6w-modal-actions">
-                            <button
-                              type="button"
-                              className="w6w-btn"
-                              onClick={() => setRunResult(null)}
-                            >
-                              Close
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </Modal>
-                  )}
+                              )}
+                              {runResult.status === "done" && (
+                                <div>
+                                  <div className="w6w-muted w6w-small" style={{ marginBottom: 6 }}>
+                                    Result
+                                  </div>
+                                  <ResultViewer value={runResult.value} maxHeight={360} />
+                                  {runResult.meta && (
+                                    <>
+                                      <div
+                                        className="w6w-muted w6w-small"
+                                        style={{ margin: "10px 0 6px" }}
+                                      >
+                                        Metadata
+                                      </div>
+                                      <ResultViewer value={runResult.meta} maxHeight={360} />
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {runResult.logs && runResult.logs.length > 0 && (
+                                <div>
+                                  <div
+                                    className="w6w-muted w6w-small"
+                                    style={{ margin: "10px 0 6px" }}
+                                  >
+                                    Console output
+                                  </div>
+                                  <pre
+                                    className="w6w-result"
+                                    style={{
+                                      whiteSpace: "pre-wrap",
+                                      maxHeight: 200,
+                                      overflow: "auto",
+                                      margin: 0,
+                                    }}
+                                  >
+                                    {runResult.logs.join("\n")}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                            <div className="w6w-modal-actions">
+                              <button
+                                type="button"
+                                className="w6w-btn"
+                                onClick={() => setRunResult(null)}
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </Modal>
+                    )}
 
-                  {pendingDelete !== null && (
-                    <ConfirmModal
-                      title="Delete node"
-                      message={deleteStepMessage(pendingDelete, nodes, edges)}
-                      confirmLabel="Delete"
-                      onConfirm={() => {
-                        performDeleteStep(pendingDelete);
-                        setPendingDelete(null);
-                      }}
-                      onClose={() => setPendingDelete(null)}
-                    />
-                  )}
-                </div>
-              </ExpressionOptionsProvider>
-            </WorkflowProjectProvider>
-          </AppsCtx.Provider>
+                    {pendingDelete !== null && (
+                      <ConfirmModal
+                        title="Delete node"
+                        message={deleteStepMessage(pendingDelete, nodes, edges)}
+                        confirmLabel="Delete"
+                        onConfirm={() => {
+                          performDeleteStep(pendingDelete);
+                          setPendingDelete(null);
+                        }}
+                        onClose={() => setPendingDelete(null)}
+                      />
+                    )}
+                  </section>
+                </ExpressionOptionsProvider>
+              </WorkflowProjectProvider>
+            </CardDataProvider>
+          </LoopPaintCtx.Provider>
         </FanOutCountsCtx.Provider>
       </PortsLookupCtx.Provider>
     </StepControlsCtx.Provider>
   );
+  return (
+    <WorkflowConnectionsContext.Provider
+      value={{ nodes: nodes.map((n) => n.data.step), connections, setConnections, readOnly }}
+    >
+      {editor}
+    </WorkflowConnectionsContext.Provider>
+  );
 }
+
+/** `@w6w/script`'s params the host passes through as source text, never resolved (engine `LITERAL_PARAMS`). */
+const SCRIPT_LITERAL_KEYS = ["code"];
 
 /**
  * Parse the incoming-state box into the object it stands for. Anything that is
@@ -2094,6 +2689,79 @@ function parseStateOverride(text: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A For each Test's override box: the usual JSON object (its `items` key replaces the
+ * binding), or — what a pasted sample usually is — a bare array, taken as `items` itself.
+ */
+function parseForeachOverride(text: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(text);
+    if (Array.isArray(v)) return { items: v };
+  } catch {
+    return null;
+  }
+  return parseStateOverride(text);
+}
+
+type ForeachSave = "idle" | "saving" | "saved" | "failed";
+
+/**
+ * A For each's Test result: what its Items resolve to against the incoming state — the count
+ * and the first item. Nothing inside the loop runs; the footer's Test saves the sample
+ * (`foreachTestFixture`) so the body steps' picker offers the item's keys.
+ */
+function ForeachTestResult({ items, save }: { items: unknown[] | undefined; save: ForeachSave }) {
+  if (!items) {
+    return (
+      <output className="w6w-small" style={{ display: "block" }}>
+        <strong>Items</strong> doesn't resolve to a list yet: no step before this one has a saved
+        test that produces it. Test an earlier step, or paste a sample list under{" "}
+        <strong>Override the incoming state</strong> below.
+      </output>
+    );
+  }
+  const first = items[0];
+  const keys = first !== undefined ? (inferOutputFields(first) ?? []).map((o) => o.key) : [];
+  return (
+    <div className="w6w-testout">
+      <div className="w6w-testout-label">
+        {items.length} {items.length === 1 ? "item" : "items"}
+      </div>
+      {items.length === 0 ? (
+        <p className="w6w-muted w6w-small">The list is empty, so there is no item to sample.</p>
+      ) : (
+        <>
+          <div className="w6w-testout-label">First item</div>
+          <ResultViewer value={first} maxHeight={220} />
+        </>
+      )}
+      {save === "saved" && (
+        <output className="w6w-small" style={{ display: "block" }}>
+          Saved as this loop's sample.
+          {keys.length > 0 && (
+            <>
+              {" "}
+              Steps on <strong>Each item</strong> now offer <strong>Current item</strong> ›{" "}
+              {keys.map((k, i) => (
+                <span key={k}>
+                  {i > 0 && ", "}
+                  <code>{k}</code>
+                </span>
+              ))}
+              .
+            </>
+          )}
+        </output>
+      )}
+      {save === "failed" && (
+        <p className="w6w-small" role="alert">
+          Couldn't save the sample. Try Test again.
+        </p>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -2177,12 +2845,18 @@ function IncomingStateField({
   onChange,
   seeds,
   readOnly,
+  expand,
+  hint,
 }: {
   /** Raw JSON text of the override. `{}` (the default) means "no override". */
   text: string;
   onChange: (next: string) => void;
   seeds: SeedSource[];
   readOnly?: boolean;
+  /** Opens the override disclosure (a caller with nothing to show without one). */
+  expand?: boolean;
+  /** Replaces the default hint under the override box. */
+  hint?: ReactNode;
 }) {
   const parsed = parseStateOverride(text);
   const keyCount = parsed ? Object.keys(parsed).length : 0;
@@ -2198,8 +2872,8 @@ function IncomingStateField({
   // "nothing → something" transition reopens it, so a disclosure the operator
   // closed themselves stays closed while they keep typing in it.
   useEffect(() => {
-    if (hasOverride) setOpen(true);
-  }, [hasOverride]);
+    if (hasOverride || expand) setOpen(true);
+  }, [hasOverride, expand]);
   // Seeding from an ancestor uses the output its last run captured; only a
   // fixture that never ran falls back to its own captured incoming state.
   const seedFrom = (test: StepTest) => {
@@ -2251,9 +2925,16 @@ function IncomingStateField({
           onChange={(e) => onChange(e.target.value)}
         />
         <span className="w6w-hint">
-          JSON merged into the call (e.g. a script's <code>input</code>). Reach for this to test
-          against a state the flow cannot currently produce — a field no upstream step returns yet,
-          or a case you can't reproduce by running the flow.
+          {hint ?? (
+            <>
+              JSON whose keys replace this step's parameters by name, for this test only — so a
+              script's data goes under <code>input</code>: <code>{'{"input": {…}}'}</code>. Upstream
+              outputs already reach <code>{"{{ nodes.<id>.output }}"}</code> bindings from their
+              saved tests. Reach for this to test against a state the flow cannot currently produce
+              — a field no upstream step returns yet, or a case you can't reproduce by running the
+              flow.
+            </>
+          )}
         </span>
       </details>
     </div>
@@ -2293,6 +2974,7 @@ function StepRunCollect({
   loop,
   onRun,
   onCancel,
+  continues,
 }: {
   /** Fixture key, with `step.id` — where the remembered values are read from. */
   workflowId: string;
@@ -2310,9 +2992,11 @@ function StepRunCollect({
    */
   onRun: (values: Record<string, unknown>, state?: StepStartState) => void;
   onCancel: () => void;
+  /** Present when Run continues downstream (`onRunFromNode`): the paused ids it stops before. */
+  continues?: { stopAt: string[] };
 }) {
   const api = useW6WApi();
-  const isTrigger = isTriggerApp(step.uses.app);
+  const isTrigger = isTriggerStep(step.uses);
   const isInternal = isInternalApp(step.uses.app);
   const defs = useMemo(
     () => (isTrigger ? asFieldDefs(step.with?.fields) : []),
@@ -2421,6 +3105,25 @@ function StepRunCollect({
     <div className="w6w-stepconfig">
       <div className="w6w-modal-body">
         <div className="w6w-stack">
+          {continues && (
+            <p className="w6w-muted w6w-small" data-testid="run-from-node-hint">
+              Runs this node, then continues through every node after it
+              {continues.stopAt.length > 0 ? (
+                <>
+                  {" "}
+                  and stops before{" "}
+                  {continues.stopAt.length === 1 ? "the paused node" : "paused nodes"}{" "}
+                  {continues.stopAt.map((id, i) => (
+                    <span key={id}>
+                      {i > 0 ? ", " : ""}
+                      <code>{id}</code>
+                    </span>
+                  ))}
+                </>
+              ) : null}
+              . Disabled nodes are skipped.
+            </p>
+          )}
           {params === null || !seeded ? (
             <p className="w6w-muted w6w-small">
               {params === null ? "Loading parameters…" : "Loading saved values…"}
@@ -2508,13 +3211,33 @@ function isForeachCard(step: FlowStep): boolean {
   return step.uses.app === CONTROL_APP && step.uses.action === "foreach";
 }
 
-/** The loop-region badge: names the For each a body step runs inside. */
-function LoopBadge({ loopOf }: { loopOf: string }) {
+/**
+ * The loop dots above a body step's top-right corner: one per enclosing For each,
+ * outermost first, each in that loop's colour and named on hover.
+ */
+function LoopDots({ id }: { id: string }) {
+  const { tones, loopOf } = useContext(LoopPaintCtx);
+  const chain = enclosingLoops(id, loopOf);
+  if (chain.length === 0) return null;
   return (
-    <span className="w6w-loop-badge w6w-small" title={`Runs once per item of ${loopOf}`}>
-      in loop · {loopOf}
+    <span className="w6w-loop-dots">
+      {chain.map((loop) => (
+        <span
+          key={loop}
+          className="w6w-loop-dot"
+          role="img"
+          aria-label={`In loop · ${loop}`}
+          title={`In loop · ${loop}`}
+          style={{ background: loopToneVar(tones.get(loop) ?? 1) }}
+        />
+      ))}
     </span>
   );
+}
+
+/** A card's loop colour: only a For each carries one, for its Each item port. */
+function useLoopStyle(id: string): CSSProperties | undefined {
+  return loopCardStyle(id, useContext(LoopPaintCtx).tones);
 }
 
 function PortHandle({
@@ -2523,12 +3246,16 @@ function PortHandle({
   multiple,
   id,
   variant,
+  top,
+  routeLabel,
 }: {
   type: "source" | "target";
   position: Position;
   multiple: boolean;
   id?: string;
   variant?: "error" | "each";
+  top?: string;
+  routeLabel?: string;
 }) {
   const nodeId = useNodeId();
   const ctrl = useContext(StepControlsCtx);
@@ -2558,42 +3285,85 @@ function PortHandle({
               ? "w6w-handle-multi"
               : undefined
       }
-      style={multiple ? { height: 22, borderRadius: 3, width: 8 } : undefined}
+      style={{
+        ...(multiple ? { height: 22, borderRadius: 3, width: 8 } : {}),
+        ...(top ? { top } : {}),
+      }}
       // A click (no drag) adds a step from this port; a drag still draws a connection.
       onClick={canAdd ? add : undefined}
       title={
-        canAdd
-          ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
-          : variant === "error"
-            ? "On error — drag to route this step's failure separately"
-            : variant === "each"
-              ? "Each item — drag to the first step to repeat for every item"
-              : multiple
-                ? type === "target"
-                  ? "Accepts multiple incoming connections"
-                  : "Multiple outgoing connections"
-                : undefined
+        routeLabel
+          ? `${routeLabel} — drag or click to connect`
+          : canAdd
+            ? `Drag to empty canvas (or click) to add ${what} · drag to a port to connect`
+            : variant === "error"
+              ? "On error — drag to route this step's failure separately"
+              : variant === "each"
+                ? "Each item — drag to the first step to repeat for every item"
+                : multiple
+                  ? type === "target"
+                    ? "Accepts multiple incoming connections"
+                    : "Multiple outgoing connections"
+                  : undefined
       }
     />
   );
 }
 
-function NodeControls({ id, runnable }: { id: string; runnable?: boolean }) {
+/**
+ * The node's hover toolbar: the run controls — ▶ run, ⏸ pause, ⃠ disable — then a divider, then
+ * the edit controls (edit, copy, delete).
+ */
+function NodeControls({ id, step, runnable }: { id: string; step: FlowStep; runnable?: boolean }) {
   const ctrl = useContext(StepControlsCtx);
   if (!ctrl || ctrl.readOnly) return null;
+  // A run that continues downstream is a real run, so any node — flow control too — can start it.
+  const canRun = runnable || ctrl.runsFromNode;
+  const runLabel = ctrl.runsFromNode
+    ? "Run from this node — continues through the nodes after it"
+    : "Test-run this node";
+  const paused = isPausedStep(step);
+  const disabled = isDisabledStep(step);
   return (
     <NodeToolbar position={Position.Top} className="w6w-node-toolbar">
-      {runnable && (
+      {canRun && (
         <button
           type="button"
           className="w6w-node-toolbar-btn"
-          title="Test-run this node"
-          aria-label="Test-run this node"
+          title={runLabel}
+          aria-label={runLabel}
           onClick={() => ctrl.onRun(id)}
         >
           <Icon name="run" size={15} />
         </button>
       )}
+      <button
+        type="button"
+        className="w6w-node-toolbar-btn"
+        data-testid="node-pause-toggle"
+        aria-pressed={paused}
+        title={
+          paused
+            ? "Resume — test runs go through this node"
+            : "Pause — test runs stop before this node"
+        }
+        aria-label={paused ? "Unpause node" : "Pause node"}
+        onClick={() => ctrl.onTogglePause(id)}
+      >
+        <Icon name="pause" size={15} />
+      </button>
+      <button
+        type="button"
+        className="w6w-node-toolbar-btn"
+        data-testid="node-disable-toggle"
+        aria-pressed={disabled}
+        title={disabled ? "Enable — this node runs again" : "Disable — skip this node in every run"}
+        aria-label={disabled ? "Enable node" : "Disable node"}
+        onClick={() => ctrl.onToggleDisable(id)}
+      >
+        <Icon name="ban" size={15} />
+      </button>
+      <span className="w6w-node-toolbar-divider" aria-hidden="true" />
       <button
         type="button"
         className="w6w-node-toolbar-btn"
@@ -2637,6 +3407,39 @@ function FanOutBadge({ step, count }: { step: FlowStep; count: number }) {
   );
 }
 
+/** Persistent flags under a card — visible without hovering: ⏸ paused, ⃠ disabled. */
+function NodeFlagBadges({ step }: { step: FlowStep }) {
+  const paused = isPausedStep(step);
+  const disabled = isDisabledStep(step);
+  if (!paused && !disabled) return null;
+  return (
+    <div>
+      {disabled && (
+        <span
+          className="w6w-node-flag w6w-node-flag-disabled"
+          data-testid="step-disabled-badge"
+          role="img"
+          aria-label={DISABLED_LABEL}
+          title={DISABLED_LABEL}
+        >
+          <Icon name="ban" size={11} /> Disabled
+        </span>
+      )}
+      {paused && (
+        <span
+          className="w6w-node-flag w6w-node-flag-paused"
+          data-testid="step-paused-badge"
+          role="img"
+          aria-label={PAUSED_LABEL}
+          title={PAUSED_LABEL}
+        >
+          <Icon name="pause" size={11} /> Paused
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** `data-step-problem` (codes, space-joined) + `title` (tooltips, newline-joined); absent with no problems. */
 function problemAttrs(problems: StepProblem[] | undefined) {
   if (!problems || problems.length === 0) return {};
@@ -2674,22 +3477,164 @@ function ProblemBadge({ problems }: { problems: StepProblem[] | undefined }) {
   );
 }
 
+/**
+ * The display title of an app trigger node's trigger (`api.getAppTriggers`),
+ * falling back to its key until/unless the catalog answers. Read-only: the
+ * editor never subscribes anything (the server derives that on publish).
+ */
+function useAppTriggerTitle(step: FlowStep): string {
+  const api = useW6WApi();
+  const key = step.uses.action;
+  const [title, setTitle] = useState<string | null>(null);
+  const enabled = step.uses.trigger === true;
+  const app = step.uses.app;
+  useEffect(() => {
+    if (!enabled || !api.getAppTriggers) return;
+    let canceled = false;
+    api
+      .getAppTriggers(app)
+      .then((ts) => !canceled && setTitle(ts.find((t) => t.key === key)?.title ?? null))
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, app, key, enabled]);
+  return title || key;
+}
+
+/**
+ * ONE `listSubscriptionsForWorkflow` read per mounted workflow, shared with every
+ * trigger card through context. Re-read when the workflow's trigger nodes change
+ * (a publish rewrites them) and after a Retry. Absent API member => empty map.
+ */
+function useTriggerRegistration(value: FlowWorkflow): TriggerRegistrationValue {
+  const api = useW6WApi();
+  const list = api.listSubscriptionsForWorkflow;
+  const retrySub = api.retrySubscriptionRegistration;
+  const workflowId = value.id;
+  // App triggers, plus `@w6w/webhook` nodes: their URL is `nodes.<id>.meta.config.url`.
+  const triggers = [
+    ...appTriggerNodesOf(value.nodes),
+    ...(value.nodes ?? []).filter((n) => n.uses?.app === WEBHOOK_APP && n.uses.trigger !== true),
+  ];
+  const hasTrigger = triggers.length > 0;
+  const triggerSig = triggers
+    .map(
+      (n) =>
+        `${n.id}:${n.uses.app}:${n.uses.action}:${connectionIdFor(n, value.connections) ?? ""}`,
+    )
+    .join("|");
+  const [subs, setSubs] = useState<readonly SubscriptionSummary[]>([]);
+  const byNode = useMemo(() => subscriptionsByNode(subs), [subs]);
+  const [tick, setTick] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: triggerSig/tick are refetch keys
+  useEffect(() => {
+    if (!list || !hasTrigger) {
+      setSubs([]);
+      return;
+    }
+    let canceled = false;
+    list
+      .call(api, workflowId)
+      .then((next) => !canceled && setSubs(next))
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [api, list, workflowId, hasTrigger, triggerSig, tick]);
+  const retry = useMemo(
+    () =>
+      retrySub
+        ? async (subscriptionId: string) => {
+            try {
+              await retrySub.call(api, subscriptionId);
+            } finally {
+              setTick((t) => t + 1);
+            }
+          }
+        : undefined,
+    [api, retrySub],
+  );
+  return useMemo(() => ({ byNode, subs, retry }), [byNode, subs, retry]);
+}
+
+/** Registration state, last error, last fire and Retry for a trigger node's bound subscription. */
+function TriggerRegistrationBadge({ nodeId }: { nodeId: string }) {
+  const { byNode, retry } = useContext(TriggerRegistrationCtx);
+  const [busy, setBusy] = useState(false);
+  const sub = byNode.get(nodeId);
+  const d = registrationDisplay(sub, retry !== undefined);
+  if (!sub || !d) return null;
+  return (
+    <div
+      className="w6w-small"
+      data-trigger-registration={sub.status}
+      data-tone={d.tone}
+      style={{ marginTop: 3, paddingLeft: 2 }}
+    >
+      <span style={d.tone === "danger" ? { color: "var(--w6w-danger)" } : undefined}>
+        {d.label}
+      </span>
+      <span className="w6w-muted"> · {d.lastFire}</span>
+      {d.error && (
+        <div role="alert" style={{ color: "var(--w6w-danger)" }}>
+          {d.error}
+        </div>
+      )}
+      {d.retryVisible && retry && (
+        <button
+          type="button"
+          className="nodrag"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            retry(sub.id)
+              .catch(() => {})
+              .finally(() => setBusy(false));
+          }}
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
   const apps = useContext(AppsCtx);
   const app = apps.get(step.uses.app);
   // The human app name (fall back to the raw id when the app isn't in the list).
   const appName = app?.displayName || step.uses.app || "—";
+  // An app trigger node (`uses.trigger`): entry card — no inbound port, no error
+  // exit — labelled "<App> · <trigger title>".
+  const isTrigger = isTriggerStep(step.uses);
+  const triggerTitle = useAppTriggerTitle(step);
+  const cardName = step.uses.trigger ? `${appName} · ${triggerTitle}` : appName;
   // Per-step ports (T2.3.1): a persisted `ports.in > 1` renders a multi-input handle.
   const ports = nodePortsForStep(step, useContext(PortsLookupCtx));
   // T1.1.1 — run-execution visual, RunStatus × StepStatus (A3). `data.stepStatus`
   // is stamped by `Inner`'s live-run repaint effect, never by `workflowToFlow`.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
+  const loopStyle = useLoopStyle(id);
   return (
-    <div className={data.loopOf ? "w6w-node-in-loop" : undefined} data-loop-of={data.loopOf}>
-      <NodeControls id={id} runnable />
+    <div
+      className={
+        [data.loopOf ? "w6w-node-in-loop" : "", isDisabledStep(step) ? "w6w-node-disabled" : ""]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      data-loop-of={data.loopOf}
+      style={loopStyle}
+      data-disabled={isDisabledStep(step) || undefined}
+      data-paused={isPausedStep(step) || undefined}
+    >
+      <NodeControls id={id} step={step} runnable />
       <div
+        // An app trigger gets the same half-pill entry chrome as a built-in trigger.
+        className={isTrigger ? "w6w-node-trigger" : undefined}
+        data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
         {...problemAttrs(data.stepProblems)}
         style={{
@@ -2705,11 +3650,12 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           border: `${visual.borderWidth}px ${visual.borderStyle} ${
             selected ? "var(--w6w-accent)" : visual.borderColor
           }`,
-          opacity: selected ? 1 : visual.opacity,
+          // A disabled node reads greyed out whatever its run status (`.w6w-node-disabled`).
+          opacity: isDisabledStep(step) ? 0.45 : selected ? 1 : visual.opacity,
           background: "var(--w6w-panel)",
           color: "var(--w6w-text)",
-          borderRadius: 4,
-          padding: "8px 12px",
+          // The trigger half-pill's radius + padding live in `.w6w-node-trigger`.
+          ...(isTrigger ? {} : { borderRadius: 4, padding: "8px 12px" }),
           minWidth: 180,
           fontSize: 13,
           display: "flex",
@@ -2729,7 +3675,7 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           size={28}
         />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>{appName}</div>
+          <div style={{ fontWeight: 600 }}>{cardName}</div>
           <div className="w6w-muted w6w-small" style={{ marginTop: 2 }}>
             <code>{step.uses.action || "—"}</code>
           </div>
@@ -2737,18 +3683,22 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         {ports.out > 0 && (
           <>
             <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
-            <PortHandle
-              type="source"
-              position={Position.Bottom}
-              multiple={false}
-              id={ERROR_SOURCE_HANDLE}
-              variant="error"
-            />
+            {!isTrigger && (
+              <PortHandle
+                type="source"
+                position={Position.Bottom}
+                multiple={false}
+                id={ERROR_SOURCE_HANDLE}
+                variant="error"
+              />
+            )}
           </>
         )}
       </div>
       {fanBadge}
-      {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
+      <NodeFlagBadges step={step} />
+      {isTrigger && step.uses.trigger === true && <TriggerRegistrationBadge nodeId={id} />}
+      {data.loopOf && <LoopDots id={id} />}
       {/* Meta line under the card: the step id and (when known) the app version. */}
       <div
         className="w6w-muted"
@@ -2772,6 +3722,17 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   const step = data.step;
+  const routes = routesForStep(step);
+  const isRouter = step.uses.app === ROUTER_APP;
+  // An If lays its True/False ports out like a Router's routes (ifPortLayout).
+  const isIf = isIfStep(step);
+  const routerPorts = routes.length ? routerPortLayout(routes) : isIf ? ifPortLayout() : undefined;
+  const routeKey = JSON.stringify(routes.map((r) => r.id));
+  const updateNodeInternals = useUpdateNodeInternals();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: route identities and order change handle positions.
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, routeKey, updateNodeInternals]);
   const label = internalNodeLabel(step.uses.app, step.uses.action);
   const icon = internalNodeIcon(step.uses.app, step.uses.action);
   // Per-step ports (T2.3.1): triggers have no entry (0 in, 1 out); a fan-in node
@@ -2780,27 +3741,34 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
   // A trigger is the run's ENTRY, not a step that acts: it emits the start
   // payload and has no vendor call to fail, so there is no failure of its own
   // to route — no error exit port (human report, 2026-09-01). Triggers on the
-  // canvas are always internal nodes (an app's own trigger binds as a
-  // subscription, never as a node), so this card is the only one that needs
-  // the guard.
-  const isTrigger = isTriggerApp(step.uses.app);
+  // canvas may be internal nodes or an app trigger node (uses.trigger, D-5);
+  // an app trigger renders in StepNodeCard, which guards it separately.
+  const isTrigger = isTriggerStep(step.uses);
   const isForeach = isForeachCard(step);
   // T1.1.1 — same run-execution visual StepNodeCard derives; see its comment.
   const visual = stepNodeVisual(data.stepStatus ?? "no-run", data.runStatus);
   const fanBadge = <FanOutBadge step={step} count={useContext(FanOutCountsCtx).get(id) ?? 0} />;
+  const loopStyle = useLoopStyle(id);
   return (
     <div
       className={
-        [isForeach ? "w6w-node-foreach" : "", data.loopOf ? "w6w-node-in-loop" : ""]
+        [
+          isForeach ? "w6w-node-foreach" : "",
+          data.loopOf ? "w6w-node-in-loop" : "",
+          isDisabledStep(step) ? "w6w-node-disabled" : "",
+        ]
           .filter(Boolean)
           .join(" ") || undefined
       }
       data-loop-of={data.loopOf}
+      style={loopStyle}
+      data-disabled={isDisabledStep(step) || undefined}
+      data-paused={isPausedStep(step) || undefined}
     >
-      {/* Compute/trigger nodes can be test-run; flow-control nodes cannot. */}
-      <NodeControls id={id} runnable={!isControlApp(step.uses.app)} />
+      {/* Compute/trigger nodes can be test-run; flow-control nodes only start a run that continues. */}
+      <NodeControls id={id} step={step} runnable={!isControlApp(step.uses.app)} />
       <div
-        className={isTrigger ? "w6w-node-trigger" : undefined}
+        className={isTrigger ? "w6w-node-trigger" : isRouter ? "w6w-node-router" : undefined}
         data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
         {...problemAttrs(data.stepProblems)}
@@ -2812,13 +3780,19 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           border: `${visual.borderWidth}px ${visual.borderStyle} ${
             selected ? "var(--w6w-accent)" : visual.borderColor
           }`,
-          opacity: selected ? 1 : visual.opacity,
+          // A disabled node reads greyed out whatever its run status (`.w6w-node-disabled`).
+          opacity: isDisabledStep(step) ? 0.45 : selected ? 1 : visual.opacity,
           background: "var(--w6w-panel-2)",
           color: "var(--w6w-text)",
           // A trigger's half-pill radius + padding live in `.w6w-node-trigger`
           // (styles/_flow.scss): an inline value here would beat the class.
           ...(isTrigger ? {} : { borderRadius: 4, padding: "6px 14px 6px 8px" }),
           minWidth: 140,
+          // Past three route ports the Router grows a fixed step per port
+          // (routerPortLayout); border-box so that height is the whole card's.
+          ...(routerPorts?.minHeight
+            ? { minHeight: routerPorts.minHeight, boxSizing: "border-box" as const }
+            : {}),
           fontSize: 13,
           display: "flex",
           alignItems: "center",
@@ -2842,6 +3816,22 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
             <span>Done</span>
           </div>
         )}
+        {/* Route labels inside the card, each beside its right-edge handle, the
+            way For each labels Each item / Done. One row per port over the full
+            card height, so a row's centre is its handle's `top`. */}
+        {!!routerPorts?.right.length && (
+          <div
+            className="w6w-router-ports w6w-small"
+            style={{ gridTemplateRows: `repeat(${routerPorts.right.length}, 1fr)` }}
+            aria-hidden="true"
+          >
+            {routerPorts.right.map((port) => (
+              <span key={port.id} title={port.label}>
+                {port.label}
+              </span>
+            ))}
+          </div>
+        )}
         {ports.out > 0 && (
           <>
             {isForeach && (
@@ -2853,8 +3843,45 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
                 variant="each"
               />
             )}
-            <PortHandle type="source" position={Position.Right} multiple={ports.out > 1} />
-            {!isTrigger && (
+            {routerPorts ? (
+              <>
+                {routerPorts.right.map((port) => (
+                  <PortHandle
+                    key={port.id}
+                    type="source"
+                    position={Position.Right}
+                    multiple={false}
+                    id={port.handleId}
+                    top={port.top}
+                    routeLabel={port.label}
+                  />
+                ))}
+                {routerPorts.bottom && (
+                  <>
+                    <PortHandle
+                      type="source"
+                      position={Position.Bottom}
+                      multiple={false}
+                      id={routerPorts.bottom.handleId}
+                      routeLabel={routerPorts.bottom.label}
+                    />
+                    <span className="w6w-router-fallback-label w6w-small" aria-hidden="true">
+                      {routerPorts.bottom.label}
+                    </span>
+                  </>
+                )}
+              </>
+            ) : (
+              // A For each's Done port is named: React Flow anchors a handle-less edge
+              // to the FIRST source handle, which here is Each item.
+              <PortHandle
+                type="source"
+                position={Position.Right}
+                multiple={ports.out > 1}
+                id={isForeach ? routeHandle(FOREACH_DONE_ROUTE) : undefined}
+              />
+            )}
+            {!isTrigger && !isRouter && !isIf && step.uses.app !== RACE_APP && (
               <PortHandle
                 type="source"
                 position={Position.Bottom}
@@ -2867,7 +3894,8 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
         )}
       </div>
       {fanBadge}
-      {data.loopOf && <LoopBadge loopOf={data.loopOf} />}
+      <NodeFlagBadges step={step} />
+      {data.loopOf && <LoopDots id={id} />}
       {data.legacyLoop && (
         <div className="w6w-loop-legacy-note w6w-small">
           This loop was converted from an older definition. Its steps after For each now run once
@@ -2893,28 +3921,51 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
 
 // ── Step edit modal (Form ⇄ JSON) ─────────────────────────────────────────
 
-export function StepEditModal({
-  workflowId,
-  step: initialStep,
-  upstreamSteps,
-  loop,
-  foreachItemCount,
-  onChange,
-  onClose,
-  readOnly,
-  initialView = "props",
-  fanOutCount = 0,
-  onTestRun,
-  stepProblems,
-}: {
+/**
+ * The state the Test tab PREVIEWS its resolved params against: the seeded `testStartState`
+ * (what the test will actually send) with, for each upstream `nodes.<id>.output` and the
+ * `trigger.event` that the seeds do not carry, the value the editor already previews in the ƒx
+ * Result (`sampleValues`: a persisted test's kept value or the app's declared `sample`). A seeded
+ * output always wins. Only the PREVIEW reads this; the invoke is still sent `testStartState`.
+ */
+export function previewStartState(
+  state: StepStartState | undefined,
+  sampleValues: Record<string, unknown> | undefined,
+): StepStartState | undefined {
+  if (!sampleValues) return state;
+  const steps: NonNullable<StepStartState["steps"]> = { ...(state?.steps ?? {}) };
+  let added = false;
+  for (const [ref, value] of Object.entries(sampleValues)) {
+    const m = /^nodes\.([^.]+)\.output$/.exec(ref);
+    if (!m || steps[m[1]]?.output !== undefined) continue;
+    steps[m[1]] = { ...(steps[m[1]] ?? {}), output: value };
+    added = true;
+  }
+  const event = sampleValues["trigger.event"];
+  const addEvent = event !== undefined && state?.trigger?.event === undefined;
+  if (!added && !addEvent) return state;
+  return {
+    ...(state ?? {}),
+    ...(added ? { steps } : {}),
+    ...(addEvent ? { trigger: { ...(state?.trigger ?? {}), event } } : {}),
+  };
+}
+
+export function StepEditModal(props: StepEditModalProps) {
+  // One editor for every node. An app trigger node rides the action editor:
+  // Setup (app, account, trigger) · Configure (its params) · Test.
+  return <ActionStepEditModal {...props} />;
+}
+
+interface StepEditModalProps {
   workflowId: string;
   step: FlowStep;
+  /** Refresh authored fields after undo/redo without remounting the Test tab. */
+  restoreVersion?: number;
   /** Graph ancestors of this step (from `upstreamStateSources`); the incoming-state picker seeds from their saved tests. */
   upstreamSteps: ExpressionStepSource[];
   /** The enclosing For each when this step is in its body: seeds `state.foreach` on Test. */
   loop?: ExpressionLoopSource;
-  /** On a For each step: how many items its Items resolve to now (`undefined` = unknown). */
-  foreachItemCount?: number;
   onChange: (next: FlowStep) => void;
   onClose: () => void;
   readOnly?: boolean;
@@ -2925,23 +3976,40 @@ export function StepEditModal({
   onTestRun?: () => void;
   /** Host-supplied problems for this step; a dangling connection locks Configure/Test, a fixable one gets a button. */
   stepProblems?: StepProblem[];
-}) {
+}
+
+function ActionStepEditModal({
+  workflowId,
+  step: initialStep,
+  restoreVersion,
+  upstreamSteps,
+  loop,
+  onChange,
+  onClose,
+  readOnly,
+  initialView = "props",
+  fanOutCount = 0,
+  onTestRun,
+  stepProblems,
+}: StepEditModalProps) {
   const api = useW6WApi();
   const apps = useContext(AppsCtx);
   const [step, setStep] = useState<FlowStep>(initialStep);
+  const connectionScope = useWorkflowConnections();
+  const connectionId = connectionIdFor(step, connectionScope?.connections);
+  const effectiveStep = { ...step, uses: { ...step.uses, connection: connectionId } };
   // Checked against the LOCAL step so choosing another connection unblocks at once.
-  const blocked = isConnectionBlocked(step, stepProblems);
+  const unresolvedConnection = step.uses.connectionRef !== undefined && !connectionId;
+  const blocked = unresolvedConnection || isConnectionBlocked(effectiveStep, stepProblems);
   const connectionProblem = stepProblems?.find(
     (p): p is Extract<StepProblem, { code: "unknown_connection" }> =>
-      p.code === "unknown_connection" && p.connection === step.uses.connection,
+      p.code === "unknown_connection" && p.connection === connectionId,
   );
   const fixable = (stepProblems ?? []).filter((p) => "fix" in p);
   // Same shape as the add modal: Setup/Configure/Test tabs with the Configure
   // tab showing form (props) / full-step JSON (code) / params JSON
   // (params-code) / node settings (config).
-  const [tab, setTab] = useState<"setup" | "configure" | "test">(
-    isConnectionBlocked(initialStep, stepProblems) ? "setup" : "configure",
-  );
+  const [tab, setTab] = useState<"setup" | "configure" | "test">(blocked ? "setup" : "configure");
   const [configView, setConfigView] = useState<ConfigView>(
     initialView === "json" ? "code" : initialView === "settings" ? "config" : "props",
   );
@@ -2963,12 +4031,24 @@ export function StepEditModal({
   const [renaming, setRenaming] = useState(false);
   const [draftId, setDraftId] = useState(step.id);
   const [renameErr, setRenameErr] = useState<string | null>(null);
+  const lastRestoreVersion = useRef(restoreVersion);
+  useEffect(() => {
+    if (lastRestoreVersion.current === restoreVersion) return;
+    lastRestoreVersion.current = restoreVersion;
+    setStep(initialStep);
+    setDraftId(initialStep.id);
+    setCodeText(stepToJson(initialStep));
+    setParamsCodeText(paramsToJson(initialStep));
+    setRenameErr(null);
+  }, [restoreVersion, initialStep]);
 
   const [params, setParams] = useState<ActionParam[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
   const [connsFailed, setConnsFailed] = useState(false);
   const isInternal = isInternalApp(step.uses.app);
+  // An app trigger node (`uses.trigger`): its "actions" are the app's triggers.
+  const isAppTrigger = step.uses.trigger === true;
 
   // Refetch actions + params whenever the app/action identity changes. P-3:
   // this must refetch on an APP change alone (action `""` included) — an
@@ -2987,8 +4067,7 @@ export function StepEditModal({
     }
     let canceled = false;
     setParams(null);
-    api
-      .getAppActions(step.uses.app)
+    (isAppTrigger ? getTriggerDefs(api, step.uses.app) : api.getAppActions(step.uses.app))
       .then((acts) => {
         if (canceled) return;
         setActions(acts);
@@ -3000,7 +4079,15 @@ export function StepEditModal({
     return () => {
       canceled = true;
     };
-  }, [api, step.uses.app, step.uses.action, isInternal]);
+  }, [api, step.uses.app, step.uses.action, isInternal, isAppTrigger]);
+
+  const appSelectionRequest = useRef(0);
+  useEffect(
+    () => () => {
+      appSelectionRequest.current++;
+    },
+    [],
+  );
 
   const refetchConns = useCallback(() => {
     if (isInternal || !step.uses.app) return;
@@ -3016,6 +4103,8 @@ export function StepEditModal({
   useEffect(() => {
     if (isInternal || !step.uses.app) return;
     let canceled = false;
+    setConns(null);
+    setConnsFailed(false);
     api
       .listConnectionsForApp(step.uses.app)
       .then((c) => {
@@ -3037,6 +4126,13 @@ export function StepEditModal({
     [onChange],
   );
 
+  // A script's `{{ }}` markers become code reads when the step opens (quiet note + Undo).
+  const scriptConversion = useScriptConversion({
+    enabled: step.uses.app === SCRIPT_APP && !readOnly,
+    values: step.with ?? {},
+    onChange: (w) => commit({ ...step, with: w }),
+  });
+
   const changeConfigView = (v: ConfigView) => {
     if (v === "code") setCodeText(stepToJson(step));
     else if (v === "params-code") setParamsCodeText(paramsToJson(step));
@@ -3055,9 +4151,11 @@ export function StepEditModal({
   };
 
   const testable = !!step.uses.app && !!step.uses.action && !isControlApp(step.uses.app);
+  // A For each's Test resolves its Items (nothing runs) and saves the sample.
+  const isForeach = isForeachStep(step);
   // A manual/webhook trigger's Test tab fills its configured `fields` into
   // `{ input }` (via TriggerFillForm) rather than running the raw config.
-  const isTrigger = isTriggerApp(step.uses.app);
+  const isTrigger = isTriggerStep(step.uses);
   // A4/D-7: the tabs-bar toggle is enabled and narrowed to props/code ONLY on
   // this arm — the non-trigger, testable Test tab, the one that mounts
   // `<ResolvedParams>`. The trigger arm keeps the dim four (`PropertyEntryForm`
@@ -3068,19 +4166,24 @@ export function StepEditModal({
   // The editing step's graph ancestors that carry a saved step-test, offered as
   // one-click seeds for the incoming state. The SAME hook the canvas ▶ Run
   // collect form uses — one implementation, so the two surfaces cannot drift.
-  const seedSources = useSeedSources(workflowId, upstreamSteps, testable && !isTrigger);
+  const seedSources = useSeedSources(
+    workflowId,
+    upstreamSteps,
+    (testable && !isTrigger) || isForeach,
+  );
   // …and the start state the test is SENT with, from those same fixtures. This
   // is what makes `{{ steps.<id>.output.<field> }}` in this step's `with`
   // resolve to what that step last produced instead of to "".
   const loopSeed = useLoopSeed(testable && !isTrigger ? loop : undefined);
   const testStartState = startStateFromSeeds(seedSources, loopSeedValue(loopSeed));
+  const previewState = previewStartState(testStartState, useExpressionOptions().sampleValues);
 
   // The incoming state this step was last tested or run with comes back (T4.1.3
   // on this surface's own noun): the fixture's `input` slot is where both
   // surfaces write it. Applied only while the box is still untouched, so a slow
   // list can never overwrite what the operator is typing.
   useEffect(() => {
-    if (!testable || isTrigger) return;
+    if ((!testable || isTrigger) && !isForeach) return;
     let canceled = false;
     api
       .listStepTests(workflowId, step.id)
@@ -3097,17 +4200,36 @@ export function StepEditModal({
     return () => {
       canceled = true;
     };
-  }, [api, workflowId, step.id, testable, isTrigger]);
+  }, [api, workflowId, step.id, testable, isTrigger, isForeach]);
 
   // The incoming-state override, and the payload it produces. The step's STORED
   // configuration is what runs; the override is merged over it. A box that is
   // not a JSON object overrides nothing (see `parseStateOverride`).
-  const testOverride = parseStateOverride(testState);
+  const testOverride = isForeach ? parseForeachOverride(testState) : parseStateOverride(testState);
   const testValues = { ...(step.with ?? {}), ...(testOverride ?? {}) };
   // The resolved incoming state saved alongside the fixture — the slot the ▶ Run
   // collect form reads back, and what the upstream seed chips write into.
   const testInput = testOverride ?? {};
   const canTest = !!params && !loopSeedError(loopSeed) && requiredParamsFilled(params, testValues);
+  // A For each's Test: its Items against the same start state, and the save of the sample.
+  const foreachItems = isForeach
+    ? resolveLoopItemsInState(testValues.items, testStartState)
+    : undefined;
+  const [foreachSave, setForeachSave] = useState<ForeachSave>("idle");
+  const changeTestState = (next: string) => {
+    setTestState(next);
+    setForeachSave("idle");
+  };
+  const saveForeachTest = async () => {
+    if (!foreachItems) return;
+    setForeachSave("saving");
+    try {
+      await api.saveStepTest(workflowId, step.id, foreachTestFixture(foreachItems, testInput));
+      setForeachSave("saved");
+    } catch {
+      setForeachSave("failed");
+    }
+  };
 
   // Header icon mirrors the canvas node: the app's icon for app steps, the
   // internal glyph for triggers/actions/control nodes (same as the node cards).
@@ -3183,17 +4305,19 @@ export function StepEditModal({
       <div className="w6w-stepconfig">
         <div className="w6w-tabsbar">
           <div className="w6w-subtabs">
-            {(["setup", "configure", "test"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={`w6w-subtab${tab === t ? " active" : ""}`}
-                disabled={blocked && t !== "setup"}
-                onClick={() => setTab(t)}
-              >
-                {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
-              </button>
-            ))}
+            {(["setup", "configure", "test"] as const)
+              .filter((t) => step.uses.app !== RACE_APP || t !== "test")
+              .map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`w6w-subtab${tab === t ? " active" : ""}`}
+                  disabled={blocked && t !== "setup"}
+                  onClick={() => setTab(t)}
+                >
+                  {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
+                </button>
+              ))}
           </div>
           {isTestPropsCode ? (
             <ConfigViewToggle
@@ -3251,29 +4375,58 @@ export function StepEditModal({
               conns={conns}
               connsFailed={connsFailed}
               isInternal={isInternal}
+              actionLabel={isAppTrigger ? "Trigger" : "Action"}
               readOnly={readOnly}
               onChangeAction={(action) =>
                 commit({ ...step, uses: { ...step.uses, action }, with: {} })
               }
-              onChangeConnection={(connection) =>
-                commit({ ...step, uses: { ...step.uses, connection } })
-              }
+              onChangeConnection={(connection) => {
+                // Standalone step editors have no workflow map to write to.
+                if (!connectionScope) {
+                  const { connectionRef: _ref, ...uses } = step.uses;
+                  commit({ ...step, uses: { ...uses, connection } });
+                  return;
+                }
+                const selected = selectNodeConnection(
+                  step,
+                  connection,
+                  connectionScope?.nodes ?? [step],
+                  connectionScope?.connections ?? {},
+                );
+                connectionScope?.setConnections(selected.connections);
+                commit(selected.step);
+              }}
+              onChangeConnectionRef={(ref) => commit(withConnectionRef(step, ref))}
               onConnectionCreated={refetchConns}
-              onChangeApp={(appId) =>
-                // D-1: a genuinely different app clears `uses.action`/`with` and
-                // drops the connection; reselecting the SAME app is a no-op —
-                // still committed (so the field always collapses cleanly), but
-                // with `step` itself, unchanged.
-                commit(
-                  appId === step.uses.app
-                    ? step
-                    : {
-                        ...step,
-                        uses: { app: appId, action: "", connection: undefined },
-                        with: {},
-                      },
-                )
-              }
+              onChangeApp={(appId) => {
+                const request = ++appSelectionRequest.current;
+                if (appId === step.uses.app) {
+                  commit(step);
+                  return;
+                }
+                // Commit the new app and its default account together, so one undo restores both.
+                const next: FlowStep = {
+                  ...step,
+                  uses: {
+                    app: appId,
+                    action: "",
+                    ...(isAppTrigger ? { trigger: true as const } : {}),
+                  },
+                  with: {},
+                };
+                void (isInternalApp(appId) ? Promise.resolve([]) : api.listConnectionsForApp(appId))
+                  .catch(() => [])
+                  .then((choices) => {
+                    if (request !== appSelectionRequest.current) return;
+                    const selected = defaultConnectionFor(
+                      next,
+                      choices,
+                      connectionScope?.nodes ?? [],
+                      connectionScope?.connections ?? {},
+                    );
+                    commit({ ...next, uses: { ...next.uses, ...selected } });
+                  });
+              }}
             />
           )}
 
@@ -3287,29 +4440,58 @@ export function StepEditModal({
               {params === null ? (
                 <p className="w6w-muted w6w-small">Loading parameters…</p>
               ) : configView === "props" ? (
-                step.uses.action === "wait" && isControlApp(step.uses.app) ? (
+                step.uses.app === RACE_APP ? (
+                  <p className="w6w-muted w6w-small">{RACE_DESCRIPTION}</p>
+                ) : step.uses.action === "wait" && isControlApp(step.uses.app) ? (
                   <WaitEditor
                     values={step.with ?? {}}
                     readOnly={readOnly}
                     onChange={(w) => commit({ ...step, with: w })}
                   />
-                ) : (
-                  <ParamsForm
-                    params={params}
+                ) : step.uses.action === "if" && isControlApp(step.uses.app) ? (
+                  <ConditionEditor
                     values={step.with ?? {}}
                     readOnly={readOnly}
                     onChange={(w) => commit({ ...step, with: w })}
-                    dynamic={
-                      isInternal || !step.uses.action
-                        ? undefined
-                        : {
-                            appId: step.uses.app,
-                            actionKey: step.uses.action,
-                            connectionId: blocked ? undefined : (step.uses.connection ?? undefined),
-                            appName: app?.displayName,
-                          }
-                    }
                   />
+                ) : step.uses.app === "@w6w/stop" ? (
+                  <StopEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : step.uses.app === ROUTER_APP ? (
+                  <RouterEditor
+                    values={step.with ?? {}}
+                    readOnly={readOnly}
+                    onChange={(w) => commit({ ...step, with: w })}
+                  />
+                ) : (
+                  <>
+                    {step.uses.app === SCRIPT_APP && (
+                      <ScriptBindingsNotice
+                        values={step.with ?? {}}
+                        conversion={scriptConversion}
+                        readOnly={readOnly}
+                      />
+                    )}
+                    <ParamsForm
+                      params={params}
+                      values={step.with ?? {}}
+                      readOnly={readOnly}
+                      onChange={(w) => commit({ ...step, with: w })}
+                      dynamic={
+                        isInternal || !step.uses.action
+                          ? undefined
+                          : {
+                              appId: step.uses.app,
+                              actionKey: step.uses.action,
+                              connectionId: blocked ? undefined : connectionId,
+                              appName: app?.displayName,
+                            }
+                      }
+                    />
+                  </>
                 )
               ) : configView === "code" ? (
                 // Full step, read-only (D-3) — `stepToJson` is the ONE serializer,
@@ -3369,7 +4551,14 @@ export function StepEditModal({
           {tab === "test" && (
             <div className="w6w-stack">
               {testable ? (
-                isTrigger ? (
+                isAppTrigger ? (
+                  <AppTriggerTestNote
+                    title={
+                      actions?.find((a) => a.key === step.uses.action)?.title ?? step.uses.action
+                    }
+                    app={app?.displayName ?? step.uses.app}
+                  />
+                ) : isTrigger ? (
                   <TriggerFillForm
                     app={step.uses.app}
                     action={step.uses.action}
@@ -3378,6 +4567,14 @@ export function StepEditModal({
                     // <StepTestRun> below, so the values entered here are
                     // remembered and come back on the canvas ▶ Run form.
                     persist={{ workflowId, stepId: step.id, input: testInput }}
+                    // A webhook trigger's primary test is a REAL request: listen for one.
+                    listen={
+                      step.uses.app === WEBHOOK_APP &&
+                      api.listSubscriptionsForWorkflow &&
+                      api.startWebhookListen
+                        ? { stepWith: step.with, readOnly }
+                        : undefined
+                    }
                   />
                 ) : (
                   <>
@@ -3402,15 +4599,16 @@ export function StepEditModal({
                       <ResolvedParams
                         params={params}
                         values={testValues}
-                        testStartState={testStartState}
+                        testStartState={previewState}
                         view={testView}
+                        literalKeys={step.uses.app === SCRIPT_APP ? SCRIPT_LITERAL_KEYS : undefined}
                       />
                     )}
                     <StepTestRun
                       ref={testRunRef}
                       app={step.uses.app}
                       action={step.uses.action}
-                      connectionId={step.uses.connection ?? undefined}
+                      connectionId={connectionId}
                       values={testValues}
                       state={testStartState}
                       canRun={canTest}
@@ -3420,18 +4618,30 @@ export function StepEditModal({
                     />
                   </>
                 )
-              ) : isForeachStep(step) ? (
+              ) : isForeach ? (
                 <>
                   <p className="w6w-muted w6w-small">
-                    A For each can't be tested on its own — it runs only as part of the workflow. To
-                    test the loop, test a step on its <strong>Each item</strong> output: it runs
-                    once, on one item.
+                    Resolves <strong>Items</strong> against the incoming state — nothing inside the
+                    loop runs. <strong>Test</strong> saves the first item as this loop's sample, so
+                    the steps on its <strong>Each item</strong> output can pick its keys. To run the
+                    loop's work, test a step on <strong>Each item</strong>: it runs once, on one
+                    item.
                   </p>
-                  {foreachItemCount !== undefined && (
-                    <p className="w6w-small">
-                      {foreachItemCount} {foreachItemCount === 1 ? "item" : "items"}
-                    </p>
-                  )}
+                  <IncomingStateField
+                    text={testState}
+                    onChange={changeTestState}
+                    seeds={seedSources}
+                    readOnly={readOnly}
+                    expand={!foreachItems}
+                    hint={
+                      <>
+                        Paste a sample list — <code>{'[{"id": 1, "name": "…"}]'}</code> — or{" "}
+                        <code>{'{"items": […]}'}</code>. It replaces what <strong>Items</strong>{" "}
+                        resolves to, for this test only.
+                      </>
+                    }
+                  />
+                  <ForeachTestResult items={foreachItems} save={foreachSave} />
                 </>
               ) : (
                 <p className="w6w-muted w6w-small">
@@ -3443,7 +4653,11 @@ export function StepEditModal({
         </div>
 
         <div className="w6w-modal-actions w6w-stepconfig-footer">
-          {tab !== "test" ? (
+          {step.uses.app === RACE_APP && tab === "configure" ? (
+            <button type="button" className="w6w-btn" onClick={onClose}>
+              Done
+            </button>
+          ) : tab !== "test" ? (
             <button
               type="button"
               className="w6w-btn"
@@ -3473,6 +4687,16 @@ export function StepEditModal({
                   }}
                 >
                   {testBusy ? "Testing…" : "Test"}
+                </button>
+              )}
+              {isForeach && (
+                <button
+                  type="button"
+                  className="w6w-btn"
+                  disabled={readOnly || !foreachItems?.length || foreachSave === "saving"}
+                  onClick={() => void saveForeachTest()}
+                >
+                  {foreachSave === "saving" ? "Testing…" : "Test"}
                 </button>
               )}
             </>
@@ -3597,7 +4821,7 @@ function WebhookUrlPanel({
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Deliberately keyed on [api, workflowId] only — NOT on `step` (its `with`
+  // Deliberately keyed on [api, workflowId, step.id] only — NOT on `step` (its `with`
   // changes on every keystroke in the panel below). Re-running this on a
   // `with` edit would defeat the "never re-creates" guarantee this panel
   // exists to provide; the list is a one-shot get, not a live subscription.
@@ -3607,13 +4831,13 @@ function WebhookUrlPanel({
     let canceled = false;
     list(workflowId)
       .then((subs) => {
-        if (!canceled) setSub(subs.find((s) => s.appId === WEBHOOK_APP) ?? null);
+        if (!canceled) setSub(pickWebhookSubscription(subs, step.id));
       })
       .catch((e) => !canceled && setError((e as Error).message));
     return () => {
       canceled = true;
     };
-  }, [api, workflowId]);
+  }, [api, workflowId, step.id]);
 
   const create = () => {
     const createSubscription = api.createSubscription;
@@ -3659,92 +4883,13 @@ function WebhookUrlPanel({
 }
 
 /**
- * A small popover anchored to a trigger element, portaled to the trigger's
- * own `<dialog>` (never `document.body`) — a `showModal()` dialog and its
- * contents live in the browser's native top layer, so a portal straight to
- * `document.body` would render BEHIND the modal, not over it (2026-08-30:
- * "it needs to be a flyout over the modal, not squeezed inside it"). Plain
- * CSS-positioned `<div>`, not a nested `<dialog>` — the ask was explicit
- * ("don't use native dialog, create css dialog").
- *
- * Closes on Escape or a click outside both itself and the anchor. It does
- * NOT close on a click ON the anchor — that stays the trigger's own toggle
- * (click to open, click again to close), so the anchor button remains a
- * working close affordance the whole time the flyout is open, unlike an
- * inline "replace the button with the picker" approach where there is
- * nothing left to click to back out.
- */
-function Flyout({
-  anchorRef,
-  onClose,
-  children,
-}: {
-  // Anchored to the ROW (both App and Connection buttons together), not the
-  // individual trigger button — two reasons, both from the same feedback
-  // pass (2026-08-30): a flyout anchored to whichever button sits at the
-  // row's right edge (Connection) could overflow past the modal's own right
-  // border ("fix anchor"), and the app picker specifically was asked to
-  // "take up the entire horizontal width of the content... extend to the
-  // end of the prod button". Anchoring both to the row's own bounding box
-  // solves both at once: the flyout's width always matches content already
-  // known to fit inside the modal, and it never hangs off either edge.
-  anchorRef: RefObject<HTMLElement | null>;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const popRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const el = anchorRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setPos({ top: r.bottom + 6, left: r.left, width: r.width });
-    setContainer(el.closest("dialog") ?? document.body);
-  }, [anchorRef]);
-
-  useEffect(() => {
-    function onDocPointerDown(e: MouseEvent) {
-      const target = e.target as Node;
-      if (popRef.current?.contains(target)) return;
-      // A click ON the anchor is the trigger's own toggle — never close here
-      // AND reopen there in the same gesture.
-      if (anchorRef.current?.contains(target)) return;
-      onClose();
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("mousedown", onDocPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onClose, anchorRef]);
-
-  if (!pos || !container) return null;
-  return createPortal(
-    <div
-      ref={popRef}
-      className="w6w-flyout"
-      style={{ top: pos.top, left: pos.left, width: pos.width }}
-    >
-      {children}
-    </div>,
-    container,
-  );
-}
-
-/**
  * The Setup tab — an App button and a Connection button, spaced apart, then
  * the step's action (a dropdown for app steps). Two independent pickers
  * (2026-08-30, superseding D-1's single combined field — see intake for the
  * exact spec): App opens a searchable app picker; Connection opens a plain
  * list of connections FOR THE CURRENT APP plus "+ New connection" — no
  * search, per the ask ("just list the connections for the same app"). Both
- * render as an anchored `Flyout`, not inline content that pushes the rest
+ * render as an anchored flyout, not inline content that pushes the rest
  * of the tab down.
  */
 function SetupTab({
@@ -3754,9 +4899,11 @@ function SetupTab({
   conns,
   connsFailed,
   isInternal,
+  actionLabel = "Action",
   readOnly,
   onChangeAction,
   onChangeConnection,
+  onChangeConnectionRef,
   onChangeApp,
   onConnectionCreated,
 }: {
@@ -3767,9 +4914,12 @@ function SetupTab({
   /** The connections fetch rejected — a distinct state, never "missing". */
   connsFailed: boolean;
   isInternal: boolean;
+  /** The picked thing's name: "Action", or "Trigger" on an app trigger node. */
+  actionLabel?: string;
   readOnly?: boolean;
   onChangeAction: (action: string) => void;
   onChangeConnection: (connection: string | undefined) => void;
+  onChangeConnectionRef: (ref: string) => void;
   /** Fires with whatever app is picked, same or different — the caller owns
    *  the same-app-is-a-no-op / different-app-clears-action-and-with decision
    *  (it already owns the equivalent decision for `onChangeAction`). */
@@ -3784,13 +4934,17 @@ function SetupTab({
   // and searches its own catalog; the connection picker below just maps
   // `conns` (already app-scoped by the caller) — neither needs its own fetch.
   const [mode, setMode] = useState<"app" | "conn" | null>(null);
-  const [showConnModal, setShowConnModal] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
-
-  const connName = connectionButtonLabel(step.uses.connection, conns, connsFailed);
+  const scope = useWorkflowConnections();
+  const connectionId = connectionIdFor(step, scope?.connections);
 
   return (
     <div className="w6w-stack">
+      {step.uses.connectionRef && !connectionId && (
+        <p role="alert" className="w6w-field-error">
+          The shared connection is missing or unbound. Choose an account.
+        </p>
+      )}
       <div className="w6w-field">
         <span>App</span>
         {/* One field, two buttons — `[App] <-- spacer --> [Connection]`
@@ -3822,21 +4976,23 @@ function SetupTab({
             </span>
           </button>
           {!isInternal && (
-            <button
-              type="button"
-              className="w6w-app-conn-btn"
-              aria-label="Connection"
-              aria-expanded={mode === "conn"}
-              disabled={readOnly}
-              onClick={() => setMode((m) => (m === "conn" ? null : "conn"))}
-            >
-              <span className="w6w-conn-label-name">{connName}</span>
-            </button>
+            <WorkflowConnectionPicker
+              step={step}
+              conns={conns}
+              failed={connsFailed}
+              readOnly={readOnly}
+              open={mode === "conn"}
+              onOpenChange={(open) => setMode(open ? "conn" : null)}
+              anchorRef={rowRef}
+              onChangeConnection={onChangeConnection}
+              onChangeConnectionRef={onChangeConnectionRef}
+              onConnectionCreated={onConnectionCreated}
+            />
           )}
         </div>
 
         {mode === "app" && (
-          <Flyout anchorRef={rowRef} onClose={() => setMode(null)}>
+          <AnchoredFlyout anchorRef={rowRef} onClose={() => setMode(null)}>
             <AppPicker
               onSelectApp={(a) => {
                 const sameAppReselected = a.id === step.uses.app;
@@ -3849,57 +5005,9 @@ function SetupTab({
                 setMode(sameAppReselected ? "conn" : null);
               }}
             />
-          </Flyout>
-        )}
-        {mode === "conn" && (
-          <Flyout anchorRef={rowRef} onClose={() => setMode(null)}>
-            <div className="w6w-stack">
-              <div className="w6w-stepbuilder-list">
-                {(conns ?? []).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="w6w-stepbuilder-item"
-                    onClick={() => {
-                      onChangeConnection(c.id);
-                      setMode(null);
-                    }}
-                  >
-                    <span className="w6w-stepbuilder-item-main">
-                      <strong>{c.displayName || c.id}</strong>
-                      {c.state && <span className="w6w-muted w6w-small">{c.state}</span>}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="w6w-btn"
-                disabled={readOnly}
-                onClick={() => {
-                  setShowConnModal(true);
-                  setMode(null);
-                }}
-              >
-                + New connection
-              </button>
-            </div>
-          </Flyout>
+          </AnchoredFlyout>
         )}
       </div>
-
-      {!isInternal && showConnModal && (
-        <AddConnectionModal
-          initialAppId={step.uses.app}
-          onClose={() => setShowConnModal(false)}
-          onCreated={({ connectionId }) => {
-            setShowConnModal(false);
-            onChangeConnection(connectionId);
-            onConnectionCreated();
-            setMode(null);
-          }}
-        />
-      )}
 
       {isInternal ? (
         <div className="w6w-field">
@@ -3911,7 +5019,7 @@ function SetupTab({
       ) : (
         // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <select>/<input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
         <label className="w6w-field">
-          <span>Action</span>
+          <span>{actionLabel}</span>
           {/* While the action manifest is still loading there is nothing to pick
               from: the current action renders as the single option, so the field
               keeps showing the step's action instead of going empty. */}

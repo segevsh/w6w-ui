@@ -17,9 +17,16 @@ import { type Edge, addEdge } from "@xyflow/react";
 import { type LoopRefusalReason, isForeachStep, loopMembership, loopRefusal } from "./flow-loop.ts";
 import {
   type CanvasLane,
+  FOREACH_DONE_ROUTE,
+  IF_FALSE_ROUTE,
   type PortsLookup,
+  RACE_APP,
+  ROUTER_APP,
   edgeVisuals,
+  isIfStep,
   nodePortsForStep,
+  routeHandle,
+  routesForStep,
   sourceHandleForLane,
 } from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
@@ -76,9 +83,8 @@ function collidingEdgeId(survivors: Edge[], id: string): string | null {
  * replacement can satisfy: a real, *distinct* pair (no self-loops), no duplicate
  * edge, the target accepts an entry port (blocks connecting *into* a trigger,
  * which declares `in: 0`), and the source has an exit port. Port **capacity** is
- * deliberately NOT checked here: a full single-slot port is freed by replacement
- * (see `applyConnect`), so dragging a new wire from an already-connected node
- * re-points it rather than being rejected. Used as the live `isValidConnection`.
+ * deliberately NOT checked here: an input accepts any number of edges, and the exit
+ * cap is refused in `applyConnect`. Used as the live `isValidConnection`.
  *
  * The duplicate-pair check is **lane-blind by design**, and that is a v1 *editor*
  * limit, not a model limit: the model permits a success edge and an error edge
@@ -100,13 +106,15 @@ export function canConnect(
   nodes: StepNode[],
   edges: Edge[],
   lookup?: PortsLookup,
+  route?: string,
 ): boolean {
   if (!source || !target || source === target) return false;
-  if (edges.some((e) => e.source === source && e.target === target)) return false;
+  if (edges.some((e) => e.source === source && e.target === target && e.data?.route === route))
+    return false;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return false;
-  // Per-step ports (T2.3.1): a persisted `ports.in > 1` lets multiple edges land.
+  // Only presence matters: `in: 0` (a trigger) takes no edge; any `in >= 1` takes many.
   const srcPorts = nodePortsForStep(srcStep, lookup);
   const tgtPorts = nodePortsForStep(tgtStep, lookup);
   return srcPorts.out >= 1 && tgtPorts.in >= 1;
@@ -127,11 +135,25 @@ function planConnect(
   edges: Edge[],
   when: CanvasLane,
   lookup?: PortsLookup,
+  drawnRoute?: string,
 ): { next: Edge[]; conflict: string | null; refusal: OutCapRefusal | LoopRefusal | null } | null {
-  if (!canConnect(source, target, nodes, edges, lookup) || !source || !target) return null;
+  // A For each's success connect is its Done port, routed so it never reads as Each item.
+  const fromForeach =
+    when === "success" && isForeachStep(nodes.find((n) => n.id === source)?.data.step);
+  const route = fromForeach && drawnRoute === undefined ? FOREACH_DONE_ROUTE : drawnRoute;
+  if (!canConnect(source, target, nodes, edges, lookup, route) || !source || !target) return null;
   const srcStep = nodes.find((n) => n.id === source)?.data.step;
   const tgtStep = nodes.find((n) => n.id === target)?.data.step;
   if (!srcStep || !tgtStep) return null;
+  const srcIsIf = isIfStep(srcStep);
+  if (fromForeach) {
+    if (route !== FOREACH_DONE_ROUTE) return null;
+  } else if (srcStep.uses.app === ROUTER_APP && when === "success") {
+    if (!routesForStep(srcStep).some((r) => r.id === route)) return null;
+  } else if (srcIsIf && when === "success") {
+    // An If's True port is unrouted; its False port is the one route it has.
+    if (route !== undefined && route !== IF_FALSE_ROUTE) return null;
+  } else if (route !== undefined) return null;
   // A success connect drawn from a body node extends the body (its ordinary right
   // handle is the only one it has), so it is an each-lane edge. Computed once.
   const inBody = loopMembership(nodes, edges)[source] !== undefined;
@@ -145,23 +167,20 @@ function planConnect(
   if (loopReason) {
     return { next: edges, conflict: null, refusal: { refused: "loop", reason: loopReason } };
   }
-  // Per-step ports (T2.3.1): capacity honors a persisted `ports.in`/`ports.out`,
-  // so a fan-in node with `ports.in > 1` keeps prior edges instead of dropping them.
   const srcPorts = nodePortsForStep(srcStep, lookup);
-  const tgtPorts = nodePortsForStep(tgtStep, lookup);
-  let next = edges;
+  const next = edges;
   // The source's exit port IN THIS LANE is full at a finite cap: REFUSE. Nothing is
   // evicted — `next` stays the input edge set. The other lane is untouched.
-  const fromSrc = next.filter((e) => e.source === source && edgeLane(e) === effLane);
-  if (fromSrc.length >= srcPorts.out) {
-    return { next: edges, conflict: null, refusal: { refused: "out_cap", cap: srcPorts.out } };
+  const fromSrc = next.filter(
+    (e) => e.source === source && edgeLane(e) === effLane && e.data?.route === route,
+  );
+  // A Router route holds one edge; an If's False port fans out like its True port.
+  const cap = route === undefined || srcIsIf || fromForeach ? srcPorts.out : 1;
+  if (fromSrc.length >= cap) {
+    return { next: edges, conflict: null, refusal: { refused: "out_cap", cap } };
   }
-  // Free the target's entry port likewise — lane-blind, see the docstring.
-  const toTgt = next.filter((e) => e.target === target);
-  if (toTgt.length >= tgtPorts.in) {
-    const drop = new Set(toTgt.slice(0, toTgt.length - tgtPorts.in + 1).map((e) => e.id));
-    next = next.filter((e) => !drop.has(e.id));
-  }
+  // The target's entry port is never full: an input takes any number of inbound edges, so a
+  // connect only ever ADDS (`in: 0`, a trigger, is refused by canConnect).
   // Stamp the lane at creation: a freshly drawn wire is a success edge unless the
   // caller says otherwise, and flowToWorkflow reads `data.when` back off the edge
   // (it would see `undefined` otherwise). "success" is emitted as ABSENT on the
@@ -175,7 +194,7 @@ function planConnect(
   // because only `planRelane` (re-laning an EXISTING edge) applied it — the
   // create path never did. Same trap `planRelane`'s own comment warns about:
   // this must be an explicit spread here, not left for a later re-render.
-  const id = flowEdgeId(source, target, effLane);
+  const id = flowEdgeId(source, target, effLane, route);
   // A body node has no Each-item handle: stamping `out-each` there would leave the
   // edge unrendered, so only the For each itself anchors to it.
   const sourceHandle = effLane === "each" && inBody ? undefined : sourceHandleForLane(effLane);
@@ -185,8 +204,8 @@ function planConnect(
         source,
         target,
         id,
-        sourceHandle,
-        data: { when: effLane },
+        sourceHandle: route === undefined ? sourceHandle : routeHandle(route),
+        data: { when: effLane, ...(route === undefined ? {} : { route }) },
         // No run state: this mints a freshly DRAWN edge, never a run-taken
         // one — the live run-aware repaint is a separate effect
         // (WorkflowFlowEditor.tsx, T1.1.1), not this creation path.
@@ -203,8 +222,8 @@ function planConnect(
  * Build the next edge set for a new `source → target` connection. **Additive at the
  * source**: a source under its `out` cap (or unbounded) keeps every existing edge and
  * gains one; at a finite cap the connection is **refused** (see {@link connectRefusal}),
- * never satisfied by evicting. The target's entry port is still single-slot-replacing:
- * the oldest inbound edge(s) are dropped to make room. Returns `null` when the
+ * never satisfied by evicting. The target's entry port accepts any number of
+ * inbound edges, so nothing is ever evicted there. Returns `null` when the
  * connection is disallowed by {@link canConnect}, refused at the out cap — **or when the minted id would
  * duplicate a surviving edge's id**, the same refusal {@link setEdgeWhen} performs
  * through the same {@link collidingEdgeId} test.
@@ -225,11 +244,8 @@ function planConnect(
  * `send → (error) → fallback` shape authorable at all. No `ports.out` bump is
  * needed, so every persisted definition and palette entry stays valid.
  *
- * The target's entry capacity stays **lane-blind**, and that asymmetry is the
- * point: a converging tail step receiving one success and one error edge is
- * governed by `ports.in` alone. Partitioning the target rule by lane too — the
- * plausible "symmetry" cleanup — would let a `ports.in: 1` node silently accept
- * two inbound edges.
+ * The target's entry has no capacity: any number of edges, from any number of
+ * sources (several triggers may feed one node), converge on it.
  */
 export function applyConnect(
   source: string | null | undefined,
@@ -238,8 +254,9 @@ export function applyConnect(
   edges: Edge[],
   when: CanvasLane = "success",
   lookup?: PortsLookup,
+  route?: string,
 ): Edge[] | null {
-  const plan = planConnect(source, target, nodes, edges, when, lookup);
+  const plan = planConnect(source, target, nodes, edges, when, lookup, route);
   if (!plan || plan.conflict || plan.refusal) return null;
   return plan.next;
 }
@@ -261,8 +278,9 @@ export function connectConflict(
   edges: Edge[],
   when: CanvasLane = "success",
   lookup?: PortsLookup,
+  route?: string,
 ): string | null {
-  return planConnect(source, target, nodes, edges, when, lookup)?.conflict ?? null;
+  return planConnect(source, target, nodes, edges, when, lookup, route)?.conflict ?? null;
 }
 
 /**
@@ -277,8 +295,9 @@ export function connectRefusal(
   edges: Edge[],
   when: CanvasLane = "success",
   lookup?: PortsLookup,
+  route?: string,
 ): OutCapRefusal | LoopRefusal | null {
-  return planConnect(source, target, nodes, edges, when, lookup)?.refusal ?? null;
+  return planConnect(source, target, nodes, edges, when, lookup, route)?.refusal ?? null;
 }
 
 /**
@@ -314,6 +333,7 @@ function planRelane(
   if (edgeLane(me) === "each") return null;
   const srcStep = nodes.find((n) => n.id === me.source)?.data.step;
   if (!srcStep) return null;
+  if (srcStep.uses.app === ROUTER_APP || srcStep.uses.app === RACE_APP) return null;
   const out = nodePortsForStep(srcStep, lookup).out;
   // The DESTINATION lane at the source is full at a finite cap: REFUSE, evicting
   // nothing (exactly the rule `applyConnect` applies on creation). `me` is excluded —
@@ -345,13 +365,17 @@ function planRelane(
   // No run state: an edge is only re-laned during live authoring — there is
   // no run in progress while an author re-lanes an edge (T1.1.1).
   const visuals = edgeVisuals(when, undefined);
+  // A For each's success edge leaves its Done port (routed); its error edge is unrouted.
+  const foreach = isForeachStep(srcStep);
+  const done = foreach && when === "success" ? FOREACH_DONE_ROUTE : undefined;
+  const { route: _route, ...unrouted } = (me.data ?? {}) as Record<string, unknown>;
   const relaned: Edge = {
     ...me,
-    id: flowEdgeId(me.source, me.target, when),
-    data: { ...me.data, when },
+    id: flowEdgeId(me.source, me.target, when, done),
+    data: foreach ? { ...unrouted, when, ...(done ? { route: done } : {}) } : { ...me.data, when },
     className: visuals.className,
     label: visuals.label,
-    sourceHandle: sourceHandleForLane(when),
+    sourceHandle: done ? routeHandle(done) : sourceHandleForLane(when),
   };
   // The same id-uniqueness test the creation path runs, against the survivors only.
   const conflict = collidingEdgeId(others, relaned.id);
@@ -439,6 +463,16 @@ export function renameStepInEdges(edges: Edge[], prevId: string, nextId: string)
   return edges.map((e) => {
     const source = e.source === prevId ? nextId : e.source;
     const target = e.target === prevId ? nextId : e.target;
-    return { ...e, source, target, id: flowEdgeId(source, target, edgeLane(e)) };
+    return {
+      ...e,
+      source,
+      target,
+      id: flowEdgeId(
+        source,
+        target,
+        edgeLane(e),
+        typeof e.data?.route === "string" ? e.data.route : undefined,
+      ),
+    };
   });
 }

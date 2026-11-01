@@ -4,6 +4,7 @@
  * and doesn't use this. Every method calls the w6w server directly and
  * throws `ApiError` on non-OK responses so callers can surface the message.
  */
+import type { NodeSample } from "./node-samples.ts";
 import type { StepMeta, StepTest, TestRunSummary, W6WApi } from "./provider.tsx";
 import type {
   ActionDef,
@@ -275,6 +276,7 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
             connectionId: opts.connectionId,
             project: opts.project,
             state: opts.state,
+            workflowId: opts.workflowId,
           }),
         },
       ),
@@ -323,6 +325,11 @@ export function createW6WApi(opts: CreateW6WApiOptions): W6WApi {
       req<{ stepTests: StepTest[] }>(
         `/workflows/${encodeURIComponent(workflowId)}/steps/${encodeURIComponent(stepId)}/tests`,
       ).then((r) => r.stepTests ?? []),
+
+    loadNodeSamples: (workflowId) =>
+      req<{ nodeSamples?: NodeSample[] }>(
+        `/workflows/${encodeURIComponent(workflowId)}/node-samples`,
+      ).then((r) => r.nodeSamples ?? []),
 
     recordStepTestRun: (workflowId, stepId, body) =>
       req<{ run: unknown }>(

@@ -8,12 +8,22 @@
 export { W6WUIProvider, useW6WApi } from "./provider.tsx";
 export type {
   AppsPageResult,
+  DataStoreEntryOptions,
   ListAppsPageOptions,
   StepTest,
   TestRunSummary,
   W6WApi,
   W6WUIProviderProps,
 } from "./provider.tsx";
+
+export {
+  effectiveNodeOutput,
+  effectiveNodeOutputs,
+  indexNodeSamples,
+  previewNodeOutputs,
+  shapeToSkeleton,
+} from "./node-samples.ts";
+export type { NodeSample, NodeShape } from "./node-samples.ts";
 
 export { createW6WApi, ApiError } from "./createW6WApi.ts";
 export type { CreateW6WApiOptions } from "./createW6WApi.ts";
@@ -132,6 +142,7 @@ export type {
   FunctionSummary,
   SecretValue,
   SubscriptionSummary,
+  WebhookListenSession,
   ThemeMode,
   TriggerSummary,
   WorkflowDetail,
@@ -166,6 +177,7 @@ export type { RetryPolicyValue, RetryTarget } from "./RetryPolicyFields.tsx";
 export { StepStatusPill } from "./components/StepStatusPill.tsx";
 export type {
   ExecutionStatus,
+  SkipReason,
   StepStatus,
   StepStatusPillProps,
 } from "./components/StepStatusPill.tsx";
@@ -180,6 +192,7 @@ export { ExecutionLogPanel } from "./components/ExecutionLogPanel.tsx";
 export type {
   ExecutionLogError,
   ExecutionLogIteration,
+  ExecutionLogNode,
   ExecutionLogPanelProps,
   ExecutionLogRecordedError,
   ExecutionLogStep,
@@ -252,3 +265,71 @@ export {
   resultCopyText,
 } from "./components/result-format.ts";
 export type { DetectedResult } from "./components/result-format.ts";
+
+// ── Data stores (F-2) ──
+export { DataStoreList } from "./components/DataStoreList.tsx";
+export type { DataStoreListProps } from "./components/DataStoreList.tsx";
+export { ColumnsEditor } from "./components/ColumnsEditor.tsx";
+export type { ColumnsEditorProps } from "./components/ColumnsEditor.tsx";
+export { CsvPanel } from "./components/CsvPanel.tsx";
+export type { CsvPanelProps } from "./components/CsvPanel.tsx";
+export {
+  CELL_PROBLEM_COPY,
+  CSV_MAX_BYTES,
+  CSV_TOO_LARGE_COPY,
+  DATA_STORE_ERROR_FALLBACK,
+  DATA_STORE_KIND_LABEL,
+  DATA_STORE_KINDS,
+  DATA_STORE_NETWORK_ERROR,
+  DOC_VALUE_COPY,
+  NEW_ROW_ID,
+  SCALAR_TYPES,
+  VERSION_CONFLICT_COPY,
+  buildRowValue,
+  cellErrorsOf,
+  csvFilenameOf,
+  csvImportMessage,
+  csvLineOf,
+  dirtyColumns,
+  draftFromEntry,
+  errorPlacement,
+  isCellValue,
+  isVersionConflict,
+  kvValueOf,
+  kvValueTypeOf,
+  locateDataStoreError,
+  locateRawResponseError,
+  newRowDraft,
+  parseCell,
+  parseDocText,
+  remainingTtlSeconds,
+  rowValueOf,
+  rowWriteOf,
+  serializeCell,
+  tableSchemaOf,
+} from "./data-stores/data-store-view.ts";
+export type {
+  CellProblem,
+  DataStore,
+  DataStoreCreateInput,
+  DataStoreErrorLocator,
+  DataStoreKind,
+  DataStorePage,
+  DataStorePatch,
+  Entry,
+  EntryPage,
+  ImportResult,
+  KvSchema,
+  RowDraft,
+  ScalarType,
+  TableColumn,
+  TableSchema,
+} from "./data-stores/data-store-view.ts";
+
+// Data store entry views (T2.1.2)
+export { DataEntryList } from "./components/DataEntryList.tsx";
+export type { DataEntryListProps, DataEntryListRow } from "./components/DataEntryList.tsx";
+export { DataEntryEditor } from "./components/DataEntryEditor.tsx";
+export type { DataEntryEditorProps } from "./components/DataEntryEditor.tsx";
+export { DataTableGrid } from "./components/DataTableGrid.tsx";
+export type { DataTableGridProps, DataTableGridRow } from "./components/DataTableGrid.tsx";

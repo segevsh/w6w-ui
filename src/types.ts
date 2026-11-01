@@ -33,6 +33,8 @@ export interface AppSummary {
    * `packages/server/packages/api/wire-summary.ts`'s `zeroCredential`).
    */
   zeroCredential?: boolean;
+  /** Number of triggers the app declares (wire already carries it). */
+  triggerCount?: number;
 }
 
 /** One trigger an app declares, as returned by GET /apps/:id/triggers. */
@@ -44,9 +46,15 @@ export interface TriggerSummary {
   description?: string;
   requiresAuth?: boolean;
   /** `"poll"` triggers are fetched on an interval; absent or `"webhook"` receive pushes. */
-  type?: "webhook" | "poll";
+  type?: "webhook" | "poll" | "protocol";
   /** Host floor for a poll trigger's interval, in milliseconds. */
   minIntervalMs?: number;
+  /** The trigger's declared parameters (the route returns the full declaration). */
+  params?: readonly unknown[];
+  /** The event's declared fields (an `OutputField[]`) — keys for `trigger.event.<key>`. */
+  output?: unknown;
+  /** A representative event payload the app declares (never fabricated). */
+  sample?: unknown;
 }
 
 /** A Subscription (rfcs/trigger.md) as returned by the console subscription routes. */
@@ -58,12 +66,42 @@ export interface SubscriptionSummary {
   connectionId: string | null;
   /** Present only for `appId === "@w6w/webhook"` — the server's own computed receive URL. */
   webhookUrl?: string;
-  type?: "webhook" | "poll";
-  status?: string;
+  type?: "webhook" | "poll" | "protocol";
+  status?: SubscriptionStatus;
   /** Poll interval in milliseconds; null for webhook subscriptions. */
   intervalMs?: number | null;
   lastError?: { code: string; message: string } | null;
+  /** The workflow trigger node this subscription is bound to; null for a workflow-level one. */
+  nodeId?: string | null;
+  /** When registration with the app succeeded; null until it has. */
+  registeredAt?: string | null;
+  /** When the subscription last fired; null/absent when it never has. */
+  lastFireAt?: string | null;
 }
+
+/**
+ * A "Listen for test event" session on a `@w6w/webhook` subscription
+ * (`POST /subscriptions/:id/listen`). `request` is the captured, credential-masked call —
+ * exactly what a real run's webhook trigger emits as its output.
+ */
+export interface WebhookListenSession {
+  id: string;
+  subscriptionId: string;
+  nodeId: string | null;
+  expiresAt: string;
+  status: "waiting" | "captured" | "expired";
+  request?: {
+    method: string;
+    path: string;
+    query: Record<string, string>;
+    headers: Record<string, string>;
+    body: unknown;
+  };
+  receivedAt?: string;
+}
+
+/** Registration state of a Subscription (rfcs/trigger-protocol.md §Lifecycle). */
+export type SubscriptionStatus = "pending" | "registered" | "failed" | "paused" | "destroying";
 
 /** One field on an Auth method's connection form. Drives the input widgets. */
 export interface AuthField {
@@ -109,6 +147,8 @@ export interface ActionParam {
   required?: boolean;
   default?: unknown;
   hint?: string;
+  /** Render hint; multiselect supports "checkboxes" or the default chip picker. */
+  ui?: string;
   /** Placeholder text for the input (e.g. the trailing prompt on a multiselect). */
   placeholder?: string;
   /**
@@ -181,6 +221,14 @@ export interface ActionParam {
   layout?: "row" | "stack";
   /** `section: "collapsible"` only — start collapsed (default `true`). */
   collapsed?: boolean;
+  /** `section: "collapsible"` only — start open when any child already holds a value. */
+  openWhenSet?: boolean;
+  /**
+   * `type: "code"` only — a Run script's code, which reads run data from its `state` / `vars` /
+   * `consts` globals: its insert actions write code reads, never `{{ }}` (the host does not
+   * substitute in code).
+   */
+  scriptReads?: boolean;
 }
 
 /** A single choice for a param rendered as a dropdown. */

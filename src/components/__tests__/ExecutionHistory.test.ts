@@ -856,6 +856,110 @@ test("A3 — the two controls render iff their callback is given, and call it on
   }
 });
 
+test("Back + Re-run — each renders iff its callback is given, and calls it once", async () => {
+  const bare = await render(React.createElement(ExecutionDetail, { execution: SUCCEEDED }));
+  try {
+    assertAbsent(bare.container, "execution-detail-back");
+    assertAbsent(bare.container, "execution-detail-rerun");
+  } finally {
+    await act(async () => bare.root.unmount());
+  }
+
+  let back = 0;
+  let reran = 0;
+  const { container, root } = await render(
+    React.createElement(ExecutionDetail, {
+      execution: SUCCEEDED,
+      onBack: () => {
+        back += 1;
+      },
+      onRerun: () => {
+        reran += 1;
+      },
+    }),
+  );
+  try {
+    const rerun = byTestId(container, "execution-detail-rerun");
+    assert.equal(text(rerun), "Re-run");
+    await click(rerun);
+    assert.equal(reran, 1);
+
+    await click(byTestId(container, "execution-detail-back"));
+    assert.equal(back, 1);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("Back + Re-run — Back survives a failed fetch; Re-run disables while in flight", async () => {
+  // A view whose fetch failed has no execution to show, and must still be leavable.
+  const failed = await render(
+    React.createElement(ExecutionDetail, {
+      execution: null,
+      errorMessage: "Gone.",
+      onBack: () => {},
+      onRerun: () => {},
+    }),
+  );
+  try {
+    assert.ok(byTestId(failed.container, "execution-detail-back"));
+    assertAbsent(failed.container, "execution-detail-rerun");
+  } finally {
+    await act(async () => failed.root.unmount());
+  }
+
+  const { container, root } = await render(
+    React.createElement(ExecutionDetail, {
+      execution: SUCCEEDED,
+      onRerun: () => {},
+      rerunning: true,
+    }),
+  );
+  try {
+    const rerun = byTestId(container, "execution-detail-rerun") as HTMLButtonElement;
+    assert.equal(rerun.disabled, true);
+    assert.equal(text(rerun), "Re-running…");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("Re-run of — shown only for a re-run; the id opens the original when the host can", async () => {
+  const plain = await render(React.createElement(ExecutionDetail, { execution: SUCCEEDED }));
+  try {
+    assertAbsent(plain.container, "execution-detail-rerun-of");
+  } finally {
+    await act(async () => plain.root.unmount());
+  }
+
+  const asText = await render(
+    React.createElement(ExecutionDetail, { execution: { ...SUCCEEDED, rerunOf: "run_src" } }),
+  );
+  try {
+    assert.match(
+      text(byTestId(asText.container, "execution-detail-rerun-of")),
+      /Re-run\s*of\s*run_src/,
+    );
+    assertAbsent(asText.container, "execution-detail-rerun-of-link");
+  } finally {
+    await act(async () => asText.root.unmount());
+  }
+
+  const opened: string[] = [];
+  const { container, root } = await render(
+    React.createElement(ExecutionDetail, {
+      execution: { ...SUCCEEDED, rerunOf: "run_src" },
+      onOpenExecution: (id: string) => opened.push(id),
+    }),
+  );
+  try {
+    await click(byTestId(container, "execution-detail-rerun-of-link"));
+    assert.deepEqual(opened, ["run_src"]);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 test("A3 — errorMessage renders as an alert, in every branch", async () => {
   const withExecution = await render(
     React.createElement(ExecutionDetail, {

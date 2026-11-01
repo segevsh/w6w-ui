@@ -11,13 +11,20 @@ import type { EdgeRunState } from "./run-visuals.ts";
 
 export interface FlowStep {
   id: string;
-  uses: { app: string; action: string; connection?: string | null };
+  uses: {
+    app: string;
+    action: string;
+    connection?: string | null;
+    connectionRef?: string;
+    /** An app TRIGGER node (`action` is the trigger key): behaves like a built-in trigger on the canvas. */
+    trigger?: true;
+  };
   /**
    * Declared connection-port cardinality for this step (see core
    * `rfcs/node-types.md` · Ports & cardinality). Omitted fields fall through field-wise to the catalog action, the internal def, then `{ in: 1, out: "many" }`.
-   * A persisted value wins over the node's default — `in > 1` opts the step into
-   * accepting multiple inbound edges (e.g. a flow-control aggregator joining
-   * several upstream branches).
+   * A persisted value wins over the node's default. Only `in: 0` binds (no entry
+   * port); any `in >= 1` accepts any number of inbound edges (core node-types ·
+   * Alternate entries).
    */
   ports?: PortsDecl;
   with?: Record<string, unknown>;
@@ -61,11 +68,25 @@ export interface FlowStep {
    * tie, so the spelling here must stay identical to the engine's.
    */
   position?: { x: number; y: number };
+  /**
+   * Disabled: skipped in EVERY run, published and triggered included — the node does not
+   * execute and its outgoing edges are skipped, so a node that depends only on it does not run
+   * either. An engine semantic (mirrors `Node.disabled` in `@w6w/workflow-types`). Written as
+   * `true` or absent, never `false`.
+   */
+  disabled?: true;
+  /**
+   * Editor-only metadata; the engine ignores it. `paused`: a test run started from a node's ▶
+   * stops BEFORE this node (it does not execute). Never affects a published or triggered run.
+   * Absent when empty, never `{}`.
+   */
+  ui?: { paused?: true };
 }
 
 export interface FlowEdge {
   from: string;
   to: string;
+  route?: string;
   /**
    * Which outcome of the `from` step this edge carries (core
    * `rfcs/workflow.md` · "Amendment — 2026-07-29: failure-conditioned edges
@@ -143,11 +164,21 @@ export function edgeVisuals(
 export const ERROR_SOURCE_HANDLE = "out-error";
 
 /**
- * The handle id of a For each's **Each item** exit port (the success lane keeps the
- * unnamed handle, rendered as **Done**). Canvas-only: the `each` lane is never
- * serialized — `flowToWorkflow` derives `with.body` from these edges instead.
+ * The handle id of a For each's **Each item** exit port. The `each` lane derives
+ * `with.body` on save; its link to the first body step is also saved as a
+ * {@link FOREACH_EACH_ROUTE} edge so a reader sees which port it leaves.
  */
 export const EACH_SOURCE_HANDLE = "out-each";
+
+/**
+ * `Edge.route` of a For each's **Done** port (the engine's `FOREACH_DONE_ROUTE`): the
+ * success edge that runs once, after every iteration. An unrouted For each success
+ * edge — the shape saved before the port had an id — is read as Done.
+ */
+export const FOREACH_DONE_ROUTE = "done";
+
+/** `Edge.route` of a For each's Each item link to `with.body[0]` (engine `FOREACH_EACH_ROUTE`). */
+export const FOREACH_EACH_ROUTE = "each";
 
 /**
  * A lane on the CANVAS. `"each"` is canvas-only (a For each → body-step edge);
@@ -192,6 +223,7 @@ export interface FlowWorkflow {
   description?: string;
   variables?: Array<{ key: string; type?: string; required?: boolean; default?: unknown }>;
   nodes: FlowStep[];
+  connections?: Record<string, { app: string; connection: string | null }>;
   edges?: FlowEdge[];
   canvas?: FlowCanvas;
   /**
@@ -304,7 +336,7 @@ export const DOCUMENT_APP = "@w6w/document";
  */
 export const MODEL_APP = "@w6w/model";
 /**
- * Compile a Handlebars `template` string against a resolved `values` object
+ * Render Handlebars text or JSON string values against a resolved `values` object
  * (core rfcs/node-types.md · F-3 amendment, "the `@w6w/template` host node").
  * Host node: `runInternalNode` short-circuits this id before the registry
  * loads a module — it needs no privileged host resource (no DB, no
@@ -312,6 +344,109 @@ export const MODEL_APP = "@w6w/model";
  * compiles to a JS function, the same risk shape `@w6w/script` has.
  */
 export const TEMPLATE_APP = "@w6w/template";
+/**
+ * Read, write, count, list and query the entries of a named data store (core
+ * rfcs/node-types.md, the `@w6w/store` amendment). Host node, like
+ * {@link DOCUMENT_APP}: the run's own account and project are bound host-side, so
+ * there is no scope param — a store is addressed by NAME. The params mirror the
+ * `@w6w/store` internal-app manifest (pinned by `store-node-parity.test.ts`).
+ */
+export const STORE_APP = "@w6w/store";
+/** End the whole workflow successfully when its optional condition matches. */
+export const STOP_APP = "@w6w/stop";
+export const ROUTER_APP = "@w6w/router";
+export const RACE_APP = "@w6w/race";
+export const RACE_DESCRIPTION =
+  "Continue once with the first arriving path’s output. Later arrivals are ignored for this run. Other paths keep running.";
+
+export interface RouterRoute {
+  id: string;
+  label?: string;
+  condition?: unknown;
+  default?: boolean;
+}
+
+export function routesForStep(step: FlowStep): RouterRoute[] {
+  if (step.uses.app !== ROUTER_APP || !Array.isArray(step.with?.routes)) return [];
+  return step.with.routes.filter(
+    (r): r is RouterRoute => !!r && typeof r === "object" && typeof r.id === "string",
+  );
+}
+
+export const routeHandle = (id: string): string => `route:${id}`;
+export const routeFromHandle = (handle: string | null | undefined): string | undefined =>
+  handle?.startsWith("route:") ? handle.slice(6) : undefined;
+
+/** Route ports the Router card's right edge holds at its natural height. */
+export const ROUTER_PORTS_AT_BASE_HEIGHT = 3;
+/** Card height (px, border-box) added per route port past the third. */
+export const ROUTER_PORT_STEP = 16;
+
+export interface RouterPort {
+  id: string;
+  /** Absent for an If's True port: the unnamed handle a route-less edge anchors to. */
+  handleId?: string;
+  label: string;
+  /** Handle position along its edge, as a CSS `top` (right-edge ports only). */
+  top?: string;
+}
+
+/**
+ * Where a Router's ports sit (human report, 2026-10-31: "they need to be
+ * attached to the router"). Condition routes go on the card's right edge,
+ * evenly spaced; the fallback route takes the bottom edge, the slot every
+ * other node gives its error port. Up to three right-edge ports fit the
+ * card's natural height; each one past that adds a fixed step, so five
+ * routes make a slightly taller card. Handle ids stay `route:<id>`, so
+ * saved edges keep resolving.
+ */
+export interface PortLayout {
+  right: RouterPort[];
+  bottom?: RouterPort;
+  minHeight?: number;
+}
+
+export function routerPortLayout(routes: RouterRoute[]): PortLayout {
+  const fallback = routes.find((r) => r.default);
+  const port = (r: RouterRoute): RouterPort => ({
+    id: r.id,
+    handleId: routeHandle(r.id),
+    label: r.default ? "Fallback" : r.label || r.id,
+  });
+  const side = routes.filter((r) => r !== fallback);
+  return {
+    right: side.map((r, i) => ({ ...port(r), top: `${((i + 0.5) / side.length) * 100}%` })),
+    ...(fallback ? { bottom: port(fallback) } : {}),
+    ...(side.length > ROUTER_PORTS_AT_BASE_HEIGHT
+      ? { minHeight: side.length * ROUTER_PORT_STEP }
+      : {}),
+  };
+}
+
+/**
+ * `Edge.route` of an If's false branch (the engine's `IF_FALSE_ROUTE`). The true
+ * branch is an edge with no route, which is what every If edge saved before the
+ * False port existed already is.
+ */
+export const IF_FALSE_ROUTE = "false";
+
+export function isIfStep(step: FlowStep): boolean {
+  return step.uses.app === CONTROL_APP && step.uses.action === "if";
+}
+
+/**
+ * An If's ports, laid out the way {@link routerPortLayout} lays out a Router's
+ * (human report, 2026-10-31: "should not have error, it should have: true port
+ * and false port"). True takes the right edge; False takes the bottom edge, the
+ * slot every other node gives its error port, so an If has no error port. True
+ * keeps the unnamed handle, so saved If edges stay on it; False is `route:false`.
+ */
+export function ifPortLayout(): PortLayout & { bottom: RouterPort } {
+  return {
+    right: [{ id: "true", label: "True", top: "50%" }],
+    bottom: { id: IF_FALSE_ROUTE, handleId: routeHandle(IF_FALSE_ROUTE), label: "False" },
+  };
+}
 
 /** True when `app` is a reserved internal pseudo-app id (`@w6w/*`). */
 export function isInternalApp(app: string): boolean {
@@ -320,7 +455,7 @@ export function isInternalApp(app: string): boolean {
 
 /** True when a node is an engine-native flow-control node (can't run standalone). */
 export function isControlApp(app: string): boolean {
-  return app === CONTROL_APP;
+  return app === CONTROL_APP || app === RACE_APP;
 }
 
 /**
@@ -331,6 +466,16 @@ export function isControlApp(app: string): boolean {
  */
 export function isTriggerApp(app: string): boolean {
   return app === TRIGGER_APP || app === WEBHOOK_APP || app === SCHEDULER_APP;
+}
+
+/**
+ * Whether a step is a trigger NODE: one of the built-in triggers, or an app
+ * trigger node (`uses.trigger === true`). Canvas chrome, wiring and editing key
+ * on this; {@link isTriggerApp} stays for readers that mean the built-in
+ * `@w6w/*` triggers only (a callable workflow's input fields).
+ */
+export function isTriggerStep(uses: { app: string; trigger?: true }): boolean {
+  return isTriggerApp(uses.app) || uses.trigger === true;
 }
 
 /** A palette entry for an internal node: its id, label, group, and config schema. */
@@ -358,8 +503,9 @@ export interface InternalNodeDef {
    */
   hidden?: boolean;
   /**
-   * Connection ports: how many inbound (entry) and outbound (exit) connections
-   * this node accepts. A port is the ability to receive/emit a connection —
+   * Connection ports: whether this node has an entry (`in >= 1` takes any number
+   * of inbound edges; `in: 0` takes none) and how many outbound (exit) connections
+   * it allows. A port is the ability to receive/emit a connection —
    * rendered as a React Flow Handle. Defaults to one of each (`{ in: 1, out: 1 }`)
    * when omitted; a trigger overrides to `{ in: 0, out: 1 }` (nothing flows into
    * the entry node). Fixed for now — not user-editable.
@@ -430,8 +576,15 @@ export function nodePorts(app: string, action: string): NodePorts {
  * the `lookup` argument and never written onto the step, so it never serializes.
  */
 export function nodePortsForStep(step: FlowStep, lookup?: PortsLookup): NodePorts {
+  if (step.uses.app === ROUTER_APP) return { in: 1, out: routesForStep(step).length };
   const { app, action } = step.uses;
-  return resolvePorts(step.ports, lookup?.(app, action), internalNodeDef(app, action)?.ports);
+  // An app trigger node is an entry: nothing flows into it (like the built-in triggers).
+  const appTriggerPorts: PortsDecl | undefined = step.uses.trigger ? { in: 0, out: 1 } : undefined;
+  return resolvePorts(
+    step.ports,
+    lookup?.(app, action),
+    internalNodeDef(app, action)?.ports ?? appTriggerPorts,
+  );
 }
 
 // Feather-style 24×24 stroked glyphs (inner markup only; the card supplies the
@@ -481,8 +634,61 @@ const ICON_MODEL =
 const ICON_TEMPLATE =
   '<path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1" /><path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1" />';
 
+/** Cylinder — a data store. */
+const ICON_STORE =
+  '<ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" /><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />';
+
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
+  {
+    app: RACE_APP,
+    action: "race",
+    label: "Race",
+    displayName: "Race",
+    group: "control",
+    icon: '<path d="M3 5h4l5 7h9M3 19h4l5-7" /><polyline points="17 8 21 12 17 16" />',
+    ports: { in: "many", out: 1 },
+    params: [],
+  },
+  {
+    app: ROUTER_APP,
+    action: "route",
+    label: "Router",
+    displayName: "Router",
+    group: "compute",
+    icon: ICON_IF,
+    params: [
+      {
+        key: "routes",
+        label: "Routes",
+        type: "json",
+        required: true,
+        default: [
+          { id: "route_1", label: "Route 1", condition: false },
+          { id: "default", label: "Default", default: true },
+        ],
+      },
+    ],
+    output: [{ key: "route", label: "Selected route" }],
+  },
+  {
+    app: STOP_APP,
+    action: "stop",
+    label: "Stop workflow",
+    displayName: "Stop workflow",
+    group: "compute",
+    icon: '<rect x="5" y="5" width="14" height="14" rx="2" />',
+    params: [
+      {
+        key: "condition",
+        label: "Condition",
+        type: "json",
+        default: true,
+        hint: "Stop when this condition is true. Omit it to always stop.",
+      },
+    ],
+    output: [{ key: "stopped", label: "Stopped" }],
+  },
   {
     app: TRIGGER_APP,
     action: "manual",
@@ -618,7 +824,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         key: "responseData",
         label: "Response body (immediate)",
         type: "text",
-        hint: 'Body for "Immediately" responses. Empty = { "message": "Workflow was started" }.',
+        hint: 'Body for "Immediately" responses. Empty = { "runId": "run_…", "status": "started" }. Write {{ runId }} to include the run id.',
         showIf: { field: "responseMode", equals: "onReceived" },
       },
       { key: "rawBody", label: "Raw body", type: "boolean", default: false, advanced: true },
@@ -798,19 +1004,30 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         hint: "Execution language for this step's code. TypeScript types are erased before it runs, not checked. Python runs CPython-on-WASM with no network.",
       },
       {
-        key: "input",
-        type: "json",
-        label: "Input",
-        whole: true,
-        hint: "Data the script reads as `input`. Bind an upstream output ({{ nodes.<id>.output }}) or an object of several bindings; each value keeps its type.",
-      },
-      {
         key: "code",
         type: "code",
         label: "Script",
         required: true,
+        scriptReads: true,
         default: "// Runs as a function body. Return the step's output.\nreturn input;",
-        hint: "Function body over `input`; return the step's output. {{ }} is not substituted in code, so bind data under Input. digest(value) returns a stable SHA-256 hex (await it in JavaScript).",
+        hint: "Return the step's output. Read data from state, vars and consts; {{ }} isn't substituted in code. digest(value) returns a stable SHA-256 hex (await it in JavaScript or TypeScript).",
+      },
+      {
+        // Empty, the script's `input` is the run `state`, so most scripts never open this.
+        key: "custom_input",
+        type: "section",
+        section: "collapsible",
+        title: "Custom input (advanced)",
+        openWhenSet: true,
+        children: [
+          {
+            key: "input",
+            type: "json",
+            label: "Input",
+            whole: true,
+            hint: "Replaces what the script reads as `input` (by default, the run state). Each bound value keeps its type; a secret goes here, since state never holds one.",
+          },
+        ],
       },
     ],
   },
@@ -822,31 +1039,30 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     group: "compute",
     icon: ICON_TEMPLATE,
     // Static output shape (core rfcs/node-types.md:582): the already-rendered
-    // string, host-side Handlebars having run — an ordinary `var` ref, not the
+    // string or JSON, host-side Handlebars having run — an ordinary `var` ref, not the
     // `resolveRenderPart` mechanism.
     output: [{ key: "result" }],
     params: [
       {
         key: "template",
         label: "Template",
-        type: "text",
+        type: "json",
         required: true,
+        whole: true,
         hint:
-          "Handlebars template. Placeholder names are workflow-agnostic — bind them below. " +
+          'Enter a JSON string ("Hello {{name}}") or object, or bind one with ƒx. ' +
+          "String values render recursively; other values stay unchanged. " +
           "{{name}} is HTML-escaped; use {{{name}}} for raw output.",
       },
       {
-        // The manifest declares `values` as `type: "json"` — `"vars"` is a
-        // UI-only type, not a member of core's canonical `ParamType`, exactly
-        // the same divergence `data/index.ts:10-13` explains for `@w6w/data`'s
-        // own `vars` param. `required` surfaces the table in the form directly.
         key: "values",
         label: "Values",
         type: "vars",
         required: true,
-        default: [],
+        whole: true,
+        default: {},
         hint:
-          'A typed key/value array: [{ "key": "data", "type": "json", "value": ... }]. ' +
+          "Enter a JSON object, or use ƒx to bind data from workflow state or variables. " +
           "Each key becomes a top-level placeholder root.",
       },
     ],
@@ -868,7 +1084,7 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         label: "Variables",
         required: true,
         default: [],
-        hint: "Typed key/value variables for downstream steps to reference.",
+        hint: "Set values for downstream steps using individual fields or a JSON object.",
       },
     ],
   },
@@ -987,8 +1203,8 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     icon: ICON_AGGREGATE,
     hidden: true,
     // Fan-in join: accepts several inbound branches and emits one combined
-    // output. `in > 1` opts the node into multiple inbound edges (see core
-    // rfcs/node-types.md · Ports & cardinality); `out: 1` is a single exit.
+    // output. `in > 1` renders the multi-input handle (every entry already takes
+    // many edges — core rfcs/node-types.md · Alternate entries); `out: 1` is a single exit.
     ports: { in: 10, out: 1 },
     params: [
       {
@@ -1237,6 +1453,263 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
         hint: "Connection id of the provider to read the allowance of.",
       },
     ],
+  },
+  {
+    app: STORE_APP,
+    action: "get",
+    label: "Get entry",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    // Host node: the run's own account and project are bound host-side, so there is no
+    // scope param (`project`, `tenant`, ...) — the store is addressed by NAME alone.
+    // `store` is `type: "string"` in the manifest (core `ParamType` has no `data-store`);
+    // every entry's `store` param is the ui-only `data-store`, rendered as a store-name
+    // picker when the host supplies `listDataStores` — the same precedent as `model-route`.
+    // Likewise `key` (get/set/delete/increment) is the ui-only `data-store-key`: a searchable
+    // picker of that store's entries when the host supplies `listDataStoreEntries`.
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "data-store",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "data-store-key",
+        required: true,
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
+      },
+      {
+        key: "required",
+        label: "Required",
+        type: "boolean",
+        default: false,
+        hint: "Fail the step when the key is missing instead of returning found: false.",
+      },
+    ],
+    output: [
+      { key: "found" },
+      { key: "key" },
+      { key: "value" },
+      { key: "version" },
+      { key: "expiresAt" },
+    ],
+  },
+  {
+    app: STORE_APP,
+    action: "set",
+    label: "Set entry",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "data-store",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "data-store-key",
+        required: true,
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
+      },
+      {
+        key: "value",
+        label: "Value",
+        type: "json",
+        required: true,
+        hint: "The JSON value to store.",
+      },
+      {
+        key: "ifVersion",
+        label: "If version",
+        type: "number",
+        hint: "Write only when the stored version equals this number.",
+      },
+      {
+        key: "ttlSeconds",
+        label: "TTL (seconds)",
+        type: "number",
+        hint: "Expire the entry after this many seconds. Omit to keep it.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "value" }, { key: "version" }, { key: "expiresAt" }],
+  },
+  {
+    app: STORE_APP,
+    action: "delete",
+    label: "Delete entry",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "data-store",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "data-store-key",
+        required: true,
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "deleted" }],
+  },
+  {
+    app: STORE_APP,
+    action: "increment",
+    label: "Increment counter",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "data-store",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        type: "data-store-key",
+        required: true,
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
+      },
+      {
+        key: "by",
+        label: "By",
+        type: "number",
+        default: 1,
+        hint: "Amount to add; may be negative.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "value" }, { key: "version" }],
+  },
+  {
+    app: STORE_APP,
+    action: "list",
+    label: "List entries",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "data-store",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "prefix",
+        label: "Prefix",
+        type: "string",
+        hint: "Only entries whose key starts with this.",
+      },
+      {
+        key: "cursor",
+        label: "Cursor",
+        type: "string",
+        hint: "The nextCursor of a previous page.",
+      },
+      {
+        key: "limit",
+        label: "Limit",
+        type: "number",
+        default: 50,
+        hint: "Page size, at most 200.",
+      },
+    ],
+    output: [{ key: "items" }, { key: "nextCursor" }],
+  },
+  {
+    app: STORE_APP,
+    action: "query",
+    label: "Query rows",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "data-store",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "where",
+        label: "Where",
+        type: "json",
+        hint: "Column equality filter.",
+      },
+      {
+        key: "order",
+        label: "Order",
+        type: "string",
+        hint: "Column to order by; prefix with - for descending.",
+      },
+      {
+        key: "limit",
+        label: "Limit",
+        type: "number",
+        hint: "Maximum rows to return.",
+      },
+    ],
+    output: [{ key: "items" }],
+  },
+  {
+    app: STORE_APP,
+    action: "insert",
+    label: "Insert row",
+    displayName: "Store",
+    group: "compute",
+    icon: ICON_STORE,
+    ports: { in: 1, out: 1 },
+    params: [
+      {
+        key: "store",
+        label: "Store",
+        type: "data-store",
+        required: true,
+        hint: "Name of a data store in this account and project.",
+      },
+      {
+        key: "row",
+        label: "Row",
+        type: "json",
+        required: true,
+        hint: "The row, keyed by column name.",
+      },
+      {
+        key: "ttlSeconds",
+        label: "TTL (seconds)",
+        type: "number",
+        hint: "Expire the entry after this many seconds. Omit to keep it.",
+      },
+    ],
+    output: [{ key: "key" }, { key: "value" }, { key: "version" }],
   },
 ];
 

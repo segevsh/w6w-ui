@@ -11,6 +11,7 @@
  * this file's `W6WUIProviderProps.theme` doc and `docs/theming.md`.
  */
 import { type ReactNode, createContext, useContext } from "react";
+import type { NodeSample } from "./node-samples.ts";
 import { ProvidedThemeCtx } from "./theme.ts";
 import type {
   ActionDef,
@@ -31,6 +32,7 @@ import type {
   SubscriptionSummary,
   ThemeMode,
   TriggerSummary,
+  WebhookListenSession,
   WorkflowDetail,
   WorkflowSummary,
 } from "./types.ts";
@@ -151,6 +153,8 @@ export interface ListAppsPageOptions {
   q?: string;
   /** Server-side category filter (e.g. `"ai"`). */
   category?: string;
+  /** Server-side filter to apps declaring at least one trigger (`GET /apps?hasTriggers=true`); `total` is then the filtered total. */
+  hasTriggers?: boolean;
   /** Server-side id allow-list (`GET /apps?ids=a,b`); `total` is then the filtered total. */
   ids?: string[];
   /** Opaque pagination cursor from a prior {@link AppsPageResult.nextCursor}. */
@@ -177,6 +181,17 @@ export interface AppsPageResult {
   offset?: number;
   limit?: number;
   expiresAt?: string;
+}
+
+/**
+ * One page of a data store's entries for the `data-store-key` picker
+ * ({@link W6WApi.listDataStoreEntries}). `value` is the stored JSON, which the
+ * picker shortens to a one-line preview; `updatedAt` is an ISO timestamp.
+ */
+export interface DataStoreEntryOptions {
+  items: { key: string; value?: unknown; updatedAt?: string }[];
+  /** True when further matching entries exist past this page. */
+  more?: boolean;
 }
 
 export interface W6WApi {
@@ -230,6 +245,31 @@ export interface W6WApi {
   listModelRoutes?(
     project?: string,
   ): Promise<{ name: string; model: string; status: "active" | "broken" }[]>;
+
+  /**
+   * OPTIONAL: the project's data stores, for the `data-store` step-param
+   * picker (`@w6w/store`). Absent, the param renders as a plain text input and
+   * this is never called. Archived stores are not listed by the host.
+   * `project` is the editor's own project (`WorkflowProjectProvider`) when it
+   * has one — a host should list THAT project's stores, not guess one from its
+   * URL; `undefined` leaves the choice to the host.
+   */
+  listDataStores?(project?: string): Promise<{ name: string; kind: string }[]>;
+
+  /**
+   * OPTIONAL: ONE page of a data store's entries, for the `data-store-key`
+   * step-param picker (`@w6w/store` get/set/delete/increment). Absent, the key
+   * renders as a plain text input and this is never called.
+   * `store` is the store's NAME (what the step's `store` param holds) — the
+   * host resolves it to its own id. `prefix` is the server-side key search
+   * (the host's `GET /data-stores/:id/entries?prefix=`); `limit` caps the page,
+   * so a picker never loads a whole store. `more` is true when the store holds
+   * further matches past this page. `project` follows the `listDataStores` rule.
+   */
+  listDataStoreEntries?(
+    store: string,
+    opts: { project?: string; prefix?: string; limit?: number; signal?: AbortSignal },
+  ): Promise<DataStoreEntryOptions>;
 
   /**
    * OPTIONAL: resolve the choices of `options: { source: "resolveFields" }`
@@ -340,6 +380,11 @@ export interface W6WApi {
       project?: string;
       state?: StepStartState;
       overrides?: RequestOverrides;
+      /**
+       * The workflow the step belongs to, so the host resolves `nodes.<id>.config` (e.g. a
+       * webhook node's `url`) as on a run. The host reads only the caller's own workflows.
+       */
+      workflowId?: string;
     },
   ): Promise<{
     value: unknown;
@@ -438,6 +483,15 @@ export interface W6WApi {
   listStepTests(workflowId: string, stepId: string): Promise<StepTest[]>;
 
   /**
+   * OPTIONAL. The workflow's persisted node samples — each node's last output shape (and value,
+   * when kept) from a step Test, a node run or a full run, written server-side on every one of
+   * them. The flow editor loads them once per workflow so upstream keys survive a reload
+   * (`node-samples.ts`); a host without it behaves exactly as before. GETs
+   * `/workflows/:workflowId/node-samples` → `{ nodeSamples }`.
+   */
+  loadNodeSamples?(workflowId: string): Promise<NodeSample[]>;
+
+  /**
    * List the caller's registered Functions (core rfcs/function.md) — drives
    * the step builder's Functions tab (F-2.0). GETs `/functions`.
    */
@@ -492,11 +546,11 @@ export interface W6WApi {
 
   /**
    * List apps that declare at least one trigger — the Triggers tab's
-   * "App triggers" section (T-0). GETs whatever the host resolves to (e.g.
-   * apps filtered by `triggerCount > 0`).
+   * Apps filtered by `triggerCount > 0`. UNUSED by the step builder: the Triggers
+   * tab resolves connected apps via `listAppsByIds` and searches via
+   * `listAppsPage({ hasTriggers: true })`. The member stays on the public surface.
    *
-   * OPTIONAL, like `listTestRuns?` above: a host that hasn't wired this member
-   * still typechecks and simply doesn't render the App-triggers section.
+   * OPTIONAL, like `listTestRuns?` above.
    */
   listTriggerApps?(): Promise<AppSummary[]>;
 
@@ -511,6 +565,35 @@ export interface W6WApi {
    * `/workflows/:id/subscriptions`.
    */
   listSubscriptionsForWorkflow?(workflowId: string): Promise<SubscriptionSummary[]>;
+
+  /**
+   * "Listen for test event" on a `@w6w/webhook` subscription: opens a short-lived session in
+   * which the receive URL captures the next request, even for an unpublished workflow. POSTs
+   * `/subscriptions/:id/listen`.
+   */
+  startWebhookListen?(
+    subscriptionId: string,
+  ): Promise<{ session: WebhookListenSession; webhookUrl: string }>;
+
+  /**
+   * Long-poll a listen session (`GET /subscriptions/:id/listen/:sessionId?wait=`). Resolves as
+   * soon as a request is captured or the session expires, else after `waitSeconds` (max 25).
+   */
+  pollWebhookListen?(
+    subscriptionId: string,
+    sessionId: string,
+    opts?: { waitSeconds?: number; signal?: AbortSignal },
+  ): Promise<WebhookListenSession>;
+
+  /** Stop listening (`DELETE /subscriptions/:id/listen/:sessionId`). */
+  stopWebhookListen?(subscriptionId: string, sessionId: string): Promise<void>;
+
+  /**
+   * Retry a failed trigger registration. POSTs
+   * `/subscriptions/:id/retry-registration`; resolves the updated Subscription.
+   * Absent => the trigger node offers no Retry.
+   */
+  retrySubscriptionRegistration?(subscriptionId: string): Promise<SubscriptionSummary>;
 
   /**
    * Create a Subscription binding an app trigger to a workflow — the one
@@ -614,19 +697,35 @@ export function useOptionalW6WApi(): W6WApi | undefined {
  * panels render outside the editor too (e.g. connection screens).
  */
 const WorkflowProjectCtx = createContext<string | undefined>(undefined);
+/** The edited workflow's id, so a test-invoke can name it (`nodes.<id>.config`). */
+const WorkflowIdCtx = createContext<string | undefined>(undefined);
 
-/** Scopes test-invokes under it to `project`; the editor wraps its body with this. */
+/**
+ * Scopes test-invokes under it to `project`, and names `workflowId` on them; the editor wraps
+ * its body with this.
+ */
 export function WorkflowProjectProvider({
   project,
+  workflowId,
   children,
 }: {
   project?: string;
+  workflowId?: string;
   children: ReactNode;
 }) {
-  return <WorkflowProjectCtx.Provider value={project}>{children}</WorkflowProjectCtx.Provider>;
+  return (
+    <WorkflowProjectCtx.Provider value={project}>
+      <WorkflowIdCtx.Provider value={workflowId}>{children}</WorkflowIdCtx.Provider>
+    </WorkflowProjectCtx.Provider>
+  );
 }
 
 /** The selected workflow project id in scope, or `undefined` outside the editor. */
 export function useWorkflowProject(): string | undefined {
   return useContext(WorkflowProjectCtx);
+}
+
+/** The edited workflow's id in scope, or `undefined` outside the editor. */
+export function useWorkflowId(): string | undefined {
+  return useContext(WorkflowIdCtx);
 }

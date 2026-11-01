@@ -2,7 +2,7 @@
 //
 // T-0.1 — a trigger node renders as a half-pill. A structural gate pins the
 // mechanism's SHAPE inside the .tsx (the class + data attribute are driven by
-// `isTrigger`, on ControlNodeCard's card div only); that the shape actually
+// `isTrigger`, on ControlNodeCard's and StepNodeCard's card divs); that the shape actually
 // RENDERS is test/canvas-layer's job (real Chromium, computed border radius).
 // Mirrors the AST rig from WorkflowFlowEditor.error-port-wiring.test.ts.
 import assert from "node:assert/strict";
@@ -71,7 +71,7 @@ function controlCard(): JsxEl {
   return els[0];
 }
 
-test("TS1 — isTrigger is derived from isTriggerApp(step.uses.app)", () => {
+test("TS1 — isTrigger is derived from isTriggerStep(step.uses)", () => {
   const fn = findFunction("ControlNodeCard");
   let init: string | undefined;
   const visit = (node: ts.Node) => {
@@ -81,21 +81,35 @@ test("TS1 — isTrigger is derived from isTriggerApp(step.uses.app)", () => {
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(fn, visit);
-  assert.equal(init, "isTriggerApp(step.uses.app)");
+  assert.equal(init, "isTriggerStep(step.uses)");
 });
 
-test('TS2 — the card div carries className={isTrigger ? "w6w-node-trigger" : undefined}', () => {
-  assertTriggerConditional(attrExpr(controlCard(), "className"), "w6w-node-trigger", "className");
+test('TS2 — the card div carries className={isTrigger ? "w6w-node-trigger" : …}, absent on a plain non-router control', () => {
+  // 55c674b: the false arm now composes the router class
+  // (`isTrigger ? "w6w-node-trigger" : isRouter ? "w6w-node-router" : undefined`).
+  // The trigger arm is unchanged, and a control that is neither still gets no class.
+  const expr = attrExpr(controlCard(), "className");
+  assert.ok(ts.isConditionalExpression(expr), "className must be conditional on isTrigger");
+  assert.equal(expr.condition.getText(sf), "isTrigger", "className's condition");
+  assert.ok(ts.isStringLiteral(expr.whenTrue), "className's trigger arm must be a string literal");
+  assert.equal(expr.whenTrue.text, "w6w-node-trigger", "className's trigger arm");
+  const rest = expr.whenFalse;
+  assert.ok(ts.isConditionalExpression(rest), "the non-trigger arm must branch on isRouter");
+  assert.equal(rest.condition.getText(sf), "isRouter", "the non-trigger arm's condition");
+  assert.ok(ts.isStringLiteral(rest.whenTrue), "the router arm must be a string literal");
+  assert.equal(rest.whenTrue.text, "w6w-node-router", "the router arm");
+  assert.equal(rest.whenFalse.getText(sf), "undefined", "className must be absent otherwise");
 });
 
 test('TS3 — the card div carries data-node-kind={isTrigger ? "trigger" : undefined}', () => {
   assertTriggerConditional(attrExpr(controlCard(), "data-node-kind"), "trigger", "data-node-kind");
 });
 
-test("TS4 — StepNodeCard (app steps) carries neither marker", () => {
-  const text = findFunction("StepNodeCard").getText(sf);
-  assert.doesNotMatch(text, /data-node-kind/);
-  assert.doesNotMatch(text, /w6w-node-trigger/);
+test("TS4 — StepNodeCard carries both markers only for an app trigger (uses.trigger)", () => {
+  const els = elementsWithAttr(findFunction("StepNodeCard"), "data-run-status");
+  assert.equal(els.length, 1, "exactly one data-run-status element in StepNodeCard");
+  assertTriggerConditional(attrExpr(els[0], "className"), "w6w-node-trigger", "className");
+  assertTriggerConditional(attrExpr(els[0], "data-node-kind"), "trigger", "data-node-kind");
 });
 
 test("TS5 — _flow.scss defines the half-pill rule under .w6w-flow", () => {

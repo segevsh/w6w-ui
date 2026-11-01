@@ -74,13 +74,15 @@ A paged list of runs, in the order you give.
 
 | Prop | Type | What it does |
 | --- | --- | --- |
-| `items` | `{ id, kind, callableName, status, startedAt, durationMs }[]` | Required. `durationMs` is `null` while a run is unfinished. |
+| `items` | `{ id, kind, callableName, status, startedAt, durationMs, rerunOf? }[]` | Required. `durationMs` is `null` while a run is unfinished. A row with `rerunOf` carries a **Re-run** tag. |
 | `showCallable` | `boolean` | `true` titles each row with the callable's name, for a project-wide history. The default, `false`, titles it with the start time, for one callable's history. |
 | `selectedId` | `string \| null` | The row to highlight. |
 | `onSelect` | `(id) => void` | Makes rows clickable. |
 | `loading` | `boolean` | Shows the loading state while there are no items yet. |
 | `emptyLabel` | `ReactNode` | Shown when `items` is empty. |
 | `hasPrev`, `hasNext`, `onPrev`, `onNext` | | The pager. It renders once you pass `onPrev` or `onNext`. |
+| `onRerun` | `(id) => void` | Adds a **Re-run** button beside every row. |
+| `rerunningId` | `string \| null` | The row whose re-run is in flight. While set, every row's **Re-run** is disabled. |
 
 ## `ExecutionFilters`
 
@@ -116,6 +118,10 @@ One run: its status, timing, input, output, error and, for a workflow, the node 
 | `errorMessage` | `ReactNode` | An alert, such as "Couldn't load this run". |
 | `onClose` | `() => void` | Adds a close control. |
 | `onOpenInEditor` | `() => void` | Adds an **Open in visual editor** button. Pass it for workflow runs only. |
+| `onBack` | `() => void` | Adds a **← Back** control above the run, for showing the detail in place of the list it came from. It shows even when the run failed to load. |
+| `onRerun` | `() => void` | Adds a **Re-run** button. |
+| `onOpenExecution` | `(id) => void` | Makes the id in a re-run's "Re-run of <id>" line (from `execution.rerunOf`) a link to the original. |
+| `rerunning` | `boolean` | Disables **Re-run** and labels it **Re-running…**. |
 
 Leave `input` or `output` `undefined` to hide that section. Pass `null` to show a `null` value.
 `steps` follows the same rule.
@@ -127,7 +133,7 @@ beside the [workflow canvas](/reference-packages/components/flow-editor/).
 
 | Prop | Type | What it does |
 | --- | --- | --- |
-| `steps` | `{ id, label?, status, startedAt?, finishedAt?, input?, output?, meta?, error? }[]` | Required. In run order. `status` is a node status (`pending`, `running`, `succeeded`, `failed` or `skipped`). `meta` (`{ app, version, action, connectionId }`) adds a Metadata block after Output; it is hidden when `meta` is absent. |
+| `steps` | `{ id, label?, status, skipReason?, startedAt?, finishedAt?, input?, output?, meta?, error? }[]` | Required. In run order. `status` is a node status (`pending`, `running`, `succeeded`, `failed` or `skipped`). A skipped row's `skipReason` adds "condition false", "run stopped" or "disabled" beside its pill; a `not_on_path` row moves to a collapsed "N steps on other paths, not part of this run" line under the list. `meta` (`{ app, version, action, connectionId }`) adds a Metadata block after Output; it is hidden when `meta` is absent. `node` (`{ app, action, trigger?, appName?, actionName? }`) marks the row **Trigger** or **Node** and adds "App · Action" under its label; a built-in `@w6w/*` node is named for you, and anything unnamed shows its raw id. |
 | `runError` | `{ message, code?, phase?, retryable? }` | Why the run itself failed, shown above the nodes. |
 | `stepErrors` | `{ stepId, label?, error }[]` | Failures the run recorded and continued past (a node with `onError: "continue-record"`). |
 | `emptyLabel` | `ReactNode` | Shown when `steps` is empty. |

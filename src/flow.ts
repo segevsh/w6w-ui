@@ -13,7 +13,18 @@
  * compiled in from `@xyflow/react/dist/style`), so no second import is needed.
  */
 export { WorkflowFlowEditor } from "./WorkflowFlowEditor.tsx";
-export type { WorkflowFlowEditorProps } from "./WorkflowFlowEditor.tsx";
+export type {
+  FlowChangeMeta,
+  RunFromNodeRequest,
+  WorkflowFlowEditorProps,
+} from "./WorkflowFlowEditor.tsx";
+export {
+  isDisabledStep,
+  isPausedStep,
+  pausedStopAt,
+  withDisabled,
+  withPaused,
+} from "./flow-node-flags.ts";
 
 export { ExpressionOptionsProvider } from "./components/ExpressionOptions.tsx";
 export type { ExpressionOptions } from "./components/ExpressionOptions.tsx";
@@ -22,6 +33,7 @@ export type { FlowEdge, FlowStep, FlowWorkflow, InternalNodeDef } from "./flow-t
 export {
   CALL_APP,
   CONTROL_APP,
+  RACE_APP,
   DATA_APP,
   INTERNAL_NODES,
   internalNodeDefaults,
@@ -31,6 +43,7 @@ export {
   isControlApp,
   isInternalApp,
   isTriggerApp,
+  isTriggerStep,
   SCHEDULER_APP,
   SCRIPT_APP,
   TRIGGER_APP,
@@ -66,3 +79,6 @@ export {
   withCanvasGeometry,
 } from "./canvas-utils.ts";
 export type { LiveGeometry } from "./canvas-utils.ts";
+
+export { centralizeConnections, connectionIdFor } from "./workflow-connections.ts";
+export type { FlowConnections } from "./workflow-connections.ts";

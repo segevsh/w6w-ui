@@ -40,7 +40,7 @@ test("W1 — workflowToFlow stays one-arg (stepProblems never goes through it)",
   const calls = findCalls(inner, "workflowToFlow");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].arguments.length, 1);
-  assert.equal(calls[0].arguments[0].getText(sf), "value");
+  assert.equal(calls[0].arguments[0].getText(sf), "initialWorkflow");
 });
 
 test("W2 — one useEffect keyed on stepProblems calls setNodes(applyStepProblems(...))", () => {
@@ -53,7 +53,10 @@ test("W2 — one useEffect keyed on stepProblems calls setNodes(applyStepProblem
     );
   });
   assert.equal(effects.length, 1, "exactly one effect depends on stepProblems");
-  assert.equal(effects[0].arguments[1].getText(sf), "[stepProblems, initial, setNodes]");
+  assert.equal(
+    effects[0].arguments[1].getText(sf),
+    "[stepProblems, initial, restoreVersion, setNodes]",
+  );
   const body = effects[0].arguments[0].getText(sf);
   assert.match(body, /setNodes\(/);
   assert.match(body, /applyStepProblems\(/);
@@ -130,8 +133,8 @@ test("W6 — every applyStepProblemFix( call sits inside a JSX onClick handler",
   }
 });
 
-test("W4 — StepEditModal never empties the connection list (no setConns([]))", () => {
-  const text = findFunction("StepEditModal").getText(sf);
+test("W4 — StepEditModal (action form) never empties the connection list (no setConns([]))", () => {
+  const text = findFunction("ActionStepEditModal").getText(sf);
   assert.match(text, /setConns\(/, "the rig must actually see the setConns calls");
   assert.doesNotMatch(text, /setConns\(\s*\[\s*\]\s*\)/);
 });

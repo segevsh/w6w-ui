@@ -3,6 +3,7 @@ import { CodeBlock } from "../CodeBlock.tsx";
 import type { ExecutionKind } from "./ExecutionList.tsx";
 import { ExecutionLogPanel } from "./ExecutionLogPanel.tsx";
 import type { ExecutionLogStep } from "./ExecutionLogPanel.tsx";
+import { Icon } from "./Icon.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { StepStatusPill } from "./StepStatusPill.tsx";
 import type { ExecutionStatus } from "./StepStatusPill.tsx";
@@ -42,6 +43,9 @@ export interface ExecutionDetailValue {
   /** A workflow run's steps. `undefined` = not a step-bearing run (no section);
    * `[]` = it ran and no step did (the panel's own empty state). */
   steps?: ExecutionLogStep[];
+  /** The execution this one is a re-run of — shown as "Re-run of <id>".
+   * `null`/omitted ⇒ an ordinary execution, no line. */
+  rerunOf?: string | null;
 }
 
 export interface ExecutionDetailProps {
@@ -61,6 +65,19 @@ export interface ExecutionDetailProps {
   /** Supplied ⇒ the "Open in visual editor" button renders and calls this.
    * Omitted ⇒ no button (a function/endpoint run has no visual editor to open). */
   onOpenInEditor?: () => void;
+  /** Supplied ⇒ a "Back" control renders above everything else and calls this
+   * — for a host that shows this detail IN PLACE of the list it was opened
+   * from. Omitted ⇒ no control. Rendered in every branch, so a view whose
+   * fetch failed can still be left. */
+  onBack?: () => void;
+  /** Supplied ⇒ the "Re-run" button renders and calls this. Omitted ⇒ no button. */
+  onRerun?: () => void;
+  /** `true` while the host's re-run is in flight — the button is disabled and
+   * says so. */
+  rerunning?: boolean;
+  /** Supplied ⇒ the "Re-run of <id>" id is a link that calls this with that
+   * id, to open the original. Omitted ⇒ plain text. */
+  onOpenExecution?: (id: string) => void;
 }
 
 const KIND_LABEL: Record<ExecutionKind, string> = {
@@ -93,9 +110,25 @@ export function ExecutionDetail({
   errorMessage,
   onClose,
   onOpenInEditor,
+  onBack,
+  onRerun,
+  rerunning = false,
+  onOpenExecution,
 }: ExecutionDetailProps) {
   return (
     <section className="w6w-execution-detail w6w-stack" data-testid="execution-detail">
+      {onBack && (
+        <div className="w6w-execution-detail-back">
+          <button
+            type="button"
+            className="w6w-btn w6w-btn-ghost"
+            data-testid="execution-detail-back"
+            onClick={onBack}
+          >
+            <span aria-hidden="true">←</span> Back
+          </button>
+        </div>
+      )}
       {errorMessage != null && (
         <p
           role="alert"
@@ -106,7 +139,14 @@ export function ExecutionDetail({
         </p>
       )}
       {execution ? (
-        <Body execution={execution} onClose={onClose} onOpenInEditor={onOpenInEditor} />
+        <Body
+          execution={execution}
+          onClose={onClose}
+          onOpenInEditor={onOpenInEditor}
+          onRerun={onRerun}
+          rerunning={rerunning}
+          onOpenExecution={onOpenExecution}
+        />
       ) : loading ? (
         <p className="w6w-muted" data-testid="execution-detail-loading">
           Loading…
@@ -124,11 +164,18 @@ function Body({
   execution,
   onClose,
   onOpenInEditor,
+  onRerun,
+  rerunning,
+  onOpenExecution,
 }: {
   execution: ExecutionDetailValue;
   onClose?: () => void;
   onOpenInEditor?: () => void;
+  onRerun?: () => void;
+  rerunning: boolean;
+  onOpenExecution?: (id: string) => void;
 }) {
+  const rerunOf = execution.rerunOf;
   return (
     <>
       <div className="w6w-execution-detail-head">
@@ -141,8 +188,20 @@ function Body({
             </span>
           </div>
         </div>
-        {(onOpenInEditor || onClose) && (
+        {(onRerun || onOpenInEditor || onClose) && (
           <div className="w6w-execution-detail-actions">
+            {onRerun && (
+              <button
+                type="button"
+                className="w6w-btn w6w-execution-detail-rerun"
+                data-testid="execution-detail-rerun"
+                title="Run it again with the same input"
+                disabled={rerunning}
+                onClick={onRerun}
+              >
+                <Icon name="sync" size={14} /> {rerunning ? "Re-running…" : "Re-run"}
+              </button>
+            )}
             {onOpenInEditor && (
               <button
                 type="button"
@@ -167,6 +226,25 @@ function Body({
           {execution.id}
         </code>
       </p>
+
+      {rerunOf && (
+        <p className="w6w-execution-detail-rerun-of" data-testid="execution-detail-rerun-of">
+          <span className="w6w-execution-rerun-tag">Re-run</span>
+          <span className="w6w-muted w6w-small">of</span>
+          {onOpenExecution ? (
+            <button
+              type="button"
+              className="w6w-execution-detail-rerun-of-link"
+              data-testid="execution-detail-rerun-of-link"
+              onClick={() => onOpenExecution(rerunOf)}
+            >
+              <code>{rerunOf}</code>
+            </button>
+          ) : (
+            <code>{rerunOf}</code>
+          )}
+        </p>
+      )}
 
       <dl className="w6w-execution-detail-timing">
         <TimingItem label="Started" value={formatExecutionTime(execution.startedAt)} />

@@ -10,18 +10,23 @@ import {
 } from "react";
 import { AddConnectionModal } from "./AddConnectionModal.tsx";
 import { AppPicker } from "./AppPicker.tsx";
+import { ConditionEditor } from "./ConditionEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { type NodeConfig, NodeConfigForm } from "./NodeConfigForm.tsx";
 import { ParamsForm, flattenParams, isParamVisible } from "./ParamsForm.tsx";
+import { RouterEditor } from "./RouterEditor.tsx";
+import { StopEditor } from "./StopEditor.tsx";
 import { TriggerFillForm } from "./TriggerFillForm.tsx";
 import { WaitEditor } from "./WaitEditor.tsx";
+import { WorkflowConnectionPicker, useWorkflowConnections } from "./WorkflowConnections.tsx";
 import { mergeResolvedApps, nextIdBatch } from "./app-pages.ts";
 import { ApiCallsPanel } from "./components/ApiCallsPanel.tsx";
 import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
-import type {
-  ExpressionLoopSource,
-  ExpressionStepSource,
+import {
+  type ExpressionLoopSource,
+  type ExpressionStepSource,
+  useExpressionOptions,
 } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { InternalIcon } from "./components/InternalIcon.tsx";
@@ -33,13 +38,25 @@ import {
   DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
+  RACE_APP,
+  RACE_DESCRIPTION,
+  ROUTER_APP,
+  STOP_APP,
+  STORE_APP,
   internalNodeDefaults,
   isControlApp,
   isInternalApp,
   isTriggerApp,
 } from "./flow-types.ts";
 import { paramsToJson, stepToJson } from "./flow-utils.ts";
-import { type StepMeta, type StepStartState, useW6WApi, useWorkflowProject } from "./provider.tsx";
+import {
+  type StepMeta,
+  type StepStartState,
+  type W6WApi,
+  useW6WApi,
+  useWorkflowId,
+  useWorkflowProject,
+} from "./provider.tsx";
 import { loopSeedFromSource, startStateFromSeeds } from "./step-preview-state.ts";
 import type {
   ActionDef,
@@ -50,16 +67,27 @@ import type {
   ConnectionSummary,
   FunctionSummary,
   ThemeMode,
-  TriggerSummary,
   WorkflowDetail,
   WorkflowSummary,
 } from "./types.ts";
 import { useSeedSources } from "./use-seed-sources.ts";
+import {
+  connectionIdFor,
+  defaultConnectionFor,
+  withDefaultConnection,
+} from "./workflow-connections.ts";
 
 /** The step the builder emits — the editor assigns the final `id`. `NodeConfig`
  * carries the base settings (retry / onError / notes) set on the Config view. */
 export interface BuiltStep extends NodeConfig {
-  uses: { app: string; action: string; connection?: string | null };
+  uses: {
+    app: string;
+    action: string;
+    connection?: string | null;
+    connectionRef?: string;
+    /** Marks an app TRIGGER node (`action` is the trigger key); the engine/server read it. */
+    trigger?: true;
+  };
   with?: Record<string, unknown>;
 }
 
@@ -195,6 +223,12 @@ export interface StepBuilderModalProps {
    * so the only outcome is an infinite loop. Absent ⇒ nothing is excluded.
    */
   excludeCallableIds?: readonly string[];
+  /**
+   * Fired once an app TRIGGER picked on the Triggers tab is committed (needs
+   * `onDraftChange`), with the new node's id: the host closes this modal and
+   * opens that node in its own step editor, as it does for any node.
+   */
+  onOpenStep?: (id: string) => void;
 }
 
 /** {@link StepBuilderModalProps.callables}'s default — both families. Module
@@ -315,6 +349,7 @@ export function StepBuilderModal({
   connectionOnly,
   onConnected,
   excludeCallableIds,
+  onOpenStep,
 }: StepBuilderModalProps) {
   // Default to the apps the user already connected — no searching for the one
   // integration they use every day.
@@ -326,6 +361,10 @@ export function StepBuilderModal({
   // Same collapse for a chosen internal node (trigger / control / compute) — its
   // config form (dynamic ParamsForm over the node's schema) shows before adding.
   const [selectedNode, setSelectedNode] = useState<InternalNodeDef | null>(null);
+  // An app picked on the Triggers tab runs the SAME `AppStepConfig` as an app
+  // picked for an action (app → account → pick), in its `kind="trigger"` mode:
+  // picking a trigger adds ONE trigger node the way picking an action adds one.
+  const [selectedTriggerApp, setSelectedTriggerApp] = useState<AppSummary | null>(null);
   // Same collapse for a picked Function/Workflow target (D-12/D-15): both tabs
   // mint the SAME `@w6w/call` step shape, so one piece of state (family + id +
   // label) is enough — `CallableStepConfig` decides what to call from `family`.
@@ -416,24 +455,30 @@ export function StepBuilderModal({
     );
   }
 
-  if (selectedApp) {
+  const pickedApp = selectedTriggerApp ?? selectedApp;
+  if (pickedApp) {
+    const kind = selectedTriggerApp ? "trigger" : "action";
+    const changeApp = () => {
+      setSelectedApp(null);
+      setSelectedTriggerApp(null);
+    };
     return (
       <Modal
-        title={selectedApp.displayName}
+        title={pickedApp.displayName}
         subtitle={
           <>
-            <code>{selectedApp.id}</code>
-            {selectedApp.version && ` · v${selectedApp.version}`}
+            <code>{pickedApp.id}</code>
+            {pickedApp.version && ` · v${pickedApp.version}`}
           </>
         }
         onClose={onClose}
         size="xl"
         titleIcon={
           <AppIcon
-            src={selectedApp.iconSvg}
-            srcDark={selectedApp.iconSvgDark}
-            brandColor={selectedApp.brandColor}
-            name={selectedApp.displayName}
+            src={pickedApp.iconSvg}
+            srcDark={pickedApp.iconSvgDark}
+            brandColor={pickedApp.brandColor}
+            name={pickedApp.displayName}
             theme={theme}
             size={22}
           />
@@ -442,32 +487,34 @@ export function StepBuilderModal({
         <div className="w6w-stepbuilder-config">
           {/* App-switching lives in the Setup tab's "Change" (à la Zapier), not a
               top-right back button. */}
-          {connectionOnly ? (
+          {connectionOnly && kind === "action" ? (
             <AppConnectionOnlyConfig
-              appId={selectedApp.id}
-              app={selectedApp}
+              appId={pickedApp.id}
+              app={pickedApp}
               onClose={onClose}
-              onChangeApp={() => setSelectedApp(null)}
+              onChangeApp={changeApp}
               theme={theme}
               initialConnection={initialConnection}
               onConnected={(connectionId, app) => onConnected?.(connectionId, app)}
             />
           ) : (
             <AppStepConfig
-              appId={selectedApp.id}
-              app={selectedApp}
+              kind={kind}
+              onOpenStep={onOpenStep}
+              appId={pickedApp.id}
+              app={pickedApp}
               onAdd={onAdd}
               onClose={onClose}
               onDraftChange={onDraftChange}
-              onChangeApp={() => setSelectedApp(null)}
+              onChangeApp={changeApp}
               theme={theme}
               workflowId={workflowId}
               stepId={stepId}
               upstreamSteps={upstreamSteps}
               loop={loop}
-              initialAction={initialAction}
-              initialConnection={initialConnection}
-              initialWith={initialWith}
+              // The initial* props pre-fill an ACTION step being edited; a
+              // trigger is always picked fresh.
+              {...(kind === "action" ? { initialAction, initialConnection, initialWith } : {})}
             />
           )}
         </div>
@@ -607,7 +654,13 @@ export function StepBuilderModal({
               emptyMessage="No AI apps registered yet."
             />
           ) : tab === "triggers" ? (
-            <TriggersFlow onSelect={setSelectedNode} workflowId={workflowId} onClose={onClose} />
+            <TriggersFlow
+              onSelect={setSelectedNode}
+              onSelectApp={setSelectedTriggerApp}
+              theme={theme}
+              appsFilter={appsFilter}
+              appsIds={appsIds}
+            />
           ) : tab === "controls" ? (
             <ControlsFlow onSelect={setSelectedNode} />
           ) : tab === "data" ? (
@@ -634,264 +687,151 @@ function NodeList({
   return (
     <div className="w6w-stepbuilder-list">
       {nodes.map((n) => (
-        <button
-          key={`${n.app}:${n.action}`}
-          type="button"
-          className="w6w-stepbuilder-item"
-          onClick={() => onSelect(n)}
-        >
-          <InternalIcon icon={n.icon} size={24} />
-          <span className="w6w-stepbuilder-item-main">
-            <strong>{n.label}</strong>
-            <code className="w6w-muted w6w-small">
-              {n.app} · {n.action}
-            </code>
-          </span>
-        </button>
+        <NodeRow key={`${n.app}:${n.action}`} node={n} onSelect={onSelect} />
       ))}
     </div>
   );
 }
 
-/**
- * Triggers tab — entry nodes that start a workflow (manual, webhook, …), plus
- * (T-0) an "App triggers" section listing apps that declare their own
- * triggers (RFC `trigger.md`). The internal 3 keep their existing `onSelect`
- * → `onAdd` graph-node behaviour, untouched; the app section is a SEPARATE,
- * non-graph mechanism (DECISIONS.md HITL-1, plan.md D-3) — selecting an app
- * trigger never calls `onAdd`.
- */
-function TriggersFlow({
+/** One internal-node row — shared by {@link NodeList} and the Triggers tab's built-in column. */
+function NodeRow({
+  node: n,
   onSelect,
-  workflowId,
-  onClose,
 }: {
+  node: InternalNodeDef;
   onSelect: (node: InternalNodeDef) => void;
-  workflowId?: string;
-  onClose: () => void;
 }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.group === "trigger");
-  const api = useW6WApi();
   return (
-    <div className="w6w-stack">
-      <p className="w6w-muted w6w-small">
-        Triggers start a workflow — run it manually or on an inbound webhook.
-      </p>
-      <NodeList nodes={nodes} onSelect={onSelect} />
-      {/* Gated on BOTH workflowId (this builder is opened for a real workflow —
-       *  a Subscription needs a workflow to bind to) and the optional member
-       *  itself. `test/picker-layout`'s I5/I6 mount with no `workflowId` even
-       *  though its stub `api` answers every key truthy — this second gate is
-       *  exactly why that suite stays unaffected (see the contract's test plan). */}
-      {workflowId && api.listTriggerApps && (
-        <AppTriggersSection workflowId={workflowId} onClose={onClose} />
-      )}
-    </div>
+    <button type="button" className="w6w-stepbuilder-item" onClick={() => onSelect(n)}>
+      <InternalIcon icon={n.icon} size={24} />
+      <span className="w6w-stepbuilder-item-main">
+        <strong>{n.label}</strong>
+        <code className="w6w-muted w6w-small">
+          {n.app} · {n.action}
+        </code>
+      </span>
+    </button>
   );
 }
 
 /**
- * `AppSummary.triggerCount` is declared on the SDK/wire type
- * (`@w6w/sdk/console`'s `AppSummary`) but not on this package's own
- * `types.ts` (`ui/src/types.ts`, read-only reuse site per this task's
- * contract) — accessed defensively rather than widening that shared type.
- */
-function hasDeclaredTriggers(a: AppSummary): boolean {
-  return ((a as { triggerCount?: number }).triggerCount ?? 0) > 0;
-}
-
-/**
- * "App triggers" section (T-0): apps that declare triggers, then — once one
- * is picked — that app's declared triggers (`api.getAppTriggers`). Choosing a
- * trigger calls `api.createSubscription` on an explicit click only; no graph
- * step is added (plan.md D-3 — `onAdd` is never reached from this section).
+ * Triggers tab — the "Ready to use" layout (F-2): **Your apps** on the left,
+ * the connected apps that declare at least one trigger; **Built-in** on the
+ * right (Manual / Webhook / Schedule); and a "Search all apps" button that opens
+ * an Apps-tab-style `AppPicker` narrowed SERVER-side to apps with triggers
+ * (`hasTriggers`).
  *
- * **Bounded when the host implements `listAppsPage`** (A2/C3): delegates
- * straight to `AppPicker`'s own paged mode (no `apps` prop, so AppPicker runs
- * its own bounded fetch/search/load-more/cancellation) with a client-side
- * `triggerCount > 0` filter — there is no server-side trigger-only filter, so
- * pages legitimately without SEE trigger apps stay reachable via search/load
- * more rather than being auto-drained. Falls back to the legacy
- * `api.listTriggerApps()` eager fetch, unchanged, for a host that has not
- * (yet) implemented the bounded seam.
+ * Unlike the home tab, BOTH columns always render: an empty left column says
+ * so and points at the search, rather than vanishing and leaving the built-ins
+ * to read as the only triggers there are.
+ *
+ * Picking an app, from either place, runs the app-action flow itself —
+ * {@link AppStepConfig} with `kind="trigger"`: account and trigger on the one
+ * Setup screen, and picking the trigger adds ONE trigger node; no
+ * Subscription is created here (the server derives it when the workflow is
+ * published). The built-ins keep their existing `onSelect` → `onAdd` path.
  */
-function AppTriggersSection({ workflowId, onClose }: { workflowId: string; onClose: () => void }) {
-  const api = useW6WApi();
-  const bounded = typeof api.listAppsPage === "function";
-  const [legacyApps, setLegacyApps] = useState<AppSummary[] | null>(null);
-  const [legacyError, setLegacyError] = useState<string | null>(null);
-  const [selectedApp, setSelectedApp] = useState<AppSummary | null>(null);
+function TriggersFlow({
+  onSelect,
+  onSelectApp,
+  theme,
+  appsFilter,
+  appsIds,
+}: {
+  onSelect: (node: InternalNodeDef) => void;
+  onSelectApp: (app: AppSummary) => void;
+  theme?: ThemeMode;
+  appsFilter?: (app: AppSummary) => boolean;
+  appsIds?: readonly string[];
+}) {
+  const nodes = INTERNAL_NODES.filter((n) => n.group === "trigger");
+  const [searching, setSearching] = useState(false);
+  // Connected apps resolved through `listAppsByIds` (inline connection meta has
+  // no `triggerCount`), then filtered to the ones that declare a trigger.
+  const data = useReadyToUse([], appsFilter, undefined, appsIds, { resolveInline: true });
 
-  useEffect(() => {
-    if (bounded) return;
-    const load = api.listTriggerApps;
-    if (!load) return;
-    let canceled = false;
-    load()
-      .then((r) => !canceled && setLegacyApps(r))
-      .catch((e) => !canceled && setLegacyError((e as Error).message));
-    return () => {
-      canceled = true;
-    };
-  }, [api, bounded]);
-
-  if (!bounded && !api.listTriggerApps) return null;
-
-  return (
-    <div className="w6w-stack">
-      <p className="w6w-muted w6w-small">
-        <strong>App triggers</strong> — bind one of these apps' declared triggers to this workflow.
-      </p>
-      {selectedApp ? (
-        <AppTriggerPicker
-          app={selectedApp}
-          workflowId={workflowId}
-          onBack={() => setSelectedApp(null)}
-          onClose={onClose}
-        />
-      ) : bounded ? (
+  if (searching) {
+    return (
+      <div className="w6w-stack">
+        <button
+          type="button"
+          className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+          onClick={() => setSearching(false)}
+        >
+          ← Back
+        </button>
         <AppPicker
-          onSelectApp={setSelectedApp}
-          filter={hasDeclaredTriggers}
+          onSelectApp={onSelectApp}
+          theme={theme}
+          filter={appsFilter}
+          ids={appsIds ? [...appsIds] : undefined}
+          hasTriggers
           search
           searchPlaceholder="Search apps with triggers…"
           emptyMessage="No apps declare triggers yet."
         />
-      ) : legacyError ? (
-        <div className="w6w-result w6w-error">{legacyError}</div>
-      ) : (
-        <AppPicker
-          apps={legacyApps}
-          onSelectApp={setSelectedApp}
-          search={false}
-          emptyMessage="No apps declare triggers yet."
-        />
-      )}
-    </div>
-  );
-}
+      </div>
+    );
+  }
 
-/**
- * One app's declared triggers, once picked in {@link AppTriggersSection} — a
- * chooser when the app declares triggers, an explicit "declares no triggers"
- * message when it doesn't (mirrors `SubscriptionsPage.tsx`'s
- * `TriggerKeyField`, minus its free-text fallback: a trigger key the app
- * doesn't declare is a `404 unknown_trigger` here, so there is nothing useful
- * a free-text arm could submit).
- */
-function AppTriggerPicker({
-  app,
-  workflowId,
-  onBack,
-  onClose,
-}: {
-  app: AppSummary;
-  workflowId: string;
-  onBack: () => void;
-  onClose: () => void;
-}) {
-  const api = useW6WApi();
-  const [triggers, setTriggers] = useState<TriggerSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  // A poll trigger waits here for its "Check every N minutes" before it is created.
-  const [pending, setPending] = useState<TriggerSummary | null>(null);
-  // Raw text while editing — clamped to the trigger's minimum only on blur / confirm.
-  const [minutes, setMinutes] = useState("5");
-
-  useEffect(() => {
-    const load = api.getAppTriggers;
-    if (!load) return;
-    let canceled = false;
-    load(app.id)
-      .then((r) => !canceled && setTriggers(r))
-      .catch((e) => !canceled && setError((e as Error).message));
-    return () => {
-      canceled = true;
-    };
-  }, [api, app.id]);
-
-  const minMinutes = (t: TriggerSummary) => Math.max(1, Math.ceil((t.minIntervalMs ?? 0) / 60000));
-
-  const pick = (t: TriggerSummary) => {
-    if (t.type !== "poll") return create(t.key);
-    setError(null);
-    setPending(t);
-    setMinutes(String(Math.max(5, Math.ceil((t.minIntervalMs ?? 0) / 60000))));
-  };
-
-  const create = (triggerKey: string, intervalMs?: number) => {
-    const createSubscription = api.createSubscription;
-    if (!createSubscription) return;
-    setError(null);
-    setCreating(true);
-    createSubscription(app.id, triggerKey, {
-      workflowId,
-      connectionId: null,
-      params: {},
-      ...(intervalMs === undefined ? {} : { intervalMs }),
-    })
-      .then(() => onClose())
-      .catch((e) => {
-        setCreating(false);
-        setError(e instanceof Error ? e.message : String(e));
-      });
-  };
-
+  const apps = data.apps
+    .filter((a) => (a.triggerCount ?? 0) > 0)
+    .sort(byLabel((a: AppSummary) => a.displayName));
+  const leftRows: ReactNode[] = apps.map((a) => (
+    <AppRow key={a.id} app={a} theme={theme} onSelect={onSelectApp} />
+  ));
+  if (data.moreApps) {
+    leftRows.push(
+      <button
+        key="__load_more_apps"
+        type="button"
+        className="w6w-btn w6w-btn-ghost w6w-btn-sm"
+        onClick={data.loadMoreApps}
+      >
+        Load more
+      </button>,
+    );
+  }
+  let leftBody: ReactNode;
+  if (data.state === "error") {
+    leftBody = <div className="w6w-result w6w-error">{data.error}</div>;
+  } else if (data.state === "loading") {
+    leftBody = <p className="w6w-muted w6w-small">Loading…</p>;
+  } else if (leftRows.length === 0) {
+    leftBody = (
+      <p className="w6w-muted w6w-small w6w-readytouse-empty">
+        No connected apps with triggers yet ·{" "}
+        <button type="button" className="w6w-linkbtn" onClick={() => setSearching(true)}>
+          Search all apps
+        </button>
+      </p>
+    );
+  } else {
+    leftBody = <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">{leftRows}</div>;
+  }
   return (
-    <div className="w6w-stack">
-      <button type="button" className="w6w-btn w6w-btn-ghost w6w-btn-sm" onClick={onBack}>
-        ← Back
-      </button>
-      <strong>{app.displayName}</strong>
-      {error && <div className="w6w-result w6w-error">{error}</div>}
-      {triggers === null ? (
-        <p className="w6w-muted w6w-small">Loading triggers…</p>
-      ) : triggers.length === 0 ? (
-        <p className="w6w-muted w6w-small">This app declares no triggers.</p>
-      ) : (
-        <div className="w6w-stepbuilder-list">
-          {triggers.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className="w6w-stepbuilder-item"
-              disabled={creating}
-              onClick={() => pick(t)}
-            >
-              <span className="w6w-stepbuilder-item-main">
-                <strong>{t.title}</strong>
-                <code className="w6w-muted w6w-small">{t.key}</code>
-                {t.description && <span className="w6w-muted w6w-small">{t.description}</span>}
-              </span>
-            </button>
-          ))}
+    <div className="w6w-apppicker-host">
+      <div className="w6w-readytouse" data-cols={2}>
+        <section className="w6w-readytouse-col" data-col="your-apps">
+          <h4 className="w6w-readytouse-heading">Your apps</h4>
+          {leftBody}
+        </section>
+        <div className="w6w-readytouse-stack">
+          <section className="w6w-readytouse-col" data-col="built-in">
+            <h4 className="w6w-readytouse-heading">Built-in</h4>
+            <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">
+              {nodes.map((n) => (
+                <NodeRow key={`${n.app}:${n.action}`} node={n} onSelect={onSelect} />
+              ))}
+            </div>
+          </section>
         </div>
-      )}
-      {pending && (
-        <div className="w6w-stack">
-          <label className="w6w-field">
-            <span>Check every … minutes</span>
-            <input
-              type="number"
-              min={minMinutes(pending)}
-              step={1}
-              value={minutes}
-              disabled={creating}
-              onChange={(e) => setMinutes(e.target.value)}
-              onBlur={() => setMinutes(String(clampMinutes(minutes, minMinutes(pending))))}
-            />
-          </label>
-          <button
-            type="button"
-            className="w6w-btn w6w-btn-primary w6w-btn-sm"
-            disabled={creating}
-            onClick={() => create(pending.key, clampMinutes(minutes, minMinutes(pending)) * 60000)}
-          >
-            Add trigger
-          </button>
-        </div>
-      )}
+      </div>
+      <div className="w6w-readytouse-footer">
+        <button type="button" className="w6w-btn" onClick={() => setSearching(true)}>
+          Search all apps
+        </button>
+      </div>
     </div>
   );
 }
@@ -902,37 +842,42 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Flow-control nodes branch, loop, parallelize, or pause the run.
+        Flow-control nodes branch, join paths, loop, parallelize, or pause the run.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
   );
 }
 
-/** Utilities tab — compute + request nodes (script, HTTP, respond). The `@w6w/data`
- * node lives in its own **Data** tab, so exclude it here. */
+/** Utilities tab — compute + request nodes. Variables and store actions live in Data. */
 function UtilitiesFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
   const nodes = INTERNAL_NODES.filter(
-    (n) => n.group !== "control" && n.group !== "trigger" && n.app !== DATA_APP && !n.hidden,
+    (n) =>
+      n.group !== "control" &&
+      n.group !== "trigger" &&
+      n.app !== DATA_APP &&
+      n.app !== STORE_APP &&
+      !n.hidden,
   );
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Utilities run a script, call an HTTP(S) endpoint, or respond to a webhook.
+        Run scripts, make HTTP requests, respond to webhooks, route the workflow, or stop it.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
   );
 }
 
-/** Data tab — the `@w6w/data` node: declare typed key/value variables for
- * downstream steps to reference. */
+/** Data tab — typed variables and persistent data-store actions. */
 function DataFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void }) {
-  const nodes = INTERNAL_NODES.filter((n) => n.app === DATA_APP);
+  const nodes = INTERNAL_NODES.filter(
+    (n) => (n.app === DATA_APP || n.app === STORE_APP) && !n.hidden,
+  );
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Declare typed key/value variables for downstream steps to reference.
+        Declare typed variables, read and write store entries, or query stored rows.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
@@ -1056,8 +1001,16 @@ export function ControlStepConfig({
       <div className="w6w-stepconfig-body">
         {tab === "configure" &&
           (configView === "props" ? (
-            node.action === "wait" && isControlApp(node.app) ? (
+            node.app === RACE_APP ? (
+              <p className="w6w-muted w6w-small">{RACE_DESCRIPTION}</p>
+            ) : node.action === "wait" && isControlApp(node.app) ? (
               <WaitEditor values={withValues} onChange={setWithValues} />
+            ) : node.action === "if" && isControlApp(node.app) ? (
+              <ConditionEditor values={withValues} onChange={setWithValues} />
+            ) : node.app === STOP_APP ? (
+              <StopEditor values={withValues} onChange={setWithValues} />
+            ) : node.app === ROUTER_APP ? (
+              <RouterEditor values={withValues} onChange={setWithValues} />
             ) : (
               <ParamsForm params={node.params} values={withValues} onChange={setWithValues} />
             )
@@ -1756,6 +1709,8 @@ export const StepTestRun = forwardRef<
   // Resolve document expressions against the workflow's selected project (the
   // editor provides it; undefined outside the editor → server default project).
   const project = useWorkflowProject();
+  // Named on the invoke so `{{ nodes.<id>.config.* }}` resolves as on a run.
+  const workflowId = useWorkflowId();
   const [state, setState] = useState<TestState | null>(null);
   const [log, setLog] = useState<TestRunLog | null>(null);
   const [logOpen, setLogOpen] = useState(false);
@@ -1768,6 +1723,9 @@ export const StepTestRun = forwardRef<
   // never saves, records, invokes or notifies the host.
   const persistWorkflowId = persist?.workflowId;
   const persistStepId = persist?.stepId;
+  // The node's static metadata (`nodes.<id>.meta.*`): shown before any run, and under a run's own.
+  const nodeMeta = useExpressionOptions().nodeMeta;
+  const staticMeta = persistStepId ? nodeMeta?.[persistStepId] : undefined;
   useEffect(() => {
     if (!persistWorkflowId || !persistStepId) return;
     let canceled = false;
@@ -1822,6 +1780,7 @@ export const StepTestRun = forwardRef<
         ...(connectionId ? { connectionId } : {}),
         ...(project ? { project } : {}),
         ...(startState ? { state: startState } : {}),
+        ...(workflowId ? { workflowId } : {}),
       },
     };
     const finishLog = (response: TestRunLog["response"]) =>
@@ -1839,6 +1798,7 @@ export const StepTestRun = forwardRef<
         // Omitted when the host has no upstream state to offer, so the request
         // is unchanged for every caller that never had one.
         ...(startState ? { state: startState } : {}),
+        ...(workflowId ? { workflowId } : {}),
       });
       finishLog({ ok: true, body: result });
       outcome = {
@@ -1939,12 +1899,18 @@ export const StepTestRun = forwardRef<
         <div className="w6w-testout">
           <div className="w6w-testout-label">Result (return value)</div>
           <ResultViewer value={state.value} maxHeight={220} />
-          {state.meta && (
+          {(state.meta || staticMeta) && (
             <>
               <div className="w6w-testout-label">Metadata</div>
-              <ResultViewer value={state.meta} maxHeight={220} />
+              <ResultViewer value={{ ...staticMeta, ...state.meta }} maxHeight={220} />
             </>
           )}
+        </div>
+      )}
+      {state?.status !== "done" && state?.status !== "running" && staticMeta && (
+        <div className="w6w-testout" data-testid="steptest-static-meta">
+          <div className="w6w-testout-label">Metadata</div>
+          <ResultViewer value={staticMeta} maxHeight={220} />
         </div>
       )}
       {logs && logs.length > 0 && (
@@ -2043,6 +2009,9 @@ export function useReadyToUse(
   appsFilter?: (app: AppSummary) => boolean,
   excludeIds?: readonly string[],
   appsIds?: readonly string[],
+  /** `resolveInline`: ignore a connection row's inline `app` meta and resolve every id through
+   *  `listAppsByIds` — for a caller that needs fields the inline meta lacks (`triggerCount`). */
+  opts?: { resolveInline?: boolean },
 ): ReadyToUse {
   // When a provider-id allow-list is set, apps outside it are never offered.
   const idSet = appsIds && appsIds.length > 0 ? new Set(appsIds) : null;
@@ -2083,7 +2052,7 @@ export function useReadyToUse(
         const inline = new Map<string, AppSummary>();
         for (const c of conns) {
           if (isInternalApp(c.appId)) continue;
-          if (bounded && c.app && !inline.has(c.appId)) {
+          if (bounded && !opts?.resolveInline && c.app && !inline.has(c.appId)) {
             inline.set(c.appId, { ...c.app, id: c.appId });
           }
           if (seen.has(c.appId)) continue;
@@ -2115,7 +2084,7 @@ export function useReadyToUse(
     return () => {
       canceled = true;
     };
-  }, [api, bounded, wantFns, wantWfs]);
+  }, [api, bounded, wantFns, wantWfs, opts?.resolveInline]);
 
   // Legacy full-catalog fallback — fetched only when there is no bounded id
   // lookup to use instead, never alongside it.
@@ -2139,13 +2108,15 @@ export function useReadyToUse(
     };
   }, [api, bounded]);
 
+  // Re-armed on every mount: StrictMode mounts, unmounts and remounts once, and
+  // a ref left `false` by that simulated unmount drops every batch's answer.
   const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const resolveBatch = useCallback(
     (batch: string[]) => {
@@ -2323,6 +2294,50 @@ function CallableRow({
  * `search={false}`, and short scoped lists are not the surface a search box
  * earns. The Apps/Workflows/Functions tabs each keep their own.
  */
+/** One home-tab column: a heading and its rows. Rendered only when it HAS rows. The
+ * Triggers tab draws the same `.w6w-readytouse` markup but keeps an empty column. */
+function readyToUseColumn(title: string, rows: ReactNode[]) {
+  return rows.length === 0 ? null : (
+    <section key={title} className="w6w-readytouse-col">
+      <h4 className="w6w-readytouse-heading">{title}</h4>
+      <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">{rows}</div>
+    </section>
+  );
+}
+
+/** One app row (icon + name + id) — shared by the home tab and the Triggers tab. */
+function AppRow({
+  app: a,
+  theme,
+  onSelect,
+}: {
+  app: AppSummary;
+  theme?: ThemeMode;
+  onSelect: (app: AppSummary) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="w6w-stepbuilder-item"
+      data-kind="app"
+      onClick={() => onSelect(a)}
+    >
+      <AppIcon
+        src={a.iconSvg}
+        srcDark={a.iconSvgDark}
+        brandColor={a.brandColor}
+        name={a.displayName}
+        theme={theme}
+        size={24}
+      />
+      <span className="w6w-stepbuilder-item-main">
+        <strong>{a.displayName}</strong>
+        <code className="w6w-muted w6w-small">{a.id}</code>
+      </span>
+    </button>
+  );
+}
+
 function ReadyToUseFlow({
   data,
   onSelectApp,
@@ -2348,36 +2363,10 @@ function ReadyToUseFlow({
   const fns = [...data.fns].sort(byLabel(callableLabel));
   const wfs = [...data.wfs].sort(byLabel(callableLabel));
 
-  /** One column: a heading and its rows. Rendered only when it HAS rows. */
-  const column = (title: string, rows: ReactNode[]) =>
-    rows.length === 0 ? null : (
-      <section key={title} className="w6w-readytouse-col">
-        <h4 className="w6w-readytouse-heading">{title}</h4>
-        <div className="w6w-stepbuilder-list w6w-stepbuilder-scroll">{rows}</div>
-      </section>
-    );
+  const column = readyToUseColumn;
 
   const leftRows: ReactNode[] = apps.map((a) => (
-    <button
-      key={a.id}
-      type="button"
-      className="w6w-stepbuilder-item"
-      data-kind="app"
-      onClick={() => onSelectApp(a)}
-    >
-      <AppIcon
-        src={a.iconSvg}
-        srcDark={a.iconSvgDark}
-        brandColor={a.brandColor}
-        name={a.displayName}
-        theme={theme}
-        size={24}
-      />
-      <span className="w6w-stepbuilder-item-main">
-        <strong>{a.displayName}</strong>
-        <code className="w6w-muted w6w-small">{a.id}</code>
-      </span>
-    </button>
+    <AppRow key={a.id} app={a} theme={theme} onSelect={onSelectApp} />
   ));
   // A3: further connected-app ids remain unresolved — an explicit affordance,
   // never an automatic drain of the rest of the connected-id list.
@@ -2433,7 +2422,32 @@ function ReadyToUseFlow({
   );
 }
 
+/** An app's triggers as action-shaped defs ({ key, title, description, params }), so
+ *  the action pickers and param forms take them as they are. No API member => none. */
+export function getTriggerDefs(api: W6WApi, appId: string): Promise<ActionDef[]> {
+  return (api.getAppTriggers?.(appId) ?? Promise.resolve([])).then((ts) =>
+    ts.map((t) => ({
+      key: t.key,
+      title: t.title,
+      description: t.description,
+      params: (t.params ?? []) as ActionParam[],
+    })),
+  );
+}
+
+/** An app trigger's Test tab: it runs when the app reports the event, not by hand. */
+export function AppTriggerTestNote({ title, app }: { title: string; app: string }) {
+  return (
+    <p className="w6w-muted w6w-small">
+      <strong>{title}</strong> runs when {app} reports it, so there is nothing to run by hand.
+      Publish the workflow to start listening.
+    </p>
+  );
+}
+
 export function AppStepConfig({
+  kind = "action",
+  onOpenStep,
   appId,
   app,
   onAdd,
@@ -2449,6 +2463,16 @@ export function AppStepConfig({
   initialConnection,
   initialWith,
 }: {
+  /**
+   * What the Setup tab picks: one of the app's actions, or (`"trigger"`, the
+   * Triggers tab) one of its triggers. Same account step, same picker, same
+   * add-on-pick; a trigger node carries `uses.trigger: true` and lists
+   * `api.getAppTriggers`. Its Test tab only says when it runs: there is no
+   * action to invoke by hand.
+   */
+  kind?: "action" | "trigger";
+  /** See {@link StepBuilderModalProps.onOpenStep}. */
+  onOpenStep?: (id: string) => void;
   appId: string;
   app?: AppSummary;
   // biome-ignore lint/suspicious/noConfusingVoidType: see StepBuilderModalProps.onAdd, forwarded as-is.
@@ -2472,18 +2496,32 @@ export function AppStepConfig({
   initialWith?: Record<string, unknown>;
 }) {
   const api = useW6WApi();
+  const isTrigger = kind === "trigger";
+  const aNoun = isTrigger ? "a trigger" : "an action";
   const [auths, setAuths] = useState<AuthDef[] | null>(null);
   const [conns, setConns] = useState<ConnectionSummary[] | null>(null);
   const [actions, setActions] = useState<ActionDef[] | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
 
-  const [connectionId, setConnectionId] = useState<string>(initialConnection ?? "");
+  const [accountId, setAccountId] = useState<string>(initialConnection ?? "");
+  const [connectionRef, setConnectionRef] = useState<string | undefined>();
+  const connectionScope = useWorkflowConnections();
+  const connectionScopeRef = useRef(connectionScope);
+  connectionScopeRef.current = connectionScope;
+  const connectionId = connectionRef
+    ? (connectionIdFor(
+        { id: stepId ?? "", uses: { app: appId, action: "", connectionRef } },
+        connectionScope?.connections,
+      ) ?? "")
+    : accountId;
+  const setConnectionId = useCallback((id: string | ((prev: string) => string)) => {
+    setConnectionRef(undefined);
+    setAccountId(id);
+  }, []);
   const [actionKey, setActionKey] = useState<string>(initialAction ?? "");
   const [withValues, setWithValues] = useState<Record<string, unknown>>(initialWith ?? {});
-  const [showConnModal, setShowConnModal] = useState(false);
-  // Once a connection is chosen it renders as a static label; "Change" flips
-  // back to the dropdown. No connection selected yet also forces the dropdown.
-  const [changingConn, setChangingConn] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [connectionPickerOpen, setConnectionPickerOpen] = useState(false);
   // Setup (app + connection + action) / Configure (params) / Test — same tabs as
   // the node editor, so add + edit are consistent.
   // When initial values are provided, skip Setup and open directly to Configure.
@@ -2504,41 +2542,38 @@ export function AppStepConfig({
   useEffect(() => {
     let canceled = false;
     setMetaError(null);
-    Promise.all([api.getAppAuth(appId), api.listConnectionsForApp(appId), api.getAppActions(appId)])
+    const pickables = isTrigger ? getTriggerDefs(api, appId) : api.getAppActions(appId);
+    Promise.all([api.getAppAuth(appId), api.listConnectionsForApp(appId), pickables])
       .then(([au, co, ac]) => {
         if (canceled) return;
+        const choices = withDefaultConnection(appId, au, co);
         setAuths(au);
-        setConns(co);
+        setConns(choices);
         setActions(ac);
-        // P2: in the auto-satisfied state, never auto-select an existing
-        // connection — it would be silently written into every step the user
-        // builds. A connection picked deliberately through the "+ New" escape
-        // hatch still is (that flows through `refetchConns`/`onCreated`, not
-        // here). No availability re-filter needed: `autoSatisfied` is only
-        // ever set on a `tenantAuth`/`jit` entry, and `available` stays
-        // unconditionally `true` for every non-`oauth2` type (T3.1.1 P5).
-        const autoSat = (au ?? []).some((a) => a.autoSatisfied === true);
-        if (!autoSat && co.length > 0) setConnectionId(co[0].id);
+        const scope = connectionScopeRef.current;
+        const selected = defaultConnectionFor(
+          { id: stepId ?? "", uses: { app: appId, action: "" } },
+          choices,
+          scope?.nodes ?? [],
+          scope?.connections ?? {},
+          initialConnection,
+        );
+        if (selected.connectionRef) setConnectionRef(selected.connectionRef);
+        else setConnectionId(selected.connection ?? "");
       })
       .catch((e) => !canceled && setMetaError((e as Error).message));
     return () => {
       canceled = true;
     };
-  }, [api, appId]);
+  }, [api, appId, isTrigger, setConnectionId, initialConnection, stepId]);
 
   const refetchConns = async () => {
     const co = await api.listConnectionsForApp(appId);
-    setConns(co);
-    if (co.length > 0) setConnectionId((prev) => prev || co[0].id);
+    setConns(withDefaultConnection(appId, auths ?? [], co));
   };
 
   const availableAuths = (auths ?? []).filter((a) => a.available !== false);
-  // Third connection state: the operator has flagged a `tenantAuth`/`jit`
-  // method as zero-credential for this tenant, so the server resolves a
-  // connection automatically at invoke time — the step is complete with none
-  // picked. `.some(...)` deliberately: an app declaring both an `oauth2`
-  // method and an auto-satisfied `tenantAuth` method is auto-satisfied, and
-  // the oauth2 route stays reachable through the "+ New" escape hatch (P3).
+  // Tenant-scoped auth can use the built-in account; stored accounts remain available.
   const autoSatisfied = availableAuths.some(
     (a) => a.autoSatisfied === true && (a.type === "tenantAuth" || a.type === "jit"),
   );
@@ -2601,21 +2636,15 @@ export function AppStepConfig({
   const canAdd = setupComplete;
 
   const selectedConn = (conns ?? []).find((c) => c.id === connectionId);
-  // Show the dropdown only before a connection is picked or while changing it;
-  // otherwise the selected connection reads as a compact label.
-  const showConnPicker = changingConn || !connectionId;
 
   function buildStep(): BuiltStep {
     return {
       uses: {
         app: appId,
         action: selectedAction?.key ?? actionKey,
-        // A connection is emitted only when the user explicitly picked one —
-        // in the auto-satisfied state nothing is picked by default (P2), so
-        // nothing is emitted here, and the server resolves the connection
-        // live on every call. Never synthesise an id: it does not exist
-        // server-side.
-        ...((needsConnection || autoSatisfied) && connectionId ? { connection: connectionId } : {}),
+        // Workflow defaults are explicit references, including the server's built-in account.
+        ...(connectionRef ? { connectionRef } : connectionId ? { connection: connectionId } : {}),
+        ...(isTrigger ? { trigger: true as const } : {}),
       },
       with: withValues,
       ...draftConfig,
@@ -2638,6 +2667,7 @@ export function AppStepConfig({
     if (!onDraftChange || committedId !== null || !setupComplete) return;
     const id = onAdd(buildStep());
     if (id) setCommittedId(id);
+    if (id && isTrigger) onOpenStep?.(id);
   }, [onDraftChange, committedId, setupComplete]);
 
   // Update — keep the already-committed node current on every subsequent field
@@ -2646,7 +2676,7 @@ export function AppStepConfig({
   useEffect(() => {
     if (!onDraftChange || committedId === null) return;
     onDraftChange(committedId, buildStep());
-  }, [committedId, withValues, draftConfig, connectionId]);
+  }, [committedId, withValues, draftConfig, connectionId, connectionRef]);
 
   const changeConfigView = (v: ConfigView) => {
     if (v === "code") setCodeText(stepToJson(buildStep()));
@@ -2694,145 +2724,86 @@ export function AppStepConfig({
       </div>
 
       <div className="w6w-stepconfig-body">
-        {/* Setup — app, connection, action. */}
+        {/* Setup — app, connection, action (or trigger). */}
         {tab === "setup" && (
           <div className="w6w-stack">
             {metaError && <div className="w6w-result w6w-error">{metaError}</div>}
             {auths === null && !metaError && <p className="w6w-muted w6w-small">Loading…</p>}
 
-            {/* App — click Change to go back to the app picker. */}
             <div className="w6w-field">
               <span>App</span>
-              <div className="w6w-conn-label">
-                {app && (
-                  <AppIcon
-                    src={app.iconSvg}
-                    srcDark={app.iconSvgDark}
-                    brandColor={app.brandColor}
-                    name={app.displayName}
-                    theme={theme}
-                    size={20}
-                  />
-                )}
-                <span className="w6w-conn-label-name">{app?.displayName ?? appId}</span>
-                {onChangeApp && (
-                  <button
-                    type="button"
-                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                    onClick={onChangeApp}
-                  >
-                    Change
-                  </button>
-                )}
+              <div className="w6w-app-conn-row" ref={rowRef}>
+                <button
+                  type="button"
+                  className="w6w-app-conn-btn"
+                  aria-label="App"
+                  onClick={onChangeApp}
+                  disabled={!onChangeApp}
+                >
+                  {app && (
+                    <AppIcon
+                      src={app.iconSvg}
+                      srcDark={app.iconSvgDark}
+                      brandColor={app.brandColor}
+                      name={app.displayName}
+                      theme={theme}
+                      size={20}
+                    />
+                  )}
+                  <span className="w6w-conn-label-name">{app?.displayName ?? appId}</span>
+                </button>
+                <WorkflowConnectionPicker
+                  step={{
+                    id: committedId ?? stepId ?? "",
+                    uses: {
+                      app: appId,
+                      action: actionKey,
+                      ...(connectionRef
+                        ? { connectionRef }
+                        : { connection: connectionId || undefined }),
+                    },
+                  }}
+                  conns={conns}
+                  failed={!!metaError}
+                  open={connectionPickerOpen}
+                  onOpenChange={setConnectionPickerOpen}
+                  anchorRef={rowRef}
+                  onChangeConnection={setConnectionId}
+                  onChangeConnectionRef={setConnectionRef}
+                  onConnectionCreated={() => {
+                    void refetchConns();
+                  }}
+                />
               </div>
+              {autoNeedsSignedInUser && selectedConn?.builtIn && (
+                <span className="w6w-hint">
+                  Scheduled or queued runs need a stored connection. Choose one from the connection
+                  menu.
+                </span>
+              )}
+              {auths !== null && needsConnection && !hasConnection && (
+                <span className="w6w-hint">
+                  This app needs a connection before its actions can run.
+                </span>
+              )}
             </div>
-
-            {/* Connection — the third, auto-satisfied state (P3): the section
-                still renders (it never disappears — a user may still want to
-                add their own third-party account), but the picker is replaced
-                by a passive line plus the escape hatch. */}
-            {auths !== null && autoSatisfied && (
-              <div className="w6w-field">
-                <span>Connection</span>
-                <div className="w6w-conn-label">
-                  <span className="w6w-conn-label-name">
-                    Connected automatically — this app needs no connection for your organization.
-                  </span>
-                  <button
-                    type="button"
-                    className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                    onClick={() => setShowConnModal(true)}
-                  >
-                    Create connection
-                  </button>
-                </div>
-                {/* P3a: a `jit` sign-in needs the signed-in user's own token, which a
-                    scheduled or queued run of this saved workflow does not have. */}
-                {autoNeedsSignedInUser && (
-                  <span className="w6w-hint">
-                    A scheduled or queued run of this workflow still needs a connection configured
-                    on this step — use "Create connection" if this step will run on a schedule.
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Connection — the two pre-existing states (needs one / has one). */}
-            {auths !== null &&
-              needsConnection &&
-              (!hasConnection ? (
-                <div className="w6w-result w6w-stepconfig-conn-empty">
-                  <div style={{ marginBottom: 8 }}>
-                    This app needs a connection before its actions can run.
-                  </div>
-                  <button type="button" className="w6w-btn" onClick={() => setShowConnModal(true)}>
-                    Create connection
-                  </button>
-                </div>
-              ) : showConnPicker ? (
-                <label className="w6w-field">
-                  <span>Connection</span>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <select
-                      value={connectionId}
-                      onChange={(e) => {
-                        setConnectionId(e.target.value);
-                        setChangingConn(false);
-                      }}
-                      style={{ flex: 1 }}
-                    >
-                      {(conns ?? []).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.displayName || c.id} {c.state ? `(${c.state})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost"
-                      onClick={() => setShowConnModal(true)}
-                    >
-                      + New
-                    </button>
-                  </div>
-                </label>
-              ) : (
-                <div className="w6w-field">
-                  <span>Connection</span>
-                  <div className="w6w-conn-label">
-                    <span className="w6w-conn-label-name">
-                      {selectedConn?.displayName || selectedConn?.id || connectionId}
-                      {selectedConn?.state ? ` (${selectedConn.state})` : ""}
-                    </span>
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                      onClick={() => setChangingConn(true)}
-                    >
-                      Change
-                    </button>
-                    <button
-                      type="button"
-                      className="w6w-btn w6w-btn-ghost w6w-btn-sm"
-                      onClick={() => setShowConnModal(true)}
-                    >
-                      + New
-                    </button>
-                  </div>
-                </div>
-              ))}
 
             {/* Action */}
             {actions !== null &&
               (actions.length === 0 ? (
-                <p className="w6w-muted w6w-small">This app exposes no actions.</p>
+                <p className="w6w-muted w6w-small">
+                  {isTrigger ? "This app declares no triggers." : "This app exposes no actions."}
+                </p>
               ) : (
                 // biome-ignore lint/a11y/noLabelWithoutControl: Combobox renders its own <input> INSIDE this label, so the field text labels the control at runtime; the rule cannot see through the component boundary.
                 <label className="w6w-field">
-                  <span>Action{actionKey ? "" : " *"}</span>
+                  <span>
+                    {isTrigger ? "Trigger" : "Action"}
+                    {actionKey ? "" : " *"}
+                  </span>
                   <Combobox
                     value={actionKey}
-                    placeholder="— pick an action —"
+                    placeholder={`— pick ${aNoun} —`}
                     // Always the searchable combobox (T-1): a short action list used
                     // to collapse to a native <select>, which hides the filter and
                     // opens an unbounded OS popup over the modal.
@@ -2864,7 +2835,7 @@ export function AppStepConfig({
             (config). */}
         {tab === "configure" &&
           (!selectedAction ? (
-            <p className="w6w-muted w6w-small">Pick an action in Setup first.</p>
+            <p className="w6w-muted w6w-small">Pick {aNoun} in Setup first.</p>
           ) : configView === "props" ? (
             <ParamsForm
               params={selectedAction.params ?? []}
@@ -2905,18 +2876,26 @@ export function AppStepConfig({
               }
             />
           ) : (
-            <NodeConfigForm config={draftConfig} onChange={setDraftConfig} />
+            // A trigger has no failure of its own to retry or police.
+            <NodeConfigForm
+              config={draftConfig}
+              onChange={setDraftConfig}
+              failureHandling={!isTrigger}
+            />
           ))}
 
         {/* Test — try the action with the current params. */}
         {tab === "test" &&
-          (selectedAction ? (
+          (selectedAction && isTrigger ? (
+            <AppTriggerTestNote
+              title={selectedAction.title ?? selectedAction.key}
+              app={app?.displayName ?? appId}
+            />
+          ) : selectedAction ? (
             <StepTestRun
               app={appId}
               action={selectedAction.key}
-              connectionId={
-                (needsConnection || autoSatisfied) && connectionId ? connectionId : undefined
-              }
+              connectionId={connectionId || undefined}
               values={withValues}
               canRun={
                 setupComplete && requiredParamsFilled(selectedAction.params ?? [], withValues)
@@ -2969,20 +2948,6 @@ export function AppStepConfig({
           </button>
         )}
       </div>
-
-      {showConnModal && (
-        <AddConnectionModal
-          theme={theme}
-          initialAppId={appId}
-          onClose={() => setShowConnModal(false)}
-          onCreated={async ({ connectionId: id }) => {
-            setShowConnModal(false);
-            setConnectionId(id);
-            setChangingConn(false);
-            await refetchConns();
-          }}
-        />
-      )}
     </div>
   );
 }

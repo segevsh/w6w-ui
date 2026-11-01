@@ -294,7 +294,9 @@ The canvas doesn't fetch runs. Poll the run yourself (`GET /runs/:id`) and pass 
 
 Run statuses are `queued`, `running`, `succeeded`, `failed` and `canceled`. Node statuses are
 `pending`, `running`, `succeeded`, `failed` and `skipped`. A node missing from the run's `steps`
-map hasn't been reached. `runState` is never written back into the workflow.
+map hasn't been reached. A `skipped` node with `skipReason: "not_on_path"` was on another path
+and never part of the run: it, its loop body and its edges get no run paint. `runState` is never
+written back into the workflow.
 
 ## Helpers
 
@@ -305,7 +307,9 @@ yourself:
   workflow and React Flow nodes and edges, with the canvas's automatic layout.
 - **Built-in app ids**: `TRIGGER_APP`, `WEBHOOK_APP`, `SCHEDULER_APP`, `CONTROL_APP`, `SCRIPT_APP`,
   `DATA_APP` and `CALL_APP`, with `isInternalApp(app)`, `isTriggerApp(app)` and
-  `isControlApp(app)`.
+  `isControlApp(app)`. `isTriggerApp` matches the built-in triggers only; `isTriggerStep(uses)` also
+  matches an app trigger node (`uses.trigger: true`), which the canvas draws as a trigger with no
+  inbound port.
 - **`INTERNAL_NODES`**: the built-in nodes the builder offers (triggers, control flow, script,
   data and so on), with `internalNodeLabel`, `internalNodeIcon`, `internalNodeParams` and
   `internalNodeDefaults` to look one up by app and action.

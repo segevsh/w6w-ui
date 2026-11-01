@@ -35,7 +35,22 @@
 }
 
 .w6w-execution-list-rows > li {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
   min-width: 0;
+}
+
+/* The row stays the full-width click target; a Re-run control, when the host
+   offers one, sits beside it rather than inside it (a button cannot nest in
+   the row's own `<button>`). */
+.w6w-execution-list-rows > li > .w6w-list-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.w6w-execution-list-rerun {
+  flex-shrink: 0;
 }
 
 /* Both non-list branches (the loading and the empty `<p>`) hang straight off
@@ -193,6 +208,12 @@
   min-width: 0;
 }
 
+/* The Back control sits alone on its own line, flush left, so the detail
+   reads as a page the list was swapped for. */
+.w6w-execution-detail-back {
+  display: flex;
+}
+
 /* Title block left, controls right; the actions keep their width, the name
    wraps or ellipses into whatever is left. */
 .w6w-execution-detail-head {
@@ -228,6 +249,13 @@
   align-items: center;
   gap: var(--w6w-sp-2);
   flex-shrink: 0;
+}
+
+/* Glyph + label on one baseline (`.w6w-btn` itself is not a flex box). */
+.w6w-execution-detail-rerun {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
 }
 
 .w6w-execution-detail-id-line {
@@ -279,4 +307,43 @@
   background: color-mix(in srgb, var(--w6w-danger) 10%, transparent);
   color: var(--w6w-danger);
   font-size: var(--w6w-fs-sm);
+}
+
+/* "Re-run": marks an execution started by History's Re-run — on its list row
+   (after the title) and on its detail ("Re-run of <id>"). */
+.w6w-execution-rerun-tag {
+  display: inline-block;
+  margin-left: var(--w6w-sp-2);
+  padding: 0 var(--w6w-sp-1-5);
+  border: 1px solid var(--w6w-accent);
+  border-radius: var(--w6w-radius);
+  color: var(--w6w-accent);
+  font-size: var(--w6w-fs-xs);
+  line-height: var(--w6w-lh-tight);
+  vertical-align: middle;
+}
+
+.w6w-execution-detail-rerun-of {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1-5);
+  margin: 0;
+}
+
+.w6w-execution-detail-rerun-of .w6w-execution-rerun-tag {
+  margin-left: 0;
+}
+
+.w6w-execution-detail-rerun-of code {
+  font-family: var(--w6w-font-mono);
+  font-size: var(--w6w-fs-sm);
+}
+
+.w6w-execution-detail-rerun-of-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--w6w-accent);
+  cursor: pointer;
+  text-decoration: underline;
 }

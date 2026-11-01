@@ -264,3 +264,42 @@ test("T151-V4 an own record wins over iteration records", () => {
   } as unknown as RunState;
   assert.equal(stepVisualState(run, "b"), "succeeded");
 });
+
+test("a For each's Done edge into a skipped step is skipped, not taken (Stop workflow in the body)", () => {
+  const run = {
+    status: "succeeded",
+    nodes: {
+      for_each_1: { status: "succeeded", output: { stopped: true } },
+      create_webhook_1: { status: "skipped" },
+      next: { status: "succeeded" },
+    },
+  } as unknown as RunState;
+  assert.equal(edgeRunState(run, "for_each_1", "success", "done", "create_webhook_1"), "skipped");
+  assert.equal(stepVisualState(run, "create_webhook_1"), "skipped");
+  // A Done edge whose target ran is taken — routed or legacy unrouted.
+  assert.equal(edgeRunState(run, "for_each_1", "success", "done", "next"), "taken");
+  assert.equal(edgeRunState(run, "for_each_1", "success", undefined, "next"), "taken");
+});
+
+// ── not_on_path: never part of this run ⇒ no run paint ───────────────────
+
+test("not_on_path — the step, its loop body and its edges get no run paint", () => {
+  const run: RunState = {
+    status: "succeeded",
+    nodes: {
+      manual: { status: "skipped", skipReason: "not_on_path" },
+      loop: { status: "skipped", skipReason: "not_on_path" },
+      hook: { status: "succeeded" },
+      data: { status: "succeeded" },
+      gated: { status: "skipped", skipReason: "condition" },
+    },
+  };
+  assert.equal(stepVisualState(run, "manual"), "no-run");
+  assert.equal(stepVisualState(run, "body", ["loop"]), "no-run", "body of an off-path loop");
+  assert.equal(stepVisualState(run, "body"), "pending", "without its loop, a recordless step");
+  assert.equal(stepVisualState(run, "gated"), "skipped", "a real skip keeps its paint");
+  assert.equal(edgeRunState(run, "manual", undefined, undefined, "loop"), undefined);
+  assert.equal(edgeRunState(run, "loop", "each", undefined, "body"), undefined);
+  assert.equal(edgeRunState(run, "hook", undefined, undefined, "data"), "taken");
+  assert.equal(edgeRunState(run, "data", undefined, undefined, "gated"), "skipped");
+});

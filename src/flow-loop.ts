@@ -23,11 +23,13 @@ import { edgeLane } from "./flow-connect.ts";
 import {
   CONTROL_APP,
   EACH_SOURCE_HANDLE,
+  FOREACH_EACH_ROUTE,
   type FlowEdge,
   type FlowStep,
   type FlowWorkflow,
+  ROUTER_APP,
   edgeVisuals,
-  isControlApp,
+  routeHandle,
 } from "./flow-types.ts";
 import { type StepNode, flowEdgeId } from "./flow-utils.ts";
 
@@ -40,6 +42,15 @@ export function isForeachStep(step: UsesLike | undefined): boolean {
 
 function isControlStep(step: UsesLike | undefined): boolean {
   return step?.uses?.app === CONTROL_APP;
+}
+
+/** A loop body may contain an If gate or a Router; nested control blocks need their own canvas model. */
+function isLoopBodyStep(step: FlowStep | undefined): boolean {
+  if (step?.uses.app === ROUTER_APP) return true;
+  return (
+    !isControlStep(step) ||
+    (step?.uses.action === "if" && step.with?.then === undefined && step.with?.else === undefined)
+  );
 }
 
 /**
@@ -69,25 +80,37 @@ export function ownedStepIds(steps: readonly FlowStep[]): Set<string> {
 }
 
 /** A canvas each-lane edge in the ONE shape load, bridge and `applyConnect` share (P3). */
-export function eachLaneEdge(from: string, to: string, fromIsForeach: boolean): Edge {
+export function eachLaneEdge(
+  from: string,
+  to: string,
+  fromIsForeach: boolean,
+  route?: string,
+): Edge {
   return {
-    id: flowEdgeId(from, to, "each"),
+    id: flowEdgeId(from, to, "each", route),
     source: from,
     target: to,
-    sourceHandle: fromIsForeach ? EACH_SOURCE_HANDLE : undefined,
+    sourceHandle:
+      route !== undefined ? routeHandle(route) : fromIsForeach ? EACH_SOURCE_HANDLE : undefined,
     animated: false,
-    data: { when: "each" },
+    data: { when: "each", ...(route === undefined ? {} : { route }) },
     ...edgeVisuals("each", undefined),
   };
 }
 
 // ── Canvas side ────────────────────────────────────────────────────────────
 
+const routeOf = (e: Edge): string | undefined =>
+  typeof e.data?.route === "string" ? e.data.route : undefined;
+
 /**
- * The body chain drawn from `foreachId`: follow each-lane out-edges (the first in
- * `edges` order, then the next). Ids in chain order, never including `foreachId`
- * or a repeat — so it terminates on a cycle. `claimed` (internal) stops the chain
- * BEFORE a step an earlier foreach already owns.
+ * The body drawn from `foreachId`: every step reachable from its Each-item port
+ * over each-lane edges, as a topological order (Kahn over the body's own each-lane
+ * edges, ties broken by discovery order) so the Each-item target is first and every
+ * edge goes from an earlier id to a later one. A plain chain comes out exactly as
+ * the chain. Never includes `foreachId` or a repeat — so it terminates on a cycle
+ * (steps stuck in one are appended in discovery order). `claimed` (internal) stops
+ * the walk BEFORE a step an earlier foreach already owns.
  */
 export function loopBody(
   foreachId: string,
@@ -96,23 +119,74 @@ export function loopBody(
   claimed?: ReadonlySet<string>,
 ): string[] {
   const exists = new Set(nodes.map((n) => n.id));
+  const each = edges.filter((e) => edgeLane(e) === "each");
   const seen = new Set<string>([foreachId]);
-  const chain: string[] = [];
-  let cur = foreachId;
-  for (;;) {
-    const next = edges.find(
-      (e) =>
-        e.source === cur &&
-        edgeLane(e) === "each" &&
-        exists.has(e.target) &&
-        !seen.has(e.target) &&
-        !claimed?.has(e.target),
-    );
-    if (!next) return chain;
-    seen.add(next.target);
-    chain.push(next.target);
-    cur = next.target;
+  const found: string[] = [];
+  const queue = [foreachId];
+  for (let q = 0; q < queue.length; q++) {
+    for (const e of each) {
+      if (e.source !== queue[q]) continue;
+      if (!exists.has(e.target) || seen.has(e.target) || claimed?.has(e.target)) continue;
+      seen.add(e.target);
+      found.push(e.target);
+      queue.push(e.target);
+    }
   }
+  const order = new Map(found.map((id, i) => [id, i]));
+  const internal = each.filter(
+    (e) => e.source !== foreachId && order.has(e.source) && order.has(e.target),
+  );
+  const indeg = new Map(found.map((id) => [id, 0]));
+  for (const e of internal) indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
+  const out: string[] = [];
+  const done = new Set<string>();
+  for (;;) {
+    const next = found.find((id) => !done.has(id) && indeg.get(id) === 0);
+    if (next === undefined) break;
+    done.add(next);
+    out.push(next);
+    for (const e of internal)
+      if (e.source === next) indeg.set(e.target, (indeg.get(e.target) ?? 0) - 1);
+  }
+  for (const id of found) if (!done.has(id)) out.push(id);
+  return out;
+}
+
+/** The each-lane edges with both ends inside `body` (the For each → body[0] link is not one). */
+export function bodyInternalEdges(body: readonly string[], edges: readonly Edge[]): Edge[] {
+  const ids = new Set(body);
+  return edges.filter((e) => edgeLane(e) === "each" && ids.has(e.source) && ids.has(e.target));
+}
+
+/**
+ * A body is plain iff it is a chain the ordered `with.body` list already says: every
+ * body node has at most one outgoing each-lane edge and none carries a route. Plain
+ * bodies serialize as the list alone; anything else also emits its body edges.
+ */
+export function isPlainBody(body: readonly string[], edges: readonly Edge[]): boolean {
+  const internal = bodyInternalEdges(body, edges);
+  const outs = new Set<string>();
+  for (const e of internal) {
+    if (routeOf(e) !== undefined || outs.has(e.source)) return false;
+    outs.add(e.source);
+  }
+  return true;
+}
+
+/** The definition edges a canvas's non-plain loop bodies need (empty for plain chains). */
+export function loopBodyDefinitionEdges(
+  nodes: readonly StepNode[],
+  edges: readonly Edge[],
+): FlowEdge[] {
+  const out: FlowEdge[] = [];
+  for (const body of loopBodies(nodes, edges).values()) {
+    if (isPlainBody(body, edges)) continue;
+    for (const e of bodyInternalEdges(body, edges)) {
+      const route = routeOf(e);
+      out.push({ from: e.source, to: e.target, ...(route === undefined ? {} : { route }) });
+    }
+  }
+  return out;
 }
 
 /** Every foreach's body, handled in `nodes` order so emitted bodies are disjoint (P6). */
@@ -142,11 +216,12 @@ export function loopMembership(
 }
 
 /**
- * The edge set after deleting step `id` (D-A4). A mid-body step is bridged
- * (`prev → next`, each lane, `out-each` iff `prev` is the foreach); a last step
- * leaves no bridge; deleting the foreach also removes the each-lane edges of its
- * chain (the body steps stay, as ordinary unconnected nodes). A non-body step is
- * the plain incident-edge filter.
+ * The edge set after deleting step `id` (D-A4). A body step with exactly one inbound
+ * and one outbound each-lane edge is bridged (`prev → next`, each lane, keeping the
+ * inbound edge's route when `prev` is an If/Router, `out-each` iff `prev` is the
+ * foreach); any other body step just loses its incident edges; deleting the foreach
+ * also removes the each-lane edges of its whole body (the body steps stay, as
+ * ordinary unconnected nodes). A non-body step is the plain incident-edge filter.
  */
 export function bridgeDeletedBodyStep(
   id: string,
@@ -157,25 +232,28 @@ export function bridgeDeletedBodyStep(
   const plain = edges.filter((e) => !incident(e));
   const stepOf = (nid: string) => nodes.find((n) => n.id === nid)?.data?.step;
   if (isForeachStep(stepOf(id))) {
-    const chain = loopBody(id, nodes, edges);
-    const links = new Set<string>();
-    let prev = id;
-    for (const b of chain) {
-      links.add(`${prev}\u0000${b}`);
-      prev = b;
-    }
+    const body = loopBody(id, nodes, edges);
+    const inBody = new Set(body);
     return plain.filter(
-      (e) => !(edgeLane(e) === "each" && links.has(`${e.source}\u0000${e.target}`)),
+      (e) =>
+        !(
+          edgeLane(e) === "each" &&
+          (e.source === id || inBody.has(e.source)) &&
+          inBody.has(e.target)
+        ),
     );
   }
   const fid = loopMembership(nodes, edges)[id];
   if (fid === undefined) return plain;
-  const chain = loopBody(fid, nodes, edges);
-  const i = chain.indexOf(id);
-  const prev = i <= 0 ? fid : chain[i - 1];
-  const next = chain[i + 1];
-  if (next === undefined) return plain;
-  return [...plain, eachLaneEdge(prev, next, prev === fid)];
+  const ins = edges.filter((e) => e.target === id && edgeLane(e) === "each");
+  const outs = edges.filter((e) => e.source === id && edgeLane(e) === "each");
+  if (ins.length !== 1 || outs.length !== 1) return plain;
+  const prev = ins[0].source;
+  const next = outs[0].target;
+  if (plain.some((e) => e.source === prev && e.target === next && edgeLane(e) === "each")) {
+    return plain;
+  }
+  return [...plain, eachLaneEdge(prev, next, prev === fid, routeOf(ins[0]))];
 }
 
 /** `with.body` is the derived view of the each lane — drop it from a foreach (P1); other steps untouched. */
@@ -217,13 +295,39 @@ export function loopRefusal(
   const stepOf = (id: string) => nodes.find((n) => n.id === id)?.data?.step;
   const owner = isForeachStep(stepOf(source)) ? source : M[source];
   if (owner === undefined) return null;
-  if (target === owner || M[target] === owner) return "loop_cycle";
+  if (target === owner) return "loop_cycle";
+  // The only shape rule: the For each's Each-item port takes ONE edge. Downstream of
+  // its first step the body is an ordinary graph (fan-out and joins; port capacity is
+  // the caller's out-cap census).
+  const branches = (): boolean =>
+    source !== owner || !edges.some((e) => e.source === source && edgeLane(e) === "each");
+  if (M[target] === owner) {
+    // A join inside the same body: fine unless it closes a cycle (or re-enters via the For each).
+    if (source === owner) return "loop_cycle";
+    if (reaches(target, source, edges)) return "loop_cycle";
+    return branches() ? null : "body_branch";
+  }
   if (M[target] !== undefined) return "already_in_loop";
-  const app = stepOf(target)?.uses?.app;
-  if (app !== undefined && isControlApp(app)) return "control_in_body";
-  if (edges.some((e) => e.source === source && edgeLane(e) === "each")) return "body_branch";
+  if (!isLoopBodyStep(stepOf(target))) return "control_in_body";
+  if (!branches()) return "body_branch";
   if (edges.some((e) => e.source === target || e.target === target)) return "body_exit";
   return null;
+}
+
+/** True when `to` is reachable from `from` over each-lane edges (or they are the same step). */
+function reaches(from: string, to: string, edges: readonly Edge[]): boolean {
+  const seen = new Set<string>([from]);
+  const stack = [from];
+  while (stack.length > 0) {
+    const cur = stack.pop() as string;
+    if (cur === to) return true;
+    for (const e of edges) {
+      if (e.source !== cur || edgeLane(e) !== "each" || seen.has(e.target)) continue;
+      seen.add(e.target);
+      stack.push(e.target);
+    }
+  }
+  return false;
 }
 
 /** The author-facing sentence for each refusal (shown in the node-anchored notice). */
@@ -235,9 +339,9 @@ const LOOP_REFUSAL_MESSAGES: Record<LoopRefusalReason, string> = {
   loop_cycle: "A loop body can't connect back to its own For each.",
   already_in_loop: "That step is already inside another loop.",
   control_in_body:
-    "A loop body can only hold plain steps. If, For each, Parallel, Wait and similar steps can't go inside it yet.",
+    "A loop body supports plain steps, If conditions and Routers. Nested control blocks aren't supported here yet.",
   body_branch:
-    "A loop body is one straight line of steps. This step already continues to another step.",
+    "A For each's Each item port connects to one first step. Branch inside the loop from that step onward.",
   body_exit:
     "That step is already connected elsewhere in the workflow. Use a step with no connections, or disconnect it first.",
 };
@@ -289,7 +393,9 @@ export type LoopInvalidReason =
   | "legacy_not_linear";
 
 export type LoopInvalid = { reason: LoopInvalidReason; stepId?: string };
-export type LoopResult = { body: string[]; source: "body" | "legacy" } | { invalid: LoopInvalid };
+export type LoopResult =
+  | { body: string[]; source: "body" | "legacy"; edges?: FlowEdge[] }
+  | { invalid: LoopInvalid };
 
 /** The edges the engine would run: declared, else the implicit chain over main-graph (non-owned) steps. */
 export function effectiveEdges(wf: FlowWorkflow): FlowEdge[] {
@@ -302,6 +408,9 @@ export function effectiveEdges(wf: FlowWorkflow): FlowEdge[] {
 }
 
 const isSuccess = (e: FlowEdge) => (e.when ?? "success") === "success";
+
+/** A saved For each → `body[0]` link ({@link FOREACH_EACH_ROUTE}); the canvas draws it from `with.body`. */
+export const isEachLink = (e: FlowEdge): boolean => e.route === FOREACH_EACH_ROUTE && isSuccess(e);
 
 /**
  * What each foreach's loop is, in a stored definition — the ONE place that knows
@@ -343,22 +452,37 @@ export function definitionLoops(wf: FlowWorkflow): Record<string, LoopResult> {
       return bad("body_not_literal");
     }
     const ids = body as string[];
+    const inBody = new Set(ids);
     const seen = new Set<string>();
     for (const id of ids) {
       if (!byId.has(id)) return bad("body_unknown_step", id);
       if (id === fid) return bad("body_self", id);
       if (seen.has(id)) return bad("body_duplicate", id);
       seen.add(id);
-      if (isControlStep(byId.get(id))) return bad("body_contains_control", id);
+      if (!isLoopBodyStep(byId.get(id))) return bad("body_contains_control", id);
       const own = owners.get(id);
       if (own && [...own].some((o) => o !== fid)) return bad("body_claimed_twice", id);
-      if (declared.some((e) => e.from === id || e.to === id)) return bad("body_step_has_edges", id);
     }
-    return { body: ids, source: "body" };
+    // Body edges: success-lane edges with BOTH ends in this body, never into body[0].
+    // The For each's own Each item link to body[0] restates the list. Any other edge
+    // touching a body step is still refused.
+    const bodyEdges: FlowEdge[] = [];
+    for (const e of declared) {
+      if (isEachLink(e) && e.from === fid && e.to === ids[0]) continue;
+      const touches = inBody.has(e.from) || inBody.has(e.to);
+      if (!touches) continue;
+      const internal = inBody.has(e.from) && inBody.has(e.to) && isSuccess(e) && e.to !== ids[0];
+      if (!internal) return bad("body_step_has_edges", inBody.has(e.from) ? e.from : e.to);
+      bodyEdges.push(e);
+    }
+    return bodyEdges.length > 0
+      ? { body: ids, source: "body", edges: bodyEdges }
+      : { body: ids, source: "body" };
   }
 
   function legacyBody(fid: string): LoopResult {
-    const succ = edges.filter((e) => e.from === fid && isSuccess(e));
+    // A routed edge names its port (Done), so only the unrouted shape can be a legacy chain.
+    const succ = edges.filter((e) => e.from === fid && isSuccess(e) && e.route === undefined);
     if (succ.length === 0) return { body: [], source: "body" };
     const bad = (stepId: string): LoopResult => ({
       invalid: { reason: "legacy_not_linear", stepId },
@@ -371,7 +495,7 @@ export function definitionLoops(wf: FlowWorkflow): Record<string, LoopResult> {
     while (next !== undefined) {
       const n: string = next;
       const step = byId.get(n);
-      if (!step || seen.has(n) || isControlStep(step) || owners.has(n)) return bad(n);
+      if (!step || seen.has(n) || !isLoopBodyStep(step) || owners.has(n)) return bad(n);
       const inbound = edges.filter((e) => e.to === n);
       if (inbound.length !== 1 || inbound[0].from !== prev) return bad(n);
       const outbound = edges.filter((e) => e.from === n);

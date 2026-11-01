@@ -1,0 +1,108 @@
+/* Data stores (F-2): DataStoreList, ColumnsEditor, CsvPanel and the data-grid/entry rules ported from Studio's Data store detail page. */
+.w6w-data-store-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-3);
+}
+.w6w-data-store-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--w6w-sp-4);
+}
+.w6w-data-store-list-heading {
+  min-width: 0;
+}
+.w6w-data-store-list-actions {
+  display: flex;
+  gap: var(--w6w-sp-2);
+  flex-shrink: 0;
+}
+.w6w-data-columns-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.w6w-data-columns-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-2);
+}
+.w6w-data-columns-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+}
+.w6w-data-columns-required {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+}
+.w6w-data-columns-error {
+  flex-basis: 100%;
+}
+.w6w-data-entries-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+  margin: var(--w6w-sp-3) 0;
+}
+.w6w-data-entries-toolbar input[type="search"] {
+  flex: 1;
+  max-width: 20rem;
+  /* Same box as `.w6w-field` inputs — no host page styles a bare search input. */
+  background: var(--w6w-panel-2);
+  border: 1px solid var(--w6w-border);
+  border-radius: 8px;
+  padding: var(--w6w-sp-2) var(--w6w-sp-2-5);
+  color: var(--w6w-text);
+  font-size: var(--w6w-fs-sm);
+  font-family: inherit;
+}
+.w6w-data-entries-toolbar input[type="search"]:focus {
+  outline: none;
+  border-color: var(--w6w-accent);
+}
+/* The wide-table pane: the sheet scrolls INSIDE this box, so a 24-column
+   table never widens its container and the page itself never overflows. */
+.w6w-data-grid-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.w6w-data-grid-scroll input {
+  min-width: var(--w6w-sp-16);
+}
+.w6w-data-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--w6w-sp-1);
+}
+.w6w-data-cell-error {
+  color: var(--w6w-danger);
+  font-size: var(--w6w-fs-xs);
+}
+.w6w-data-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-2);
+}
+.w6w-data-entry-editor {
+  margin-top: var(--w6w-sp-4);
+}
+.w6w-data-entry-editor-actions {
+  display: flex;
+  gap: var(--w6w-sp-2);
+  margin-top: var(--w6w-sp-3);
+}
+.w6w-data-csv-panel {
+  margin-bottom: var(--w6w-sp-4);
+}
+.w6w-data-csv-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-3);
+}

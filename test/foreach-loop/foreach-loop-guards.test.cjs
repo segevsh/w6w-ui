@@ -128,7 +128,10 @@ const inside = (r, p, slack = 0) =>
   p.y <= r.y + r.height + slack;
 
 const card = (id) => `.react-flow__node[data-id="${id}"] [data-run-status]`;
-const SRC_DONE = (id) => `.react-flow__node[data-id="${id}"] .source:not([data-handleid])`;
+// Done is the routed port `route:done` (core rfcs/engine.md `route: "done"`; routeHandle in src/flow-types.ts).
+const SRC_DONE = (id) => `.react-flow__node[data-id="${id}"] [data-handleid="route:done"]`;
+// A plain step's success handle stays unnamed.
+const SRC_SUCCESS = (id) => `.react-flow__node[data-id="${id}"] .source:not([data-handleid])`;
 const SRC_EACH = (id) => `.react-flow__node[data-id="${id}"] [data-handleid="out-each"]`;
 const TARGET = (id) => `.react-flow__node[data-id="${id}"] .target`;
 
@@ -239,6 +242,9 @@ test("G3: the picker of a loop-body field offers Loop > Current item / Index / t
     await page.locator('button[aria-label="Edit expression for Ticket"]').click();
     const group = '[data-testid="expr-loop-group"]';
     await page.waitForSelector(group);
+    // The item's keys sit collapsed under Current item's "N fields ›" toggle.
+    const toggle = page.locator(`${group} [data-testid="expr-toggle-fields"]`);
+    await toggle.click();
     const rail = page.locator("aside.w6w-exprmodal-sources");
     const railText = await rail.innerText();
     assert.ok(/\bLoop\b/i.test(railText), `a "Loop" group heading: ${railText}`);
@@ -263,6 +269,7 @@ test("G3: the picker of a loop-body field offers Loop > Current item / Index / t
       if (i > 0) {
         await page.locator('button[aria-label="Edit expression for Ticket"]').click();
         await page.waitForSelector(group);
+        await toggle.click();
       }
       await page.locator(entries).nth(i).click();
       await page.waitForFunction(() => !document.querySelector("aside.w6w-exprmodal-sources"));
@@ -288,7 +295,7 @@ test("G4: dragging a connection from outside the loop onto a body step is refuse
   const page = await open("fixed");
   try {
     assert.equal(await page.locator('[role="alert"]:visible').count(), 0, "no alert before the drag");
-    const from = centre(await rectOf(page, SRC_DONE("create_event_1")));
+    const from = centre(await rectOf(page, SRC_SUCCESS("create_event_1")));
     const to = centre(await rectOf(page, TARGET("update_event_ticket_1")));
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();

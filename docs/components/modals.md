@@ -166,12 +166,18 @@ anywhere you need a node or a target.
 | `upstreamSteps` | `{ id, label? }[]` | Earlier nodes, so `nodes.<id>.output` references resolve in a test. The older `steps.<id>.output` spelling still works. |
 | `theme` | `"light" \| "dark"` | |
 
-With a `workflowId`, the Triggers tab also lists app triggers. A webhook trigger is added with one
-click. A poll trigger first asks "Check every … minutes" (default 5, or the trigger's
-`minIntervalMs` if higher) and creates the subscription with that interval sent as `intervalMs`, in
-milliseconds. The host enforces its own minimum and the picker shows its refusal as-is.
+The Triggers tab has two columns: **Your apps**, the connected apps that declare at least one
+trigger, and **Built-in** (Manual, Webhook, Schedule). Both always render; an empty **Your apps**
+shows an empty state that links to the search. **Search all apps** opens an app picker that
+the server narrows to apps with triggers (`listAppsPage({ hasTriggers: true })`), so its count
+covers only those apps. Picking an app asks for an account (skipped when the app needs none),
+then a trigger and its settings, and adds a **trigger node** through `onAdd`:
+`{ uses: { app, action: <triggerKey>, connection?, trigger: true }, with }`. The picker creates no
+subscription; the host subscribes the node when the workflow is published. A workflow can hold
+several trigger nodes. The same form is exported as `AppTriggerConfig`, and the canvas opens it
+when you edit an app trigger node.
 
-`BuiltStep` is a node without its id: `{ uses: { app, action, connection? }, with?, retry?,
+`BuiltStep` is a node without its id: `{ uses: { app, action, connection?, trigger? }, with?, retry?,
 onError?, notes? }`.
 
 ```tsx

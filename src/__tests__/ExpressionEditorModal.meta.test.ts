@@ -110,8 +110,11 @@ const { excludeSelfStep } = await import("../components/ExpressionOptions.tsx");
 const { varLabel } = await import("../components/expression-dom.ts");
 
 const q = (c: ParentNode, sel: string) => Array.from(c.querySelectorAll(sel)) as HTMLElement[];
-const toggles = (c: ParentNode) => q(c, '[data-testid="expr-meta-toggle"]');
-const leaves = (c: ParentNode) => q(c, '[data-testid="expr-meta-fields"] .w6w-exprmodal-item');
+// A node's meta is offered only in the Metadata section: one row per node, its caret opening the
+// leaves. Workflow state never carries a per-node Metadata chip.
+const toggles = (c: ParentNode) => q(c, '[data-testid="expr-metadata-node-toggle"]');
+const stateChips = (c: ParentNode) => q(c, '[data-testid="expr-meta-toggle"]');
+const leaves = (c: ParentNode) => q(c, '[data-testid="expr-metadata-fields"] .w6w-exprmodal-item');
 const leafBtn = (c: ParentNode, i: number) =>
   leaves(c)[i].querySelector(".w6w-exprmodal-source") as HTMLElement;
 const copyBtn = (c: ParentNode, i: number) =>
@@ -154,6 +157,7 @@ test("M1 - composed projection, before any test: exactly one Metadata group, for
   );
   const { container } = await mountModal({ options: { steps } });
   assert.equal(toggles(container).length, 1);
+  assert.equal(stateChips(container).length, 0, "no Metadata chip beside the state row");
   const saved: unknown[] = [];
   const m = await mountModal({ options: { steps }, onSave: (v) => saved.push(v) });
   await click(toggles(m.container)[0]);
@@ -178,7 +182,7 @@ for (const [i, k] of KEYS.entries()) {
   });
 }
 
-test("M4 - the toggle follows hasMeta === true only, and is independent of the fields caret", async () => {
+test("M4 - the Metadata row follows hasMeta === true only, and is independent of the fields caret", async () => {
   const withOutputs = {
     id: "ev",
     hasMeta: true,
@@ -192,6 +196,7 @@ test("M4 - the toggle follows hasMeta === true only, and is independent of the f
   ]) {
     const { container } = await mountModal({ options: { steps: [st] } });
     assert.equal(toggles(container).length, 1);
+    assert.equal(stateChips(container).length, 0);
   }
   for (const st of [{ id: "ev" }, { id: "ev", hasMeta: false }]) {
     const { container } = await mountModal({ options: { steps: [st] } });
@@ -208,17 +213,17 @@ test("M4 - the toggle follows hasMeta === true only, and is independent of the f
   await click(caret);
   assert.equal(caret.getAttribute("aria-expanded"), "true");
   assert.equal(t.getAttribute("aria-expanded"), "false", "opening fields does not open meta");
-  assert.equal(q(container, '[data-testid="expr-meta-fields"]').length, 0);
+  assert.equal(q(container, '[data-testid="expr-metadata-fields"]').length, 0);
 });
 
-test("M4b - the Metadata disclosure shows the closed/open glyph, switching with aria-expanded", async () => {
+test("M4b - the Metadata row's caret shows the closed/open glyph, switching with aria-expanded", async () => {
   const { container } = await mountExt();
   const t = toggles(container)[0];
   assert.equal(t.getAttribute("aria-expanded"), "false");
-  assert.ok(t.textContent?.includes("›") && !t.textContent.includes("⌄"));
+  assert.equal(t.textContent, "▸");
   await click(t);
   assert.equal(t.getAttribute("aria-expanded"), "true");
-  assert.ok(t.textContent?.includes("⌄") && !t.textContent.includes("›"));
+  assert.equal(t.textContent, "▾");
 });
 
 test("M5 - exactly the four labels, and no value, ever", async () => {
@@ -229,7 +234,7 @@ test("M5 - exactly the four labels, and no value, ever", async () => {
     LABELS,
   );
   assert.equal(
-    q(container, '[data-testid="expr-meta-fields"]')[0].textContent,
+    q(container, '[data-testid="expr-metadata-fields"]')[0].textContent,
     ["App", "App version", "Action", "Connection ID"].map((l) => `·${l}`).join(""),
     "labels plus the leaf sigil, nothing else",
   );
@@ -261,7 +266,7 @@ test("M6 - save/reload: meta chips read readably; other values round-trip", asyn
   }
 });
 
-test("M7 - json-binding mode: one Metadata toggle per app step; a click into an empty draft binds", async () => {
+test("M7 - json-binding mode: one Metadata row per app step; a click into an empty draft binds", async () => {
   const saved: unknown[] = [];
   const { container } = await mountModal({
     mode: "json-binding",

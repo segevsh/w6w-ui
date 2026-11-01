@@ -16,7 +16,7 @@
  * already has the real `RunState`/`StepExecution` is structurally compatible
  * for free.
  */
-import type { CanvasLane } from "./flow-types.ts";
+import { type CanvasLane, FOREACH_DONE_ROUTE } from "./flow-types.ts";
 
 /** Mirrors `RunStatus` in `@w6w/workflow-types`. */
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
@@ -26,6 +26,9 @@ export type StepStatus = "pending" | "running" | "succeeded" | "failed" | "skipp
 /** The slice of `StepExecution` this module reads. */
 export interface StepExecution {
   status: StepStatus;
+  /** Why a `skipped` step did not run; `"not_on_path"` = never part of this run (no paint). */
+  skipReason?: string;
+  output?: unknown;
   /** For each only (I3): per-iteration body-step records, keyed by body-step id. */
   iterations?: ReadonlyArray<{ nodes?: Record<string, { status: StepStatus }> }>;
 }
@@ -44,6 +47,13 @@ function execOf(runState: RunState, id: string): StepExecution | undefined {
   return (runState.nodes ?? runState.steps)?.[id];
 }
 
+/** A step on another path — not downstream of the fired trigger, or outside a run-from-node
+ *  scope. It was never part of this run, so it and its edges get no run paint at all. */
+function offPath(runState: RunState, id: string): boolean {
+  const rec = execOf(runState, id);
+  return rec?.status === "skipped" && rec.skipReason === "not_on_path";
+}
+
 const RUN_ENDED: ReadonlySet<RunStatus> = new Set(["succeeded", "failed", "canceled"]);
 
 /**
@@ -60,10 +70,17 @@ export type StepVisualState = "no-run" | StepStatus;
  * The rendered state for step `stepId` under `runState` — the StepStatus
  * half of A3's RunStatus × StepStatus mapping. Pure function of the run's own
  * step records; no additional data needed (`GET /runs/:id` already returns
- * everything this reads).
+ * everything this reads). A step whose record says `skipReason: "not_on_path"` (or whose
+ * enclosing loop's does) was never part of the run: `"no-run"`, the unpainted look.
  */
-export function stepVisualState(runState: RunState | undefined, stepId: string): StepVisualState {
-  if (!runState) return "no-run";
+export function stepVisualState(
+  runState: RunState | undefined,
+  stepId: string,
+  loops: readonly string[] = [],
+): StepVisualState {
+  // `loops`: the For each steps enclosing `stepId` — a body step of a loop on another path is
+  // off the path too.
+  if (!runState || [...loops, stepId].some((id) => offPath(runState, id))) return "no-run";
   const own = execOf(runState, stepId);
   if (own) return own.status;
   // A For each body node has no record of its own (D-R1): derive from the owning
@@ -171,14 +188,46 @@ export function edgeRunState(
   runState: RunState | undefined,
   from: string,
   when: CanvasLane | undefined,
+  route?: string,
+  to?: string,
 ): EdgeRunState | undefined {
-  if (!runState) return undefined;
+  if (!runState || offPath(runState, from) || (to !== undefined && offPath(runState, to))) {
+    return undefined;
+  }
+  const state = edgeStateFromSource(runState, from, when, route);
+  // An edge into a step that was skipped was not taken, whatever its source did (a For each
+  // whose body hit Stop workflow still succeeded, but nothing on Done ran).
+  if (state === "taken" && to !== undefined && execOf(runState, to)?.status === "skipped") {
+    return "skipped";
+  }
+  return state;
+}
+
+function edgeStateFromSource(
+  runState: RunState,
+  from: string,
+  when: CanvasLane | undefined,
+  route?: string,
+): EdgeRunState | undefined {
   const exec = execOf(runState, from);
   if (!exec) return undefined;
   // Each lane: a body edge's fate is not decidable from the parent's record (body
   // ids are never `RunState.nodes` keys) — only a skipped parent skips it.
   if (when === "each") return exec.status === "skipped" ? "skipped" : undefined;
   const lane = when ?? "success";
+  const output = exec.output;
+  // A For each's Done route is its plain success exit (a Router's routes carry `route`).
+  const done =
+    route === FOREACH_DONE_ROUTE && !(output && typeof output === "object" && "route" in output);
+  if (route !== undefined && !done && exec.status === "succeeded") {
+    // An If's routed edge (its False port, or an explicit "true") follows `matched`.
+    if (output && typeof output === "object" && "matched" in output) {
+      return (route === "false") !== (output.matched === true) ? "taken" : "skipped";
+    }
+    return output && typeof output === "object" && "route" in output && output.route === route
+      ? "taken"
+      : "skipped";
+  }
   if (exec.status === "succeeded") return lane === "success" ? "taken" : "skipped";
   if (exec.status === "failed") return lane === "error" ? "taken" : "skipped";
   if (exec.status === "skipped") return "skipped";

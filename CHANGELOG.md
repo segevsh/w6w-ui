@@ -9,6 +9,24 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- Ctrl/Cmd+Z undoes workflow edits to nodes, configuration, edges, connections and canvas layout.
+  Ctrl/Cmd+Shift+Z or Ctrl+Y redoes them. History keeps the latest 100 edits while the workflow is
+  open; test runs and learned output shapes stay intact, and text fields keep their own undo.
+- A node's input takes any number of incoming edges: wiring a second trigger (or a second path)
+  into a node that already has one adds the edge instead of replacing the existing one. Only an
+  exact duplicate, or an edge into a trigger, is refused.
+- A run's skipped steps say why: `ExecutionLogStep.skipReason` (`SkipReason`) shows "condition
+  false", "run stopped" or "disabled" beside the Skipped pill. A `not_on_path` step (on another
+  path, never part of the run) leaves the run log for a collapsed "N steps on other paths" footer
+  and gets no run paint on the canvas, nor do its edges.
+- Run script reads data as code: a `{{ }}` in its code is converted to `state.nodes.<id>.output…`,
+  `vars.…` or `consts.…` (Python indexes them) when the step opens, behind a quiet note with
+  **Undo**; step chips and ƒx under the code insert those reads; the hint is one line plus a
+  collapsed "How to read data". **Input** moved under a collapsed "Custom input (advanced)"
+  section (open when set). A whole-value JSON param offers "Use the output of <step>" chips, and
+  the Test tab shows script code verbatim. `ResolvedParams` takes `literalKeys`; `CodeEditor`
+  takes `onCreateEditor`; a collapsible section param takes `openWhenSet`, a code param
+  `scriptReads`.
 - A JSON param can be composed from references: the picker shows each step's outputs with their
   metadata, a click inserts the reference at the cursor (adding to the draft, never replacing it),
   a bound field renders as a chip, and the editor fills its pane.

@@ -4,9 +4,8 @@
 // used to free the source's exit port lane-BLINDLY, so the moment a second wire
 // was dragged out of a step the first one was deleted — which made a
 // `send → (error) → fallback` shape literally unauthorable. Capacity is now
-// per-lane at the SOURCE and deliberately lane-blind at the TARGET; both halves
-// are asserted here, because "make it symmetric" is the plausible cleanup that
-// would let a `ports.in: 1` node silently accept two inbound edges.
+// per-lane at the SOURCE, and the TARGET has none: an input accepts any number of
+// inbound edges and a connect never evicts one.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge } from "@xyflow/react";
@@ -25,6 +24,7 @@ import {
   EACH_SOURCE_HANDLE,
   ERROR_SOURCE_HANDLE,
   type NodePorts,
+  RACE_APP,
   laneForSourceHandle,
   sourceHandleForLane,
 } from "../flow-types.ts";
@@ -66,6 +66,20 @@ const ABCD = [node("a"), node("b"), node("c"), node("d")];
 
 /** Nodes whose every step caps its exit at ONE edge per lane. */
 const CAP1 = ["a", "b", "c", "d"].map((id) => node(id, { in: 1, out: 1 }));
+
+test("Race keeps multiple incoming paths and one common outgoing path", () => {
+  const race = node("race");
+  race.data.step.uses = { app: RACE_APP, action: "race" };
+  const nodes = [...ABCD, race];
+  let edges = applyConnect("a", "race", nodes, []);
+  assert.ok(edges);
+  edges = applyConnect("b", "race", nodes, edges);
+  assert.ok(edges);
+  edges = applyConnect("race", "c", nodes, edges);
+  assert.ok(edges);
+  assert.deepEqual(pairs(edges), ["a->race:success", "b->race:success", "race->c:success"]);
+  assert.equal(applyConnect("race", "d", nodes, edges), null);
+});
 
 test("at a finite out cap a second success edge is REFUSED — edges unchanged, cap named", () => {
   // Asserted for BOTH spellings of a success edge: the explicit `data.when` stamp
@@ -116,14 +130,28 @@ test("a catalog lookup cap reaches connect without being written on the step", (
   assert.equal(ABCD[0].data.step.ports, undefined);
 });
 
-test("target entry capacity stays LANE-BLIND — a ports.in:1 step keeps one inbound", () => {
-  // A lane-partitioned target rule (the plausible "symmetry" cleanup) would let
-  // this 1-in node hold two inbound edges at once. `ports.in` alone governs it.
+test("an input accepts many edges — a connect NEVER evicts an inbound edge", () => {
+  // `ports.in: 1` (and the default) used to evict the oldest inbound edge.
+  const trig = (id: string) => node(id, { in: 0, out: 1 });
+  const nodes = [trig("order"), trig("manual"), node("t", { in: 1, out: 1 }), node("u")];
+  const one = [rf("order", "t", "success")];
+  const two = applyConnect("manual", "t", nodes, one);
+  assert.ok(two, "a second trigger may feed the same node");
+  assert.deepEqual(pairs(two), ["order->t:success", "manual->t:success"]);
+  const three = applyConnect("u", "t", nodes, two);
+  assert.ok(three);
+  assert.deepEqual(pairs(three), ["order->t:success", "manual->t:success", "u->t:success"]);
+  // An exact duplicate is still refused; so is connecting INTO a trigger.
+  assert.equal(applyConnect("manual", "t", nodes, two), null);
+  assert.equal(canConnect("u", "order", nodes, []), false);
+  assert.equal(applyConnect("u", "order", nodes, []), null);
+});
+
+test("a different lane into a ports.in:1 step also keeps the existing inbound", () => {
   const nodes = [node("a"), node("b"), node("t", { in: 1, out: 1 })];
   const next = applyConnect("b", "t", nodes, [rf("a", "t", "success")], "error");
-  assert.ok(next, "the connection must be allowed");
-  assert.deepEqual(pairs(next), ["b->t:error"]);
-  assert.equal(next.filter((e) => e.target === "t").length, 1);
+  assert.ok(next);
+  assert.deepEqual(pairs(next), ["a->t:success", "b->t:error"]);
 });
 
 test("a multi-in target still fans in — ports.in:10 keeps a success AND an error inbound", () => {
@@ -486,12 +514,27 @@ function refuses(
   assert.equal(applyConnect(src, tgt, w.nodes, w.edges, when), null);
 }
 
-test("C1 control targets are refused in the body, including a nested For each", () => {
-  refuses("fe3", "iff", "each", "control_in_body");
+test("C1 nested controls are refused, but If gates can join a loop body", () => {
   refuses("fe3", "fe2", "each", "control_in_body");
   // The body-continuation gesture (success connect from a body node) is each-lane too.
   refuses("b1", "fe3", "success", "control_in_body");
-  refuses("b1", "iff", "success", "control_in_body");
+  for (const [source, lane] of [
+    ["fe3", "each"],
+    ["b1", "success"],
+  ] as const) {
+    const w = loopWorld();
+    const edges = applyConnect(source, "iff", w.nodes, w.edges, lane);
+    assert.ok(edges);
+    assert.ok(
+      edges.some((e) => e.source === source && e.target === "iff" && e.data?.when === "each"),
+    );
+  }
+  const w = loopWorld();
+  const gate = w.nodes.find((n) => n.id === "iff");
+  assert.ok(gate);
+  // biome-ignore lint/suspicious/noThenProperty: then is the workflow's literal branch key.
+  gate.data.step.with = { condition: true, then: ["f"] };
+  refuses("fe3", "iff", "each", "control_in_body", w);
 });
 
 test("C2 a target already in another loop is refused", () => {
@@ -502,8 +545,11 @@ test("C3 a second Each-item edge is refused", () => {
   refuses("fe", "f", "each", "body_branch");
 });
 
-test("C4 body branching is refused", () => {
-  refuses("b0", "f", "success", "body_branch");
+test("C4 a plain body step may fan out to a second step", () => {
+  const w = loopWorld();
+  const next = applyConnect("b0", "f", w.nodes, w.edges, "success");
+  assert.ok(next);
+  assert.ok(next.some((e) => e.source === "b0" && e.target === "f" && e.data?.when === "each"));
 });
 
 test("C5 Done-side / outside → body node is refused", () => {
@@ -575,8 +621,8 @@ test("C10 a 3-step body authored by applyConnect serializes to with.body, no bod
   const out = flowToWorkflow(wf, nodes, edges);
   const fe3 = out.nodes.find((n) => n.id === "fe3");
   assert.deepEqual((fe3?.with as { body: string[] }).body, ["f", "g", "h"]);
-  const body = new Set(["f", "g", "h"]);
-  assert.ok(!(out.edges ?? []).some((e) => body.has(e.from) || body.has(e.to)));
+  // Only the For each's own Each item link names a body step.
+  assert.deepEqual(out.edges, [{ from: "fe3", to: "f", route: "each" }]);
 });
 
 test("C11 loopRefusalMessage: seven distinct non-empty strings", () => {

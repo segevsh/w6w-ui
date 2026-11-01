@@ -1,7 +1,7 @@
 import { effectiveParam } from "@w6w/expr";
 import { useMemo, useState } from "react";
 import { JsonEditor } from "../JsonEditor.tsx";
-import { type DataVar, flattenParams, isParamVisible } from "../ParamsForm.tsx";
+import { dataVarRows, flattenParams, isParamVisible } from "../ParamsForm.tsx";
 import type { StepStartState } from "../provider.tsx";
 import {
   type ResolveScope,
@@ -31,6 +31,11 @@ export interface ResolvedParamsProps {
    * the trigger arm, and two side by side is a defect, not a feature).
    */
   view?: "props" | "code";
+  /**
+   * Param keys the host sends as SOURCE TEXT, never resolved (`@w6w/script`'s `code`, the
+   * engine's `LITERAL_PARAMS`): shown verbatim, so a `{{ }}` in them never reads as a value.
+   */
+  literalKeys?: readonly string[];
 }
 
 /**
@@ -50,11 +55,12 @@ export function ResolvedParams({
   values,
   testStartState,
   view = "props",
+  literalKeys,
 }: ResolvedParamsProps) {
-  const { sampleValues } = useExpressionOptions();
+  const { sampleValues, nodeConfig, nodeMeta } = useExpressionOptions();
   const scope = useMemo(
-    () => buildResolveScope(sampleValues, testStartState),
-    [sampleValues, testStartState],
+    () => buildResolveScope(sampleValues, testStartState, nodeConfig, nodeMeta),
+    [sampleValues, testStartState, nodeConfig, nodeMeta],
   );
   const flat = flattenParams(params);
   const effective = (key: string) =>
@@ -73,7 +79,7 @@ export function ResolvedParams({
     // Derived fresh on every render from `values` — no draft state — so
     // editing the incoming-state override above updates this text live,
     // exactly as it already updates the row list (A5).
-    const json = buildResolvedJson(visibleRows, values, scope);
+    const json = buildResolvedJson(visibleRows, values, scope, literalKeys);
     return (
       <div className="w6w-resolved-params">
         <JsonEditor
@@ -127,10 +133,11 @@ export function ResolvedParams({
           <ResolvedParamRow
             key={param.key}
             label={param.label ?? param.key}
-            segments={resolveParamValue(
-              values[param.key] !== undefined ? values[param.key] : param.default,
-              scope,
-            )}
+            segments={
+              literalKeys?.includes(param.key)
+                ? [{ status: "resolved", value: effective(param.key) }]
+                : resolveParamValue(effective(param.key), scope)
+            }
           />
         ),
       )}
@@ -149,16 +156,16 @@ function buildResolvedJson(
   rows: ActionParam[],
   values: Record<string, unknown>,
   scope: ResolveScope,
+  literalKeys?: readonly string[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const param of rows) {
-    if (param.type === "vars") {
-      const raw = Array.isArray(values[param.key])
-        ? (values[param.key] as DataVar[])
-        : Array.isArray(param.default)
-          ? (param.default as DataVar[])
-          : [];
-      out[param.key] = resolveVarsJson(raw, scope);
+    if (literalKeys?.includes(param.key)) {
+      out[param.key] = values[param.key] !== undefined ? values[param.key] : param.default;
+    } else if (param.type === "vars") {
+      const raw = values[param.key] ?? param.default ?? [];
+      const vars = dataVarRows(raw);
+      out[param.key] = vars ? resolveVarsJson(vars, scope) : resolveParamJson(raw, scope);
     } else {
       out[param.key] = resolveParamJson(
         values[param.key] !== undefined ? values[param.key] : param.default,
@@ -190,11 +197,13 @@ function ResolvedVarsRow({
   value: unknown;
   scope: ResolveScope;
 }) {
-  const rows: DataVar[] = Array.isArray(value)
-    ? (value as DataVar[])
-    : Array.isArray(param.default)
-      ? (param.default as DataVar[])
-      : [];
+  const raw = value ?? param.default ?? [];
+  const rows = dataVarRows(raw);
+  if (rows === null) {
+    return (
+      <ResolvedParamRow label={param.label ?? param.key} segments={resolveParamValue(raw, scope)} />
+    );
+  }
   return (
     <div className="w6w-resolved-row">
       <span className="w6w-resolved-label">{param.label ?? param.key}</span>
@@ -248,6 +257,14 @@ function ResolvedSegmentView({ segment }: { segment: ResolvedSegment }) {
         <>
           <ExprChip kind="var" refName={segment.ref} />
           <span className="w6w-param-unresolved">unresolved</span>
+        </>
+      );
+    case "at-run":
+      // A node config key this client cannot see (the host fills it on the run): neutral.
+      return (
+        <>
+          <ExprChip kind="var" refName={segment.ref} />
+          <span className="w6w-param-unevaluated">resolved at run</span>
         </>
       );
     case "not-evaluated":

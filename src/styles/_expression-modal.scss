@@ -13,9 +13,76 @@
   padding: var(--w6w-sp-2-5);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--w6w-sp-1);
 }
+/* A rail section is an accordion item: its header always shows, its body animates open
+   (grid-template-rows 0fr -> 1fr) and only one section is open at a time. */
 .w6w-exprmodal-group {
+  display: flex;
+  flex-direction: column;
+}
+.w6w-exprmodal-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--w6w-sp-1);
+}
+.w6w-exprmodal-group-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--w6w-sp-1);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: var(--w6w-sp-1) var(--w6w-sp-0-5);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.w6w-exprmodal-group-toggle:focus-visible {
+  outline: 2px solid var(--w6w-accent);
+  outline-offset: 1px;
+}
+.w6w-exprmodal-group-toggle:hover .w6w-exprmodal-group-label,
+.w6w-exprmodal-group.is-open .w6w-exprmodal-group-label {
+  color: var(--w6w-text);
+}
+.w6w-exprmodal-group-caret {
+  color: var(--w6w-muted);
+  line-height: 1;
+  transition: transform 200ms ease;
+}
+.w6w-exprmodal-group.is-open .w6w-exprmodal-group-caret {
+  transform: rotate(90deg);
+}
+.w6w-exprmodal-group-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease;
+}
+.w6w-exprmodal-group.is-open .w6w-exprmodal-group-body {
+  grid-template-rows: 1fr;
+}
+.w6w-exprmodal-group-inner {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.w6w-exprmodal-group.is-open .w6w-exprmodal-group-inner {
+  padding-bottom: var(--w6w-sp-1-5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .w6w-exprmodal-group-caret,
+  .w6w-exprmodal-group-body {
+    transition: none;
+  }
+}
+/* A labelled block inside a section (Workflow state's Loop). */
+.w6w-exprmodal-subgroup {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -26,7 +93,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--w6w-muted);
-  margin-bottom: var(--w6w-sp-0-5);
 }
 .w6w-exprmodal-source {
   display: flex;
@@ -144,20 +210,6 @@
 }
 .w6w-exprmodal-caret-btn:hover {
   background: var(--w6w-panel);
-}
-/* The "N fields" toggle with the Metadata toggle stacked under it, so both
-   disclosures share one left edge on a step row. */
-.w6w-exprmodal-toggle-stack {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px; /* lint-tokens-allow: 3px sits between no two steps of the spacing scale; tight stack of the fields and Metadata toggles */
-}
-/* A step with no fields: its Metadata toggle sits at the leaf indentation of
-   `.w6w-exprmodal-subsources` (margin 9px + 1px border + sp-2 padding). */
-.w6w-exprmodal-meta-row {
-  margin-left: calc(10px + var(--w6w-sp-2)); /* lint-tokens-allow: 9px margin + 1px border of .w6w-exprmodal-subsources */
 }
 /* Same 20px-high chrome as `.w6w-exprmodal-render-btn` above — the sizing
    precedent for a dense rail control — but a separate class: this toggles

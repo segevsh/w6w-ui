@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { IconButton } from "./IconButton.tsx";
 import { ListItem } from "./ListItem.tsx";
 import type { ExecutionStatus } from "./StepStatusPill.tsx";
 import { StepStatusPill } from "./StepStatusPill.tsx";
@@ -24,6 +25,9 @@ export interface ExecutionListItem {
   /** Wall-clock duration once the run has finished; `null` while it is still
    * queued/running (rendered as `—`). */
   durationMs: number | null;
+  /** The execution this one is a re-run of — the row then carries a "Re-run"
+   * tag. `null`/omitted ⇒ an ordinary execution. */
+  rerunOf?: string | null;
 }
 
 export interface ExecutionListProps {
@@ -53,6 +57,13 @@ export interface ExecutionListProps {
   onPrev?: () => void;
   /** Supplied ⇒ the pager renders and `Next` calls this. */
   onNext?: () => void;
+  /** Supplied ⇒ every row gets a "Re-run" control beside it that reports the
+   * row's id here. Omitted ⇒ no control. */
+  onRerun?: (id: string) => void;
+  /** The row whose re-run is in flight — its control is disabled. While any
+   * re-run is in flight every row's control is disabled, so two can never
+   * overlap. `null`/omitted ⇒ none. */
+  rerunningId?: string | null;
 }
 
 /** Row subtitle's kind prefix, in the `showCallable` view. */
@@ -82,6 +93,8 @@ export function ExecutionList({
   hasNext,
   onPrev,
   onNext,
+  onRerun,
+  rerunningId = null,
 }: ExecutionListProps) {
   // Rendered in EVERY branch below, deliberately: a host that reports it can
   // go back to a previous page must still offer that control from an empty
@@ -123,7 +136,20 @@ export function ExecutionList({
           <li key={item.id} data-testid="execution-row" data-execution-id={item.id}>
             <ListItem
               icon={<StepStatusPill state={item.status} />}
-              title={showCallable ? item.callableName : formatExecutionTime(item.startedAt)}
+              title={
+                <>
+                  {showCallable ? item.callableName : formatExecutionTime(item.startedAt)}
+                  {item.rerunOf && (
+                    <span
+                      className="w6w-execution-rerun-tag"
+                      data-testid="execution-row-rerun-tag"
+                      title={`Re-run of ${item.rerunOf}`}
+                    >
+                      Re-run
+                    </span>
+                  )}
+                </>
+              }
               subtitle={
                 showCallable
                   ? `${KIND_LABEL[item.kind]} · ${formatExecutionTime(item.startedAt)}`
@@ -133,6 +159,17 @@ export function ExecutionList({
               active={item.id === selectedId}
               onClick={onSelect ? () => onSelect(item.id) : undefined}
             />
+            {onRerun && (
+              <IconButton
+                icon="sync"
+                label="Re-run"
+                title={item.id === rerunningId ? "Re-running…" : "Re-run with the same input"}
+                className="w6w-execution-list-rerun"
+                data-testid="execution-row-rerun"
+                disabled={rerunningId !== null}
+                onClick={() => onRerun(item.id)}
+              />
+            )}
           </li>
         ))}
       </ul>

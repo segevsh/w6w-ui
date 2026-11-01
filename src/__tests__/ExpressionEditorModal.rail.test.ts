@@ -315,3 +315,125 @@ test("T-2 — a composite row (step with fields) keeps click = insert, no save",
   assert.equal(onSaveCalls.length, 0);
   assert.equal(onCloseCalls.length, 0);
 });
+
+// ── Metadata › config — each node's settings ────────────────────────────────
+
+test("Metadata › config: no Node settings group; config is collapsed inside Metadata, expands to its keys, inserts nodes.<id>.meta.config.<key>; a non-upstream node sits only in the Metadata section", async () => {
+  const { container } = await mountModal({
+    options: {
+      steps: [{ id: "data_1" }],
+      nodeConfigs: [
+        { id: "data_1", keys: ["vars"] },
+        { id: "webhook_1", keys: ["url", "auth", "methods"] },
+      ],
+    },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  assert.equal(groupFor(container, "Node settings"), null);
+  const group = groupFor(container, "Workflow state") as HTMLElement;
+  assert.ok(group);
+  assert.ok(!group.textContent?.includes("webhook_1"), "the unconnected webhook is not state");
+  assert.equal(
+    group.querySelectorAll('[data-testid="expr-meta-toggle"]').length,
+    0,
+    "no chip in state",
+  );
+  assert.equal(group.querySelectorAll('[data-testid="expr-config-toggle"]').length, 0);
+
+  const meta = groupFor(container, "Metadata") as HTMLElement;
+  assert.deepEqual(
+    Array.from(
+      meta.querySelectorAll('[data-testid="expr-metadata-node"] .w6w-exprmodal-source-label'),
+    ).map((e) => e.textContent),
+    ["data_1", "webhook_1"],
+    "…but it is in Metadata",
+  );
+  await click(meta.querySelector('[data-testid="expr-section-toggle"]') as Element);
+  // Collapsed: nothing inside a node shown until its own caret opens.
+  assert.equal(meta.querySelectorAll('[data-testid="expr-config-toggle"]').length, 0);
+  const nodeToggles = Array.from(
+    meta.querySelectorAll('[data-testid="expr-metadata-node-toggle"]'),
+  );
+  await click(nodeToggles[1]);
+  const cfgToggle = meta.querySelector('[data-testid="expr-config-toggle"]') as HTMLElement;
+  assert.ok(cfgToggle, "Metadata opens onto a config entry");
+  assert.equal(cfgToggle.getAttribute("aria-expanded"), "false");
+  assert.equal(meta.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
+
+  await click(cfgToggle);
+  const fields = meta.querySelector('[data-testid="expr-config-fields"]') as HTMLElement;
+  assert.ok(fields, "expanded — the webhook's keys render");
+  assert.deepEqual(
+    Array.from(fields.querySelectorAll(".w6w-exprmodal-source-label")).map((l) => l.textContent),
+    ["url", "auth", "methods"],
+  );
+  await click(copyOf(fields.querySelector(".w6w-exprmodal-source") as Element));
+  const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
+  assert.equal(chip.getAttribute("data-ref"), "nodes.webhook_1.meta.config.url");
+
+  await click(cfgToggle);
+  assert.equal(meta.querySelectorAll('[data-testid="expr-config-fields"]').length, 0);
+});
+
+test("Metadata leaves from static meta: a webhook offers its subscription id and URL but no connection id; a non-upstream app node offers its connection id in the Metadata section", async () => {
+  const { container } = await mountModal({
+    options: {
+      steps: [{ id: "eb_webhook" }],
+      nodeConfigs: [{ id: "find_webhook", keys: ["organizationId"] }],
+      nodeMeta: {
+        eb_webhook: {
+          app: "@w6w/webhook",
+          action: "webhook",
+          connectionId: null,
+          subscriptionId: "sub_1",
+          url: "https://h/triggers/webhooks/sub_1",
+        },
+        find_webhook: {
+          app: "io.w6w.eventbrite",
+          action: "list-webhooks",
+          connectionId: "conn_1",
+        },
+      },
+    },
+  });
+  const editor = container.querySelector(".w6w-exprmodal-chips") as HTMLElement;
+  const labels = (el: Element) =>
+    Array.from(
+      el.querySelectorAll(
+        ":scope > * .w6w-exprmodal-source-label, :scope > .w6w-exprmodal-source .w6w-exprmodal-source-label",
+      ),
+    )
+      .map((l) => l.textContent)
+      .filter((t) => t !== "config ›");
+  const group = groupFor(container, "Workflow state") as HTMLElement;
+  assert.equal(group.querySelectorAll('[data-testid="expr-meta-toggle"]').length, 0);
+
+  const meta = groupFor(container, "Metadata") as HTMLElement;
+  await click(meta.querySelector('[data-testid="expr-section-toggle"]') as Element);
+  const nodeRow = (id: string) =>
+    Array.from(meta.querySelectorAll('[data-testid="expr-metadata-node"]')).find((r) =>
+      r.textContent?.includes(id),
+    ) as Element;
+  // The webhook (no config) still gets its Metadata, here and only here.
+  await click(
+    nodeRow("eb_webhook").querySelector('[data-testid="expr-metadata-node-toggle"]') as Element,
+  );
+  const list = meta.querySelector('[data-testid="expr-metadata-fields"]') as Element;
+  assert.deepEqual(labels(list), ["Subscription ID", "Webhook URL"]);
+  await click(
+    nodeRow("eb_webhook").querySelector('[data-testid="expr-metadata-node-toggle"]') as Element,
+  );
+
+  await click(
+    nodeRow("find_webhook").querySelector('[data-testid="expr-metadata-node-toggle"]') as Element,
+  );
+  const findList = meta.querySelector('[data-testid="expr-metadata-fields"]') as Element;
+  assert.deepEqual(labels(findList), ["App", "App version", "Action", "Connection ID"]);
+
+  const conn = Array.from(findList.querySelectorAll(".w6w-exprmodal-source")).find((b) =>
+    b.textContent?.includes("Connection ID"),
+  ) as Element;
+  await click(copyOf(conn));
+  const chip = editor.querySelector(".w6w-expr-chip") as HTMLElement;
+  assert.equal(chip.getAttribute("data-ref"), "nodes.find_webhook.meta.connectionId");
+});

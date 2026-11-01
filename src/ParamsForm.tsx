@@ -1,5 +1,14 @@
 import { effectiveParam, matchesParamCondition } from "@w6w/expr";
-import { type ReactNode, createContext, useContext, useEffect, useId, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { CodeEditor, type ScriptLanguage } from "./CodeEditor.tsx";
 import { JsonEditor } from "./JsonEditor.tsx";
 import { Combobox } from "./components/Combobox.tsx";
@@ -8,6 +17,7 @@ import { ExpressionInput } from "./components/ExpressionInput.tsx";
 import { useExpressionOptions } from "./components/ExpressionOptions.tsx";
 import { Icon } from "./components/Icon.tsx";
 import { Modal } from "./components/Modal.tsx";
+import { ScriptCodeField } from "./components/ScriptCodeField.tsx";
 import { varLabel } from "./components/expression-dom.ts";
 import { holdsExpression } from "./components/expression-template.ts";
 import { bareRefBinding, wholeValueRef } from "./components/json-compose.ts";
@@ -196,7 +206,10 @@ export function ParamsForm({ params, values, onChange, readOnly, dynamic }: Para
         if (p.type !== "code") continue;
         const current = values[p.key];
         const isUntouchedBoilerplate =
-          current === undefined || current === p.default || current === PYTHON_CODE_DEFAULT;
+          current === undefined ||
+          current === p.default ||
+          current === PYTHON_CODE_DEFAULT ||
+          LEGACY_CODE_DEFAULTS.includes(current as string);
         if (isUntouchedBoilerplate) {
           next[p.key] = value === "python" ? PYTHON_CODE_DEFAULT : p.default;
         }
@@ -265,7 +278,17 @@ function SectionField({
 
   if (param.section === "collapsible") {
     return (
-      <details className="w6w-section" open={param.collapsed === false}>
+      <details
+        className="w6w-section"
+        open={
+          param.collapsed === false ||
+          (param.openWhenSet === true &&
+            visibleChildren.some((c) => {
+              const v = effective(c.key);
+              return v !== undefined && v !== null && v !== "";
+            }))
+        }
+      >
         <summary className="w6w-section-summary">
           <span className="w6w-section-title">{param.title ?? param.label ?? param.key}</span>
           {param.subtitle && <span className="w6w-section-subtitle">{param.subtitle}</span>}
@@ -406,6 +429,15 @@ function RepeatField({
  *  shape/intent as `SCRIPT_APP`'s JS default in `flow-types.ts`. */
 const PYTHON_CODE_DEFAULT = "# Runs as a function body. Return the step's output.\nreturn input";
 
+/** Earlier script defaults (the ones that named `input`, then `vars`/`consts`/`state`) — still untouched
+ *  boilerplate a `language` switch may swap, on a step saved while that wording was current. */
+const LEGACY_CODE_DEFAULTS = [
+  "// Read `input` (bound under Input), plus `vars`, `consts` and `state.nodes.<step-id>.output`.\n// Runs as a function body. Return the step's output.\nreturn input;",
+  '# Read `input` (bound under Input), plus `vars`, `consts` and `state["nodes"][<step-id>]["output"]`.\n# Runs as a function body. Return the step\'s output.\nreturn input',
+  "// `input` holds the data bound under Input (e.g. an upstream step's output).\n// Runs as a function body. Return the step's output.\nreturn input;",
+  "# `input` holds the data bound under Input (e.g. an upstream step's output).\n# Runs as a function body. Return the step's output.\nreturn input",
+];
+
 function ParamField(props: ParamFieldProps) {
   const dyn = useContext(DynamicFieldsCtx);
   const key = props.param.key;
@@ -446,6 +478,8 @@ function ParamFieldBody({
   readOnly?: boolean;
 }) {
   const listModelRoutes = useOptionalW6WApi()?.listModelRoutes;
+  const listDataStores = useOptionalW6WApi()?.listDataStores;
+  const listDataStoreEntries = useOptionalW6WApi()?.listDataStoreEntries;
   const workflowProject = useWorkflowProject();
   const dyn = useContext(DynamicFieldsCtx);
   const dynState = dyn?.fields[param.key];
@@ -518,6 +552,19 @@ function ParamFieldBody({
         : undefined;
     const fallbackDefault = language === "python" ? PYTHON_CODE_DEFAULT : param.default;
     const current = (value ?? fallbackDefault ?? "") as string;
+    if (param.scriptReads) {
+      return (
+        <ScriptCodeField
+          param={param}
+          value={String(current)}
+          language={siblingLanguage === "python" ? "python" : "javascript"}
+          label={label}
+          req={req}
+          readOnly={readOnly}
+          onChange={(next) => onChange(param.key, next)}
+        />
+      );
+    }
     return (
       <div className="w6w-field">
         <span>
@@ -549,6 +596,48 @@ function ParamFieldBody({
         label={label}
         req={req}
         listModelRoutes={listModelRoutes}
+        project={workflowProject}
+      />
+    );
+  }
+
+  // `data-store` — a store-name picker when the host supplies `listDataStores`;
+  // otherwise it falls through to the plain text input below (like `string`).
+  if (param.type === "data-store" && listDataStores) {
+    return (
+      <StoreField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        listDataStores={listDataStores}
+        project={workflowProject}
+      />
+    );
+  }
+
+  // `data-store-key` — a searchable picker of the sibling `store`'s entries when the host
+  // supplies `listDataStoreEntries` and `store` names a store literally; otherwise (no member,
+  // no store yet, or a store bound to an expression) the plain text input below, as `string`.
+  const storeName = effective?.("store");
+  if (
+    param.type === "data-store-key" &&
+    listDataStoreEntries &&
+    typeof storeName === "string" &&
+    storeName.trim() !== ""
+  ) {
+    return (
+      <StoreKeyField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        store={storeName}
+        listDataStoreEntries={listDataStoreEntries}
         project={workflowProject}
       />
     );
@@ -866,6 +955,200 @@ function ModelRouteField({
   );
 }
 
+type DataStoreList = NonNullable<import("./provider.tsx").W6WApi["listDataStores"]>;
+
+/**
+ * The `data-store` picker: store NAMES in a {@link Combobox}. Free text is a
+ * value (`forceSelection={false}`) and an expression binds through the same
+ * {@link FxField} a `string` uses.
+ */
+function StoreField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  listDataStores,
+  project,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  listDataStores: DataStoreList;
+  /** The editor's project (`WorkflowProjectProvider`) — the stores listed are THIS project's. */
+  project: string | undefined;
+}) {
+  const [stores, setStores] = useState<Awaited<ReturnType<DataStoreList>>>([]);
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => listDataStores(project))
+      .then((r) => live && setStores(Array.isArray(r) ? r : []))
+      .catch(() => live && setStores([]));
+    return () => {
+      live = false;
+    };
+  }, [listDataStores, project]);
+  const raw = value ?? param.default ?? "";
+  const current = typeof raw === "string" ? raw : "";
+  return (
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
+      <Combobox
+        mode="combobox"
+        forceSelection={false}
+        aria-label={label}
+        disabled={readOnly}
+        value={current}
+        placeholder="Select a store…"
+        options={stores.map((s) => ({ value: s.name, label: `${s.name} (${s.kind})` }))}
+        onChange={(next) => onChange(param.key, next)}
+      />
+    </FxField>
+  );
+}
+
+type DataStoreEntryList = NonNullable<import("./provider.tsx").W6WApi["listDataStoreEntries"]>;
+
+/** Entries one picker request asks for: a page, never the whole store. */
+export const STORE_KEY_PAGE = 25;
+/** Typing settles this long before the key search goes to the host. */
+const STORE_KEY_DEBOUNCE_MS = 200;
+const PREVIEW_CHARS = 60;
+
+/** One muted line under an entry's key: its value, shortened, and when it last changed. */
+export function storeEntryDetail(entry: { value?: unknown; updatedAt?: string }): string {
+  let text = "";
+  if (entry.value !== undefined) {
+    try {
+      text = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
+    } catch {
+      text = String(entry.value);
+    }
+    text = text.replace(/\s+/g, " ");
+    if (text.length > PREVIEW_CHARS) text = `${text.slice(0, PREVIEW_CHARS - 1)}…`;
+  }
+  const when =
+    typeof entry.updatedAt === "string" && entry.updatedAt.length >= 16
+      ? `updated ${entry.updatedAt.slice(0, 16).replace("T", " ")}`
+      : "";
+  return [text, when].filter(Boolean).join(" · ");
+}
+
+/**
+ * The `data-store-key` picker: the chosen store's entry KEYS in a {@link Combobox}, each with
+ * a short value preview. Typing searches the host by key prefix (debounced, one page of
+ * {@link STORE_KEY_PAGE}); free text is still a value (`forceSelection={false}`), so a key that
+ * does not exist yet (a `set`) is typed as before, and an expression binds through the same
+ * {@link FxField} a `string` uses.
+ */
+function StoreKeyField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  store,
+  listDataStoreEntries,
+  project,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  /** The sibling `store` param's literal NAME. */
+  store: string;
+  listDataStoreEntries: DataStoreEntryList;
+  project: string | undefined;
+}) {
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState<Awaited<ReturnType<DataStoreEntryList>>>({ items: [] });
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLoading(true);
+    const prefix = query.trim();
+    const timer = setTimeout(
+      () => {
+        Promise.resolve()
+          .then(() =>
+            listDataStoreEntries(store, {
+              project,
+              prefix: prefix === "" ? undefined : prefix,
+              limit: STORE_KEY_PAGE,
+              signal: ctrl.signal,
+            }),
+          )
+          .then((r) => {
+            if (ctrl.signal.aborted) return;
+            setPage(r && Array.isArray(r.items) ? r : { items: [] });
+            setLoading(false);
+          })
+          .catch(() => {
+            if (ctrl.signal.aborted) return;
+            setPage({ items: [] });
+            setLoading(false);
+          });
+      },
+      prefix === "" ? 0 : STORE_KEY_DEBOUNCE_MS,
+    );
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [listDataStoreEntries, store, project, query]);
+  const raw = value ?? param.default ?? "";
+  const current = typeof raw === "string" ? raw : "";
+  const typed = query.trim();
+  return (
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
+      <Combobox
+        mode="combobox"
+        forceSelection={false}
+        aria-label={label}
+        disabled={readOnly}
+        value={current}
+        placeholder="Search entries or type a key…"
+        options={page.items.map((e) => ({
+          value: e.key,
+          label: e.key,
+          detail: storeEntryDetail(e) || undefined,
+        }))}
+        onInputChange={setQuery}
+        emptyText={
+          loading
+            ? "Searching…"
+            : typed !== ""
+              ? `No key starts with "${typed}" — Enter keeps it as typed`
+              : "No entries in this store"
+        }
+        footer={page.more ? "More entries — type to narrow by key" : undefined}
+        onChange={(next) => onChange(param.key, next)}
+      />
+    </FxField>
+  );
+}
+
 /**
  * Wraps a general scalar field (text/number `input`, `textarea`, or an
  * `options` dropdown) with an `fx` affordance: a small ƒx at the end of the
@@ -1039,11 +1322,15 @@ function JsonParamField({
   value,
   onChange,
   readOnly,
+  headerActions,
+  onValidityChange,
 }: {
   param: ActionParam;
   value: unknown;
   onChange: (key: string, value: unknown) => void;
   readOnly?: boolean;
+  headerActions?: ReactNode;
+  onValidityChange?: (valid: boolean) => void;
 }) {
   // "Bound" is DERIVED from the stored value on every render — never a local
   // flag — so control and value cannot disagree (same stance as `FxField`'s `fx`).
@@ -1060,6 +1347,7 @@ function JsonParamField({
   const [expanded, setExpanded] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const exprOptions = useExpressionOptions();
+  const upstream = exprOptions.steps ?? [];
 
   // Re-seed when the field identity changes OR the incoming value changes to
   // something other than what the current draft already represents — i.e. an
@@ -1086,11 +1374,13 @@ function JsonParamField({
   };
   const onValid = (parsed: unknown) => {
     setInvalid(false);
+    onValidityChange?.(true);
     onChange(param.key, parsed);
   };
   // Empty is not invalid: it clears the value (required-ness is enforced on
   // submit, not by this field). Only non-empty unparseable text is "Invalid JSON".
   const onValidity = ({ valid, error }: { valid: boolean; error?: string }) => {
+    onValidityChange?.(valid || error === "Empty");
     if (!valid && error === "Empty") {
       setInvalid(false);
       onChange(param.key, undefined);
@@ -1128,6 +1418,7 @@ function JsonParamField({
           {label}
           {param.required ? " *" : ""}
         </span>
+        {headerActions}
         {!bound && (
           <button
             type="button"
@@ -1234,6 +1525,24 @@ function JsonParamField({
           Invalid JSON
         </span>
       )}
+      {/* One click binds the whole value to an upstream step's output — the binding the
+          ƒx picker would store, without having to know the `nodes.<id>.output` spelling. */}
+      {param.whole && !bound && !readOnly && upstream.length > 0 && (
+        <div className="w6w-seed-chips w6w-json-quickbind">
+          <span className="w6w-muted w6w-small">Use the output of</span>
+          {upstream.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="w6w-chip w6w-seed-chip"
+              title={`Bind ${label} to {{ nodes.${s.id}.output }}`}
+              onClick={() => onChange(param.key, `{{ nodes.${s.id}.output }}`)}
+            >
+              <code>{s.id}</code>
+            </button>
+          ))}
+        </div>
+      )}
       {param.hint && <span className="w6w-hint">{param.hint}</span>}
 
       {expanded && !bound && (
@@ -1322,51 +1631,101 @@ function MultiSelectField({
       label={label}
       req={req}
     >
-      {/* One input-like box: chips inline, then the dropdown as the trailing
+      {param.ui === "checkboxes" ? (
+        <div className="w6w-multiselect-checks w6w-fx-grow">
+          <div className="w6w-multiselect-checks-toolbar">
+            <span className="w6w-muted w6w-small">{selected.length} selected</span>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  className="w6w-linkbtn"
+                  disabled={available.length === 0}
+                  onClick={() => commit([...selected, ...available.map((option) => option.value)])}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="w6w-linkbtn"
+                  disabled={selected.length === 0}
+                  onClick={() => commit([])}
+                >
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+          <fieldset className="w6w-multiselect-checks-options" aria-label={label}>
+            {[
+              ...options,
+              ...selected
+                .filter((v) => !options.some((o) => String(o.value) === String(v)))
+                .map((v) => ({ value: v, label: String(v) })),
+            ].map((option) => (
+              <label key={String(option.value)} className="w6w-multiselect-check">
+                <input
+                  type="checkbox"
+                  checked={selectedKeys.has(String(option.value))}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    event.target.checked ? add(String(option.value)) : remove(option.value)
+                  }
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </fieldset>
+        </div>
+      ) : (
+        <>
+          {/* One input-like box: chips inline, then the dropdown as the trailing
           placeholder — chips appear to live inside the field's boundaries. The
           ƒx toggle (via FxField) swaps the whole box for an expression. */}
-      <div className={`w6w-multiselect${readOnly ? " is-readonly" : ""}`}>
-        {selected.map((v) => (
-          <span className="w6w-chip" key={String(v)}>
-            {labelFor(v)}
-            {!readOnly && (
-              <button
-                type="button"
-                className="w6w-chip-x"
-                aria-label={`Remove ${labelFor(v)}`}
-                title="Remove"
-                onClick={() => remove(v)}
-              >
-                ×
-              </button>
-            )}
-          </span>
-        ))}
-        {!readOnly && (
-          // Controlled to "" so it always reads as the trailing placeholder;
-          // picking an option appends a chip and resets.
-          <select
-            className="w6w-multiselect-add"
-            value=""
-            disabled={available.length === 0}
-            aria-label={`Add to ${param.label ?? param.key}`}
-            onChange={(e) => add(e.target.value)}
-          >
-            <option value="">
-              {available.length > 0
-                ? selected.length
-                  ? "Add more…"
-                  : placeholder
-                : "All selected"}
-            </option>
-            {available.map((o) => (
-              <option key={String(o.value)} value={String(o.value)}>
-                {o.label}
-              </option>
+          <div className={`w6w-multiselect${readOnly ? " is-readonly" : ""}`}>
+            {selected.map((v) => (
+              <span className="w6w-chip" key={String(v)}>
+                {labelFor(v)}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="w6w-chip-x"
+                    aria-label={`Remove ${labelFor(v)}`}
+                    title="Remove"
+                    onClick={() => remove(v)}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
             ))}
-          </select>
-        )}
-      </div>
+            {!readOnly && (
+              // Controlled to "" so it always reads as the trailing placeholder;
+              // picking an option appends a chip and resets.
+              <select
+                className="w6w-multiselect-add"
+                value=""
+                disabled={available.length === 0}
+                aria-label={`Add to ${param.label ?? param.key}`}
+                onChange={(e) => add(e.target.value)}
+              >
+                <option value="">
+                  {available.length > 0
+                    ? selected.length
+                      ? "Add more…"
+                      : placeholder
+                    : "All selected"}
+                </option>
+                {available.map((o) => (
+                  <option key={String(o.value)} value={String(o.value)}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </>
+      )}
     </FxField>
   );
 }
@@ -1542,6 +1901,52 @@ export interface DataVar {
 }
 
 const DATA_VAR_TYPES: DataVar["type"][] = ["string", "number", "boolean", "json"];
+const EMPTY_DATA_VARS: DataVar[] = [];
+
+/** Rows for a literal object or the existing typed-row format; bindings stay in JSON mode. */
+export function dataVarRows(value: unknown, previous: DataVar[] = []): DataVar[] | null {
+  if (Array.isArray(value)) {
+    return value.every((v) => v && typeof v === "object" && typeof v.key === "string")
+      ? (value as DataVar[])
+      : null;
+  }
+  if (
+    !value ||
+    typeof value !== "object" ||
+    holdsExpression(value) ||
+    wholeValueRef(value) ||
+    "$expr" in value
+  ) {
+    return null;
+  }
+  return Object.entries(value).map(([key, item]) => {
+    const old = previous.find((row) => row.key === key);
+    const type = typeof item;
+    return {
+      key,
+      type:
+        old && JSON.stringify(old.value) === JSON.stringify(item)
+          ? old.type
+          : type === "string" || type === "number" || type === "boolean"
+            ? type
+            : "json",
+      value: item,
+    };
+  });
+}
+
+/** Keep incomplete/duplicate-key rows as an array so opening JSON never drops an entry. */
+function dataVarsJson(value: unknown): unknown {
+  const rows = Array.isArray(value) ? dataVarRows(value) : null;
+  if (
+    !rows ||
+    rows.some((row) => !row.key) ||
+    new Set(rows.map((row) => row.key)).size !== rows.length
+  ) {
+    return value;
+  }
+  return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+}
 
 /** Coerce a text input into the variable's declared type (best-effort). */
 function coerceVarValue(type: DataVar["type"], raw: string): unknown {
@@ -1569,8 +1974,7 @@ function varValueToText(v: unknown): string {
 }
 
 /**
- * A `vars`-typed param: a dynamic table of typed key/value variables. The value
- * is an array of `{ key, type, value }`, collected into the step's `with`.
+ * A `vars`-typed param offers both typed rows and a JSON object/binding.
  */
 function VarsField({
   param,
@@ -1583,20 +1987,103 @@ function VarsField({
   onChange: (key: string, value: unknown) => void;
   readOnly?: boolean;
 }) {
-  const vars: DataVar[] = Array.isArray(value)
-    ? (value as DataVar[])
-    : Array.isArray(param.default)
-      ? (param.default as DataVar[])
-      : [];
+  const seed = value ?? param.default ?? EMPTY_DATA_VARS;
+  const jsonValue = useMemo(() => dataVarsJson(seed), [seed]);
+  const [mode, setMode] = useState<"fields" | "json">(() =>
+    Array.isArray(seed) ? "fields" : "json",
+  );
+  const previousRows = useRef<DataVar[]>([]);
+  const [invalidJson, setInvalidJson] = useState(false);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const rows = dataVarRows(seed, previousRows.current);
+  const vars = rows ?? [];
+  const jsonMode = mode === "json" || rows === null;
+  const label = param.label ?? param.key;
+  const toggle = (
+    <div className="w6w-view-toggle w6w-datavar-modes">
+      <button
+        type="button"
+        className={`w6w-btn w6w-btn-sm w6w-btn-ghost${!jsonMode ? " active" : ""}`}
+        aria-label={`Edit ${label} as fields`}
+        aria-pressed={!jsonMode}
+        disabled={invalidJson || !!jsonError || rows === null}
+        title={
+          rows === null
+            ? "Use a literal JSON object to edit individual fields"
+            : "Edit individual fields"
+        }
+        onClick={() => {
+          if (!readOnly && !Array.isArray(seed)) onChange(param.key, vars);
+          setMode("fields");
+        }}
+      >
+        Fields
+      </button>
+      <button
+        type="button"
+        className={`w6w-btn w6w-btn-sm w6w-btn-ghost${jsonMode ? " active" : ""}`}
+        aria-label={`Edit ${label} as JSON`}
+        aria-pressed={jsonMode}
+        onClick={() => {
+          previousRows.current = vars;
+          setMode("json");
+        }}
+      >
+        JSON
+      </button>
+    </div>
+  );
+  if (jsonMode) {
+    return (
+      <div className="w6w-datavar-json">
+        <JsonParamField
+          param={{
+            ...param,
+            type: "json",
+            whole: true,
+            default: {},
+            hint: "Enter a JSON object or use ƒx to bind one. Switch to Fields to edit individual values.",
+          }}
+          value={jsonValue}
+          readOnly={readOnly}
+          headerActions={toggle}
+          onValidityChange={(valid) => setInvalidJson(!valid)}
+          onChange={(key, next) => {
+            if (
+              next !== undefined &&
+              dataVarRows(next) === null &&
+              !wholeValueRef(next) &&
+              !holdsExpression(next) &&
+              !(next && typeof next === "object" && "$expr" in next)
+            ) {
+              setJsonError("Use a JSON object, a typed key/value array, or an object binding.");
+              return;
+            }
+            setJsonError(null);
+            setInvalidJson(false);
+            onChange(key, next);
+          }}
+        />
+        {jsonError && (
+          <span className="w6w-hint w6w-datavar-error" aria-live="polite">
+            {jsonError}
+          </span>
+        )}
+      </div>
+    );
+  }
   const commit = (next: DataVar[]) => onChange(param.key, next);
   const patch = (i: number, p: Partial<DataVar>) =>
     commit(vars.map((v, idx) => (idx === i ? { ...v, ...p } : v)));
 
   return (
     <div className="w6w-field">
-      <span>
-        {param.label ?? param.key}
-        {param.required ? " *" : ""}
+      <span className="w6w-field-labelrow">
+        <span>
+          {label}
+          {param.required ? " *" : ""}
+        </span>
+        {toggle}
       </span>
       <div className="w6w-stack">
         {vars.length === 0 && (

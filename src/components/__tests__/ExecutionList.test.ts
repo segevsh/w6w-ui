@@ -249,6 +249,71 @@ test("A3 — clicking a row calls onSelect exactly once, with that row's id", as
   }
 });
 
+test("Re-run — absent without onRerun; with it, one control per row reporting that row's id", async () => {
+  const items = [item({ id: "a" }), item({ id: "b" })];
+  const bare = await renderList({ items, onSelect: () => {} });
+  try {
+    assert.equal(bare.container.querySelectorAll('[data-testid="execution-row-rerun"]').length, 0);
+  } finally {
+    await act(async () => bare.root.unmount());
+  }
+
+  const selected: string[] = [];
+  const reran: string[] = [];
+  const { container, root } = await renderList({
+    items,
+    onSelect: (id) => selected.push(id),
+    onRerun: (id) => reran.push(id),
+  });
+  try {
+    const controls = rows(container).map((r) =>
+      r.querySelector('[data-testid="execution-row-rerun"]'),
+    );
+    assert.ok(
+      controls.every((c) => c !== null),
+      "every row carries its own control",
+    );
+    // Beside the row, never inside it: a button cannot nest in the row's own <button>.
+    assert.equal(rowBox(rows(container)[1]).querySelector("button"), null);
+    assert.equal(controls[1]?.getAttribute("aria-label"), "Re-run");
+    await act(async () => {
+      controls[1]?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    assert.deepEqual(reran, ["b"]);
+    assert.deepEqual(selected, [], "re-running a row does not also select it");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("Re-run — while one is in flight every row's control is disabled", async () => {
+  const items = [item({ id: "a" }), item({ id: "b" })];
+  const { container, root } = await renderList({ items, onRerun: () => {}, rerunningId: "a" });
+  try {
+    const disabled = [...container.querySelectorAll('[data-testid="execution-row-rerun"]')].map(
+      (c) => (c as HTMLButtonElement).disabled,
+    );
+    assert.deepEqual(disabled, [true, true]);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("Re-run tag — a row that re-runs another says so; an ordinary row does not", async () => {
+  const items = [item({ id: "b", rerunOf: "a" }), item({ id: "a" })];
+  const { container, root } = await renderList({ items });
+  try {
+    const tags = rows(container).map((r) =>
+      r.querySelector('[data-testid="execution-row-rerun-tag"]'),
+    );
+    assert.equal(text(tags[0] ?? null), "Re-run");
+    assert.equal(tags[0]?.getAttribute("title"), "Re-run of a");
+    assert.equal(tags[1], null);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 test("A3 — without onSelect the rows are not interactive", async () => {
   const { container, root } = await renderList({ items: [item({ id: "a" })] });
   try {

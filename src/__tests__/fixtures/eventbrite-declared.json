@@ -1,0 +1,381 @@
+{
+  "app": "io.w6w.eventbrite",
+  "action": {
+    "key": "list-webhooks",
+    "output": [
+      {
+        "key": "webhooks",
+        "type": "array",
+        "label": "Webhooks",
+        "items": [
+          {
+            "key": "id",
+            "type": "string",
+            "label": "Webhook ID"
+          },
+          {
+            "key": "resource_uri",
+            "type": "string",
+            "label": "Resource URI"
+          },
+          {
+            "key": "endpoint_url",
+            "type": "string",
+            "label": "Endpoint URL"
+          },
+          {
+            "key": "actions",
+            "type": "array",
+            "label": "Actions"
+          },
+          {
+            "key": "user_id",
+            "type": "string",
+            "label": "Organization ID"
+          },
+          {
+            "key": "created",
+            "type": "string",
+            "label": "Created"
+          },
+          {
+            "key": "event_id",
+            "type": "string",
+            "label": "Event ID"
+          }
+        ]
+      },
+      {
+        "key": "pagination",
+        "type": "object",
+        "label": "Pagination"
+      },
+      {
+        "key": "pagination.object_count",
+        "type": "number",
+        "label": "Total items"
+      },
+      {
+        "key": "pagination.page_number",
+        "type": "number",
+        "label": "Page number"
+      },
+      {
+        "key": "pagination.page_size",
+        "type": "number",
+        "label": "Page size"
+      },
+      {
+        "key": "pagination.page_count",
+        "type": "number",
+        "label": "Page count"
+      },
+      {
+        "key": "pagination.has_more_items",
+        "type": "boolean",
+        "label": "Has more items"
+      },
+      {
+        "key": "pagination.continuation",
+        "type": "string",
+        "label": "Continuation token"
+      }
+    ],
+    "sample": {
+      "webhooks": [
+        {
+          "id": "1000000006",
+          "resource_uri": "https://www.eventbriteapi.com/v3/webhooks/1000000006/",
+          "endpoint_url": "https://hooks.example.com/eventbrite",
+          "actions": [
+            "order.placed"
+          ],
+          "user_id": "1000000007",
+          "created": "2026-10-08T09:00:00Z",
+          "event_id": "1000000001"
+        }
+      ],
+      "pagination": {
+        "object_count": 1,
+        "page_number": 1,
+        "page_size": 50,
+        "page_count": 1,
+        "has_more_items": false,
+        "continuation": "example-continuation-token"
+      }
+    }
+  },
+  "trigger": {
+    "key": "order-placed",
+    "output": [
+      {
+        "key": "action",
+        "type": "string",
+        "label": "Action"
+      },
+      {
+        "key": "resourceType",
+        "type": "string",
+        "label": "Resource Type"
+      },
+      {
+        "key": "resourceId",
+        "type": "string",
+        "label": "Resource ID"
+      },
+      {
+        "key": "apiUrl",
+        "type": "string",
+        "label": "API URL"
+      },
+      {
+        "key": "webhookId",
+        "type": "string",
+        "label": "Webhook ID"
+      },
+      {
+        "key": "userId",
+        "type": "string",
+        "label": "User ID"
+      },
+      {
+        "key": "resource.id",
+        "type": "string",
+        "label": "Order ID"
+      },
+      {
+        "key": "resource.event_id",
+        "type": "string",
+        "label": "Event ID"
+      },
+      {
+        "key": "resource.name",
+        "type": "string",
+        "label": "Buyer Name"
+      },
+      {
+        "key": "resource.first_name",
+        "type": "string",
+        "label": "Buyer First Name"
+      },
+      {
+        "key": "resource.last_name",
+        "type": "string",
+        "label": "Buyer Last Name"
+      },
+      {
+        "key": "resource.email",
+        "type": "string",
+        "label": "Buyer Email"
+      },
+      {
+        "key": "resource.status",
+        "type": "string",
+        "label": "Status"
+      },
+      {
+        "key": "resource.created",
+        "type": "string",
+        "label": "Created"
+      },
+      {
+        "key": "resource.changed",
+        "type": "string",
+        "label": "Changed"
+      },
+      {
+        "key": "resource.time_remaining",
+        "type": "number",
+        "label": "Time remaining"
+      },
+      {
+        "key": "resource.resource_uri",
+        "type": "string",
+        "label": "Resource URI"
+      },
+      {
+        "key": "resource.costs",
+        "type": "object",
+        "label": "Costs"
+      },
+      {
+        "key": "resource.costs.base_price",
+        "type": "object",
+        "label": "Base price"
+      },
+      {
+        "key": "resource.costs.base_price.display",
+        "type": "string",
+        "label": "Base price (display)"
+      },
+      {
+        "key": "resource.costs.base_price.currency",
+        "type": "string",
+        "label": "Base price currency"
+      },
+      {
+        "key": "resource.costs.base_price.value",
+        "type": "number",
+        "label": "Base price (minor units)"
+      },
+      {
+        "key": "resource.costs.base_price.major_value",
+        "type": "string",
+        "label": "Base price (major units)"
+      },
+      {
+        "key": "resource.costs.eventbrite_fee",
+        "type": "object",
+        "label": "Eventbrite fee"
+      },
+      {
+        "key": "resource.costs.eventbrite_fee.display",
+        "type": "string",
+        "label": "Eventbrite fee (display)"
+      },
+      {
+        "key": "resource.costs.eventbrite_fee.currency",
+        "type": "string",
+        "label": "Eventbrite fee currency"
+      },
+      {
+        "key": "resource.costs.eventbrite_fee.value",
+        "type": "number",
+        "label": "Eventbrite fee (minor units)"
+      },
+      {
+        "key": "resource.costs.eventbrite_fee.major_value",
+        "type": "string",
+        "label": "Eventbrite fee (major units)"
+      },
+      {
+        "key": "resource.costs.gross",
+        "type": "object",
+        "label": "Gross total"
+      },
+      {
+        "key": "resource.costs.gross.display",
+        "type": "string",
+        "label": "Gross total (display)"
+      },
+      {
+        "key": "resource.costs.gross.currency",
+        "type": "string",
+        "label": "Gross total currency"
+      },
+      {
+        "key": "resource.costs.gross.value",
+        "type": "number",
+        "label": "Gross total (minor units)"
+      },
+      {
+        "key": "resource.costs.gross.major_value",
+        "type": "string",
+        "label": "Gross total (major units)"
+      },
+      {
+        "key": "resource.costs.payment_fee",
+        "type": "object",
+        "label": "Payment fee"
+      },
+      {
+        "key": "resource.costs.payment_fee.display",
+        "type": "string",
+        "label": "Payment fee (display)"
+      },
+      {
+        "key": "resource.costs.payment_fee.currency",
+        "type": "string",
+        "label": "Payment fee currency"
+      },
+      {
+        "key": "resource.costs.payment_fee.value",
+        "type": "number",
+        "label": "Payment fee (minor units)"
+      },
+      {
+        "key": "resource.costs.payment_fee.major_value",
+        "type": "string",
+        "label": "Payment fee (major units)"
+      },
+      {
+        "key": "resource.costs.tax",
+        "type": "object",
+        "label": "Tax"
+      },
+      {
+        "key": "resource.costs.tax.display",
+        "type": "string",
+        "label": "Tax (display)"
+      },
+      {
+        "key": "resource.costs.tax.currency",
+        "type": "string",
+        "label": "Tax currency"
+      },
+      {
+        "key": "resource.costs.tax.value",
+        "type": "number",
+        "label": "Tax (minor units)"
+      },
+      {
+        "key": "resource.costs.tax.major_value",
+        "type": "string",
+        "label": "Tax (major units)"
+      }
+    ],
+    "sample": {
+      "action": "order.placed",
+      "resourceType": "order",
+      "resourceId": "1000000003",
+      "apiUrl": "https://www.eventbriteapi.com/v3/orders/1000000003/",
+      "webhookId": "1000000006",
+      "userId": "1000000007",
+      "resource": {
+        "id": "1000000003",
+        "event_id": "1000000001",
+        "name": "Alex Doe",
+        "first_name": "Alex",
+        "last_name": "Doe",
+        "email": "alex@example.com",
+        "status": "placed",
+        "created": "2026-10-08T09:00:00Z",
+        "changed": "2026-10-08T09:00:00Z",
+        "time_remaining": 0,
+        "resource_uri": "https://www.eventbriteapi.com/v3/orders/1000000003/",
+        "costs": {
+          "base_price": {
+            "display": "$25.00",
+            "currency": "USD",
+            "value": 2500,
+            "major_value": "25.00"
+          },
+          "eventbrite_fee": {
+            "display": "$1.50",
+            "currency": "USD",
+            "value": 150,
+            "major_value": "1.50"
+          },
+          "gross": {
+            "display": "$26.50",
+            "currency": "USD",
+            "value": 2650,
+            "major_value": "26.50"
+          },
+          "payment_fee": {
+            "display": "$0.00",
+            "currency": "USD",
+            "value": 0,
+            "major_value": "0.00"
+          },
+          "tax": {
+            "display": "$0.00",
+            "currency": "USD",
+            "value": 0,
+            "major_value": "0.00"
+          }
+        }
+      }
+    }
+  }
+}
