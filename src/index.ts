@@ -8,6 +8,7 @@
 export { W6WUIProvider, useW6WApi } from "./provider.tsx";
 export type {
   AppsPageResult,
+  DataStoreEntryOptions,
   ListAppsPageOptions,
   StepTest,
   TestRunSummary,

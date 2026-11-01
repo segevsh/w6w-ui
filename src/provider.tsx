@@ -183,6 +183,17 @@ export interface AppsPageResult {
   expiresAt?: string;
 }
 
+/**
+ * One page of a data store's entries for the `data-store-key` picker
+ * ({@link W6WApi.listDataStoreEntries}). `value` is the stored JSON, which the
+ * picker shortens to a one-line preview; `updatedAt` is an ISO timestamp.
+ */
+export interface DataStoreEntryOptions {
+  items: { key: string; value?: unknown; updatedAt?: string }[];
+  /** True when further matching entries exist past this page. */
+  more?: boolean;
+}
+
 export interface W6WApi {
   /**
    * List registered apps to pick from in the connection modal.
@@ -244,6 +255,21 @@ export interface W6WApi {
    * URL; `undefined` leaves the choice to the host.
    */
   listDataStores?(project?: string): Promise<{ name: string; kind: string }[]>;
+
+  /**
+   * OPTIONAL: ONE page of a data store's entries, for the `data-store-key`
+   * step-param picker (`@w6w/store` get/set/delete/increment). Absent, the key
+   * renders as a plain text input and this is never called.
+   * `store` is the store's NAME (what the step's `store` param holds) — the
+   * host resolves it to its own id. `prefix` is the server-side key search
+   * (the host's `GET /data-stores/:id/entries?prefix=`); `limit` caps the page,
+   * so a picker never loads a whole store. `more` is true when the store holds
+   * further matches past this page. `project` follows the `listDataStores` rule.
+   */
+  listDataStoreEntries?(
+    store: string,
+    opts: { project?: string; prefix?: string; limit?: number; signal?: AbortSignal },
+  ): Promise<DataStoreEntryOptions>;
 
   /**
    * OPTIONAL: resolve the choices of `options: { source: "resolveFields" }`
