@@ -9,6 +9,12 @@ repo's git history for exact dates and commits.
 
 ## [Unreleased]
 
+- Code views fill their box. In `JsonEditor`, `CodeEditor` and `YamlEditor` the code area now
+  covers the whole bordered box, also when only `minHeight` / `maxHeight` size it (the Data page's
+  Document modal, the default-height Script and YAML editors, the full-view JSON body). Before, the
+  gutter and the horizontal scrollbar stopped under the last line and the rest of the box was empty.
+  Taller content still scrolls inside the editor, and an explicit `height` is kept. New real-browser
+  gate: `pnpm test:code-editor-fill`.
 - **Write to state** says which side is which. **Pick fields** and **Append** rows carry the column
   headers **From this step output** → **To state key** (or **Append to state list**), an arrow and a
   hint (`Copies output.<path> into state.<key>`), and use the Set data row style: the same inputs,

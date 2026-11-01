@@ -1,0 +1,35 @@
+/* Every CodeMirror code view (`JsonEditor`, `CodeEditor`, `YamlEditor`) FILLS
+   its bordered box. The border is on `.cm-editor`, which react-codemirror
+   sizes with the `height` / `minHeight` / `maxHeight` props and whose
+   `.cm-scroller` it gives `height: 100%`. With only a min/max height (the Data
+   page's Document modal) that percentage has nothing definite to resolve
+   against, so the scroller — and the gutter column inside it — stopped at the
+   last content line, the horizontal scrollbar sat right under it, and the rest
+   of the box was empty.
+
+   The react-codemirror root (the wrapper's first child) is a one-cell grid.
+   A grid area is definite once its track is sized, so `.cm-editor`, stretched
+   into it, has a definite height whether that came from `height`, from
+   `minHeight` or from the content (capped by `maxHeight`), and the scroller and
+   the gutters fill it. `minmax(0, 1fr)` keeps a long line from widening the
+   editor: the scroller scrolls it instead. The wrapper is a flex column so a
+   wrapper given a definite height (a flex item with `min-height: 0`, as in
+   `_step-config.scss`) hands that height down to the editor.
+
+   Everything sits under `:where()` (specificity 0 for the wrapper part), so a
+   call site's own layout for the same elements — `_expression-modal.scss`'s
+   JSON pane, a host's dialog — still wins. */
+:where(.w6w-json-editor, .w6w-code-editor, .w6w-yaml-editor) {
+  display: flex;
+  flex-direction: column;
+}
+:where(.w6w-json-editor, .w6w-code-editor, .w6w-yaml-editor) > :first-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+:where(.w6w-json-editor, .w6w-code-editor, .w6w-yaml-editor) .cm-scroller,
+:where(.w6w-json-editor, .w6w-code-editor, .w6w-yaml-editor) .cm-gutters {
+  min-height: 100%;
+}

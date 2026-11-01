@@ -75,6 +75,10 @@ A JSON editor with parse errors marked inline.
 | `copyable` | `boolean` | `false` | An in-box copy button. |
 | `placeholder`, `readOnly`, `theme`, `aria-label` | | | |
 
+The code area always fills the bordered box, whichever of these sizes it. The line-number gutter
+runs to the bottom of the box, the horizontal scrollbar sits on the box's bottom edge, and content
+taller than the box scrolls inside the editor. The same holds for `YamlEditor` and `CodeEditor`.
+
 ```tsx
 import { JsonEditor } from "@w6w/ui";
 
