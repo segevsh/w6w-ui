@@ -355,6 +355,9 @@ export const STORE_APP = "@w6w/store";
 /** End the whole workflow successfully when its optional condition matches. */
 export const STOP_APP = "@w6w/stop";
 export const ROUTER_APP = "@w6w/router";
+export const RACE_APP = "@w6w/race";
+export const RACE_DESCRIPTION =
+  "Continue once with the first arriving path’s output. Later arrivals are ignored for this run. Other paths keep running.";
 
 export interface RouterRoute {
   id: string;
@@ -452,7 +455,7 @@ export function isInternalApp(app: string): boolean {
 
 /** True when a node is an engine-native flow-control node (can't run standalone). */
 export function isControlApp(app: string): boolean {
-  return app === CONTROL_APP;
+  return app === CONTROL_APP || app === RACE_APP;
 }
 
 /**
@@ -637,6 +640,16 @@ const ICON_STORE =
 
 /** The built-in internal nodes, in palette order. */
 export const INTERNAL_NODES: InternalNodeDef[] = [
+  {
+    app: RACE_APP,
+    action: "race",
+    label: "Race",
+    displayName: "Race",
+    group: "control",
+    icon: '<path d="M3 5h4l5 7h9M3 19h4l5-7" /><polyline points="17 8 21 12 17 16" />',
+    ports: { in: "many", out: 1 },
+    params: [],
+  },
   {
     app: ROUTER_APP,
     action: "route",

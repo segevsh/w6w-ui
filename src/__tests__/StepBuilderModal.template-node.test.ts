@@ -182,3 +182,40 @@ test("@w6w/template · render accepts JSON templates and values in Fields or JSO
   assert.equal(values?.whole, true);
   assert.deepEqual(values?.default, {});
 });
+
+test("Race is available in Controls and adds without fields or a standalone Test", async () => {
+  const { container, root } = mountRoot();
+  let added: unknown;
+  await act(async () => {
+    root.render(
+      React.createElement(
+        W6WUIProvider,
+        { api: fakeApi() as never, children: null } as never,
+        React.createElement(StepBuilderModal, {
+          onClose: () => {},
+          onAdd: (step: unknown) => {
+            added = step;
+          },
+        } as never),
+      ),
+    );
+  });
+  const button = (name: string) =>
+    Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.trim() === name);
+  const controls = button("Controls");
+  assert.ok(controls);
+  await act(async () => controls.click());
+  const race = Array.from(container.querySelectorAll(".w6w-stepbuilder-item")).find(
+    (item) => item.querySelector("strong")?.textContent === "Race",
+  );
+  assert.ok(race);
+  await act(async () => (race as HTMLButtonElement).click());
+  assert.match(container.textContent ?? "", /first arriving path/);
+  assert.equal(button("Test"), undefined);
+  assert.equal(container.querySelectorAll("input, textarea, select").length, 0);
+  const add = button("Add node");
+  assert.ok(add);
+  await act(async () => add.click());
+  assert.deepEqual(added, { uses: { app: "@w6w/race", action: "race" }, with: {} });
+  await act(async () => root.unmount());
+});

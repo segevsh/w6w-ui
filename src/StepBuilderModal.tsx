@@ -38,6 +38,8 @@ import {
   DATA_APP,
   INTERNAL_NODES,
   type InternalNodeDef,
+  RACE_APP,
+  RACE_DESCRIPTION,
   ROUTER_APP,
   STOP_APP,
   STORE_APP,
@@ -836,7 +838,7 @@ function ControlsFlow({ onSelect }: { onSelect: (node: InternalNodeDef) => void 
   return (
     <div className="w6w-stack">
       <p className="w6w-muted w6w-small">
-        Flow-control nodes branch, loop, parallelize, or pause the run.
+        Flow-control nodes branch, join paths, loop, parallelize, or pause the run.
       </p>
       <NodeList nodes={nodes} onSelect={onSelect} />
     </div>
@@ -995,7 +997,9 @@ export function ControlStepConfig({
       <div className="w6w-stepconfig-body">
         {tab === "configure" &&
           (configView === "props" ? (
-            node.action === "wait" && isControlApp(node.app) ? (
+            node.app === RACE_APP ? (
+              <p className="w6w-muted w6w-small">{RACE_DESCRIPTION}</p>
+            ) : node.action === "wait" && isControlApp(node.app) ? (
               <WaitEditor values={withValues} onChange={setWithValues} />
             ) : node.action === "if" && isControlApp(node.app) ? (
               <ConditionEditor values={withValues} onChange={setWithValues} />

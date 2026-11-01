@@ -140,6 +140,8 @@ import {
 import { applyStepProblemFix, connectDropRefusal, dragLane } from "./flow-problems.ts";
 import {
   FOREACH_DONE_ROUTE,
+  RACE_APP,
+  RACE_DESCRIPTION,
   ROUTER_APP,
   ifPortLayout,
   isIfStep,
@@ -3756,7 +3758,7 @@ function ControlNodeCard({ id, data, selected }: NodeProps<StepNode>) {
                 id={isForeach ? routeHandle(FOREACH_DONE_ROUTE) : undefined}
               />
             )}
-            {!isTrigger && !isRouter && !isIf && (
+            {!isTrigger && !isRouter && !isIf && step.uses.app !== RACE_APP && (
               <PortHandle
                 type="source"
                 position={Position.Bottom}
@@ -4157,17 +4159,19 @@ function ActionStepEditModal({
       <div className="w6w-stepconfig">
         <div className="w6w-tabsbar">
           <div className="w6w-subtabs">
-            {(["setup", "configure", "test"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={`w6w-subtab${tab === t ? " active" : ""}`}
-                disabled={blocked && t !== "setup"}
-                onClick={() => setTab(t)}
-              >
-                {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
-              </button>
-            ))}
+            {(["setup", "configure", "test"] as const)
+              .filter((t) => step.uses.app !== RACE_APP || t !== "test")
+              .map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`w6w-subtab${tab === t ? " active" : ""}`}
+                  disabled={blocked && t !== "setup"}
+                  onClick={() => setTab(t)}
+                >
+                  {t === "setup" ? "Setup" : t === "configure" ? "Configure" : "Test"}
+                </button>
+              ))}
           </div>
           {isTestPropsCode ? (
             <ConfigViewToggle
@@ -4281,7 +4285,9 @@ function ActionStepEditModal({
               {params === null ? (
                 <p className="w6w-muted w6w-small">Loading parameters…</p>
               ) : configView === "props" ? (
-                step.uses.action === "wait" && isControlApp(step.uses.app) ? (
+                step.uses.app === RACE_APP ? (
+                  <p className="w6w-muted w6w-small">{RACE_DESCRIPTION}</p>
+                ) : step.uses.action === "wait" && isControlApp(step.uses.app) ? (
                   <WaitEditor
                     values={step.with ?? {}}
                     readOnly={readOnly}
@@ -4492,7 +4498,11 @@ function ActionStepEditModal({
         </div>
 
         <div className="w6w-modal-actions w6w-stepconfig-footer">
-          {tab !== "test" ? (
+          {step.uses.app === RACE_APP && tab === "configure" ? (
+            <button type="button" className="w6w-btn" onClick={onClose}>
+              Done
+            </button>
+          ) : tab !== "test" ? (
             <button
               type="button"
               className="w6w-btn"

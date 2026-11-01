@@ -20,6 +20,7 @@ import {
   FOREACH_DONE_ROUTE,
   IF_FALSE_ROUTE,
   type PortsLookup,
+  RACE_APP,
   ROUTER_APP,
   edgeVisuals,
   isIfStep,
@@ -332,7 +333,7 @@ function planRelane(
   if (edgeLane(me) === "each") return null;
   const srcStep = nodes.find((n) => n.id === me.source)?.data.step;
   if (!srcStep) return null;
-  if (srcStep.uses.app === ROUTER_APP) return null;
+  if (srcStep.uses.app === ROUTER_APP || srcStep.uses.app === RACE_APP) return null;
   const out = nodePortsForStep(srcStep, lookup).out;
   // The DESTINATION lane at the source is full at a finite cap: REFUSE, evicting
   // nothing (exactly the rule `applyConnect` applies on creation). `me` is excluded —

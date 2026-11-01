@@ -24,6 +24,7 @@ import {
   EACH_SOURCE_HANDLE,
   ERROR_SOURCE_HANDLE,
   type NodePorts,
+  RACE_APP,
   laneForSourceHandle,
   sourceHandleForLane,
 } from "../flow-types.ts";
@@ -65,6 +66,20 @@ const ABCD = [node("a"), node("b"), node("c"), node("d")];
 
 /** Nodes whose every step caps its exit at ONE edge per lane. */
 const CAP1 = ["a", "b", "c", "d"].map((id) => node(id, { in: 1, out: 1 }));
+
+test("Race keeps multiple incoming paths and one common outgoing path", () => {
+  const race = node("race");
+  race.data.step.uses = { app: RACE_APP, action: "race" };
+  const nodes = [...ABCD, race];
+  let edges = applyConnect("a", "race", nodes, []);
+  assert.ok(edges);
+  edges = applyConnect("b", "race", nodes, edges);
+  assert.ok(edges);
+  edges = applyConnect("race", "c", nodes, edges);
+  assert.ok(edges);
+  assert.deepEqual(pairs(edges), ["a->race:success", "b->race:success", "race->c:success"]);
+  assert.equal(applyConnect("race", "d", nodes, edges), null);
+});
 
 test("at a finite out cap a second success edge is REFUSED — edges unchanged, cap named", () => {
   // Asserted for BOTH spellings of a success edge: the explicit `data.when` stamp

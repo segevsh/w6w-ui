@@ -33,6 +33,7 @@ export type { FlowEdge, FlowStep, FlowWorkflow, InternalNodeDef } from "./flow-t
 export {
   CALL_APP,
   CONTROL_APP,
+  RACE_APP,
   DATA_APP,
   INTERNAL_NODES,
   internalNodeDefaults,
