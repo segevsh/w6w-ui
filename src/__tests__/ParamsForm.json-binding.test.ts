@@ -81,6 +81,7 @@ const { createRoot } = await import("react-dom/client");
 const { act } = await import("react-dom/test-utils");
 const { EditorView } = await import("@codemirror/view");
 const { ParamsForm } = await import("../ParamsForm.tsx");
+const { TEMPLATE_APP, internalNodeDef } = await import("../flow-types.ts");
 const { ExpressionOptionsProvider } = await import("../components/ExpressionOptions.tsx");
 type ActionParam = import("../types.ts").ActionParam;
 type ExpressionOptions = import("../components/ExpressionOptions.tsx").ExpressionOptions;
@@ -608,11 +609,17 @@ test("key/value fields switch to a JSON object and back without changing row typ
 });
 
 test("every key/value param supports JSON and whole-output fx bindings", async () => {
-  const { container, root, box } = await render([
-    VARS_PARAM,
-    { ...VARS_PARAM, key: "values", label: "Values" },
-  ]);
+  const templateValues = internalNodeDef(TEMPLATE_APP, "render")?.params?.find(
+    (param) => param.key === "values",
+  );
+  assert.ok(templateValues);
+  const { container, root, box } = await render([VARS_PARAM, templateValues]);
   assert.ok(doc().querySelector('[aria-label="Edit Values as JSON"]'));
+  await click(doc().querySelector('[aria-label="Edit Values as fields"]') ?? undefined);
+  assert.deepEqual(box.current.values, []);
+  await click(doc().querySelector('[aria-label="Edit Values as JSON"]') ?? undefined);
+  await typeDraft(container, "values", '{"order":{"number":"test"}}');
+  assert.deepEqual(box.current.values, { order: { number: "test" } });
   await click(varsMode("JSON"));
   await click(doc().querySelector('[aria-label="Use an expression for Variables"]') ?? undefined);
   await pick(rowNamed("Entire output of Step A"));
