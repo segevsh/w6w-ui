@@ -157,6 +157,17 @@ async function setValue(el: HTMLInputElement | HTMLSelectElement, value: string)
   });
   await flush();
 }
+/** Type into a free-text Combobox: it commits on blur, like a user tabbing out. */
+async function typePath(el: HTMLInputElement, value: string) {
+  await act(async () => {
+    el.focus();
+  });
+  await setValue(el, value);
+  await act(async () => {
+    el.blur();
+  });
+  await flush();
+}
 const all = (c: Element, label: string) =>
   Array.from(c.querySelectorAll(`input[aria-label="${label}"]`)) as HTMLInputElement[];
 async function click(c: Element, label: string, index = 0) {
@@ -201,6 +212,8 @@ test("mode Under a key - typing order gives {mode:key,key:order}", async () => {
   assert.ok(key);
   await setValue(key, "order");
   assert.deepEqual(m.last().state, { mode: "key", key: "order" });
+  assert.equal(key.closest("label")?.querySelector("span")?.textContent, "To state key");
+  assert.ok(m.container.textContent?.includes("Copies the whole step output into state.<key>."));
   await m.unmount();
 });
 
@@ -208,10 +221,10 @@ test("mode Pick fields - two rows id→order.id, total→order.total in that ord
   const m = await mount(ACME, { stateOutputFields: ["id", "total"] });
   await setValue(modeSelect(m.container) as HTMLSelectElement, "pick");
   assert.equal(all(m.container, "From output field").length, 1);
-  await setValue(all(m.container, "From output field")[0], "id");
+  await typePath(all(m.container, "From output field")[0], "id");
   await setValue(all(m.container, "To state path")[0], "order.id");
   await click(m.container, "Add field");
-  await setValue(all(m.container, "From output field")[1], "total");
+  await typePath(all(m.container, "From output field")[1], "total");
   await setValue(all(m.container, "To state path")[1], "order.total");
   assert.deepEqual(m.last().state, {
     mode: "pick",
@@ -220,12 +233,46 @@ test("mode Pick fields - two rows id→order.id, total→order.total in that ord
       { from: "total", to: "order.total" },
     ],
   });
-  const opts = Array.from(m.container.querySelectorAll("datalist option")).map((o) =>
-    o.getAttribute("value"),
-  );
-  assert.deepEqual(opts, ["id", "total"]);
   await click(m.container, "Remove field", 0);
   assert.deepEqual(m.last().state, { mode: "pick", map: [{ from: "total", to: "order.total" }] });
+  await m.unmount();
+});
+
+test("Pick fields - labelled columns, an arrow, the hint, a trash remove and + Add field", async () => {
+  const m = await mount({ ...ACME, state: { mode: "pick", map: [{ from: "order", to: "o" }] } });
+  const head = q<HTMLElement>(m.container, ".w6w-state-map-head");
+  assert.ok(head);
+  const cols = Array.from(head.children).map((c) => c.textContent);
+  assert.deepEqual(cols, ["From this step output", "", "To state key"]);
+  const row = q<HTMLElement>(m.container, ".w6w-datavar-row.w6w-state-map-row");
+  assert.ok(row);
+  assert.equal(row.querySelector(".w6w-state-map-arrow")?.textContent, "→");
+  assert.ok(row.querySelector('button.w6w-icon-button-danger[aria-label="Remove field"] svg'));
+  const add = q<HTMLButtonElement>(m.container, 'button[aria-label="Add field"]');
+  assert.equal(add?.textContent, "+ Add field");
+  assert.ok(add?.classList.contains("w6w-btn"));
+  assert.ok(m.container.textContent?.includes("Copies output.<path> into state.<key>."));
+  await m.unmount();
+});
+
+test("Pick fields - the From field lists this step's output fields and keeps free text", async () => {
+  const m = await mount(ACME, { stateOutputFields: ["id", "total"] });
+  await setValue(modeSelect(m.container) as HTMLSelectElement, "pick");
+  const from = all(m.container, "From output field")[0];
+  assert.equal(from.getAttribute("role"), "combobox");
+  await act(async () => {
+    from.focus();
+  });
+  await flush();
+  const opts = Array.from(m.container.querySelectorAll('[role="option"]')).map(
+    (o) => o.textContent,
+  );
+  assert.deepEqual(opts, ["id", "total"]);
+  await act(async () => {
+    from.blur();
+  });
+  await typePath(all(m.container, "From output field")[0], "lines.0.sku");
+  assert.deepEqual(m.last().state, { mode: "pick", map: [{ from: "lines.0.sku", to: "fetch_1" }] });
   await m.unmount();
 });
 
@@ -238,9 +285,14 @@ test("mode Append - blank output field omits from; a field sets it", async () =>
   assert.deepEqual(m.last().state, { mode: "append", path: "items" });
   const from = q<HTMLInputElement>(m.container, 'input[aria-label="Output field to append"]');
   assert.ok(from);
-  await setValue(from, "line");
+  await typePath(from, "line");
   assert.deepEqual(m.last().state, { mode: "append", path: "items", from: "line" });
-  await setValue(from, "");
+  const head = q<HTMLElement>(m.container, ".w6w-state-map-head");
+  assert.deepEqual(
+    Array.from(head?.children ?? []).map((c) => c.textContent),
+    ["From this step output", "", "Append to state list"],
+  );
+  await typePath(from, "");
   assert.deepEqual(m.last().state, { mode: "append", path: "items" });
   await m.unmount();
 });

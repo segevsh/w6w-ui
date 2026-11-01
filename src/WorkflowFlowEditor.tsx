@@ -34,7 +34,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -81,6 +80,7 @@ import { AppIcon } from "./components/AppIcon.tsx";
 import { Combobox } from "./components/Combobox.tsx";
 import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { Copyable } from "./components/Copyable.tsx";
+import { DeleteButton } from "./components/DeleteButton.tsx";
 import {
   type ExpressionLoopSource,
   type ExpressionOptions,
@@ -4896,6 +4896,63 @@ function StepFanOutControl({
   );
 }
 
+/** Column headers over the "Write to state" mapping rows: which side is the step, which is state. */
+function StateMapHead({ to }: { to: string }) {
+  return (
+    <div className="w6w-state-map-row w6w-state-map-head" aria-hidden="true">
+      <span>From this step output</span>
+      <span />
+      <span>{to}</span>
+    </div>
+  );
+}
+
+function StateMapArrow() {
+  return (
+    <span className="w6w-state-map-arrow" aria-hidden="true">
+      →
+    </span>
+  );
+}
+
+/**
+ * A path in this step's output: picks from the fields `resolveOutputShape` found
+ * (declared output, the last test or a saved sample) and takes free text for
+ * anything else. Blank means the whole output.
+ */
+function StateOutputPathInput({
+  label,
+  fields,
+  value,
+  readOnly,
+  onChange,
+}: {
+  label: string;
+  fields?: string[];
+  value: string;
+  readOnly?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const options = useMemo(() => (fields ?? []).map((k) => ({ value: k, label: k })), [fields]);
+  return (
+    <Combobox
+      mode="combobox"
+      forceSelection={false}
+      aria-label={label}
+      placeholder="Whole output, or e.g. order"
+      options={options}
+      value={value}
+      disabled={readOnly}
+      emptyText={
+        options.length > 0
+          ? "No matching field — keep typing a path"
+          : "Test this step to list its output fields, or type a path"
+      }
+      onChange={onChange}
+    />
+  );
+}
+
 /**
  * "Write to state" — where this step's output lands in the run's state tree
  * (`Node.state`). Off is the key's absence (Merge at root on Set data, R14);
@@ -4914,7 +4971,6 @@ function StepStateControl({
   readOnly?: boolean;
   onChange: (next: FlowStep) => void;
 }) {
-  const listId = useId();
   const config = stateWriteFor(step);
   const issues = validateStateConfig(config);
   const commitConfig = (next: StateWriteConfig) => onChange(setStateWrite(step, next));
@@ -4924,6 +4980,12 @@ function StepStateControl({
       mode: "pick",
       map: rows.map((r, j) => (j === i ? { ...r, ...patch } : r)),
     });
+  const setAppend = (patch: { path?: string; from?: string }) => {
+    if (config.mode !== "append") return;
+    const path = patch.path ?? config.path;
+    const from = "from" in patch ? patch.from : config.from;
+    commitConfig({ mode: "append", path, ...(from ? { from } : {}) });
+  };
   return (
     <div className="w6w-field w6w-stack">
       <label className="w6w-field">
@@ -4943,105 +5005,97 @@ function StepStateControl({
       </label>
       {config.mode === "key" && (
         <label className="w6w-field">
-          <span>Key</span>
+          <span>To state key</span>
           <input
             type="text"
             aria-label="State key"
+            placeholder="e.g. order"
             value={config.key}
             disabled={readOnly}
             onChange={(e) => commitConfig({ mode: "key", key: e.target.value })}
           />
-          <span className="w6w-muted w6w-small">
-            The whole output is stored at <code>state.&lt;key&gt;</code>. A dotted key such as{" "}
+          <span className="w6w-hint">
+            Copies the whole step output into <code>state.&lt;key&gt;</code>. A dotted key such as{" "}
             <code>order.id</code> nests.
           </span>
         </label>
       )}
       {config.mode === "pick" && (
         <div className="w6w-stack">
-          {outputFields && outputFields.length > 0 && (
-            <datalist id={listId}>
-              {outputFields.map((k) => (
-                <option key={k} value={k} />
-              ))}
-            </datalist>
+          <StateMapHead to="To state key" />
+          {rows.length === 0 && (
+            <p className="w6w-muted w6w-small">No fields yet — add one below.</p>
           )}
           {rows.map((row, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional; their order is the write order
-            <div key={i} className="w6w-array-row">
-              <input
-                type="text"
-                aria-label="From output field"
-                placeholder="Output field (blank = whole output)"
-                list={outputFields && outputFields.length > 0 ? listId : undefined}
+            <div key={i} className="w6w-datavar-row w6w-state-map-row">
+              <StateOutputPathInput
+                label="From output field"
+                fields={outputFields}
                 value={row.from}
-                disabled={readOnly}
-                onChange={(e) => setRow(i, { from: e.target.value })}
+                readOnly={readOnly}
+                onChange={(from) => setRow(i, { from })}
               />
+              <StateMapArrow />
               <input
                 type="text"
                 aria-label="To state path"
-                placeholder="State path"
+                placeholder="e.g. order"
                 value={row.to}
                 disabled={readOnly}
                 onChange={(e) => setRow(i, { to: e.target.value })}
               />
-              <button
-                type="button"
-                aria-label="Remove field"
-                disabled={readOnly}
-                onClick={() => commitConfig({ mode: "pick", map: rows.filter((_, j) => j !== i) })}
-              >
-                Remove
-              </button>
+              {!readOnly && (
+                <DeleteButton
+                  label="Remove field"
+                  onClick={() =>
+                    commitConfig({ mode: "pick", map: rows.filter((_, j) => j !== i) })
+                  }
+                />
+              )}
             </div>
           ))}
-          <button
-            type="button"
-            aria-label="Add field"
-            disabled={readOnly}
-            onClick={() => commitConfig({ mode: "pick", map: [...rows, { from: "", to: "" }] })}
-          >
-            Add field
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="w6w-btn w6w-btn-ghost w6w-state-map-add"
+              aria-label="Add field"
+              onClick={() => commitConfig({ mode: "pick", map: [...rows, { from: "", to: "" }] })}
+            >
+              + Add field
+            </button>
+          )}
+          <span className="w6w-hint">
+            Copies <code>output.&lt;path&gt;</code> into <code>state.&lt;key&gt;</code>. Leave the
+            left side blank to copy the whole output.
+          </span>
         </div>
       )}
       {config.mode === "append" && (
         <div className="w6w-stack">
-          <label className="w6w-field">
-            <span>Append to</span>
+          <StateMapHead to="Append to state list" />
+          <div className="w6w-datavar-row w6w-state-map-row">
+            <StateOutputPathInput
+              label="Output field to append"
+              fields={outputFields}
+              value={config.from ?? ""}
+              readOnly={readOnly}
+              onChange={(from) => setAppend({ from })}
+            />
+            <StateMapArrow />
             <input
               type="text"
               aria-label="Append to state path"
+              placeholder="e.g. orders"
               value={config.path}
               disabled={readOnly}
-              onChange={(e) => {
-                const { from } = config;
-                commitConfig({
-                  mode: "append",
-                  path: e.target.value,
-                  ...(from !== undefined ? { from } : {}),
-                });
-              }}
+              onChange={(e) => setAppend({ path: e.target.value })}
             />
-          </label>
-          <label className="w6w-field">
-            <span>Output field to append</span>
-            <input
-              type="text"
-              aria-label="Output field to append"
-              placeholder="Blank = the whole output"
-              value={config.from ?? ""}
-              disabled={readOnly}
-              onChange={(e) =>
-                commitConfig({
-                  mode: "append",
-                  path: config.path,
-                  ...(e.target.value !== "" ? { from: e.target.value } : {}),
-                })
-              }
-            />
-          </label>
+          </div>
+          <span className="w6w-hint">
+            Appends <code>output.&lt;path&gt;</code> to the list at <code>state.&lt;key&gt;</code>.
+            Leave the left side blank to append the whole output.
+          </span>
         </div>
       )}
       {issues.length > 0 && (

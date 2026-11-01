@@ -4148,6 +4148,32 @@ dialog.w6w-modal.w6w-modal-fullscreen .w6w-modal-header {
   color: var(--w6w-danger);
 }
 
+/* "Write to state" mapping rows (Pick fields, Append): the shared `.w6w-datavar-row`
+   input style, laid out as output path → state key → remove. The header row uses the
+   same columns so each label sits over its input. Doubled on the row so it beats
+   `.w6w-datavar-row`'s own columns whatever the partial order. */
+.w6w-state-map-row,
+.w6w-datavar-row.w6w-state-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1rem minmax(0, 1fr) 2rem;
+  gap: var(--w6w-sp-1-5);
+  align-items: center;
+}
+
+.w6w-state-map-head {
+  color: var(--w6w-muted);
+  font-size: 12px;
+}
+
+.w6w-state-map-arrow {
+  color: var(--w6w-muted);
+  text-align: center;
+}
+
+.w6w-state-map-add {
+  align-self: flex-start;
+}
+
 .w6w-section {
   border: 1px solid var(--w6w-border);
   border-radius: 8px;
