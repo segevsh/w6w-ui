@@ -1450,6 +1450,8 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
     // `store` is `type: "string"` in the manifest (core `ParamType` has no `data-store`);
     // every entry's `store` param is the ui-only `data-store`, rendered as a store-name
     // picker when the host supplies `listDataStores` — the same precedent as `model-route`.
+    // Likewise `key` (get/set/delete/increment) is the ui-only `data-store-key`: a searchable
+    // picker of that store's entries when the host supplies `listDataStoreEntries`.
     ports: { in: 1, out: 1 },
     params: [
       {
@@ -1462,9 +1464,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
       {
         key: "required",
@@ -1501,9 +1503,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
       {
         key: "value",
@@ -1546,9 +1548,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
     ],
     output: [{ key: "key" }, { key: "deleted" }],
@@ -1572,9 +1574,9 @@ export const INTERNAL_NODES: InternalNodeDef[] = [
       {
         key: "key",
         label: "Key",
-        type: "string",
+        type: "data-store-key",
         required: true,
-        hint: "Entry key — may be an expression, e.g. a step output.",
+        hint: "Entry key — search the store's entries, type a key, or bind an expression.",
       },
       {
         key: "by",

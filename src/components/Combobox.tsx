@@ -3,6 +3,8 @@ import { type CSSProperties, useEffect, useId, useMemo, useRef, useState } from 
 export interface ComboboxOption {
   value: string;
   label: string;
+  /** A muted second line under the label (e.g. a value preview); never matched by the filter. */
+  detail?: string;
 }
 
 export interface ComboboxProps {
@@ -25,6 +27,15 @@ export interface ComboboxProps {
    */
   listMaxHeight?: number;
   className?: string;
+  /**
+   * Called with the typed text on every edit — for a host that searches server-side and
+   * passes the results back as `options`. The local filter still narrows what is shown.
+   */
+  onInputChange?: (text: string) => void;
+  /** Shown in the open list when no option matches. Default "No matches". */
+  emptyText?: string;
+  /** A muted line at the foot of the open list (e.g. "More entries — type to narrow"). */
+  footer?: string;
 }
 
 /** Combobox is chosen when the list would take more than 60% of the viewport. */
@@ -46,6 +57,15 @@ export function filterOptions(options: ComboboxOption[], query: string): Combobo
 }
 
 export const DEFAULT_LIST_MAX_HEIGHT = 240;
+
+const DETAIL_STYLE: CSSProperties = {
+  display: "block",
+  fontSize: "0.85em",
+  opacity: 0.65,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
 
 /** Everything but the height cap, which is per-instance (`listMaxHeight`). */
 const LIST_STYLE: CSSProperties = {
@@ -80,6 +100,9 @@ export function Combobox({
   optionHeight = 32,
   listMaxHeight = DEFAULT_LIST_MAX_HEIGHT,
   className,
+  onInputChange,
+  emptyText = "No matches",
+  footer,
 }: ComboboxProps) {
   const useBox =
     mode === "combobox" ||
@@ -196,6 +219,7 @@ export function Combobox({
         onFocus={() => setOpen(true)}
         onChange={(e) => {
           setText(e.target.value);
+          onInputChange?.(e.target.value);
           setFiltering(true);
           setActive(0);
           setOpen(true);
@@ -233,11 +257,25 @@ export function Combobox({
               onMouseEnter={() => setActive(i)}
             >
               {o.label}
+              {o.detail !== undefined && (
+                <span className="w6w-combobox-detail" style={DETAIL_STYLE}>
+                  {o.detail}
+                </span>
+              )}
             </div>
           ))}
           {shown.length === 0 && (
             <div role="presentation" style={{ padding: "6px 8px", opacity: 0.6 }}>
-              No matches
+              {emptyText}
+            </div>
+          )}
+          {footer !== undefined && (
+            <div
+              role="presentation"
+              className="w6w-combobox-footer"
+              style={{ padding: "6px 8px", opacity: 0.6, fontSize: "0.85em" }}
+            >
+              {footer}
             </div>
           )}
         </div>

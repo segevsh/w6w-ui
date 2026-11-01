@@ -470,6 +470,7 @@ function ParamFieldBody({
 }) {
   const listModelRoutes = useOptionalW6WApi()?.listModelRoutes;
   const listDataStores = useOptionalW6WApi()?.listDataStores;
+  const listDataStoreEntries = useOptionalW6WApi()?.listDataStoreEntries;
   const workflowProject = useWorkflowProject();
   const dyn = useContext(DynamicFieldsCtx);
   const dynState = dyn?.fields[param.key];
@@ -603,6 +604,31 @@ function ParamFieldBody({
         label={label}
         req={req}
         listDataStores={listDataStores}
+        project={workflowProject}
+      />
+    );
+  }
+
+  // `data-store-key` — a searchable picker of the sibling `store`'s entries when the host
+  // supplies `listDataStoreEntries` and `store` names a store literally; otherwise (no member,
+  // no store yet, or a store bound to an expression) the plain text input below, as `string`.
+  const storeName = effective?.("store");
+  if (
+    param.type === "data-store-key" &&
+    listDataStoreEntries &&
+    typeof storeName === "string" &&
+    storeName.trim() !== ""
+  ) {
+    return (
+      <StoreKeyField
+        param={param}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        label={label}
+        req={req}
+        store={storeName}
+        listDataStoreEntries={listDataStoreEntries}
         project={workflowProject}
       />
     );
@@ -977,6 +1003,137 @@ function StoreField({
         value={current}
         placeholder="Select a store…"
         options={stores.map((s) => ({ value: s.name, label: `${s.name} (${s.kind})` }))}
+        onChange={(next) => onChange(param.key, next)}
+      />
+    </FxField>
+  );
+}
+
+type DataStoreEntryList = NonNullable<import("./provider.tsx").W6WApi["listDataStoreEntries"]>;
+
+/** Entries one picker request asks for: a page, never the whole store. */
+export const STORE_KEY_PAGE = 25;
+/** Typing settles this long before the key search goes to the host. */
+const STORE_KEY_DEBOUNCE_MS = 200;
+const PREVIEW_CHARS = 60;
+
+/** One muted line under an entry's key: its value, shortened, and when it last changed. */
+export function storeEntryDetail(entry: { value?: unknown; updatedAt?: string }): string {
+  let text = "";
+  if (entry.value !== undefined) {
+    try {
+      text = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
+    } catch {
+      text = String(entry.value);
+    }
+    text = text.replace(/\s+/g, " ");
+    if (text.length > PREVIEW_CHARS) text = `${text.slice(0, PREVIEW_CHARS - 1)}…`;
+  }
+  const when =
+    typeof entry.updatedAt === "string" && entry.updatedAt.length >= 16
+      ? `updated ${entry.updatedAt.slice(0, 16).replace("T", " ")}`
+      : "";
+  return [text, when].filter(Boolean).join(" · ");
+}
+
+/**
+ * The `data-store-key` picker: the chosen store's entry KEYS in a {@link Combobox}, each with
+ * a short value preview. Typing searches the host by key prefix (debounced, one page of
+ * {@link STORE_KEY_PAGE}); free text is still a value (`forceSelection={false}`), so a key that
+ * does not exist yet (a `set`) is typed as before, and an expression binds through the same
+ * {@link FxField} a `string` uses.
+ */
+function StoreKeyField({
+  param,
+  value,
+  onChange,
+  readOnly,
+  label,
+  req,
+  store,
+  listDataStoreEntries,
+  project,
+}: {
+  param: ActionParam;
+  value: unknown;
+  onChange: (key: string, value: unknown) => void;
+  readOnly?: boolean;
+  label: string;
+  req: string;
+  /** The sibling `store` param's literal NAME. */
+  store: string;
+  listDataStoreEntries: DataStoreEntryList;
+  project: string | undefined;
+}) {
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState<Awaited<ReturnType<DataStoreEntryList>>>({ items: [] });
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLoading(true);
+    const prefix = query.trim();
+    const timer = setTimeout(
+      () => {
+        Promise.resolve()
+          .then(() =>
+            listDataStoreEntries(store, {
+              project,
+              prefix: prefix === "" ? undefined : prefix,
+              limit: STORE_KEY_PAGE,
+              signal: ctrl.signal,
+            }),
+          )
+          .then((r) => {
+            if (ctrl.signal.aborted) return;
+            setPage(r && Array.isArray(r.items) ? r : { items: [] });
+            setLoading(false);
+          })
+          .catch(() => {
+            if (ctrl.signal.aborted) return;
+            setPage({ items: [] });
+            setLoading(false);
+          });
+      },
+      prefix === "" ? 0 : STORE_KEY_DEBOUNCE_MS,
+    );
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [listDataStoreEntries, store, project, query]);
+  const raw = value ?? param.default ?? "";
+  const current = typeof raw === "string" ? raw : "";
+  const typed = query.trim();
+  return (
+    <FxField
+      param={param}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      label={label}
+      req={req}
+    >
+      <Combobox
+        mode="combobox"
+        forceSelection={false}
+        aria-label={label}
+        disabled={readOnly}
+        value={current}
+        placeholder="Search entries or type a key…"
+        options={page.items.map((e) => ({
+          value: e.key,
+          label: e.key,
+          detail: storeEntryDetail(e) || undefined,
+        }))}
+        onInputChange={setQuery}
+        emptyText={
+          loading
+            ? "Searching…"
+            : typed !== ""
+              ? `No key starts with "${typed}" — Enter keeps it as typed`
+              : "No entries in this store"
+        }
+        footer={page.more ? "More entries — type to narrow by key" : undefined}
         onChange={(next) => onChange(param.key, next)}
       />
     </FxField>

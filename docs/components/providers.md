@@ -161,6 +161,7 @@ feature-detected: a component that finds one missing falls back or hides that fe
 | `listSubscriptionsForWorkflow`, `createSubscription` | Optional | The canvas's webhook panel |
 | `listTriggerApps()` | Optional | Nothing in `@w6w/ui` calls it any more; the Triggers tab uses `listAppsPage({ hasTriggers: true })` |
 | `listDataStores(project?)` | Optional | The `@w6w/store` step's store picker; absent → plain text |
+| `listDataStoreEntries(store, { project?, prefix?, limit?, signal? })` | Optional | The `@w6w/store` step's key picker: one page of the named store's entries, searched by key prefix; absent → plain text |
 
 **Credentials are optional end to end.** The eight credential members above use method syntax and
 are feature-detected, so an older client keeps compiling and keeps the inline-credential forms; a

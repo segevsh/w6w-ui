@@ -6,9 +6,10 @@
 // editor-built step fail) AND the S-4 seam, restated below as an independent literal so a
 // drifted manifest and a drifted entry can't agree on the wrong thing. The manifest is the
 // SIBLING repo's source (`internal-apps/apps/store/index.ts`), read as text — ui never
-// imports it. The ONE sanctioned divergence is `store`: `string` in the manifest, the ui-only
-// `data-store` in the entry (same precedent as `@w6w/model`'s `route` <-> `model-route`).
-// It is keyed to `store` — an unkeyed sanction would let a `key` -> `data-store` drift pass.
+// imports it. The TWO sanctioned divergences are `store`: `string` in the manifest, the ui-only
+// `data-store` in the entry (same precedent as `@w6w/model`'s `route` <-> `model-route`), and
+// `key`: `string` in the manifest, the ui-only `data-store-key` entry picker. Each is keyed to
+// its param — an unkeyed sanction would let a `key` -> `data-store` drift pass.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -103,6 +104,19 @@ test("every @w6w/store entry's store param is the data-store picker type", () =>
   }
 });
 
+test("every @w6w/store entry's key param is the data-store-key picker type", () => {
+  for (const e of entries()) {
+    const key = e.params.find((p) => p.key === "key");
+    if (key) assert.equal(key.type, "data-store-key", `${e.action}.key`);
+  }
+  assert.deepEqual(
+    entries()
+      .filter((e) => e.params.some((p) => p.key === "key"))
+      .map((e) => e.action),
+    ["get", "set", "delete", "increment"],
+  );
+});
+
 test("@w6w/store entries carry no scope param and one distinct label each", () => {
   const FORBIDDEN = ["scope", "account", "project", "tenant", "subject", "input"];
   for (const e of entries()) {
@@ -172,7 +186,8 @@ test(
         const mp = m.params.get(p.key);
         const ok =
           p.type === mp?.type ||
-          (p.key === "store" && p.type === "data-store" && mp?.type === "string");
+          (p.key === "store" && p.type === "data-store" && mp?.type === "string") ||
+          (p.key === "key" && p.type === "data-store-key" && mp?.type === "string");
         assert.ok(ok, `${e.action}.${p.key}: ui "${p.type}" vs manifest "${mp?.type}"`);
         const uiOptions = Array.isArray(p.options)
           ? p.options.map((o): [string, string] => [String(o.value), o.label])
