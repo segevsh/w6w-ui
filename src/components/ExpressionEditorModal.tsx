@@ -707,9 +707,8 @@ export function ExpressionEditorModal({
               editor supplies `steps`/`hasTrigger` and never `inputs`). Render
               Previous steps first should a host ever supply both. */}
           {seedMode && (
-            <div
+            <fieldset
               className="w6w-exprmodal-insert-as"
-              role="group"
               aria-label="Insert as"
               style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 8 }}
             >
@@ -732,7 +731,7 @@ export function ExpressionEditorModal({
                   {label}
                 </button>
               ))}
-            </div>
+            </fieldset>
           )}
           {jsonBinding && !seedMode && !hasState && (
             <span className="w6w-expr-menu-empty">No upstream steps</span>
