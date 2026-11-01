@@ -3339,6 +3339,9 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
     >
       <NodeControls id={id} step={step} runnable />
       <div
+        // An app trigger gets the same half-pill entry chrome as a built-in trigger.
+        className={isTrigger ? "w6w-node-trigger" : undefined}
+        data-node-kind={isTrigger ? "trigger" : undefined}
         data-run-status={data.stepStatus ?? "no-run"}
         {...problemAttrs(data.stepProblems)}
         style={{
@@ -3358,8 +3361,8 @@ function StepNodeCard({ id, data, selected }: NodeProps<StepNode>) {
           opacity: isDisabledStep(step) ? 0.45 : selected ? 1 : visual.opacity,
           background: "var(--w6w-panel)",
           color: "var(--w6w-text)",
-          borderRadius: 4,
-          padding: "8px 12px",
+          // The trigger half-pill's radius + padding live in `.w6w-node-trigger`.
+          ...(isTrigger ? {} : { borderRadius: 4, padding: "8px 12px" }),
           minWidth: 180,
           fontSize: 13,
           display: "flex",
